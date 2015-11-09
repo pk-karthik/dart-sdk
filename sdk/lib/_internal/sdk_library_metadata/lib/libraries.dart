@@ -14,6 +14,8 @@ const int DART2JS_PLATFORM = 1;
  */
 const int VM_PLATFORM = 2;
 
+const FLETCH_PLATFORM = 3;
+
 /// The contexts that a library can be used from.
 enum Category {
   /// Indicates that a library can be used in a browser context.
@@ -246,6 +248,47 @@ const Map<String, LibraryInfo> libraries = const {
       categories: "",
       documented: false,
       platforms: DART2JS_PLATFORM),
+
+  "_fletch_system": const LibraryInfo(
+      "mobile/system/system.dart",
+      categories: "Server",
+      documented: false),
+
+  "fletch.ffi": const LibraryInfo(
+      "mobile/ffi/ffi.dart",
+      categories: "Client,Server,Embedded",
+      documented: false),
+
+  "fletch": const LibraryInfo(
+      "mobile/fletch/fletch.dart",
+      categories: "Server",
+      documented: false),
+    /*  Currently not working
+  "fletch.io": const LibraryInfo(
+      "mobile/io/io.dart",
+      categories: "Client,Server,Embedded",
+      documented: false,
+      platforms: FLETCH_PLATFORM),
+    */
+    /*  Currently not working
+  "system": const LibraryInfo(
+      "mobile/io/system.dart",
+      categories: "",
+      documented: false,
+      platforms: FLETCH_PLATFORM),
+    */
+  "service": const LibraryInfo(
+      "mobile/service/service.dart",
+      categories: "Client,Server,Embedded",
+      documented: false,
+      platforms: FLETCH_PLATFORM),
+
+  "fletch.os": const LibraryInfo(
+      "mobile/os/os.dart",
+      categories: "Client,Server,Embedded",
+      documented: false,
+      platforms: FLETCH_PLATFORM),
+
 };
 
 /**
