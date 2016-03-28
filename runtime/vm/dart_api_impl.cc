@@ -5573,6 +5573,8 @@ DART_EXPORT Dart_Handle Dart_FinalizeLoading(bool complete_futures) {
     return state;
   }
 
+  I->DoneFinalizing();
+
   // Now that the newly loaded classes are finalized, notify the debugger
   // that new code has been loaded. If there are latent breakpoints in
   // the new code, the debugger convert them to unresolved source breakpoints.

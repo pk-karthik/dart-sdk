@@ -150,6 +150,9 @@ class ClassTable {
   explicit ClassTable(ClassTable* original);
   ~ClassTable();
 
+  void CopyFrom(ClassTable* original);
+  void Reset();
+
   // Thread-safe.
   RawClass* At(intptr_t index) const {
     ASSERT(IsValidIndex(index));
@@ -180,6 +183,7 @@ class ClassTable {
   void Validate();
 
   void Print();
+  void PrintNonDartClasses();
 
   void PrintToJSONObject(JSONObject* object);
 

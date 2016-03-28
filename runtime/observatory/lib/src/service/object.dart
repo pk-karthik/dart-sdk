@@ -1190,6 +1190,10 @@ class Isolate extends ServiceObjectOwner {
     return invokeRpc('getSourceReport', params);
   }
 
+  Future<ServiceMap> reloadSources() {
+    return invokeRpc('_reloadSources', {});
+  }
+
   /// Fetches and builds the class hierarchy for this isolate. Returns the
   /// Object class object.
   Future<Class> getClassHierarchy() {

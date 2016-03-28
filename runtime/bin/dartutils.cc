@@ -376,9 +376,6 @@ static Dart_Handle LoadDataAsync_Invoke(Dart_Handle tag,
 Dart_Handle DartUtils::LibraryTagHandler(Dart_LibraryTag tag,
                                          Dart_Handle library,
                                          Dart_Handle url) {
-  if (!Dart_IsLibrary(library)) {
-    return Dart_NewApiError("not a library");
-  }
   if (!Dart_IsString(url)) {
     return Dart_NewApiError("url is not a string");
   }
@@ -386,6 +383,12 @@ Dart_Handle DartUtils::LibraryTagHandler(Dart_LibraryTag tag,
   Dart_Handle result = Dart_StringToCString(url, &url_string);
   if (Dart_IsError(result)) {
     return result;
+  }
+  if (tag == Dart_kScriptTag) {
+    return LoadDataAsync_Invoke(Dart_Null(), url, Dart_Null());
+  }
+  if (!Dart_IsLibrary(library)) {
+    return Dart_NewApiError("not a library");
   }
   Dart_Handle library_url = Dart_LibraryUrl(library);
   const char* library_url_string = NULL;
@@ -557,7 +560,15 @@ void FUNCTION_NAME(Builtin_LoadSource)(Dart_NativeArguments args) {
 
   Dart_TypedDataReleaseData(source_data);
 
+  int64_t tag = -1;
   if (Dart_IsNull(tag_in) && Dart_IsNull(library_uri)) {
+    tag = Dart_kScriptTag;
+  } else {
+    tag = DartUtils::GetIntegerValue(tag_in);
+  }
+  ASSERT(tag >= 0);
+
+  if (tag == Dart_kScriptTag) {
     // Entry file. Check for payload and load accordingly.
     bool is_snapshot = false;
     const uint8_t *payload =
@@ -575,8 +586,6 @@ void FUNCTION_NAME(Builtin_LoadSource)(Dart_NativeArguments args) {
       }
     }
   } else {
-    int64_t tag = DartUtils::GetIntegerValue(tag_in);
-
     Dart_Handle source = Dart_NewStringFromUTF8(data, num_bytes);
     if (Dart_IsError(source)) {
       result = DartUtils::NewError("%s is not a valid UTF-8 script",
