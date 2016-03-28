@@ -235,6 +235,10 @@ class Isolate : public BaseIsolate {
 
   // Marks all libraries as loaded.
   void DoneLoading();
+  void DoneFinalizing();
+
+  RawError* ReloadSources();
+  bool IsReloadingSources() const;
 
   bool MakeRunnable();
   void Run();
@@ -602,6 +606,7 @@ class Isolate : public BaseIsolate {
   // running, and the visitor must not allocate.
   void VisitObjectPointers(ObjectPointerVisitor* visitor, bool validate_frames);
 
+
   void set_user_tag(uword tag) {
     user_tag_ = tag;
   }
@@ -629,6 +634,11 @@ class Isolate : public BaseIsolate {
     return mutator_thread_->zone();
   }
 
+  void CheckpointClassTable();
+  void CommitClassTable();
+  void RollbackClassTable();
+  bool ValidateReload();
+
   // Accessed from generated code:
   StoreBuffer* store_buffer_;
   Heap* heap_;
@@ -637,6 +647,7 @@ class Isolate : public BaseIsolate {
   RawUserTag* default_tag_;
   RawCode* ic_miss_code_;
   ClassTable class_table_;
+  ClassTable saved_class_table_;
   bool single_step_;
   bool skip_step_;  // skip the next single step.
 

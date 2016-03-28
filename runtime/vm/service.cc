@@ -2490,6 +2490,45 @@ static bool GetSourceReport(Thread* thread, JSONStream* js) {
 }
 
 
+static const MethodParameter* reload_sources_params[] = {
+  RUNNABLE_ISOLATE_PARAMETER,
+  NULL,
+};
+
+
+static bool ReloadSources(Thread* thread, JSONStream* js) {
+  Isolate* isolate = thread->isolate();
+  if (!isolate->compilation_allowed()) {
+    js->PrintError(kFeatureDisabled,
+        "Cannot reload source when running a precompiled program.");
+    return true;
+  }
+  Dart_LibraryTagHandler handler = isolate->library_tag_handler();
+  if (handler == NULL) {
+    js->PrintError(kFeatureDisabled,
+                   "A library tag handler must be installed.");
+    return true;
+  }
+  DebuggerStackTrace* stack = isolate->debugger()->StackTrace();
+  if (stack->Length() > 0) {
+    // TODO(turnidge): We need to support this case.
+    js->PrintError(kFeatureDisabled,
+        "Source can only be reloaded when stack is empty.");
+    return true;
+  }
+
+  const Error& result = Error::Handle(isolate->ReloadSources());
+  if (result.IsError()) {
+    // TODO(turnidge): Use an appropriate error code here.
+    js->PrintError(kFeatureDisabled, "Error reloading sources.");
+    return true;
+  }
+
+  PrintSuccess(js);
+  return true;
+}
+
+
 static const MethodParameter* get_call_site_data_params[] = {
   RUNNABLE_ISOLATE_PARAMETER,
   new IdParameter("targetId", false),
@@ -4079,6 +4118,8 @@ static const ServiceMethodDescriptor service_methods_[] = {
     remove_breakpoint_params },
   { "_restartVM", RestartVM,
     restart_vm_params },
+  { "_reloadSources", ReloadSources,
+    reload_sources_params },
   { "resume", Resume,
     resume_params },
   { "_requestHeapSnapshot", RequestHeapSnapshot,

@@ -327,9 +327,19 @@ class ObjectStore {
     root_library_ = value.raw();
   }
 
+  RawLibrary* saved_root_library() const { return saved_root_library_; }
+  void set_saved_root_library(const Library& value) {
+    saved_root_library_ = value.raw();
+  }
+
   RawGrowableObjectArray* libraries() const { return libraries_; }
   void set_libraries(const GrowableObjectArray& value) {
     libraries_ = value.raw();
+  }
+
+  RawGrowableObjectArray* saved_libraries() const { return saved_libraries_; }
+  void set_saved_libraries(const GrowableObjectArray& value) {
+    saved_libraries_ = value.raw();
   }
 
   RawGrowableObjectArray* closure_functions() const {
@@ -545,9 +555,11 @@ class ObjectStore {
   RawLibrary* native_wrappers_library_;
   RawLibrary* profiler_library_;
   RawLibrary* root_library_;
+  RawLibrary* saved_root_library_;
   RawLibrary* typed_data_library_;
   RawLibrary* vmservice_library_;
   RawGrowableObjectArray* libraries_;
+  RawGrowableObjectArray* saved_libraries_;
   RawGrowableObjectArray* closure_functions_;
   RawGrowableObjectArray* pending_classes_;
   RawGrowableObjectArray* pending_deferred_loads_;
