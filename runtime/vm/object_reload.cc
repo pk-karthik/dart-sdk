@@ -48,7 +48,7 @@ void Class::Reload(const Class& replacement) {
   field_list = replacement.fields();
   String& name = String::Handle();
   Field& field = Field::Handle();
-  String& name = String::Handle();
+  String& old_name = String::Handle();
   Instance& value = Instance::Handle();
   for (intptr_t i = 0; i < field_list.Length(); i++) {
     field = Field::RawCast(field_list.At(i));
