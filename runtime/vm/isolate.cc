@@ -20,6 +20,7 @@
 #include "vm/deopt_instructions.h"
 #include "vm/flags.h"
 #include "vm/heap.h"
+#include "vm/isolate_reload.h"
 #include "vm/lockers.h"
 #include "vm/log.h"
 #include "vm/message_handler.h"
@@ -741,7 +742,6 @@ Isolate::Isolate(const Dart_IsolateFlags& api_flags)
       current_tag_(UserTag::null()),
       default_tag_(UserTag::null()),
       class_table_(),
-      saved_class_table_(),
       single_step_(false),
       thread_registry_(new ThreadRegistry()),
       safepoint_handler_(new SafepointHandler(this)),
@@ -800,7 +800,8 @@ Isolate::Isolate(const Dart_IsolateFlags& api_flags)
       boxed_field_list_mutex_(new Mutex()),
       boxed_field_list_(GrowableObjectArray::null()),
       spawn_count_monitor_(new Monitor()),
-      spawn_count_(0) {
+      spawn_count_(0),
+      reload_context_(NULL) {
   NOT_IN_PRODUCT(FlagsCopyFrom(api_flags));
   // TODO(asiva): A Thread is not available here, need to figure out
   // how the vm_tag (kEmbedderTagId) can be set, these tags need to
@@ -999,116 +1000,18 @@ void Isolate::DoneLoading() {
 }
 
 
-void Isolate::CheckpointClassTable() {
-  fprintf(stderr, "---- CHECKPOINTING CLASS TABLE\n");
-  class_table()->PrintNonDartClasses();
-
-  saved_class_table_.CopyFrom(class_table());
-
-  // Build a new libraries array which only has the dart-scheme libs.
-  const GrowableObjectArray& libs =
-      GrowableObjectArray::Handle(object_store()->libraries());
-  const GrowableObjectArray& new_libs = GrowableObjectArray::Handle(
-      GrowableObjectArray::New(Heap::kOld));
-  Library& tmp_lib = Library::Handle();
-  String& tmp_url = String::Handle();
-  for (intptr_t i = 0; i < libs.Length(); i++) {
-    tmp_lib ^= libs.At(i);
-    tmp_url ^= tmp_lib.url();
-    if (tmp_lib.is_dart_scheme()) {
-      new_libs.Add(tmp_lib, Heap::kOld);
-    }
-  }
-  object_store()->set_saved_libraries(libs);
-  object_store()->set_libraries(new_libs);
-
-  // Reset the root library to null.
-  const Library& root_lib =
-      Library::Handle(object_store()->root_library());
-  object_store()->set_saved_root_library(root_lib);
-  object_store()->set_root_library(Library::Handle());
-}
-
-
-bool Isolate::IsReloadingSources() const {
-  return object_store()->saved_libraries() != GrowableObjectArray::null();
-}
-
-
-void Isolate::RollbackClassTable() {
-  fprintf(stderr, "---- ROLLING BACK CLASS TABLE\n");
-
-  class_table_.CopyFrom(&saved_class_table_);
-  saved_class_table_.Reset();
-  class_table()->PrintNonDartClasses();
-
-  GrowableObjectArray& saved_libs = GrowableObjectArray::Handle(
-      current_zone(), object_store()->saved_libraries());
-  if (!saved_libs.IsNull()) {
-    object_store()->set_libraries(saved_libs);
-  }
-  object_store()->set_saved_libraries(GrowableObjectArray::Handle());
-
-  Library& saved_root_lib = Library::Handle(
-      current_zone(), object_store()->saved_root_library());
-  if (!saved_root_lib.IsNull()) {
-    object_store()->set_root_library(saved_root_lib);
-  }
-  object_store()->set_saved_root_library(Library::Handle());
-}
-
-
-void Isolate::CommitClassTable() {
-  fprintf(stderr, "---- COMMITTING CLASS TABLE\n");
-  UNIMPLEMENTED();
-}
-
-
-bool Isolate::ValidateReload() {
-  // TODO(turnidge): Implement.
-  return false;
-}
-
-
 RawError* Isolate::ReloadSources() {
-  Thread* thread = Thread::Current();
-  const Library& root_lib = Library::Handle(object_store()->root_library());
-  const String& root_lib_url = String::Handle(root_lib.url());
-
-  CheckpointClassTable();
-
-  // Block class finalization attempts when calling into the library
-  // tag handler.
-  BlockClassFinalization();
-  Object& result = Object::Handle(thread->zone());
-  {
-    TransitionVMToNative transition(thread);
-    Api::Scope api_scope(thread);
-    Dart_Handle retval =
-        (library_tag_handler())(Dart_kScriptTag,
-                                Api::NewHandle(thread, Library::null()),
-                                Api::NewHandle(thread, root_lib_url.raw()));
-    result = Api::UnwrapHandle(retval);
-  }
-  UnblockClassFinalization();
-  if (result.IsError()) {
-    return Error::Cast(result).raw();
-  } else {
-    return Error::null();
-  }
+  ASSERT(reload_context_ == NULL);
+  reload_context_ = new IsolateReloadContext(this);
+  return reload_context_->StartReload();
 }
 
 
 void Isolate::DoneFinalizing() {
-  if (IsReloadingSources()) {
-    fprintf(stderr, "---- DONE FINALIZING\n");
-    class_table()->PrintNonDartClasses();
-
-    if (ValidateReload()) {
-      CommitClassTable();
-    } else {
-      RollbackClassTable();
-    }
+  if (IsReloading()) {
+    reload_context_->FinishReload();
+    delete reload_context_;
+    reload_context_ = NULL;
   }
 }
 
@@ -1738,7 +1641,6 @@ void Isolate::VisitObjectPointers(ObjectPointerVisitor* visitor,
 
   // Visit objects in the class table.
   class_table()->VisitObjectPointers(visitor);
-  saved_class_table_.VisitObjectPointers(visitor);
 
   // Visit objects in per isolate stubs.
   StubCode::VisitObjectPointers(visitor);
@@ -1785,6 +1687,11 @@ void Isolate::VisitObjectPointers(ObjectPointerVisitor* visitor,
   // Visit objects in the debugger.
   if (FLAG_support_debugger) {
     debugger()->VisitObjectPointers(visitor);
+  }
+
+  // Visit objects that are being used for isolate reload.
+  if (reload_context() != NULL) {
+    reload_context()->VisitObjectPointers(visitor);
   }
 
   // Visit objects that are being used for deoptimization.
