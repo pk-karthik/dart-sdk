@@ -136,6 +136,12 @@ bool ClassTable::TraceAllocationFor(intptr_t cid) {
 }
 
 
+void ClassTable::SetNumCids(intptr_t num_cids) {
+  ASSERT(num_cids <= top_);
+  top_ = num_cids;
+}
+
+
 void ClassTable::Register(const Class& cls) {
   ASSERT(Thread::Current()->IsMutatorThread());
   intptr_t index = cls.id();

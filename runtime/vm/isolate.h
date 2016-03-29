@@ -35,6 +35,7 @@ class HandleVisitor;
 class Heap;
 class ICData;
 class IsolateProfilerData;
+class IsolateReloadContext;
 class IsolateSpawnState;
 class Log;
 class MessageHandler;
@@ -47,12 +48,12 @@ class RawInstance;
 class RawArray;
 class RawContext;
 class RawDouble;
+class RawError;
+class RawField;
 class RawGrowableObjectArray;
 class RawMint;
 class RawObject;
 class RawInteger;
-class RawError;
-class RawField;
 class RawFloat32x4;
 class RawInt32x4;
 class RawUserTag;
@@ -432,6 +433,14 @@ class Isolate : public BaseIsolate {
     return &vm_tag_counters_;
   }
 
+  bool IsReloading() const {
+    return reload_context_ != NULL;
+  }
+
+  IsolateReloadContext* reload_context() {
+    return reload_context_;
+  }
+
   uword user_tag() const {
     return user_tag_;
   }
@@ -635,7 +644,6 @@ class Isolate : public BaseIsolate {
   RawUserTag* default_tag_;
   RawCode* ic_miss_code_;
   ClassTable class_table_;
-  ClassTable saved_class_table_;
   bool single_step_;
   bool skip_step_;  // skip the next single step.
 
@@ -754,6 +762,8 @@ class Isolate : public BaseIsolate {
   // destroyed while there are child isolates in the midst of a spawn.
   Monitor* spawn_count_monitor_;
   intptr_t spawn_count_;
+
+  IsolateReloadContext* reload_context_;
 
 #define ISOLATE_METRIC_VARIABLE(type, variable, name, unit)                    \
   type metric_##variable##_;

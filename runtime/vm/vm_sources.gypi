@@ -248,6 +248,7 @@
     'isolate.cc',
     'isolate.h',
     'isolate_reload.cc',
+    'isolate_reload.h',
     'isolate_test.cc',
     'jit_optimizer.cc',
     'jit_optimizer.h',

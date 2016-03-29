@@ -150,6 +150,7 @@ class ClassTable {
   explicit ClassTable(ClassTable* original);
   ~ClassTable();
 
+  // TODO(turnidge): Move or remove.
   void CopyFrom(ClassTable* original);
   void Reset();
 
@@ -169,6 +170,7 @@ class ClassTable {
   }
 
   intptr_t NumCids() const { return top_; }
+  void SetNumCids(intptr_t num_cids);
 
   void Register(const Class& cls);
 
