@@ -1811,6 +1811,9 @@ class ICData : public Object {
     return raw_ptr()->deopt_id_;
   }
 
+  void Reset(bool is_static_call) const;
+  void ResetData() const;
+
   // Note: only deopts with reasons before Unknown in this list are recorded in
   // the ICData. All other reasons are used purely for informational messages
   // printed during deoptimization itself.

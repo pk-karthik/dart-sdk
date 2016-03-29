@@ -12698,6 +12698,17 @@ RawICData* ICData::NewDescriptor(Zone* zone,
 }
 
 
+
+void ICData::ResetData() const {
+  // Number of array elements in one test entry.
+  intptr_t len = TestEntryLength();
+  // IC data array must be null terminated (sentinel entry).
+  const Array& ic_data = Array::Handle(Array::New(len, Heap::kOld));
+  set_ic_data_array(ic_data);
+  WriteSentinel(ic_data, len);
+}
+
+
 RawICData* ICData::New() {
   ICData& result = ICData::Handle();
   {

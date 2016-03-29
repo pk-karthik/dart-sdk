@@ -51,6 +51,12 @@ class IsolateReloadContext {
   void RollbackClassTable();
   bool ValidateReload();
 
+  // atomic_install:
+  void MarkAllFunctionsForRecompilation();
+  void ResetUnoptimizedICsOnStack();
+  void ResetMegamorphicCaches();
+  void InvalidateWorld();
+
   Isolate* isolate_;
   intptr_t saved_num_cids_;
 
