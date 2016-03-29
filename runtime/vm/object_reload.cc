@@ -18,17 +18,24 @@ void Class::Reload(const Class& replacement) {
     replacement.EnsureIsFinalized(Thread::Current());
   }
 
-  // Create a new patch class for the original source.
+  // Move all old functions and fields to a patch class so that they
+  // still refer to their original script.
   const PatchClass& patch =
       PatchClass::Handle(PatchClass::New(*this, Script::Handle(script())));
   Function& func = Function::Handle();
   Array& funcs = Array::Handle(functions());
   for (intptr_t i = 0; i < funcs.Length(); i++) {
-    func ^= funcs.At(i);
+    func = Function::RawCast(funcs.At(i));
     func.set_owner(patch);
   }
+  Field& old_field = Field::Handle();
+  Array& old_field_list = Array::Handle(fields());
+  for (intptr_t i = 0; i < old_field_list.Length(); i++) {
+    old_field = Field::RawCast(old_field_list.At(i));
+    old_field.set_owner(patch);
+  }
 
-  // replace functions
+  // Replace functions
   funcs = replacement.functions();
   for (intptr_t i = 0; i < funcs.Length(); i++) {
     func ^= funcs.At(i);
@@ -36,13 +43,38 @@ void Class::Reload(const Class& replacement) {
   }
   SetFunctions(Array::Handle(replacement.functions()));
 
-  // replace script
+  // Replace fields
+  Array& field_list = Array::Handle(fields());
+  field_list = replacement.fields();
+  String& name = String::Handle();
+  Field& field = Field::Handle();
+  String& name = String::Handle();
+  Instance& value = Instance::Handle();
+  for (intptr_t i = 0; i < field_list.Length(); i++) {
+    field = Field::RawCast(field_list.At(i));
+    field.set_owner(*this);
+    name = field.name();
+    if (field.is_static()) {
+      // Find the corresponding old field, if it exists, and migrate
+      // over the field value.
+      for (intptr_t j = 0; j < old_field_list.Length(); j++) {
+        old_field = Field::RawCast(old_field_list.At(j));
+        old_name = old_field.name();
+        if (name.Equals(old_name)) {
+          value = old_field.StaticValue();
+          field.SetStaticValue(value);
+        }
+      }
+    }
+  }
+  SetFields(Array::Handle(replacement.fields()));
+
+  // Replace script
   set_script(Script::Handle(replacement.script()));
   set_token_pos(replacement.token_pos());
   // replace library
   // clear some stuff
 
-  // static fields
   // class hierarchy changes
 }
 
