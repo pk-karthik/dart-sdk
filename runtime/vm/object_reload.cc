@@ -8,9 +8,37 @@
 
 namespace dart {
 
+void Function::Reparent(const Class& new_cls) const {
+  set_owner(new_cls);
+}
+
+
 void Class::Reload(const Class& replacement) {
+  if (is_finalized()) {
+    replacement.EnsureIsFinalized(Thread::Current());
+  }
+
+  // Create a new patch class for the original source.
+  const PatchClass& patch =
+      PatchClass::Handle(PatchClass::New(*this, Script::Handle(script())));
+  Function& func = Function::Handle();
+  Array& funcs = Array::Handle(functions());
+  for (intptr_t i = 0; i < funcs.Length(); i++) {
+    func ^= funcs.At(i);
+    func.set_owner(patch);
+  }
+
   // replace functions
+  funcs = replacement.functions();
+  for (intptr_t i = 0; i < funcs.Length(); i++) {
+    func ^= funcs.At(i);
+    func.Reparent(*this);
+  }
+  SetFunctions(Array::Handle(replacement.functions()));
+
   // replace script
+  set_script(Script::Handle(replacement.script()));
+  set_token_pos(replacement.token_pos());
   // replace library
   // clear some stuff
 
@@ -26,6 +54,7 @@ bool Class::CanReload(const Class& replacement) {
 
 
 void Library::Reload(const Library& replacement) {
+  StorePointer(&raw_ptr()->loaded_scripts_, Array::null());
 }
 
 
