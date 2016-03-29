@@ -6,6 +6,7 @@
 #define VM_ISOLATE_RELOAD_H_
 
 #include "vm/globals.h"
+#include "vm/growable_array.h"
 
 namespace dart {
 
@@ -33,6 +34,9 @@ class IsolateReloadContext {
   RawGrowableObjectArray* saved_libraries() const;
 
  private:
+  void BuildClassIdMap();
+  intptr_t FindReplacementClassId(const Class& cls);
+
   void set_saved_root_library(const Library& value);
 
   void set_saved_libraries(const GrowableObjectArray& value);
@@ -49,6 +53,13 @@ class IsolateReloadContext {
 
   Isolate* isolate_;
   intptr_t saved_num_cids_;
+
+  struct CidMapping {
+    intptr_t old_cid;
+    intptr_t new_cid;
+  };
+
+  MallocGrowableArray<CidMapping> cid_mappings_;
 
   RawObject** from() { return reinterpret_cast<RawObject**>(&script_uri_); }
   RawString* script_uri_;

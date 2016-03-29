@@ -57,6 +57,7 @@ RawError* IsolateReloadContext::StartReload() {
 
 
 void IsolateReloadContext::FinishReload() {
+  BuildClassIdMap();
   fprintf(stderr, "---- DONE FINALIZING\n");
   I->class_table()->PrintNonDartClasses();
 
@@ -130,6 +131,69 @@ void IsolateReloadContext::CommitClassTable() {
 bool IsolateReloadContext::ValidateReload() {
   // TODO(turnidge): Implement.
   return false;
+}
+
+
+intptr_t IsolateReloadContext::FindReplacementClassId(const Class& cls) {
+  const intptr_t upper_cid_bound = I->class_table()->NumCids();
+
+  const Library& lib = Library::Handle(cls.library());
+  const String& url = String::Handle(lib.IsNull() ? String::null() : lib.url());
+  const String& name = String::Handle(cls.Name());
+
+  Library& new_lib = Library::Handle();
+  String& new_url = String::Handle();
+  String& new_name = String::Handle();
+  Class& new_class = Class::Handle();
+
+  for (intptr_t i = saved_num_cids_; i < upper_cid_bound; i++) {
+    if (!I->class_table()->HasValidClassAt(i)) {
+      continue;
+    }
+    new_class = I->class_table()->At(i);
+    new_name = new_class.Name();
+    if (!name.Equals(new_name)) {
+      continue;
+    }
+    new_lib = new_class.library();
+    new_url = new_lib.IsNull() ? String::null() : new_lib.url();
+    if (!new_url.Equals(url)) {
+      continue;
+    }
+
+    return i;
+  }
+
+  return -1;
+}
+
+
+void IsolateReloadContext::BuildClassIdMap() {
+  const intptr_t lower_cid_bound =
+      Dart::vm_isolate()->class_table()->NumCids();
+
+  Class& cls = Class::Handle();
+  for (intptr_t i = lower_cid_bound; i < saved_num_cids_; i++) {
+    if (!I->class_table()->HasValidClassAt(i)) {
+      continue;
+    }
+    cls ^= I->class_table()->At(i);
+    CidMapping mapping;
+    mapping.new_cid = FindReplacementClassId(cls);
+    if (mapping.new_cid == -1) {
+      continue;
+    }
+    mapping.old_cid = i;
+    cid_mappings_.Add(mapping);
+  }
+
+  fprintf(stderr, "---- CLASS ID MAPPING\n");
+  for (intptr_t i = 0; i < cid_mappings_.length(); i++) {
+    const CidMapping& mapping = cid_mappings_[i];
+    ASSERT(mapping.new_cid > 0);
+    ASSERT(mapping.old_cid > 0);
+    fprintf(stderr, "%" Pd " -> %" Pd "\n", mapping.new_cid, mapping.old_cid);
+  }
 }
 
 
