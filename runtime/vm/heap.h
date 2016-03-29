@@ -365,6 +365,8 @@ class Heap {
 
   friend class ServiceEvent;
   friend class PageSpace;  // VerifyGC
+  friend class IsolateReloadContext;
+
   DISALLOW_COPY_AND_ASSIGN(Heap);
 };
 

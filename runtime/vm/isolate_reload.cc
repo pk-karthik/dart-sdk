@@ -4,11 +4,13 @@
 
 #include "vm/isolate_reload.h"
 
+#include "vm/code_generator.h"
 #include "vm/dart_api_impl.h"
 #include "vm/isolate.h"
 #include "vm/object.h"
 #include "vm/object_store.h"
 #include "vm/safepoint.h"
+#include "vm/stack_frame.h"
 #include "vm/thread.h"
 
 namespace dart {
@@ -124,6 +126,7 @@ void IsolateReloadContext::RollbackClassTable() {
 
 void IsolateReloadContext::CommitClassTable() {
   fprintf(stderr, "---- COMMITTING CLASS TABLE\n");
+  InvalidateWorld();
   UNIMPLEMENTED();
 }
 
@@ -225,6 +228,143 @@ void IsolateReloadContext::VisitObjectPointers(ObjectPointerVisitor* visitor) {
 
 ObjectStore* IsolateReloadContext::object_store() {
   return isolate_->object_store();
+}
+
+
+static void ResetICs(const Function& function, const Code& code) {
+  if (function.ic_data_array() == Array::null()) {
+    return;  // Already reset in an earlier round.
+  }
+
+  Thread* thread = Thread::Current();
+  Zone* zone = thread->zone();
+
+  ZoneGrowableArray<const ICData*>* ic_data_array =
+      new(zone) ZoneGrowableArray<const ICData*>();
+  function.RestoreICDataMap(ic_data_array, false /* clone ic-data */);
+  const PcDescriptors& descriptors =
+      PcDescriptors::Handle(code.pc_descriptors());
+  PcDescriptors::Iterator iter(descriptors, RawPcDescriptors::kIcCall |
+                                            RawPcDescriptors::kUnoptStaticCall);
+  while (iter.MoveNext()) {
+    const ICData* ic_data = (*ic_data_array)[iter.DeoptId()];
+    bool is_static_call = iter.Kind() == RawPcDescriptors::kUnoptStaticCall;
+    ic_data->Reset(is_static_call);
+  }
+}
+
+
+void IsolateReloadContext::ResetUnoptimizedICsOnStack() {
+  Code& code = Code::Handle();
+  Function& function = Function::Handle();
+  ObjectPool& object_table = ObjectPool::Handle();
+  Object& object_table_entry = Object::Handle();
+  DartFrameIterator iterator;
+  StackFrame* frame = iterator.NextFrame();
+  while (frame != NULL) {
+    code = frame->LookupDartCode();
+    if (code.is_optimized()) {
+      // If this code is optimized, we need to reset the ICs in the
+      // corresponding unoptimized code, which will be executed when the stack
+      // unwinds to the the optimized code. We must use the unoptimized code
+      // referenced from the optimized code's deopt object table, because this
+      // is the code that will be used to finish the activation after deopt. It
+      // can be different from the function's current unoptimized code, which
+      // may be null if we've already done an atomic install or different code
+      // if the function has already been recompiled.
+      function = code.function();
+      object_table = code.object_pool();
+      intptr_t reset_count = 0;
+      for (intptr_t i = 0; i < object_table.Length(); i++) {
+        object_table_entry = object_table.ObjectAt(i);
+        if (object_table_entry.IsCode()) {
+          code ^= object_table_entry.raw();
+          if (code.function() == function.raw()) {
+            reset_count++;
+            ResetICs(function, code);
+          }
+          // Why are other code objects in this table? Allocation stubs?
+        }
+      }
+      // ASSERT(reset_count == 1);
+      // vm shot itself in the foot: no reference to unopt code.
+    } else {
+      function = code.function();
+      ResetICs(function, code);
+    }
+    frame = iterator.NextFrame();
+  }
+}
+
+
+void IsolateReloadContext::ResetMegamorphicCaches() {
+  object_store()->set_megamorphic_cache_table(GrowableObjectArray::Handle());
+  // Since any current optimized code will not make any more calls, it may be
+  // better to clear the table instead of clearing each of the caches, allow
+  // the current megamorphic caches get GC'd and any new optimized code allocate
+  // new ones.
+}
+
+
+class MarkFunctionsForRecompilation : public ObjectVisitor {
+ public:
+  explicit MarkFunctionsForRecompilation(Isolate* isolate)
+    : ObjectVisitor(isolate),
+      handle_(Object::Handle()),
+      code_(Code::Handle()) {
+  }
+
+  virtual void VisitObject(RawObject* obj) {
+    // Free-list elements cannot even be wrapped in handles.
+    if (obj->IsFreeListElement()) {
+      return;
+    }
+    handle_ = obj;
+    if (handle_.IsFunction()) {
+      const Function& func = Function::Cast(handle_);
+
+      // Replace the instructions of most functions with the compilation stub so
+      // unqualified invocations will be recompiled to the correct kind. But
+      // leave the stub to patch the function for extracted properties so they
+      // will still be patched if more than one modification happens before they
+      // are next called.
+      code_ = func.CurrentCode();
+      if (!code_.IsStubCode()) {
+        func.ClearICDataArray();  // Don't reuse IC data in next compilation.
+        func.ClearCode();
+
+        // Type feedback data is gone, don't trigger optimization again too
+        // soon.
+        func.set_usage_counter(0);
+        func.set_deoptimization_counter(0);
+      }
+    }
+  }
+
+ private:
+  Object& handle_;
+  Code& code_;
+};
+
+
+void IsolateReloadContext::MarkAllFunctionsForRecompilation() {
+  MarkFunctionsForRecompilation visitor(isolate_);
+  NoSafepointScope no_safepoint;
+  isolate_->heap()->VisitObjects(&visitor);
+}
+
+
+void IsolateReloadContext::InvalidateWorld() {
+  // Discard all types of cached lookup, which are all potentially invalid.
+  // - ICs and MegamorphicCaches
+  // - Optimized code (inlining)
+  // - Unoptimized code (unqualifed invocations were early bound to static
+  //   or instance invocations)
+
+  DeoptimizeFunctionsOnStack();
+  ResetUnoptimizedICsOnStack();
+  ResetMegamorphicCaches();
+  MarkAllFunctionsForRecompilation();
 }
 
 
