@@ -2211,6 +2211,7 @@ class Function : public Object {
   // visible formal parameters of the function.
   RawString* UserVisibleFormalParameters() const;
 
+  void Reparent(const Class& new_cls) const;
   RawClass* Owner() const;
   RawClass* origin() const;
   RawScript* script() const;

@@ -37,6 +37,9 @@ class IsolateReloadContext {
   void BuildClassIdMap();
   intptr_t FindReplacementClassId(const Class& cls);
 
+  void BuildLibraryIdMap();
+  intptr_t FindReplacementLibrary(const Library& lib);
+
   void set_saved_root_library(const Library& value);
 
   void set_saved_libraries(const GrowableObjectArray& value);
@@ -60,12 +63,13 @@ class IsolateReloadContext {
   Isolate* isolate_;
   intptr_t saved_num_cids_;
 
-  struct CidMapping {
-    intptr_t old_cid;
-    intptr_t new_cid;
+  struct Remapping {
+    intptr_t old_id;
+    intptr_t new_id;
   };
 
-  MallocGrowableArray<CidMapping> cid_mappings_;
+  MallocGrowableArray<Remapping> class_mappings_;
+  MallocGrowableArray<Remapping> lib_mappings_;
 
   RawObject** from() { return reinterpret_cast<RawObject**>(&script_uri_); }
   RawString* script_uri_;

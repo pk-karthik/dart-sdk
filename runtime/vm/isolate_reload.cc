@@ -60,6 +60,7 @@ RawError* IsolateReloadContext::StartReload() {
 
 void IsolateReloadContext::FinishReload() {
   BuildClassIdMap();
+  BuildLibraryIdMap();
   fprintf(stderr, "---- DONE FINALIZING\n");
   I->class_table()->PrintNonDartClasses();
 
@@ -125,15 +126,64 @@ void IsolateReloadContext::RollbackClassTable() {
 
 
 void IsolateReloadContext::CommitClassTable() {
+  Thread* thread = Thread::Current();
   fprintf(stderr, "---- COMMITTING CLASS TABLE\n");
+
+  Class& cls = Class::Handle();
+  Class& new_cls = Class::Handle();
+  for (intptr_t i = 0; i < class_mappings_.length(); i++) {
+    const Remapping& mapping = class_mappings_.At(i);
+    cls = I->class_table()->At(mapping.old_id);
+    new_cls = I->class_table()->At(mapping.new_id);
+    cls.Reload(new_cls);
+  }
+
+  GrowableObjectArray& libs = GrowableObjectArray::Handle(
+      Z, saved_libraries());
+  GrowableObjectArray& new_libs = GrowableObjectArray::Handle(
+      Z, object_store()->libraries());
+
+  Library& lib = Library::Handle();
+  Library& new_lib = Library::Handle();
+  for (intptr_t i = 0; i < lib_mappings_.length(); i++) {
+    const Remapping& mapping = lib_mappings_.At(i);
+    lib = Library::RawCast(libs.At(mapping.old_id));
+    new_lib = Library::RawCast(new_libs.At(mapping.new_id));
+    lib.Reload(new_lib);
+  }
+
+  // NO.
+  I->class_table()->SetNumCids(saved_num_cids_);
+
+  // NO TWO.
+  if (!libs.IsNull()) {
+    object_store()->set_libraries(libs);
+  }
+  set_saved_libraries(GrowableObjectArray::Handle());
+
+  Library& saved_root_lib = Library::Handle(Z, saved_root_library());
+  if (!saved_root_lib.IsNull()) {
+    object_store()->set_root_library(saved_root_lib);
+  }
+  set_saved_root_library(Library::Handle());
+
   InvalidateWorld();
-  UNIMPLEMENTED();
 }
 
 
 bool IsolateReloadContext::ValidateReload() {
-  // TODO(turnidge): Implement.
-  return false;
+  Class& cls = Class::Handle();
+  Class& new_cls = Class::Handle();
+  for (intptr_t i = 0; i < class_mappings_.length(); i++) {
+    const Remapping& mapping = class_mappings_.At(i);
+    cls = I->class_table()->At(mapping.old_id);
+    new_cls = I->class_table()->At(mapping.new_id);
+    if (!cls.CanReload(new_cls)) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 
@@ -181,22 +231,92 @@ void IsolateReloadContext::BuildClassIdMap() {
       continue;
     }
     cls ^= I->class_table()->At(i);
-    CidMapping mapping;
-    mapping.new_cid = FindReplacementClassId(cls);
-    if (mapping.new_cid == -1) {
+    Remapping mapping;
+    mapping.new_id = FindReplacementClassId(cls);
+    if (mapping.new_id == -1) {
       continue;
     }
-    mapping.old_cid = i;
-    cid_mappings_.Add(mapping);
+    mapping.old_id = i;
+    class_mappings_.Add(mapping);
   }
 
   fprintf(stderr, "---- CLASS ID MAPPING\n");
-  for (intptr_t i = 0; i < cid_mappings_.length(); i++) {
-    const CidMapping& mapping = cid_mappings_[i];
-    ASSERT(mapping.new_cid > 0);
-    ASSERT(mapping.old_cid > 0);
-    fprintf(stderr, "%" Pd " -> %" Pd "\n", mapping.new_cid, mapping.old_cid);
+  for (intptr_t i = 0; i < class_mappings_.length(); i++) {
+    const Remapping& mapping = class_mappings_[i];
+    ASSERT(mapping.new_id > 0);
+    ASSERT(mapping.old_id > 0);
+    fprintf(stderr, "%" Pd " -> %" Pd "\n", mapping.old_id, mapping.new_id);
   }
+}
+
+
+
+
+void IsolateReloadContext::BuildLibraryIdMap() {
+  const GrowableObjectArray& saved_libs =
+      GrowableObjectArray::Handle(saved_libraries());
+
+  Library& lib = Library::Handle();
+  for (intptr_t i = 0; i < saved_libs.Length(); i++) {
+    lib = Library::RawCast(saved_libs.At(i));
+    if (lib.is_dart_scheme()) {
+      continue;
+    }
+    Remapping mapping;
+    mapping.new_id = FindReplacementLibrary(lib);
+    if (mapping.new_id == -1) {
+      continue;
+    }
+    mapping.old_id = i;
+    lib_mappings_.Add(mapping);
+  }
+
+  const GrowableObjectArray& libs =
+      GrowableObjectArray::Handle(object_store()->libraries());
+
+  fprintf(stderr, "---- LIBRARY ID MAPPING\n");
+  String& url = String::Handle();
+  for (intptr_t i = 0; i < lib_mappings_.length(); i++) {
+    const Remapping& mapping = lib_mappings_[i];
+    ASSERT(mapping.new_id > 0);
+    ASSERT(mapping.old_id > 0);
+
+    // Lookup old library.
+    lib = Library::RawCast(saved_libs.At(mapping.old_id));
+    url = lib.url();
+
+    fprintf(stderr, "%" Pd " %s ->", mapping.old_id, url.ToCString());
+
+    lib = Library::RawCast(libs.At(mapping.new_id));
+    url = lib.url();
+
+    fprintf(stderr, "%" Pd " %s\n", mapping.new_id, url.ToCString());
+
+  }
+}
+
+
+intptr_t IsolateReloadContext::FindReplacementLibrary(const Library& lib) {
+  const GrowableObjectArray& libs =
+      GrowableObjectArray::Handle(object_store()->libraries());
+
+  const String& url = String::Handle(lib.url());
+
+  Library& new_lib = Library::Handle();
+  String& new_url = String::Handle();
+
+  for (intptr_t i = 0; i < libs.Length(); i++) {
+    new_lib = Library::RawCast(libs.At(i));
+    if (new_lib.IsNull()) {
+      continue;
+    }
+    new_url = new_lib.url();
+    if (url.Equals(new_url)) {
+      return i;
+    }
+  }
+
+  return -1;
 }
 
 

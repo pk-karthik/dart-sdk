@@ -223,6 +223,7 @@ RawError* Thread::sticky_error() const {
 
 void Thread::set_sticky_error(const Error& value) {
   ASSERT(!value.IsNull());
+  fprintf(stderr, "sticky error = %s\n", value.ToErrorCString());
   sticky_error_ = value.raw();
 }
 
