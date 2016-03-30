@@ -136,9 +136,58 @@ bool ClassTable::TraceAllocationFor(intptr_t cid) {
 }
 
 
-void ClassTable::SetNumCids(intptr_t num_cids) {
-  ASSERT(num_cids <= top_);
-  top_ = num_cids;
+void ClassTable::ClearClassAt(intptr_t index) {
+  ASSERT(index < top_);
+  table_[index] = NULL;
+}
+
+
+void ClassTable::MoveClass(intptr_t free_index, intptr_t cls_index) {
+  ASSERT(!HasValidClassAt(free_index));
+  ASSERT(HasValidClassAt(cls_index));
+  const Class& cls = Class::Handle(table_[cls_index]);
+  // Update the class id.
+  cls.set_id(free_index);
+  // Move the class.
+  table_[free_index] = table_[cls_index];
+  table_[cls_index] = NULL;
+  ASSERT(HasValidClassAt(free_index));
+  ASSERT(!HasValidClassAt(cls_index));
+}
+
+
+intptr_t ClassTable::CompactNewClasses(intptr_t saved_num_cids) {
+  ASSERT(saved_num_cids <= top_);
+
+  intptr_t new_top = saved_num_cids;
+  for (intptr_t free_index = saved_num_cids; free_index < top_; free_index++) {
+    // Scan forward until we find a cleared class.
+    if (HasValidClassAt(free_index)) {
+      new_top++;
+      continue;
+    }
+
+    for (intptr_t cls_index = free_index + 1; cls_index < top_; cls_index++) {
+      // Scan forward until we find a live class.
+      if (!HasValidClassAt(cls_index)) {
+        continue;
+      }
+      // Move the class into the free slot.
+      MoveClass(free_index, cls_index);
+      new_top++;
+      break;
+    }
+  }
+
+  top_ = new_top;
+
+  return top_;
+}
+
+
+void ClassTable::DropNewClasses(intptr_t saved_num_cids) {
+  ASSERT(saved_num_cids <= top_);
+  top_ = saved_num_cids;
 }
 
 

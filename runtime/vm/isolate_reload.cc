@@ -107,7 +107,7 @@ void IsolateReloadContext::RollbackClassTable() {
   fprintf(stderr, "---- ROLLING BACK CLASS TABLE\n");
   Thread* thread = Thread::Current();
   ASSERT(saved_num_cids_ > 0);
-  I->class_table()->SetNumCids(saved_num_cids_);
+  I->class_table()->DropNewClasses(saved_num_cids_);
   I->class_table()->PrintNonDartClasses();
 
   GrowableObjectArray& saved_libs = GrowableObjectArray::Handle(
@@ -136,7 +136,11 @@ void IsolateReloadContext::CommitClassTable() {
     cls = I->class_table()->At(mapping.old_id);
     new_cls = I->class_table()->At(mapping.new_id);
     cls.Reload(new_cls);
+    // Remove new_cls from the class table.
+    I->class_table()->ClearClassAt(mapping.new_id);
   }
+
+  I->class_table()->CompactNewClasses(saved_num_cids_);
 
   GrowableObjectArray& libs = GrowableObjectArray::Handle(
       Z, saved_libraries());
@@ -151,9 +155,6 @@ void IsolateReloadContext::CommitClassTable() {
     new_lib = Library::RawCast(new_libs.At(mapping.new_id));
     lib.Reload(new_lib);
   }
-
-  // NO.
-  I->class_table()->SetNumCids(saved_num_cids_);
 
   // NO TWO.
   if (!libs.IsNull()) {

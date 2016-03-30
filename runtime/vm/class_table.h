@@ -169,8 +169,12 @@ class ClassTable {
     return table_[index] != NULL;
   }
 
+  void ClearClassAt(intptr_t index);
+  // Returns the number of classes after compaction.
+  intptr_t CompactNewClasses(intptr_t saved_num_cids);
+  void DropNewClasses(intptr_t saved_num_cids);
+
   intptr_t NumCids() const { return top_; }
-  void SetNumCids(intptr_t num_cids);
 
   void Register(const Class& cls);
 
@@ -233,6 +237,8 @@ class ClassTable {
   bool TraceAllocationFor(intptr_t cid);
 
  private:
+  void MoveClass(intptr_t free_index, intptr_t cls_index);
+
   friend class GCMarker;
   friend class ScavengerVisitor;
   friend class ClassHeapStatsTestHelper;
