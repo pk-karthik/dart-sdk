@@ -17,6 +17,7 @@
 #include "vm/compiler.h"
 #include "vm/dart_api_impl.h"
 #include "vm/disassembler.h"
+#include "vm/isolate_reload.h"
 #include "vm/parser.h"
 #include "vm/symbols.h"
 #include "vm/thread.h"
@@ -201,15 +202,23 @@ Dart_Handle TestCase::ReloadTestScript(const char* script) {
   // Store the new script in TLS.
   OSThread::SetThreadLocal(script_reload_key, reinterpret_cast<uword>(script));
 
+  Isolate* isolate = Isolate::Current();
+
   {
     TransitionNativeToVM transition(Thread::Current());
-    Isolate* isolate = Isolate::Current();
-    isolate->ReloadSources();
+    isolate->ReloadSources(/* test_mode = */ true);
   }
 
   Dart_Handle result = Dart_FinalizeLoading(false);
   DART_CHECK_VALID(result);
 
+  if (isolate->reload_context() != NULL) {
+    // We should only have a reload context hanging around if an error occurred.
+    ASSERT(isolate->reload_context()->has_error());
+    // Return a handle to the error.
+    return Api::NewHandle(Thread::Current(),
+                          isolate->reload_context()->error());
+  }
   return Dart_RootLibrary();
 }
 

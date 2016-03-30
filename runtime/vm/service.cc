@@ -2525,12 +2525,9 @@ static bool ReloadSources(Thread* thread, JSONStream* js) {
     return true;
   }
 
-  const Error& result = Error::Handle(isolate->ReloadSources());
-  if (result.IsError()) {
-    // TODO(turnidge): Use an appropriate error code here.
-    js->PrintError(kFeatureDisabled, "Error reloading sources.");
-    return true;
-  }
+  // TODO(johnmccutchan): Check if we are already reloading and report
+  // an error.
+  isolate->ReloadSources();
 
   PrintSuccess(js);
   return true;

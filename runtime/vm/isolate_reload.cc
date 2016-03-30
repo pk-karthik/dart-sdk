@@ -7,6 +7,7 @@
 #include "vm/code_generator.h"
 #include "vm/dart_api_impl.h"
 #include "vm/isolate.h"
+#include "vm/log.h"
 #include "vm/object.h"
 #include "vm/object_store.h"
 #include "vm/safepoint.h"
@@ -15,13 +16,20 @@
 
 namespace dart {
 
+DEFINE_FLAG(bool, trace_reload, true, "Trace isolate reloading");
+
 #define I (isolate())
 #define Z (thread->zone())
 
-IsolateReloadContext::IsolateReloadContext(Isolate* isolate)
+IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
     : isolate_(isolate),
+      test_mode_(test_mode),
+      has_error_(false),
       saved_num_cids_(-1),
-      script_uri_(String::null()) {
+      script_uri_(String::null()),
+      error_(Error::null()),
+      saved_root_library_(Library::null()),
+      saved_libraries_(GrowableObjectArray::null()) {
 }
 
 
@@ -29,7 +37,21 @@ IsolateReloadContext::~IsolateReloadContext() {
 }
 
 
-RawError* IsolateReloadContext::StartReload() {
+void IsolateReloadContext::ReportError(const Error& error) {
+  has_error_ = true;
+  error_ = error.raw();
+  if (FLAG_trace_reload) {
+    THR_Print("ISO-RELOAD: Error: %s\n", error.ToErrorCString());
+  }
+  // TODO(johnmccutchan): Send service protocol event.
+}
+
+
+void IsolateReloadContext::ReportSuccess() {
+  // TODO(johnmccutchan): Send service protocol event.
+}
+
+void IsolateReloadContext::StartReload() {
   Thread* thread = Thread::Current();
   const Library& root_lib = Library::Handle(object_store()->root_library());
   const String& root_lib_url = String::Handle(root_lib.url());
@@ -51,9 +73,7 @@ RawError* IsolateReloadContext::StartReload() {
   }
   I->UnblockClassFinalization();
   if (result.IsError()) {
-    return Error::Cast(result).raw();
-  } else {
-    return Error::null();
+    ReportError(Error::Cast(result));
   }
 }
 

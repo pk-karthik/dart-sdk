@@ -3,10 +3,14 @@
 // BSD-style license that can be found in the LICENSE file.
 
 #include "vm/object.h"
+
+#include "vm/isolate_reload.h"
 #include "vm/resolver.h"
 #include "vm/symbols.h"
 
 namespace dart {
+
+#define IRC (Isolate::Current()->reload_context())
 
 void Function::Reparent(const Class& new_cls) const {
   set_owner(new_cls);
@@ -14,10 +18,6 @@ void Function::Reparent(const Class& new_cls) const {
 
 
 void Class::Reload(const Class& replacement) {
-  if (is_finalized()) {
-    replacement.EnsureIsFinalized(Thread::Current());
-  }
-
   // Move all old functions and fields to a patch class so that they
   // still refer to their original script.
   const PatchClass& patch =
@@ -80,6 +80,14 @@ void Class::Reload(const Class& replacement) {
 
 
 bool Class::CanReload(const Class& replacement) {
+  if (is_finalized()) {
+    const Error& error =
+        Error::Handle(replacement.EnsureIsFinalized(Thread::Current()));
+    if (!error.IsNull()) {
+      IRC->ReportError(error);
+      return false;
+    }
+  }
   // field count check.
   return true;
 }
