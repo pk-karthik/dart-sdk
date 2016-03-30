@@ -136,10 +136,14 @@ void IsolateReloadContext::CommitClassTable() {
     cls = I->class_table()->At(mapping.old_id);
     new_cls = I->class_table()->At(mapping.new_id);
     cls.Reload(new_cls);
-    // Remove new_cls from the class table.
-    I->class_table()->ClearClassAt(mapping.new_id);
   }
 
+  // Remove unneeded classes from the class table.
+  for (intptr_t i = 0; i < class_mappings_.length(); i++) {
+    // Remove new_cls from the class table.
+    const Remapping& mapping = class_mappings_.At(i);
+    I->class_table()->ClearClassAt(mapping.new_id);
+  }
   I->class_table()->CompactNewClasses(saved_num_cids_);
 
   GrowableObjectArray& libs = GrowableObjectArray::Handle(
