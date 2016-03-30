@@ -81,9 +81,24 @@ static Dart_Handle ResolvePackageUri(const char* uri_chars) {
                      dart_args);
 }
 
+static ThreadLocalKey script_reload_key = kUnsetThreadLocalKey;
+
 static Dart_Handle LibraryTagHandler(Dart_LibraryTag tag,
                                      Dart_Handle library,
                                      Dart_Handle url) {
+  if (tag == Dart_kScriptTag) {
+    // Reload request.
+    ASSERT(script_reload_key != kUnsetThreadLocalKey);
+    const char* script_source =
+       reinterpret_cast<const char*>(
+           OSThread::GetThreadLocal(script_reload_key));
+    ASSERT(script_source != NULL);
+    OSThread::SetThreadLocal(script_reload_key, NULL);
+    return Dart_LoadScript(url,
+                           NewString(script_source),
+                           0,
+                           0);
+  }
   if (!Dart_IsLibrary(library)) {
     return Dart_NewApiError("not a library");
   }
@@ -174,6 +189,28 @@ Dart_Handle TestCase::LoadTestScript(const char* script,
     DART_CHECK_VALID(result);
   }
   return lib;
+}
+
+
+Dart_Handle TestCase::ReloadTestScript(const char* script) {
+  if (script_reload_key == kUnsetThreadLocalKey) {
+    script_reload_key = OSThread::CreateThreadLocal();
+  }
+  ASSERT(script_reload_key != kUnsetThreadLocalKey);
+  ASSERT(OSThread::GetThreadLocal(script_reload_key) == 0);
+  // Store the new script in TLS.
+  OSThread::SetThreadLocal(script_reload_key, reinterpret_cast<uword>(script));
+
+  {
+    TransitionNativeToVM transition(Thread::Current());
+    Isolate* isolate = Isolate::Current();
+    isolate->ReloadSources();
+  }
+
+  Dart_Handle result = Dart_FinalizeLoading(false);
+  DART_CHECK_VALID(result);
+
+  return Dart_RootLibrary();
 }
 
 
