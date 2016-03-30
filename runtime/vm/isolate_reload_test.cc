@@ -24,6 +24,15 @@ int64_t SimpleInvoke(Dart_Handle lib, const char* method) {
 }
 
 
+const char* SimpleInvokeStr(Dart_Handle lib, const char* method) {
+  Dart_Handle result = Dart_Invoke(lib, NewString(method), 0, NULL);
+  const char* result_str = NULL;
+  EXPECT(Dart_IsString(result));
+  EXPECT_VALID(Dart_StringToCString(result, &result_str));
+  return result_str;
+}
+
+
 TEST_CASE(IsolateReload_FunctionReplacement) {
   const char* kScript =
       "main() {\n"
@@ -81,6 +90,76 @@ TEST_CASE(IsolateReload_BadClass) {
   EXPECT_ERROR(result, "unexpected token");
 
   EXPECT_EQ(4, SimpleInvoke(lib, "trampoline"));
+}
+
+
+TEST_CASE(IsolateReload_FieldInitializerChanged) {
+  const char* kScript =
+      "class A {\n"
+      "  int field = 20;\n"
+      "}\n"
+      "var savedA = new A();\n"
+      "main() {\n"
+      "  var newA = new A();\n"
+      "  return ('saved:${savedA.field} new:${newA.field}');\n"
+      "}\n"
+      "trampoline() => main();\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("saved:20 new:20", SimpleInvokeStr(lib, "trampoline"));
+
+  const char* kReloadScript =
+      "class A {\n"
+      "  int field = 10;\n"
+      "}\n"
+      "var savedA = new A();\n"
+      "main() {\n"
+      "  var newA = new A();\n"
+      "  return ('saved:${savedA.field} new:${newA.field}');\n"
+      "}\n"
+      "trampoline() => main();\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("saved:20 new:10", SimpleInvokeStr(lib, "trampoline"));
+}
+
+
+TEST_CASE(IsolateReload_SuperClassChanged) {
+  const char* kScript =
+      "class A {\n"
+      "}\n"
+      "class B extends A {\n"
+      "}\n"
+      "var list = [ new A(), new B() ];\n"
+      "main() {\n"
+      "  return (list.map((x) => '${x is A}/${x is B}')).toString();\n"
+      "}\n"
+      "trampoline() => main();\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("(true/false, true/true)", SimpleInvokeStr(lib, "trampoline"));
+
+  const char* kReloadScript =
+      "class B{\n"
+      "}\n"
+      "class A extends B {\n"
+      "}\n"
+      "var list = [ new A(), new B() ];\n"
+      "main() {\n"
+      "  return (list.map((x) => '${x is A}/${x is B}')).toString();\n"
+      "}\n"
+      "trampoline() => main();\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("(true/true, false/true)", SimpleInvokeStr(lib, "trampoline"));
 }
 
 }  // namespace dart

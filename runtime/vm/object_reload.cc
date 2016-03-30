@@ -18,6 +18,40 @@ void Function::Reparent(const Class& new_cls) const {
 
 
 void Class::Reload(const Class& replacement) {
+  // TODO(turnidge): This method is incomplete.
+  //
+  // CHECKLIST (by field from RawClass);
+  //
+  // - name_ : DONE, implicitly (needs assert)
+  // - functions : DONE
+  // - fields : DONE
+  // - script : DONE
+  // - token_pos : DONE
+  // - library : DONE, implicitly (needs assert)
+  // - instance_size_in_words : DONE, implicitly (needs assert)
+  // - id : DONE, because we are copying into existing class
+  // - canonical_types : currently assuming all are of type Type.  Is this ok?
+  // - super_type: DONE
+  //
+  // - mixin : todo
+  // - functions_hash_table : todo
+  // - offset_in_words_to_field : todo
+  // - interfaces : todo
+  // - type_parameters : todo
+  // - signature_function : todo
+  // - constants : todo
+  // - invocation_dispatcher_cache : todo
+  // - allocation_stub : todo
+  // - direct_subclasses : todo
+  // - cha_codes : todo
+  // - handle_vtable : todo
+  // - type_arguments_field... : todo
+  // - next_field_offset... : todo
+  // - num_type_arguments : todo
+  // - num_own_type_arguments : todo
+  // - num_native_fields : todo
+  // - state_bits : todo
+
   // Move all old functions and fields to a patch class so that they
   // still refer to their original script.
   const PatchClass& patch =
@@ -72,10 +106,25 @@ void Class::Reload(const Class& replacement) {
   // Replace script
   set_script(Script::Handle(replacement.script()));
   set_token_pos(replacement.token_pos());
-  // replace library
-  // clear some stuff
 
-  // class hierarchy changes
+  // Update the canonical type(s).
+  const Object& types_obj = Object::Handle(replacement.canonical_types());
+  Type& type = Type::Handle();
+  if (!types_obj.IsNull()) {
+    if (types_obj.IsType()) {
+      type ^= types_obj.raw();
+      type.set_type_class(*this);
+    } else {
+      const Array& types = Array::Cast(types_obj);
+      for (intptr_t i = 0; i < types.Length(); i++) {
+        type ^= types.At(i);
+        type.set_type_class(*this);
+      }
+    }
+  }
+
+  // Update supertype.
+  set_super_type(AbstractType::Handle(replacement.super_type()));
 }
 
 
@@ -89,6 +138,8 @@ bool Class::CanReload(const Class& replacement) {
     }
   }
   // field count check.
+  // native field count check.
+  // type parameter count check.
   return true;
 }
 
