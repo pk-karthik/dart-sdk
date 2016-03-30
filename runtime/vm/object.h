@@ -3366,6 +3366,9 @@ class Script : public Object {
   intptr_t line_offset() const { return raw_ptr()->line_offset_; }
   intptr_t col_offset() const { return raw_ptr()->col_offset_; }
 
+  // The load time in milliseconds since epoch.
+  int64_t load_timestamp() const { return raw_ptr()->load_timestamp_; }
+
   RawTokenStream* tokens() const { return raw_ptr()->tokens_; }
 
   void Tokenize(const String& private_key,
@@ -3406,6 +3409,7 @@ class Script : public Object {
   void set_url(const String& value) const;
   void set_source(const String& value) const;
   void set_kind(RawScript::Kind value) const;
+  void set_load_timestamp(int64_t value) const;
   void set_tokens(const TokenStream& value) const;
 
   static RawScript* New();

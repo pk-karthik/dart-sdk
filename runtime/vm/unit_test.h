@@ -564,6 +564,24 @@ class CompilerTest : public AllStatic {
 void ElideJSONSubstring(const char* prefix, const char* in, char* out);
 
 
+template<typename T>
+class SetFlagScope : public ValueObject {
+ public:
+  SetFlagScope(T* flag, T value)
+      : flag_(flag),
+        original_value_(*flag) {
+    *flag_ = value;
+  }
+
+  ~SetFlagScope() {
+    *flag_ = original_value_;
+  }
+
+ private:
+  T* flag_;
+  T original_value_;
+};
+
 }  // namespace dart
 
 #endif  // VM_UNIT_TEST_H_

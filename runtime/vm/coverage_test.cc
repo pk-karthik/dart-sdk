@@ -10,6 +10,8 @@ namespace dart {
 
 #ifndef PRODUCT
 
+DECLARE_FLAG(bool, remove_script_timestamps_for_test);
+
 static RawObject* ExecuteScript(const char* script) {
   TransitionVMToNative transition(Thread::Current());
   Dart_Handle h_lib = TestCase::LoadTestScript(script, NULL);
@@ -42,6 +44,7 @@ VM_TEST_CASE(Coverage_Empty) {
       "main() {\n"
       "}";
 
+  SetFlagScope<bool> sfs(&FLAG_remove_script_timestamps_for_test, true);
   Library& lib = Library::Handle();
   lib ^= ExecuteScript(kScript);
   ASSERT(!lib.IsNull());
@@ -52,7 +55,8 @@ VM_TEST_CASE(Coverage_Empty) {
   char buf[1024];
   OS::SNPrint(buf, sizeof(buf),
       "{\"source\":\"test-lib\",\"script\":{\"type\":\"@Script\","
-      "\"fixedId\":true,\"id\":\"libraries\\/%" Pd  "\\/scripts\\/test-lib\","
+      "\"fixedId\":true,"
+      "\"id\":\"libraries\\/%" Pd  "\\/scripts\\/test-lib\\/0\","
       "\"uri\":\"test-lib\","
       "\"_kind\":\"script\"},\"hits\":[]}", lib.index());
   EXPECT_SUBSTRING(buf, js.ToCString());
@@ -74,6 +78,7 @@ VM_TEST_CASE(Coverage_MainWithClass) {
       "  foo.bar();\n"
       "}\n";
 
+  SetFlagScope<bool> sfs(&FLAG_remove_script_timestamps_for_test, true);
   Library& lib = Library::Handle();
   lib ^= ExecuteScript(kScript);
   ASSERT(!lib.IsNull());
@@ -88,7 +93,8 @@ VM_TEST_CASE(Coverage_MainWithClass) {
   // Data for the actual class Foo.
   OS::SNPrint(buf, sizeof(buf),
       "{\"source\":\"test-lib\",\"script\":{\"type\":\"@Script\","
-      "\"fixedId\":true,\"id\":\"libraries\\/%" Pd "\\/scripts\\/test-lib\","
+      "\"fixedId\":true,"
+      "\"id\":\"libraries\\/%" Pd "\\/scripts\\/test-lib\\/0\","
       "\"uri\":\"test-lib\","
       "\"_kind\":\"script\"},\"hits\":[3,1,5,4,6,3]}", lib.index());
   EXPECT_SUBSTRING(buf, js.ToCString());
@@ -96,7 +102,8 @@ VM_TEST_CASE(Coverage_MainWithClass) {
   // Data for the fake class containing main().
   OS::SNPrint(buf, sizeof(buf),
       "{\"source\":\"test-lib\",\"script\":{\"type\":\"@Script\","
-      "\"fixedId\":true,\"id\":\"libraries\\/%" Pd  "\\/scripts\\/test-lib\","
+      "\"fixedId\":true,"
+      "\"id\":\"libraries\\/%" Pd  "\\/scripts\\/test-lib\\/0\","
       "\"uri\":\"test-lib\","
       "\"_kind\":\"script\"},\"hits\":[10,1,11,1]}", lib.index());
   EXPECT_SUBSTRING(buf, js.ToCString());
@@ -116,6 +123,7 @@ VM_TEST_CASE(Coverage_FilterFunction) {
       "  var foo = new Foo(7);\n"
       "}\n";
 
+  SetFlagScope<bool> sfs(&FLAG_remove_script_timestamps_for_test, true);
   Library& lib = Library::Handle();
   lib ^= ExecuteScript(kScript);
   ASSERT(!lib.IsNull());
@@ -133,7 +141,8 @@ VM_TEST_CASE(Coverage_FilterFunction) {
   char buf[1024];
   OS::SNPrint(buf, sizeof(buf),
       "{\"source\":\"test-lib\",\"script\":{\"type\":\"@Script\","
-      "\"fixedId\":true,\"id\":\"libraries\\/%" Pd "\\/scripts\\/test-lib\","
+      "\"fixedId\":true,"
+      "\"id\":\"libraries\\/%" Pd "\\/scripts\\/test-lib\\/0\","
       "\"uri\":\"test-lib\","
       "\"_kind\":\"script\"},\"hits\":[6,0]}", lib.index());
   EXPECT_SUBSTRING(buf, js.ToCString());

@@ -2857,6 +2857,7 @@ class Script extends HeapObject {
   final lines = new ObservableList<ScriptLine>();
   @observable String uri;
   @observable String kind;
+  @observable DateTime loadTime;
   @observable int firstTokenPos;
   @observable int lastTokenPos;
   @observable int lineOffset;
@@ -2959,6 +2960,8 @@ class Script extends HeapObject {
       return;
     }
     _loaded = true;
+    int loadTimeMillis = map['_loadTime'];
+    loadTime = new DateTime.fromMillisecondsSinceEpoch(loadTimeMillis);
     lineOffset = map['lineOffset'];
     columnOffset = map['columnOffset'];
     _parseTokenPosTable(map['tokenPosTable']);
