@@ -23,15 +23,22 @@ class ObjectStore;
 
 class IsolateReloadContext {
  public:
-  IsolateReloadContext(Isolate* isolate);
+  IsolateReloadContext(Isolate* isolate, bool test_mode = false);
   ~IsolateReloadContext();
 
-  RawError* StartReload();
+  void StartReload();
   void FinishReload();
 
   RawLibrary* saved_root_library() const;
 
   RawGrowableObjectArray* saved_libraries() const;
+
+  void ReportError(const Error& error);
+  void ReportSuccess();
+
+  bool has_error() const { return has_error_; }
+  RawError* error() const { return error_; }
+  bool test_mode() const { return test_mode_; }
 
  private:
   void BuildClassIdMap();
@@ -61,6 +68,8 @@ class IsolateReloadContext {
   void InvalidateWorld();
 
   Isolate* isolate_;
+  bool test_mode_;
+  bool has_error_;
   intptr_t saved_num_cids_;
 
   struct Remapping {
@@ -73,6 +82,7 @@ class IsolateReloadContext {
 
   RawObject** from() { return reinterpret_cast<RawObject**>(&script_uri_); }
   RawString* script_uri_;
+  RawError* error_;
   RawLibrary* saved_root_library_;
   RawGrowableObjectArray* saved_libraries_;
   RawObject** to() { return reinterpret_cast<RawObject**>(&saved_libraries_); }

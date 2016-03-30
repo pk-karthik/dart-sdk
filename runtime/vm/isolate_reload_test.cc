@@ -48,4 +48,39 @@ TEST_CASE(IsolateReload_FunctionReplacement) {
   EXPECT_EQ(10, SimpleInvoke(lib, "trampoline"));
 }
 
+
+TEST_CASE(IsolateReload_BadClass) {
+  const char* kScript =
+      "class Foo {\n"
+      "  final a;\n"
+      "  Foo(this.a);\n"
+      "}\n"
+      "main() {\n"
+      "  new Foo(5);\n"
+      "  return 4;\n"
+      "}\n"
+      "trampoline() => main();\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_EQ(4, SimpleInvoke(lib, "trampoline"));
+
+  const char* kReloadScript =
+    "class Foo {\n"
+    "  final a kjsdf ksjdf ;\n"
+    "  Foo(this.a);\n"
+    "}\n"
+    "main() {\n"
+    "  new Foo(5);\n"
+    "  return 10;\n"
+    "}\n"
+    "trampoline() => main();\n";
+
+  Dart_Handle result = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_ERROR(result, "unexpected token");
+
+  EXPECT_EQ(4, SimpleInvoke(lib, "trampoline"));
+}
+
 }  // namespace dart

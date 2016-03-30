@@ -240,8 +240,7 @@ class Isolate : public BaseIsolate {
   void DoneLoading();
   void DoneFinalizing();
 
-  RawError* ReloadSources();
-  bool IsReloadingSources() const;
+  void ReloadSources(bool test_mode = false);
 
   bool MakeRunnable();
   void Run();

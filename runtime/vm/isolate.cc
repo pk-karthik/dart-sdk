@@ -1052,16 +1052,24 @@ void Isolate::DoneLoading() {
 }
 
 
-RawError* Isolate::ReloadSources() {
+void Isolate::ReloadSources(bool test_mode) {
   ASSERT(reload_context_ == NULL);
-  reload_context_ = new IsolateReloadContext(this);
-  return reload_context_->StartReload();
+  reload_context_ = new IsolateReloadContext(this, test_mode);
+  reload_context_->StartReload();
 }
 
 
 void Isolate::DoneFinalizing() {
   if (IsReloading()) {
     reload_context_->FinishReload();
+    if (reload_context_->has_error() && reload_context_->test_mode()) {
+      // If the reload has an error and we are in test mode keep the reload
+      // context on the isolate so that it can be used by unit tests.
+      return;
+    }
+    if (!reload_context_->has_error()) {
+      reload_context_->ReportSuccess();
+    }
     delete reload_context_;
     reload_context_ = NULL;
   }
