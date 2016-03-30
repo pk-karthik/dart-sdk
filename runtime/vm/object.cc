@@ -60,6 +60,9 @@ DEFINE_FLAG(bool, use_lib_cache, true, "Use library name cache");
 DEFINE_FLAG(bool, ignore_patch_signature_mismatch, false,
             "Ignore patch file member signature mismatch.");
 
+DEFINE_FLAG(bool, remove_script_timestamps_for_test, false,
+            "Remove script timestamps to allow for deterministic testing.");
+
 DECLARE_FLAG(charp, coverage_dir);
 DECLARE_FLAG(bool, show_invisible_frames);
 DECLARE_FLAG(bool, trace_deoptimization);
@@ -8657,6 +8660,11 @@ void Script::set_kind(RawScript::Kind value) const {
 }
 
 
+void Script::set_load_timestamp(int64_t value) const {
+  StoreNonPointer(&raw_ptr()->load_timestamp_, value);
+}
+
+
 void Script::set_tokens(const TokenStream& value) const {
   StorePointer(&raw_ptr()->tokens_, value.raw());
 }
@@ -8906,6 +8914,8 @@ RawScript* Script::New(const String& url,
   result.set_url(String::Handle(Symbols::New(url)));
   result.set_source(source);
   result.set_kind(kind);
+  result.set_load_timestamp(FLAG_remove_script_timestamps_for_test
+                            ? 0 : OS::GetCurrentTimeMillis());
   result.SetLocationOffset(0, 0);
   return result.raw();
 }

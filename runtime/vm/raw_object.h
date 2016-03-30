@@ -998,6 +998,7 @@ class RawScript : public RawObject {
   int32_t line_offset_;
   int32_t col_offset_;
   int8_t kind_;  // Of type Kind.
+  int64_t load_timestamp_;
 };
 
 

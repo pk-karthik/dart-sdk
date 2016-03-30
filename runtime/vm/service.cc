@@ -1452,14 +1452,21 @@ static RawObject* LookupHeapObjectLibraries(Isolate* isolate,
     return lib.raw();
   }
   if (strcmp(parts[2], "scripts") == 0) {
-    // Script ids look like "libraries/35/scripts/library%2Furl.dart"
-    if (num_parts != 4) {
+    // Script ids look like "libraries/35/scripts/library%2Furl.dart/12345"
+    if (num_parts != 5) {
       return Object::sentinel().raw();
     }
     const String& id = String::Handle(String::New(parts[3]));
     ASSERT(!id.IsNull());
     // The id is the url of the script % encoded, decode it.
     const String& requested_url = String::Handle(String::DecodeIRI(id));
+
+    // Each script id is tagged with a load time.
+    int64_t timestamp;
+    if (!GetInteger64Id(parts[4], &timestamp, 16) || (timestamp < 0)) {
+      return Object::sentinel().raw();
+    }
+
     Script& script = Script::Handle();
     String& script_url = String::Handle();
     const Array& loaded_scripts = Array::Handle(lib.LoadedScripts());
@@ -1469,7 +1476,8 @@ static RawObject* LookupHeapObjectLibraries(Isolate* isolate,
       script ^= loaded_scripts.At(i);
       ASSERT(!script.IsNull());
       script_url ^= script.url();
-      if (script_url.Equals(requested_url)) {
+      if (script_url.Equals(requested_url) &&
+          (timestamp == script.load_timestamp())) {
         return script.raw();
       }
     }
