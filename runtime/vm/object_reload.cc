@@ -87,6 +87,33 @@ bool Class::CanReload(const Class& replacement) {
 
 void Library::Reload(const Library& replacement) {
   StorePointer(&raw_ptr()->loaded_scripts_, Array::null());
+
+  // Move all classes owned by |replacement| onto |this|.
+  Isolate* isolate = Isolate::Current();
+
+  // TODO(johnmccutchan): Store tighter bounds in the isolate's reload context.
+  const intptr_t lower_cid_bound =
+      Dart::vm_isolate()->class_table()->NumCids();
+  const intptr_t upper_cid_bound =
+      isolate->class_table()->NumCids();
+
+  Class& cls = Class::Handle();
+  for (intptr_t i = lower_cid_bound; i < upper_cid_bound; i++) {
+    if (!isolate->class_table()->HasValidClassAt(i)) {
+      continue;
+    }
+    cls = isolate->class_table()->At(i);
+    if (cls.library() != replacement.raw()) {
+      // Class is not owned by |replacement|.
+      continue;
+    }
+    // Move class to this library.
+    fprintf(stderr, "Moving class %s from %s to %s\n",
+            cls.ToCString(),
+            this->ToCString(),
+            replacement.ToCString());
+    this->AddClass(cls);
+  }
 }
 
 
