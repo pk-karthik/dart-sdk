@@ -93,6 +93,94 @@ TEST_CASE(IsolateReload_BadClass) {
 }
 
 
+TEST_CASE(IsolateReload_StaticValuePreserved) {
+  const char* kScript =
+      "init() => 'old value';\n"
+      "var value = init();\n"
+      "main() {\n"
+      "  return 'init()=${init()},value=${value}';\n"
+      "}\n"
+      "trampoline() => main();\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("init()=old value,value=old value",
+               SimpleInvokeStr(lib, "trampoline"));
+
+  const char* kReloadScript =
+      "init() => 'new value';\n"
+      "var value = init();\n"
+      "main() {\n"
+      "  return 'init()=${init()},value=${value}';\n"
+      "}\n"
+      "trampoline() => main();\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("init()=new value,value=old value",
+               SimpleInvokeStr(lib, "trampoline"));
+}
+
+
+TEST_CASE(IsolateReload_TopLevelFieldAdded) {
+  const char* kScript =
+      "var value1 = 10;\n"
+      "main() {\n"
+      "  return 'value1=${value1}';\n"
+      "}\n"
+      "trampoline() => main();\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("value1=10", SimpleInvokeStr(lib, "trampoline"));
+
+  const char* kReloadScript =
+      "var value1 = 10;\n"
+      "var value2 = 20;\n"
+      "main() {\n"
+      "  return 'value1=${value1},value2=${value2}';\n"
+      "}\n"
+      "trampoline() => main();\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("value1=10,value2=20",
+               SimpleInvokeStr(lib, "trampoline"));
+}
+
+
+TEST_CASE(IsolateReload_ClassAdded) {
+  const char* kScript =
+      "main() {\n"
+      "  return 'hello';\n"
+      "}\n"
+      "trampoline() => main();\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("hello", SimpleInvokeStr(lib, "trampoline"));
+
+  const char* kReloadScript =
+      "class A {\n"
+      "  toString() => 'hello from A';\n"
+      "}\n"
+      "main() {\n"
+      "  return new A().toString();\n"
+      "}\n"
+      "trampoline() => main();\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("hello from A", SimpleInvokeStr(lib, "trampoline"));
+}
+
+
 TEST_CASE(IsolateReload_FieldInitializerChanged) {
   const char* kScript =
       "class A {\n"
@@ -101,7 +189,7 @@ TEST_CASE(IsolateReload_FieldInitializerChanged) {
       "var savedA = new A();\n"
       "main() {\n"
       "  var newA = new A();\n"
-      "  return ('saved:${savedA.field} new:${newA.field}');\n"
+      "  return 'saved:${savedA.field} new:${newA.field}';\n"
       "}\n"
       "trampoline() => main();\n";
 
@@ -117,7 +205,7 @@ TEST_CASE(IsolateReload_FieldInitializerChanged) {
       "var savedA = new A();\n"
       "main() {\n"
       "  var newA = new A();\n"
-      "  return ('saved:${savedA.field} new:${newA.field}');\n"
+      "  return 'saved:${savedA.field} new:${newA.field}';\n"
       "}\n"
       "trampoline() => main();\n";
 

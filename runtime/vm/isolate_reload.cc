@@ -168,7 +168,6 @@ void IsolateReloadContext::CommitClassTable() {
     const Remapping& mapping = class_mappings_.At(i);
     I->class_table()->ClearClassAt(mapping.new_id);
   }
-  I->class_table()->CompactNewClasses(saved_num_cids_);
 
   GrowableObjectArray& libs = GrowableObjectArray::Handle(
       Z, saved_libraries());
@@ -183,6 +182,8 @@ void IsolateReloadContext::CommitClassTable() {
     new_lib = Library::RawCast(new_libs.At(mapping.new_id));
     lib.Reload(new_lib);
   }
+
+  I->class_table()->CompactNewClasses(saved_num_cids_);
 
   // NO TWO.
   if (!libs.IsNull()) {
@@ -247,6 +248,17 @@ intptr_t IsolateReloadContext::FindReplacementClassId(const Class& cls) {
   }
 
   return -1;
+}
+
+
+RawClass* IsolateReloadContext::FindOriginalClass(const Class& cls) {
+  for (intptr_t i = 0; i < class_mappings_.length(); i++) {
+    const Remapping& mapping = class_mappings_.At(i);
+    if (mapping.new_id == cls.id()) {
+      return I->class_table()->At(mapping.old_id);
+    }
+  }
+  return Class::null();
 }
 
 
