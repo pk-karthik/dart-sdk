@@ -7,6 +7,18 @@
 
 #include "vm/globals.h"
 #include "vm/growable_array.h"
+#include "vm/log.h"
+
+DECLARE_FLAG(bool, trace_reload);
+
+// 'Trace Isolate Reload' TIR_Print
+#if defined(_MSC_VER)
+#define TIR_Print(format, ...) \
+    if (FLAG_trace_reload) Log::Current()->Print(format, __VA_ARGS__)
+#else
+#define TIR_Print(format, ...) \
+    if (FLAG_trace_reload) Log::Current()->Print(format, ##__VA_ARGS__)
+#endif
 
 namespace dart {
 

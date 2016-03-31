@@ -89,7 +89,7 @@ void IsolateReloadContext::StartReload() {
 void IsolateReloadContext::FinishReload() {
   BuildClassIdMap();
   BuildLibraryIdMap();
-  fprintf(stderr, "---- DONE FINALIZING\n");
+  TIR_Print("---- DONE FINALIZING\n");
   I->class_table()->PrintNonDartClasses();
 
   if (ValidateReload()) {
@@ -101,7 +101,7 @@ void IsolateReloadContext::FinishReload() {
 
 
 void IsolateReloadContext::CheckpointClassTable() {
-  fprintf(stderr, "---- CHECKPOINTING CLASS TABLE\n");
+  TIR_Print("---- CHECKPOINTING CLASS TABLE\n");
   I->class_table()->PrintNonDartClasses();
 
   saved_num_cids_ = I->class_table()->NumCids();
@@ -132,7 +132,7 @@ void IsolateReloadContext::CheckpointClassTable() {
 
 
 void IsolateReloadContext::RollbackClassTable() {
-  fprintf(stderr, "---- ROLLING BACK CLASS TABLE\n");
+  TIR_Print("---- ROLLING BACK CLASS TABLE\n");
   Thread* thread = Thread::Current();
   ASSERT(saved_num_cids_ > 0);
   I->class_table()->DropNewClasses(saved_num_cids_);
@@ -155,7 +155,7 @@ void IsolateReloadContext::RollbackClassTable() {
 
 void IsolateReloadContext::CommitClassTable() {
   Thread* thread = Thread::Current();
-  fprintf(stderr, "---- COMMITTING CLASS TABLE\n");
+  TIR_Print("---- COMMITTING CLASS TABLE\n");
 
   Class& cls = Class::Handle();
   Class& new_cls = Class::Handle();
@@ -285,12 +285,12 @@ void IsolateReloadContext::BuildClassIdMap() {
     class_mappings_.Add(mapping);
   }
 
-  fprintf(stderr, "---- CLASS ID MAPPING\n");
+  TIR_Print("---- CLASS ID MAPPING\n");
   for (intptr_t i = 0; i < class_mappings_.length(); i++) {
     const Remapping& mapping = class_mappings_[i];
     ASSERT(mapping.new_id > 0);
     ASSERT(mapping.old_id > 0);
-    fprintf(stderr, "%" Pd " -> %" Pd "\n", mapping.old_id, mapping.new_id);
+    TIR_Print("%" Pd " -> %" Pd "\n", mapping.old_id, mapping.new_id);
   }
 }
 
@@ -319,7 +319,7 @@ void IsolateReloadContext::BuildLibraryIdMap() {
   const GrowableObjectArray& libs =
       GrowableObjectArray::Handle(object_store()->libraries());
 
-  fprintf(stderr, "---- LIBRARY ID MAPPING\n");
+  TIR_Print("---- LIBRARY ID MAPPING\n");
   String& url = String::Handle();
   for (intptr_t i = 0; i < lib_mappings_.length(); i++) {
     const Remapping& mapping = lib_mappings_[i];
@@ -330,13 +330,12 @@ void IsolateReloadContext::BuildLibraryIdMap() {
     lib = Library::RawCast(saved_libs.At(mapping.old_id));
     url = lib.url();
 
-    fprintf(stderr, "%" Pd " %s ->", mapping.old_id, url.ToCString());
+    TIR_Print("%" Pd " %s ->", mapping.old_id, url.ToCString());
 
     lib = Library::RawCast(libs.At(mapping.new_id));
     url = lib.url();
 
-    fprintf(stderr, "%" Pd " %s\n", mapping.new_id, url.ToCString());
-
+    TIR_Print("%" Pd " %s\n", mapping.new_id, url.ToCString());
   }
 }
 
