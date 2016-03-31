@@ -13,6 +13,21 @@ namespace dart {
 
 #define IRC (Isolate::Current()->reload_context())
 
+class ObjectReloadUtils : public AllStatic {
+  static void DumpLibraryDictionary(const Library& lib) {
+    DictionaryIterator it(lib);
+    Object& entry = Object::Handle();
+    String& name = String::Handle();
+    TIR_Print("Dumping dictionary for %s\n", lib.ToCString());
+    while (it.HasNext()) {
+      entry = it.GetNext();
+      name = entry.DictionaryName();
+      TIR_Print("%s -> %s\n", name.ToCString(), entry.ToCString());
+    }
+  }
+};
+
+
 void Function::Reparent(const Class& new_cls) const {
   set_owner(new_cls);
 }
@@ -163,20 +178,6 @@ bool Class::CanReload(const Class& replacement) {
 
 
 #if 0
-static void DumpLibraryDictionary(const Library& lib) {
-  DictionaryIterator it(lib);
-  Object& entry = Object::Handle();
-  String& name = String::Handle();
-  THR_Print("Dumping dictionary for %s\n", lib.ToCString());
-  while (it.HasNext()) {
-    entry = it.GetNext();
-    name = entry.DictionaryName();
-    THR_Print("%s -> %s\n", name.ToCString(), entry.ToCString());
-  }
-}
-#endif
-
-#if 0
 // library fields to handle reloading of.
 RawGrowableObjectArray* metadata_;  // Metadata on classes, methods etc.
 RawClass* toplevel_class_;  // Class containing top-level elements.
@@ -193,6 +194,18 @@ bool corelib_imported_;
 bool is_dart_scheme_;
 bool debuggable_;             // True if debugger can stop in library.
 bool is_in_fullsnapshot_;     // True if library is in a full snapshot.
+
+apply library mapping to:
+  each namespaces library_ field.
+
+namespace fields:
+  RawLibrary* library_;          // library with name dictionary.
+  RawArray* show_names_;         // list of names that are exported.
+  RawArray* hide_names_;         // blacklist of names that are not exported.
+  RawField* metadata_field_;     // remembers the token pos of metadata if any,
+                                 // and the metadata values if computed.
+};
+
 #endif
 
 void Library::Reload(const Library& replacement) {
