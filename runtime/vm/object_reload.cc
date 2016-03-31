@@ -22,12 +22,12 @@ void Class::Reload(const Class& replacement) {
   //
   // CHECKLIST (by field from RawClass);
   //
-  // - name_ : DONE, implicitly (needs assert)
+  // - name_ : DONE, checked in CanReload
+  // - library : DONE, checked in CanReload
   // - functions : DONE
   // - fields : DONE
   // - script : DONE
   // - token_pos : DONE
-  // - library : DONE, implicitly (needs assert)
   // - instance_size_in_words : DONE, implicitly (needs assert)
   // - id : DONE, because we are copying into existing class
   // - canonical_types : currently assuming all are of type Type.  Is this ok?
@@ -132,6 +132,20 @@ void Class::Reload(const Class& replacement) {
 
 
 bool Class::CanReload(const Class& replacement) {
+#if defined(DEBUG)
+  {
+    const String& name = String::Handle(Name());
+    const String& new_name = String::Handle(replacement.Name());
+    ASSERT(name.Equals(new_name));
+
+    const Library& lib = Library::Handle(library());
+    const String& url = String::Handle(lib.url());
+    const Library& new_lib = Library::Handle(replacement.library());
+    const String& new_url = String::Handle(new_lib.url());
+    ASSERT(url.Equals(new_url));
+  }
+#endif
+
   if (is_finalized()) {
     const Error& error =
         Error::Handle(replacement.EnsureIsFinalized(Thread::Current()));

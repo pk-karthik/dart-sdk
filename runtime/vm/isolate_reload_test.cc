@@ -172,6 +172,9 @@ TEST_CASE(IsolateReload_ClassAdded) {
 
 
 TEST_CASE(IsolateReload_ImplicitConstructorChanged) {
+  // Note that we are checking that the value 20 gets cleared from the
+  // compile-time constants cache.  To make this test work, "20" and
+  // "10" need to be at the same token position.
   const char* kScript =
       "class A {\n"
       "  int field = 20;\n"
