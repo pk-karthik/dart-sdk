@@ -1147,6 +1147,7 @@ class Isolate extends ServiceObjectOwner {
   @observable bool loading = true;
   @observable bool runnable = false;
   @observable bool ioEnabled = false;
+  @observable bool reloading = false;
 
   final List<String> extensionRPCs = new List<String>();
 
@@ -1191,7 +1192,17 @@ class Isolate extends ServiceObjectOwner {
   }
 
   Future<ServiceMap> reloadSources() {
-    return invokeRpc('_reloadSources', {});
+    return invokeRpc('_reloadSources', {}).then((_) {
+      reloading = true;
+    });
+  }
+
+  void _handleIsolateReloadEvent(ServiceEvent event) {
+    reloading = false;
+    if (event.reloadError != null) {
+      // Failure.
+      print('Reload failed: ${event.reloadError}');
+    }
   }
 
   /// Fetches and builds the class hierarchy for this isolate. Returns the
@@ -1499,7 +1510,9 @@ class Isolate extends ServiceObjectOwner {
       case ServiceEvent.kInspect:
         // Handled elsewhere.
         break;
-
+      case ServiceEvent.kIsolateReload:
+        _handleIsolateReloadEvent(event);
+        break;
       case ServiceEvent.kBreakpointAdded:
         _addBreakpoint(event.breakpoint);
         break;
@@ -1823,6 +1836,7 @@ class ServiceEvent extends ServiceObject {
   static const kIsolateRunnable        = 'IsolateRunnable';
   static const kIsolateExit            = 'IsolateExit';
   static const kIsolateUpdate          = 'IsolateUpdate';
+  static const kIsolateReload          = 'IsolateReload';
   static const kServiceExtensionAdded  = 'ServiceExtensionAdded';
   static const kPauseStart             = 'PauseStart';
   static const kPauseExit              = 'PauseExit';
@@ -1854,6 +1868,7 @@ class ServiceEvent extends ServiceObject {
   @observable Frame topFrame;
   @observable String extensionRPC;
   @observable Instance exception;
+  @observable Instance reloadError;
   @observable bool atAsyncSuspension;
   @observable ServiceObject inspectee;
   @observable ByteData data;
@@ -1925,6 +1940,7 @@ class ServiceEvent extends ServiceObject {
     if (map['count'] != null) {
       count = map['count'];
     }
+    reloadError = map['reloadError'];
     if (map['_debuggerSettings'] != null &&
         map['_debuggerSettings']['_exceptions'] != null) {
       exceptions = map['_debuggerSettings']['_exceptions'];

@@ -45,6 +45,7 @@ ServiceEvent::ServiceEvent(Isolate* isolate, EventKind event_kind)
       timeline_event_block_(NULL),
       extension_rpc_(NULL),
       exception_(NULL),
+      reload_error_(NULL),
       at_async_jump_(false),
       inspectee_(NULL),
       gc_stats_(NULL),
@@ -112,6 +113,8 @@ const char* ServiceEvent::KindAsCString() const {
       return "IsolateUpdate";
     case kServiceExtensionAdded:
       return "ServiceExtensionAdded";
+    case kIsolateReload:
+      return "IsolateReload";
     case kPauseStart:
       return "PauseStart";
     case kPauseExit:
@@ -164,6 +167,7 @@ const char* ServiceEvent::stream_id() const {
     case kIsolateRunnable:
     case kIsolateExit:
     case kIsolateUpdate:
+    case kIsolateReload:
     case kServiceExtensionAdded:
       return Service::isolate_stream.id();
 
@@ -206,6 +210,14 @@ const char* ServiceEvent::stream_id() const {
 void ServiceEvent::PrintJSON(JSONStream* js) const {
   JSONObject jsobj(js);
   PrintJSONHeader(&jsobj);
+  if (kind() == kIsolateReload) {
+    if (reload_error_ == NULL) {
+      jsobj.AddProperty("status", "success");
+    } else {
+      jsobj.AddProperty("status", "failure");
+      jsobj.AddProperty("reloadError", *(reload_error()));
+    }
+  }
   if (kind() == kServiceExtensionAdded) {
     ASSERT(extension_rpc_ != NULL);
     jsobj.AddProperty("extensionRPC", extension_rpc_->ToCString());
