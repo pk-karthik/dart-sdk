@@ -40,6 +40,8 @@ class IsolateReloadContext {
   RawError* error() const { return error_; }
   bool test_mode() const { return test_mode_; }
 
+  RawClass* FindOriginalClass(const Class& cls);
+
  private:
   void BuildClassIdMap();
   intptr_t FindReplacementClassId(const Class& cls);
