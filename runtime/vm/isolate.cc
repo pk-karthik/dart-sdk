@@ -1814,6 +1814,7 @@ void Isolate::PrintJSON(JSONStream* stream, bool ref) {
   jsobj.AddProperty("runnable", is_runnable());
   jsobj.AddProperty("livePorts", message_handler()->live_ports());
   jsobj.AddProperty("pauseOnExit", message_handler()->should_pause_on_exit());
+  jsobj.AddProperty("isReloading", IsReloading());
 
   if (debugger() != NULL) {
     if (!is_runnable()) {

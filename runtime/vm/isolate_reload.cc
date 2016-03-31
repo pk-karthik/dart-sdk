@@ -11,6 +11,7 @@
 #include "vm/object.h"
 #include "vm/object_store.h"
 #include "vm/safepoint.h"
+#include "vm/service_event.h"
 #include "vm/stack_frame.h"
 #include "vm/thread.h"
 
@@ -43,12 +44,15 @@ void IsolateReloadContext::ReportError(const Error& error) {
   if (FLAG_trace_reload) {
     THR_Print("ISO-RELOAD: Error: %s\n", error.ToErrorCString());
   }
-  // TODO(johnmccutchan): Send service protocol event.
+  ServiceEvent service_event(Isolate::Current(), ServiceEvent::kIsolateReload);
+  service_event.set_reload_error(&error);
+  Service::HandleEvent(&service_event);
 }
 
 
 void IsolateReloadContext::ReportSuccess() {
-  // TODO(johnmccutchan): Send service protocol event.
+  ServiceEvent service_event(Isolate::Current(), ServiceEvent::kIsolateReload);
+  Service::HandleEvent(&service_event);
 }
 
 void IsolateReloadContext::StartReload() {
