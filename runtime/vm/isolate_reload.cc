@@ -6,6 +6,7 @@
 
 #include "vm/code_generator.h"
 #include "vm/dart_api_impl.h"
+#include "vm/hash_table.h"
 #include "vm/isolate.h"
 #include "vm/log.h"
 #include "vm/object.h"
@@ -22,6 +23,66 @@ DEFINE_FLAG(bool, trace_reload, true, "Trace isolate reloading");
 #define I (isolate())
 #define Z (thread->zone())
 
+
+static bool IsSameClass(const Class& a, const Class& b) {
+  const String& a_name = String::Handle(Class::Cast(a).Name());
+  const String& b_name = String::Handle(Class::Cast(b).Name());
+
+  if (!a_name.Equals(b_name)) {
+    return false;
+  }
+
+  const Library& a_lib = Library::Handle(Class::Cast(a).library());
+  const String& a_lib_url =
+      String::Handle(a_lib.IsNull() ? String::null() : a_lib.url());
+
+  const Library& b_lib = Library::Handle(Class::Cast(b).library());
+  const String& b_lib_url =
+      String::Handle(b_lib.IsNull() ? String::null() : b_lib.url());
+
+  return a_lib_url.Equals(b_lib_url);
+}
+
+
+class ClassMapTraits {
+ public:
+  static bool IsMatch(const Object& a, const Object& b) {
+    if (!a.IsClass() || !b.IsClass()) {
+      return false;
+    }
+    return IsSameClass(Class::Cast(a), Class::Cast(b));
+  }
+
+  static uword Hash(const Object& obj) {
+    return String::HashRawSymbol(Class::Cast(obj).Name());
+  }
+};
+
+
+static bool IsSameLibrary(const Library& a_lib, const Library& b_lib) {
+  const String& a_lib_url =
+      String::Handle(a_lib.IsNull() ? String::null() : a_lib.url());
+  const String& b_lib_url =
+      String::Handle(b_lib.IsNull() ? String::null() : b_lib.url());
+  return a_lib_url.Equals(b_lib_url);
+}
+
+
+class LibraryMapTraits {
+ public:
+  static bool IsMatch(const Object& a, const Object& b) {
+    if (!a.IsLibrary() || !b.IsLibrary()) {
+      return false;
+    }
+    return IsSameLibrary(Library::Cast(a), Library::Cast(b));
+  }
+
+  static uword Hash(const Object& obj) {
+    return Library::Cast(obj).UrlHash();
+  }
+};
+
+
 IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
     : isolate_(isolate),
       test_mode_(test_mode),
@@ -29,6 +90,8 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       saved_num_cids_(-1),
       script_uri_(String::null()),
       error_(Error::null()),
+      class_map_storage_(Array::null()),
+      library_map_storage_(Array::null()),
       saved_root_library_(Library::null()),
       saved_libraries_(GrowableObjectArray::null()) {
 }
@@ -87,8 +150,8 @@ void IsolateReloadContext::StartReload() {
 
 
 void IsolateReloadContext::FinishReload() {
-  BuildClassIdMap();
-  BuildLibraryIdMap();
+  BuildClassMapping();
+  BuildLibraryMapping();
   TIR_Print("---- DONE FINALIZING\n");
   I->class_table()->PrintNonDartClasses();
 
@@ -157,39 +220,74 @@ void IsolateReloadContext::CommitClassTable() {
   Thread* thread = Thread::Current();
   TIR_Print("---- COMMITTING CLASS TABLE\n");
 
-  Class& cls = Class::Handle();
-  Class& new_cls = Class::Handle();
-  for (intptr_t i = 0; i < class_mappings_.length(); i++) {
-    const Remapping& mapping = class_mappings_.At(i);
-    cls = I->class_table()->At(mapping.old_id);
-    new_cls = I->class_table()->At(mapping.new_id);
-    cls.Reload(new_cls);
+  {
+    Class& cls = Class::Handle();
+    Class& new_cls = Class::Handle();
+
+    UnorderedHashMap<ClassMapTraits> class_map(class_map_storage_);
+
+    {
+      // Reload existing classes.
+      UnorderedHashMap<ClassMapTraits>::Iterator it(&class_map);
+      while (it.MoveNext()) {
+        const intptr_t entry = it.Current();
+        new_cls = Class::RawCast(class_map.GetKey(entry));
+        cls = Class::RawCast(class_map.GetPayload(entry, 0));
+        if (new_cls.raw() != cls.raw()) {
+          cls.Reload(new_cls);
+        }
+      }
+    }
+
+    {
+      // Remove unneeded classes from the class table.
+      UnorderedHashMap<ClassMapTraits>::Iterator it(&class_map);
+      while (it.MoveNext()) {
+        const intptr_t entry = it.Current();
+        ASSERT(entry != -1);
+        new_cls = Class::RawCast(class_map.GetKey(entry));
+        cls = Class::RawCast(class_map.GetPayload(entry, 0));
+        if (new_cls.raw() != cls.raw()) {
+          I->class_table()->ClearClassAt(new_cls.id());
+        }
+      }
+    }
+
+    // Release the class map.
+    class_map.Release();
   }
 
-  // Remove unneeded classes from the class table.
-  for (intptr_t i = 0; i < class_mappings_.length(); i++) {
-    // Remove new_cls from the class table.
-    const Remapping& mapping = class_mappings_.At(i);
-    I->class_table()->ClearClassAt(mapping.new_id);
-  }
 
-  GrowableObjectArray& libs = GrowableObjectArray::Handle(
-      Z, saved_libraries());
-  GrowableObjectArray& new_libs = GrowableObjectArray::Handle(
-      Z, object_store()->libraries());
+  {
+    Library& lib = Library::Handle();
+    Library& new_lib = Library::Handle();
 
-  Library& lib = Library::Handle();
-  Library& new_lib = Library::Handle();
-  for (intptr_t i = 0; i < lib_mappings_.length(); i++) {
-    const Remapping& mapping = lib_mappings_.At(i);
-    lib = Library::RawCast(libs.At(mapping.old_id));
-    new_lib = Library::RawCast(new_libs.At(mapping.new_id));
-    lib.Reload(new_lib);
+    UnorderedHashMap<LibraryMapTraits> lib_map(library_map_storage_);
+
+    {
+      // Reload existing libraries.
+      UnorderedHashMap<LibraryMapTraits>::Iterator it(&lib_map);
+
+      while (it.MoveNext()) {
+        const intptr_t entry = it.Current();
+        ASSERT(entry != -1);
+        new_lib = Library::RawCast(lib_map.GetKey(entry));
+        lib = Library::RawCast(lib_map.GetPayload(entry, 0));
+        if (new_lib.raw() != lib.raw()) {
+          lib.Reload(new_lib);
+        }
+      }
+    }
+
+    // Release the library map.
+    lib_map.Release();
   }
 
   I->class_table()->CompactNewClasses(saved_num_cids_);
 
   // NO TWO.
+  GrowableObjectArray& libs = GrowableObjectArray::Handle(
+      Z, saved_libraries());
   if (!libs.IsNull()) {
     object_store()->set_libraries(libs);
   }
@@ -206,161 +304,30 @@ void IsolateReloadContext::CommitClassTable() {
 
 
 bool IsolateReloadContext::ValidateReload() {
+  // Already built.
+  ASSERT(class_map_storage_ != Array::null());
+  UnorderedHashMap<ClassMapTraits> map(class_map_storage_);
+  UnorderedHashMap<ClassMapTraits>::Iterator it(&map);
   Class& cls = Class::Handle();
   Class& new_cls = Class::Handle();
-  for (intptr_t i = 0; i < class_mappings_.length(); i++) {
-    const Remapping& mapping = class_mappings_.At(i);
-    cls = I->class_table()->At(mapping.old_id);
-    new_cls = I->class_table()->At(mapping.new_id);
-    if (!cls.CanReload(new_cls)) {
-      return false;
+  while (it.MoveNext()) {
+    const intptr_t entry = it.Current();
+    new_cls = Class::RawCast(map.GetKey(entry));
+    cls = Class::RawCast(map.GetPayload(entry, 0));
+    if (new_cls.raw() != cls.raw()) {
+      if (!cls.CanReload(new_cls)) {
+        map.Release();
+        return false;
+      }
     }
   }
-
+  map.Release();
   return true;
 }
 
 
-intptr_t IsolateReloadContext::FindReplacementClassId(const Class& cls) {
-  const intptr_t upper_cid_bound = I->class_table()->NumCids();
-
-  const Library& lib = Library::Handle(cls.library());
-  const String& url = String::Handle(lib.IsNull() ? String::null() : lib.url());
-  const String& name = String::Handle(cls.Name());
-
-  Library& new_lib = Library::Handle();
-  String& new_url = String::Handle();
-  String& new_name = String::Handle();
-  Class& new_class = Class::Handle();
-
-  for (intptr_t i = saved_num_cids_; i < upper_cid_bound; i++) {
-    if (!I->class_table()->HasValidClassAt(i)) {
-      continue;
-    }
-    new_class = I->class_table()->At(i);
-    new_name = new_class.Name();
-    if (!name.Equals(new_name)) {
-      continue;
-    }
-    new_lib = new_class.library();
-    new_url = new_lib.IsNull() ? String::null() : new_lib.url();
-    if (!new_url.Equals(url)) {
-      continue;
-    }
-
-    return i;
-  }
-
-  return -1;
-}
-
-
 RawClass* IsolateReloadContext::FindOriginalClass(const Class& cls) {
-  for (intptr_t i = 0; i < class_mappings_.length(); i++) {
-    const Remapping& mapping = class_mappings_.At(i);
-    if (mapping.new_id == cls.id()) {
-      return I->class_table()->At(mapping.old_id);
-    }
-  }
-  return Class::null();
-}
-
-
-void IsolateReloadContext::BuildClassIdMap() {
-  const intptr_t lower_cid_bound =
-      Dart::vm_isolate()->class_table()->NumCids();
-
-  Class& cls = Class::Handle();
-  for (intptr_t i = lower_cid_bound; i < saved_num_cids_; i++) {
-    if (!I->class_table()->HasValidClassAt(i)) {
-      continue;
-    }
-    cls ^= I->class_table()->At(i);
-    Remapping mapping;
-    mapping.new_id = FindReplacementClassId(cls);
-    if (mapping.new_id == -1) {
-      continue;
-    }
-    mapping.old_id = i;
-    class_mappings_.Add(mapping);
-  }
-
-  TIR_Print("---- CLASS ID MAPPING\n");
-  for (intptr_t i = 0; i < class_mappings_.length(); i++) {
-    const Remapping& mapping = class_mappings_[i];
-    ASSERT(mapping.new_id > 0);
-    ASSERT(mapping.old_id > 0);
-    TIR_Print("%" Pd " -> %" Pd "\n", mapping.old_id, mapping.new_id);
-  }
-}
-
-
-
-
-void IsolateReloadContext::BuildLibraryIdMap() {
-  const GrowableObjectArray& saved_libs =
-      GrowableObjectArray::Handle(saved_libraries());
-
-  Library& lib = Library::Handle();
-  for (intptr_t i = 0; i < saved_libs.Length(); i++) {
-    lib = Library::RawCast(saved_libs.At(i));
-    if (lib.is_dart_scheme()) {
-      continue;
-    }
-    Remapping mapping;
-    mapping.new_id = FindReplacementLibrary(lib);
-    if (mapping.new_id == -1) {
-      continue;
-    }
-    mapping.old_id = i;
-    lib_mappings_.Add(mapping);
-  }
-
-  const GrowableObjectArray& libs =
-      GrowableObjectArray::Handle(object_store()->libraries());
-
-  TIR_Print("---- LIBRARY ID MAPPING\n");
-  String& url = String::Handle();
-  for (intptr_t i = 0; i < lib_mappings_.length(); i++) {
-    const Remapping& mapping = lib_mappings_[i];
-    ASSERT(mapping.new_id > 0);
-    ASSERT(mapping.old_id > 0);
-
-    // Lookup old library.
-    lib = Library::RawCast(saved_libs.At(mapping.old_id));
-    url = lib.url();
-
-    TIR_Print("%" Pd " %s ->", mapping.old_id, url.ToCString());
-
-    lib = Library::RawCast(libs.At(mapping.new_id));
-    url = lib.url();
-
-    TIR_Print("%" Pd " %s\n", mapping.new_id, url.ToCString());
-  }
-}
-
-
-intptr_t IsolateReloadContext::FindReplacementLibrary(const Library& lib) {
-  const GrowableObjectArray& libs =
-      GrowableObjectArray::Handle(object_store()->libraries());
-
-  const String& url = String::Handle(lib.url());
-
-  Library& new_lib = Library::Handle();
-  String& new_url = String::Handle();
-
-  for (intptr_t i = 0; i < libs.Length(); i++) {
-    new_lib = Library::RawCast(libs.At(i));
-    if (new_lib.IsNull()) {
-      continue;
-    }
-    new_url = new_lib.url();
-    if (url.Equals(new_url)) {
-      return i;
-    }
-  }
-
-  return -1;
+  return MappedClass(cls);
 }
 
 
@@ -529,6 +496,136 @@ void IsolateReloadContext::InvalidateWorld() {
   ResetUnoptimizedICsOnStack();
   ResetMegamorphicCaches();
   MarkAllFunctionsForRecompilation();
+}
+
+
+RawClass* IsolateReloadContext::MappedClass(const Class& replacement_or_new) {
+  if (class_map_storage_ == Array::null()) {
+    return Class::null();
+  }
+  UnorderedHashMap<ClassMapTraits> map(class_map_storage_);
+  Class& cls = Class::Handle();
+  cls ^= map.GetOrNull(replacement_or_new);
+  // No need to update storage address because no mutation occurred.
+  map.Release();
+  return cls.raw();
+}
+
+
+RawLibrary* IsolateReloadContext::MappedLibrary(
+    const Library& replacement_or_new) {
+  return Library::null();
+}
+
+
+RawClass* IsolateReloadContext::LinearFindOldClass(
+    const Class& replacement_or_new) {
+  const intptr_t lower_cid_bound = Dart::vm_isolate()->class_table()->NumCids();
+  const intptr_t upper_cid_bound = saved_num_cids_;
+  ClassTable* class_table = I->class_table();
+  Class& cls = Class::Handle();
+  for (intptr_t i = lower_cid_bound; i < upper_cid_bound; i++) {
+    if (!class_table->HasValidClassAt(i)) {
+      continue;
+    }
+    cls = class_table->At(i);
+    if (IsSameClass(replacement_or_new, cls)) {
+      return cls.raw();
+    }
+  }
+  return Class::null();
+}
+
+
+void IsolateReloadContext::BuildClassMapping() {
+  const intptr_t lower_cid_bound = saved_num_cids_;
+  const intptr_t upper_cid_bound = I->class_table()->NumCids();
+  ClassTable* class_table = I->class_table();
+  Class& replacement_or_new = Class::Handle();
+  Class& old = Class::Handle();
+  for (intptr_t i = lower_cid_bound; i < upper_cid_bound; i++) {
+    if (!class_table->HasValidClassAt(i)) {
+      continue;
+    }
+    replacement_or_new = class_table->At(i);
+    old ^= LinearFindOldClass(replacement_or_new);
+    if (old.IsNull()) {
+      // New class.
+      AddClassMapping(replacement_or_new, replacement_or_new);
+    } else {
+      // Replaced class.
+      AddClassMapping(replacement_or_new, old);
+    }
+  }
+}
+
+
+RawLibrary* IsolateReloadContext::LinearFindOldLibrary(
+    const Library& replacement_or_new) {
+  const GrowableObjectArray& saved_libs =
+      GrowableObjectArray::Handle(saved_libraries());
+
+  Library& lib = Library::Handle();
+  for (intptr_t i = 0; i < saved_libs.Length(); i++) {
+    lib = Library::RawCast(saved_libs.At(i));
+    if (IsSameLibrary(replacement_or_new, lib)) {
+      return lib.raw();
+    }
+  }
+
+  return Library::null();
+}
+
+
+void IsolateReloadContext::BuildLibraryMapping() {
+  const GrowableObjectArray& libs =
+      GrowableObjectArray::Handle(object_store()->libraries());
+
+  Library& replacement_or_new = Library::Handle();
+  Library& old = Library::Handle();
+  for (intptr_t i = 0; i < libs.Length(); i++) {
+    replacement_or_new = Library::RawCast(libs.At(i));
+    old ^= LinearFindOldLibrary(replacement_or_new);
+    if (old.IsNull()) {
+      // New library.
+      AddLibraryMapping(replacement_or_new, replacement_or_new);
+    } else {
+      // Replaced class.
+      AddLibraryMapping(replacement_or_new, old);
+    }
+  }
+}
+
+
+void IsolateReloadContext::AddClassMapping(const Class& replacement_or_new,
+                                           const Class& original) {
+  if (class_map_storage_ == Array::null()) {
+    // Allocate some initial backing storage.
+    class_map_storage_ = HashTables::New<UnorderedHashMap<ClassMapTraits> >(4);
+  }
+  UnorderedHashMap<ClassMapTraits> map(class_map_storage_);
+  // Not present.
+  ASSERT(map.FindKey(replacement_or_new) == -1);
+  map.UpdateOrInsert(replacement_or_new, original);
+  // The storage given to the map may have been reallocated, remember the new
+  // address.
+  class_map_storage_ = map.Release().raw();
+}
+
+
+void IsolateReloadContext::AddLibraryMapping(const Library& replacement_or_new,
+                                             const Library& original) {
+  if (library_map_storage_ == Array::null()) {
+    // Allocate some initial backing storage.
+    library_map_storage_ = HashTables::New<UnorderedHashMap<ClassMapTraits> >(4);
+  }
+  UnorderedHashMap<LibraryMapTraits> map(library_map_storage_);
+  // Not present.
+  ASSERT(map.FindKey(replacement_or_new) == -1);
+  map.UpdateOrInsert(replacement_or_new, original);
+  // The storage given to the map may have been reallocated, remember the new
+  // address.
+  library_map_storage_ = map.Release().raw();
 }
 
 

@@ -55,12 +55,6 @@ class IsolateReloadContext {
   RawClass* FindOriginalClass(const Class& cls);
 
  private:
-  void BuildClassIdMap();
-  intptr_t FindReplacementClassId(const Class& cls);
-
-  void BuildLibraryIdMap();
-  intptr_t FindReplacementLibrary(const Library& lib);
-
   void set_saved_root_library(const Library& value);
 
   void set_saved_libraries(const GrowableObjectArray& value);
@@ -86,17 +80,26 @@ class IsolateReloadContext {
   bool has_error_;
   intptr_t saved_num_cids_;
 
-  struct Remapping {
-    intptr_t old_id;
-    intptr_t new_id;
-  };
+  RawClass* LinearFindOldClass(const Class& replacement_or_new);
+  void BuildClassMapping();
 
-  MallocGrowableArray<Remapping> class_mappings_;
-  MallocGrowableArray<Remapping> lib_mappings_;
+  RawLibrary* LinearFindOldLibrary(const Library& replacement_or_new);
+  void BuildLibraryMapping();
+
+  void AddClassMapping(const Class& replacement_or_new,
+                       const Class& original);
+
+  void AddLibraryMapping(const Library& replacement_or_new,
+                         const Library& original);
+
+  RawClass* MappedClass(const Class& replacement_or_new);
+  RawLibrary* MappedLibrary(const Library& replacement_or_new);
 
   RawObject** from() { return reinterpret_cast<RawObject**>(&script_uri_); }
   RawString* script_uri_;
   RawError* error_;
+  RawArray* class_map_storage_;
+  RawArray* library_map_storage_;
   RawLibrary* saved_root_library_;
   RawGrowableObjectArray* saved_libraries_;
   RawObject** to() { return reinterpret_cast<RawObject**>(&saved_libraries_); }
