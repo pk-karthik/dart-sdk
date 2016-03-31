@@ -37,24 +37,22 @@ TEST_CASE(IsolateReload_FunctionReplacement) {
   const char* kScript =
       "main() {\n"
       "  return 4;\n"
-      "}\n"
-      "trampoline() => main();\n";
+      "}\n";
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
 
-  EXPECT_EQ(4, SimpleInvoke(lib, "trampoline"));
+  EXPECT_EQ(4, SimpleInvoke(lib, "main"));
 
   const char* kReloadScript =
-    "main() {\n"
-    "  return 10;\n"
-    "}\n"
-    "trampoline() => main();\n";
+      "main() {\n"
+      "  return 10;\n"
+      "}\n";
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
 
-  EXPECT_EQ(10, SimpleInvoke(lib, "trampoline"));
+  EXPECT_EQ(10, SimpleInvoke(lib, "main"));
 }
 
 
@@ -67,13 +65,12 @@ TEST_CASE(IsolateReload_BadClass) {
       "main() {\n"
       "  new Foo(5);\n"
       "  return 4;\n"
-      "}\n"
-      "trampoline() => main();\n";
+      "}\n";
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
 
-  EXPECT_EQ(4, SimpleInvoke(lib, "trampoline"));
+  EXPECT_EQ(4, SimpleInvoke(lib, "main"));
 
   const char* kReloadScript =
     "class Foo {\n"
@@ -83,13 +80,12 @@ TEST_CASE(IsolateReload_BadClass) {
     "main() {\n"
     "  new Foo(5);\n"
     "  return 10;\n"
-    "}\n"
-    "trampoline() => main();\n";
+      "}\n";
 
   Dart_Handle result = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_ERROR(result, "unexpected token");
 
-  EXPECT_EQ(4, SimpleInvoke(lib, "trampoline"));
+  EXPECT_EQ(4, SimpleInvoke(lib, "main"));
 }
 
 
@@ -99,28 +95,26 @@ TEST_CASE(IsolateReload_StaticValuePreserved) {
       "var value = init();\n"
       "main() {\n"
       "  return 'init()=${init()},value=${value}';\n"
-      "}\n"
-      "trampoline() => main();\n";
+      "}\n";
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
 
   EXPECT_STREQ("init()=old value,value=old value",
-               SimpleInvokeStr(lib, "trampoline"));
+               SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
       "init() => 'new value';\n"
       "var value = init();\n"
       "main() {\n"
       "  return 'init()=${init()},value=${value}';\n"
-      "}\n"
-      "trampoline() => main();\n";
+      "}\n";
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
 
   EXPECT_STREQ("init()=new value,value=old value",
-               SimpleInvokeStr(lib, "trampoline"));
+               SimpleInvokeStr(lib, "main"));
 }
 
 
@@ -129,27 +123,25 @@ TEST_CASE(IsolateReload_TopLevelFieldAdded) {
       "var value1 = 10;\n"
       "main() {\n"
       "  return 'value1=${value1}';\n"
-      "}\n"
-      "trampoline() => main();\n";
+      "}\n";
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
 
-  EXPECT_STREQ("value1=10", SimpleInvokeStr(lib, "trampoline"));
+  EXPECT_STREQ("value1=10", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
       "var value1 = 10;\n"
       "var value2 = 20;\n"
       "main() {\n"
       "  return 'value1=${value1},value2=${value2}';\n"
-      "}\n"
-      "trampoline() => main();\n";
+      "}\n";
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
 
   EXPECT_STREQ("value1=10,value2=20",
-               SimpleInvokeStr(lib, "trampoline"));
+               SimpleInvokeStr(lib, "main"));
 }
 
 
@@ -157,13 +149,12 @@ TEST_CASE(IsolateReload_ClassAdded) {
   const char* kScript =
       "main() {\n"
       "  return 'hello';\n"
-      "}\n"
-      "trampoline() => main();\n";
+      "}\n";
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
 
-  EXPECT_STREQ("hello", SimpleInvokeStr(lib, "trampoline"));
+  EXPECT_STREQ("hello", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
       "class A {\n"
@@ -171,13 +162,12 @@ TEST_CASE(IsolateReload_ClassAdded) {
       "}\n"
       "main() {\n"
       "  return new A().toString();\n"
-      "}\n"
-      "trampoline() => main();\n";
+      "}\n";
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
 
-  EXPECT_STREQ("hello from A", SimpleInvokeStr(lib, "trampoline"));
+  EXPECT_STREQ("hello from A", SimpleInvokeStr(lib, "main"));
 }
 
 
@@ -190,13 +180,12 @@ TEST_CASE(IsolateReload_FieldInitializerChanged) {
       "main() {\n"
       "  var newA = new A();\n"
       "  return 'saved:${savedA.field} new:${newA.field}';\n"
-      "}\n"
-      "trampoline() => main();\n";
+      "}\n";
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
 
-  EXPECT_STREQ("saved:20 new:20", SimpleInvokeStr(lib, "trampoline"));
+  EXPECT_STREQ("saved:20 new:20", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
       "class A {\n"
@@ -206,13 +195,12 @@ TEST_CASE(IsolateReload_FieldInitializerChanged) {
       "main() {\n"
       "  var newA = new A();\n"
       "  return 'saved:${savedA.field} new:${newA.field}';\n"
-      "}\n"
-      "trampoline() => main();\n";
+      "}\n";
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
 
-  EXPECT_STREQ("saved:20 new:10", SimpleInvokeStr(lib, "trampoline"));
+  EXPECT_STREQ("saved:20 new:10", SimpleInvokeStr(lib, "main"));
 }
 
 
@@ -225,13 +213,12 @@ TEST_CASE(IsolateReload_SuperClassChanged) {
       "var list = [ new A(), new B() ];\n"
       "main() {\n"
       "  return (list.map((x) => '${x is A}/${x is B}')).toString();\n"
-      "}\n"
-      "trampoline() => main();\n";
+      "}\n";
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
 
-  EXPECT_STREQ("(true/false, true/true)", SimpleInvokeStr(lib, "trampoline"));
+  EXPECT_STREQ("(true/false, true/true)", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
       "class B{\n"
@@ -241,13 +228,12 @@ TEST_CASE(IsolateReload_SuperClassChanged) {
       "var list = [ new A(), new B() ];\n"
       "main() {\n"
       "  return (list.map((x) => '${x is A}/${x is B}')).toString();\n"
-      "}\n"
-      "trampoline() => main();\n";
+      "}\n";
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
 
-  EXPECT_STREQ("(true/true, false/true)", SimpleInvokeStr(lib, "trampoline"));
+  EXPECT_STREQ("(true/true, false/true)", SimpleInvokeStr(lib, "main"));
 }
 
 }  // namespace dart
