@@ -180,23 +180,15 @@ bool Class::CanReload(const Class& replacement) {
 #if 0
 // library fields to handle reloading of.
 RawGrowableObjectArray* metadata_;  // Metadata on classes, methods etc.
-RawClass* toplevel_class_;  // Class containing top-level elements.
 RawGrowableObjectArray* patch_classes_;
 RawInstance* load_error_;      // Error iff load_state_ == kLoadError.
-RawArray* resolved_names_;     // Cache of resolved names in library scope.
 
-Dart_NativeEntryResolver native_entry_resolver_;  // Resolves natives.
-Dart_NativeEntrySymbol native_entry_symbol_resolver_;
 classid_t index_;             // Library id number.
-uint16_t num_imports_;        // Number of entries in imports_.
 int8_t load_state_;           // Of type LibraryState.
 bool corelib_imported_;
-bool is_dart_scheme_;
+
 bool debuggable_;             // True if debugger can stop in library.
 bool is_in_fullsnapshot_;     // True if library is in a full snapshot.
-
-apply library mapping to:
-  each namespaces library_ field.
 
 namespace fields:
   RawLibrary* library_;          // library with name dictionary.
@@ -205,14 +197,12 @@ namespace fields:
   RawField* metadata_field_;     // remembers the token pos of metadata if any,
                                  // and the metadata values if computed.
 };
-
 #endif
 
 void Library::Reload(const Library& replacement) {
   // Hollow out the library.
   StorePointer(&raw_ptr()->loaded_scripts_, Array::null());
-  const intptr_t kInitialNameCacheSize = 64;
-  InitResolvedNamesCache(kInitialNameCacheSize);
+  InvalidateResolvedNamesCache();
   InitClassDictionary();
   // Clears imports and exports.
   DropDependencies();
