@@ -62,6 +62,10 @@ void IsolateReloadContext::StartReload() {
 
   CheckpointClassTable();
 
+  // Clear the compile time constants cache.
+  // TODO(turnidge): Can this be moved into Commit?
+  I->object_store()->set_compile_time_constants(Object::null_array());
+
   // Block class finalization attempts when calling into the library
   // tag handler.
   I->BlockClassFinalization();
