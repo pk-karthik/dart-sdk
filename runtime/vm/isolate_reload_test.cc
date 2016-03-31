@@ -171,7 +171,7 @@ TEST_CASE(IsolateReload_ClassAdded) {
 }
 
 
-TEST_CASE(IsolateReload_FieldInitializerChanged) {
+TEST_CASE(IsolateReload_ImplicitConstructorChanged) {
   const char* kScript =
       "class A {\n"
       "  int field = 20;\n"
@@ -190,6 +190,41 @@ TEST_CASE(IsolateReload_FieldInitializerChanged) {
   const char* kReloadScript =
       "class A {\n"
       "  int field = 10;\n"
+      "}\n"
+      "var savedA = new A();\n"
+      "main() {\n"
+      "  var newA = new A();\n"
+      "  return 'saved:${savedA.field} new:${newA.field}';\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("saved:20 new:10", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_ConstructorChanged) {
+  const char* kScript =
+      "class A {\n"
+      "  int field;\n"
+      "  A() { field = 20; }\n"
+      "}\n"
+      "var savedA = new A();\n"
+      "main() {\n"
+      "  var newA = new A();\n"
+      "  return 'saved:${savedA.field} new:${newA.field}';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("saved:20 new:20", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadScript =
+      "class A {\n"
+      "  int field;\n"
+      "  A() { field = 10; }\n"
       "}\n"
       "var savedA = new A();\n"
       "main() {\n"

@@ -32,6 +32,8 @@ void Class::Reload(const Class& replacement) {
   // - id : DONE, because we are copying into existing class
   // - canonical_types : currently assuming all are of type Type.  Is this ok?
   // - super_type: DONE
+  // - constants : DONE, leave these alone.
+  // - allocation_stub : DONE for now.  Revisit later.
   //
   // - mixin : todo
   // - functions_hash_table : todo
@@ -39,9 +41,7 @@ void Class::Reload(const Class& replacement) {
   // - interfaces : todo
   // - type_parameters : todo
   // - signature_function : todo
-  // - constants : todo
   // - invocation_dispatcher_cache : todo
-  // - allocation_stub : todo
   // - direct_subclasses : todo
   // - cha_codes : todo
   // - handle_vtable : todo
@@ -102,6 +102,9 @@ void Class::Reload(const Class& replacement) {
     }
   }
   SetFields(Array::Handle(replacement.fields()));
+
+  // TODO(turnidge): Do we really need to do this here?
+  DisableAllocationStub();
 
   // Replace script
   set_script(Script::Handle(replacement.script()));
