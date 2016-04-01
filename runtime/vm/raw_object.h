@@ -349,6 +349,23 @@ class RawObject {
     return (addr & kNewObjectBits) != kNewObjectBits;
   }
 
+  // NOTE: This overloads 'WatchedBit'.
+  bool IsReplacedObject() const {
+    return WatchedBit::decode(ptr()->tags_);
+  }
+
+  // NOTE: This overloads 'WatchedBit'.
+  void SetIsReplacedObject() const {
+    ASSERT(!IsReplacedObject());
+    uword tags = ptr()->tags_;
+    ptr()->tags_ = WatchedBit::update(true, tags);
+  }
+
+  void ClearIsReplacedObject() const {
+    uword tags = ptr()->tags_;
+    ptr()->tags_ = WatchedBit::update(false, tags);
+  }
+
   // Support for GC marking bit.
   bool IsMarked() const {
     return MarkBit::decode(ptr()->tags_);

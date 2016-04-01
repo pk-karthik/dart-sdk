@@ -71,6 +71,8 @@ class IsolateReloadContext {
 
   void CommitReverseMap();
   void PostCommit();
+  void ClearReplacedObjectBits();
+
   void CheckpointClassTable();
   void CommitClassTable();
   void RollbackClassTable();

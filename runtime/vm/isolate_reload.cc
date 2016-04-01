@@ -116,11 +116,12 @@ class UpdateClassesVisitor : public ObjectPointerVisitor {
       if (!(*p)->IsHeapObject()) {
         continue;
       }
-      key_ = *p;
-      const intptr_t entry = reverse_map.FindKey(key_);
-      if (entry == -1) {
+      if (!(*p)->IsReplacedObject()) {
         continue;
       }
+      key_ = *p;
+      const intptr_t entry = reverse_map.FindKey(key_);
+      ASSERT(entry != -1);
       value_ = reverse_map.GetPayload(entry, 0);
       if (key_.raw() == value_.raw()) {
         continue;
@@ -388,6 +389,7 @@ void IsolateReloadContext::CommitReverseMap() {
   }
 
   {
+    HeapIterationScope heap_iteration_scope;
     Isolate* isolate = thread->isolate();
     UpdateClassesVisitor ucv(isolate);
     // isolate->IterateObjectPointers(&ucv, true);
@@ -489,9 +491,25 @@ void IsolateReloadContext::CommitClassTable() {
 
 
 void IsolateReloadContext::PostCommit() {
+  ClearReplacedObjectBits();
   set_saved_root_library(Library::Handle());
   set_saved_libraries(GrowableObjectArray::Handle());
   InvalidateWorld();
+}
+
+
+void IsolateReloadContext::ClearReplacedObjectBits() {
+  UnorderedHashMap<ReverseMapTraits> reverse_map(reverse_map_storage_);
+  UnorderedHashMap<ReverseMapTraits>::Iterator it(&reverse_map);
+
+  Object& obj = Object::Handle();
+  while (it.MoveNext()) {
+    const intptr_t entry = it.Current();
+    obj = reverse_map.GetKey(entry);
+    obj.raw()->ClearIsReplacedObject();
+  }
+
+  reverse_map.Release();
 }
 
 
@@ -752,6 +770,7 @@ void IsolateReloadContext::BuildClassMapping() {
       UnorderedHashMap<ReverseMapTraits> reverse_map(reverse_map_storage_);
       ASSERT(reverse_map.FindKey(old) == -1);
       reverse_map.UpdateOrInsert(old, replacement_or_new);
+      old.raw()->SetIsReplacedObject();
       reverse_map_storage_ = reverse_map.Release().raw();
     }
   }
@@ -798,6 +817,7 @@ void IsolateReloadContext::BuildLibraryMapping() {
       ASSERT(reverse_map_storage_ != Array::null());
       UnorderedHashMap<ReverseMapTraits> reverse_map(reverse_map_storage_);
       ASSERT(reverse_map.FindKey(old) == -1);
+      old.raw()->SetIsReplacedObject();
       reverse_map.UpdateOrInsert(old, replacement_or_new);
       reverse_map_storage_ = reverse_map.Release().raw();
     }
