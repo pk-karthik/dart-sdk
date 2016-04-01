@@ -329,4 +329,39 @@ TEST_CASE(IsolateReload_SuperClassChanged) {
   EXPECT_STREQ("(true/true, false/true)", SimpleInvokeStr(lib, "main"));
 }
 
+
+TEST_CASE(IsolateReload_LiveStack) {
+  const char* kScript =
+      "import 'dart:developer';\n"
+      "helper() => 7;\n"
+      "alpha() { reloadTest(); return 0 + helper(); }\n"
+      "foo() => alpha();\n"
+      "bar() => foo();\n"
+      "main() {\n"
+      "  return bar();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'dart:developer';\n"
+      "helper() => 100;\n"
+      "alpha() => 5 + helper();\n"
+      "foo() => alpha();\n"
+      "bar() => foo();\n"
+      "main() {\n"
+      "  return bar();\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_EQ(100, SimpleInvoke(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+
+  EXPECT_EQ(105, SimpleInvoke(lib, "main"));
+}
+
 }  // namespace dart

@@ -193,7 +193,7 @@ Dart_Handle TestCase::LoadTestScript(const char* script,
 }
 
 
-Dart_Handle TestCase::ReloadTestScript(const char* script) {
+void TestCase::SetReloadTestScript(const char* script) {
   if (script_reload_key == kUnsetThreadLocalKey) {
     script_reload_key = OSThread::CreateThreadLocal();
   }
@@ -201,6 +201,26 @@ Dart_Handle TestCase::ReloadTestScript(const char* script) {
   ASSERT(OSThread::GetThreadLocal(script_reload_key) == 0);
   // Store the new script in TLS.
   OSThread::SetThreadLocal(script_reload_key, reinterpret_cast<uword>(script));
+}
+
+
+
+Dart_Handle TestCase::GetReloadErrorOrRootLibrary() {
+  Isolate* isolate = Isolate::Current();
+
+  if (isolate->reload_context() != NULL) {
+    // We should only have a reload context hanging around if an error occurred.
+    ASSERT(isolate->reload_context()->has_error());
+    // Return a handle to the error.
+    return Api::NewHandle(Thread::Current(),
+                          isolate->reload_context()->error());
+  }
+  return Dart_RootLibrary();
+}
+
+
+Dart_Handle TestCase::ReloadTestScript(const char* script) {
+  SetReloadTestScript(script);
 
   Isolate* isolate = Isolate::Current();
 
@@ -212,14 +232,7 @@ Dart_Handle TestCase::ReloadTestScript(const char* script) {
   Dart_Handle result = Dart_FinalizeLoading(false);
   DART_CHECK_VALID(result);
 
-  if (isolate->reload_context() != NULL) {
-    // We should only have a reload context hanging around if an error occurred.
-    ASSERT(isolate->reload_context()->has_error());
-    // Return a handle to the error.
-    return Api::NewHandle(Thread::Current(),
-                          isolate->reload_context()->error());
-  }
-  return Dart_RootLibrary();
+  return GetReloadErrorOrRootLibrary();
 }
 
 

@@ -6,6 +6,7 @@
 
 #include "include/dart_api.h"
 
+#include "vm/class_finalizer.h"
 #include "vm/debugger.h"
 #include "vm/exceptions.h"
 #include "vm/flags.h"
@@ -17,6 +18,20 @@
 namespace dart {
 
 // Native implementations for the dart:developer library.
+
+DEFINE_NATIVE_ENTRY(Developer_reloadTest, 0) {
+  {
+    isolate->ReloadSources(/* test_mode = */ true);
+  }
+
+  isolate->DoneLoading();
+
+  ClassFinalizer::ProcessPendingClasses();
+
+  isolate->DoneFinalizing();
+  return Object::null();
+}
+
 
 DEFINE_NATIVE_ENTRY(Developer_debugger, 2) {
   GET_NON_NULL_NATIVE_ARGUMENT(Bool, when, arguments->NativeArgAt(0));
