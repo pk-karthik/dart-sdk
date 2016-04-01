@@ -85,6 +85,32 @@ class LibraryMapTraits {
 };
 
 
+class ReverseMapTraits {
+ public:
+  static bool IsMatch(const Object& a, const Object& b) {
+    if (a.IsLibrary() && b.IsLibrary()) {
+      return IsolateReloadContext::IsSameLibrary(
+          Library::Cast(a), Library::Cast(b));
+    } else if (a.IsClass() && b.IsClass()) {
+      return IsolateReloadContext::IsSameClass(Class::Cast(a), Class::Cast(b));
+    } else {
+      return false;
+    }
+  }
+
+  static uword Hash(const Object& obj) {
+    if (obj.IsLibrary()) {
+      return Library::Cast(obj).UrlHash();
+    } else if (obj.IsClass()) {
+      return String::HashRawSymbol(Class::Cast(obj).Name());
+    } else {
+      UNREACHABLE();
+      return 0;
+    }
+  }
+};
+
+
 IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
     : isolate_(isolate),
       test_mode_(test_mode),
@@ -94,6 +120,7 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       error_(Error::null()),
       class_map_storage_(Array::null()),
       library_map_storage_(Array::null()),
+      reverse_map_storage_(Array::null()),
       saved_root_library_(Library::null()),
       saved_libraries_(GrowableObjectArray::null()) {
 }
@@ -152,6 +179,8 @@ void IsolateReloadContext::StartReload() {
 
 
 void IsolateReloadContext::FinishReload() {
+  reverse_map_storage_ =
+      HashTables::New<UnorderedHashMap<ReverseMapTraits> >(4);
   BuildClassMapping();
   BuildLibraryMapping();
   TIR_Print("---- DONE FINALIZING\n");
@@ -557,6 +586,12 @@ void IsolateReloadContext::BuildClassMapping() {
     } else {
       // Replaced class.
       AddClassMapping(replacement_or_new, old);
+
+      ASSERT(reverse_map_storage_ != Array::null());
+      UnorderedHashMap<ReverseMapTraits> reverse_map(reverse_map_storage_);
+      ASSERT(reverse_map.FindKey(old) == -1);
+      reverse_map.UpdateOrInsert(old, replacement_or_new);
+      reverse_map.Release();
     }
   }
 }
@@ -594,6 +629,12 @@ void IsolateReloadContext::BuildLibraryMapping() {
     } else {
       // Replaced class.
       AddLibraryMapping(replacement_or_new, old);
+
+      ASSERT(reverse_map_storage_ != Array::null());
+      UnorderedHashMap<ReverseMapTraits> reverse_map(reverse_map_storage_);
+      ASSERT(reverse_map.FindKey(old) == -1);
+      reverse_map.UpdateOrInsert(old, replacement_or_new);
+      reverse_map.Release();
     }
   }
 }

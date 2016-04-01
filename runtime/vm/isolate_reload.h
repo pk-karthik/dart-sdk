@@ -103,6 +103,7 @@ class IsolateReloadContext {
   RawError* error_;
   RawArray* class_map_storage_;
   RawArray* library_map_storage_;
+  RawArray* reverse_map_storage_;
   RawLibrary* saved_root_library_;
   RawGrowableObjectArray* saved_libraries_;
   RawObject** to() { return reinterpret_cast<RawObject**>(&saved_libraries_); }
