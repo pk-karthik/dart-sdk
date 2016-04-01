@@ -111,8 +111,6 @@ class UpdateClassesVisitor : public ObjectPointerVisitor {
       return;
     }
     UnorderedHashMap<ReverseMapTraits> reverse_map(reverse_map_storage_.raw());
-
-    TIR_Print("FIRST %p LAST %p\n", first, last);
     for (RawObject** p = first; p <= last; p++) {
       if (!(*p)->IsHeapObject()) {
         continue;
@@ -127,7 +125,6 @@ class UpdateClassesVisitor : public ObjectPointerVisitor {
       if (key_.raw() == value_.raw()) {
         continue;
       }
-      TIR_Print("REPLACED mem[%p] %p -> %p\n", p, *p, value_.raw());
       *p = value_.raw();
       replacement_count_++;
     }

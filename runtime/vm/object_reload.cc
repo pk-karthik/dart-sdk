@@ -185,11 +185,13 @@ bool Class::CanReload(const Class& replacement) {
   // field count check.
   // TODO(johnmccutchan): Check super class sizes and fields as well.
   // TODO(johnmccutchan): Verify that field names and storage offsets match.
+#if 0
   if (NumInstanceFields() != replacement.NumInstanceFields()) {
     IRC->ReportError(String::Handle(String::NewFormatted(
         "Number of instance fields changed in %s", ToCString())));
     return false;
   }
+#endif
 
   // native field count check.
   if (num_native_fields() != replacement.num_native_fields()) {
