@@ -343,6 +343,8 @@ void IsolateReloadContext::CommitReverseMap() {
 
   {
     // Copy static field values from the old classes to the new classes.
+    // Patch fields and functions in the old classes so that they retain
+    // the old script.
     Class& cls = Class::Handle();
     Class& new_cls = Class::Handle();
 
@@ -356,6 +358,7 @@ void IsolateReloadContext::CommitReverseMap() {
         cls = Class::RawCast(class_map.GetPayload(entry, 0));
         if (new_cls.raw() != cls.raw()) {
           new_cls.CopyStaticFieldValues(cls);
+          cls.PatchFieldsAndFunctions();
         }
       }
     }
