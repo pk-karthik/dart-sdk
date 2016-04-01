@@ -165,14 +165,18 @@ bool Class::CanReload(const Class& replacement) {
     }
   }
   // field count check.
-  const Array& original_fields = Array::Handle(fields());
-  const Array& replacement_fields = Array::Handle(replacement.fields());
-  if (original_fields.Length() != replacement_fields.Length()) {
+  // TODO(johnmccutchan): Check super class sizes and fields as well.
+  // TODO(johnmccutchan): Verify that field names and storage offsets match.
+  if (NumInstanceFields() != replacement.NumInstanceFields()) {
+    IRC->ReportError(String::Handle(String::NewFormatted(
+        "Number of instance fields changed in %s", ToCString())));
     return false;
   }
-  // TODO(johnmccutchan): Verify that field names and storage offsets match.
+
   // native field count check.
   if (num_native_fields() != replacement.num_native_fields()) {
+    IRC->ReportError(String::Handle(String::NewFormatted(
+        "Number of native fields changed in %s", ToCString())));
     return false;
   }
   // TODO type parameter count check.
