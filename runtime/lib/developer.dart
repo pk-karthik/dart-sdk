@@ -4,6 +4,8 @@
 
 import 'dart:isolate';
 
+patch void reloadTest() native "Developer_reloadTest";
+
 patch bool debugger({bool when: true,
                      String message}) native "Developer_debugger";
 

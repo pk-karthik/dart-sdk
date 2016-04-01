@@ -287,6 +287,8 @@ class TestCase : TestCaseBase {
                                     const char* lib_uri = USER_TEST_URI,
                                     bool finalize = true);
 
+  static void SetReloadTestScript(const char* script);
+  static Dart_Handle GetReloadErrorOrRootLibrary();
   static Dart_Handle ReloadTestScript(const char* script);
   static Dart_Handle LoadCoreTestScript(const char* script,
                                         Dart_NativeEntryResolver resolver);
