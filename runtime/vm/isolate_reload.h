@@ -46,6 +46,7 @@ class IsolateReloadContext {
   RawGrowableObjectArray* saved_libraries() const;
 
   void ReportError(const Error& error);
+  void ReportError(const String& error_msg);
   void ReportSuccess();
 
   bool has_error() const { return has_error_; }

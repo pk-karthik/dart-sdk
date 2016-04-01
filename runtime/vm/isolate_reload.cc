@@ -142,6 +142,11 @@ void IsolateReloadContext::ReportError(const Error& error) {
 }
 
 
+void IsolateReloadContext::ReportError(const String& error_msg) {
+  ReportError(LanguageError::Handle(LanguageError::New(error_msg)));
+}
+
+
 void IsolateReloadContext::ReportSuccess() {
   ServiceEvent service_event(Isolate::Current(), ServiceEvent::kIsolateReload);
   Service::HandleEvent(&service_event);
