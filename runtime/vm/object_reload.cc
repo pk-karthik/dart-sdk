@@ -11,6 +11,8 @@
 
 namespace dart {
 
+DECLARE_FLAG(bool, trace_reload);
+
 #define IRC (Isolate::Current()->reload_context())
 
 class ObjectReloadUtils : public AllStatic {
@@ -178,25 +180,24 @@ bool Class::CanReload(const Class& replacement) {
 
 
 #if 0
-// library fields to handle reloading of.
-RawGrowableObjectArray* metadata_;  // Metadata on classes, methods etc.
-RawGrowableObjectArray* patch_classes_;
-RawInstance* load_error_;      // Error iff load_state_ == kLoadError.
+Library:
 
-classid_t index_;             // Library id number.
-int8_t load_state_;           // Of type LibraryState.
-bool corelib_imported_;
+COPY RawGrowableObjectArray* metadata_;  // Metadata on classes, methods etc.
+COPY RawGrowableObjectArray* patch_classes_;
 
-bool debuggable_;             // True if debugger can stop in library.
-bool is_in_fullsnapshot_;     // True if library is in a full snapshot.
+?? RawInstance* load_error_;     // Error iff load_state_ == kLoadError.
+?? classid_t index_;             // Library id number.
+?? int8_t load_state_;           // Of type LibraryState.
+?? bool debuggable_;             // True if debugger can stop in library.
+?? bool is_in_fullsnapshot_;     // True if library is in a full snapshot.
 
-namespace fields:
-  RawLibrary* library_;          // library with name dictionary.
-  RawArray* show_names_;         // list of names that are exported.
-  RawArray* hide_names_;         // blacklist of names that are not exported.
-  RawField* metadata_field_;     // remembers the token pos of metadata if any,
-                                 // and the metadata values if computed.
-};
+Namespace:
+
+UPDATE RawLibrary* library_;          // library with name dictionary.
+?? RawArray* show_names_;         // list of names that are exported.
+?? RawArray* hide_names_;         // blacklist of names that are not exported.
+?? RawField* metadata_field_;     // remembers the token pos of metadata if any,
+                                  // and the metadata values if computed.
 #endif
 
 void Library::Reload(const Library& replacement) {
@@ -207,6 +208,8 @@ void Library::Reload(const Library& replacement) {
   // Clears imports and exports.
   DropDependencies();
   InitImportList();
+
+  set_corelib_imported(replacement.corelib_imported());
 
   // Add imports.
   Namespace& ns = Namespace::Handle();
@@ -266,7 +269,7 @@ void ICData::Reset(bool is_static_call) const {
     const Function& old_target = Function::Handle(GetTargetAt(0));
     ASSERT(!old_target.IsNull());
     if (!old_target.is_static()) {
-      OS::Print("Cannot rebind super-call to %s from %s\n",
+      TIR_Print("Cannot rebind super-call to %s from %s\n",
                 old_target.ToCString(),
                 Object::Handle(Owner()).ToCString());
       return;
@@ -276,7 +279,7 @@ void ICData::Reset(bool is_static_call) const {
     const Function& new_target =
         Function::Handle(cls.LookupStaticFunction(selector));
     if (new_target.IsNull()) {
-      OS::Print("Cannot rebind static call to %s from %s\n",
+      TIR_Print("Cannot rebind static call to %s from %s\n",
                 old_target.ToCString(),
                 Object::Handle(Owner()).ToCString());
       return;
