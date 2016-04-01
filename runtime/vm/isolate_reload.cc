@@ -24,7 +24,7 @@ DEFINE_FLAG(bool, trace_reload, true, "Trace isolate reloading");
 #define Z (thread->zone())
 
 
-static bool IsSameClass(const Class& a, const Class& b) {
+bool IsolateReloadContext::IsSameClass(const Class& a, const Class& b) {
   const String& a_name = String::Handle(Class::Cast(a).Name());
   const String& b_name = String::Handle(Class::Cast(b).Name());
 
@@ -50,7 +50,7 @@ class ClassMapTraits {
     if (!a.IsClass() || !b.IsClass()) {
       return false;
     }
-    return IsSameClass(Class::Cast(a), Class::Cast(b));
+    return IsolateReloadContext::IsSameClass(Class::Cast(a), Class::Cast(b));
   }
 
   static uword Hash(const Object& obj) {
@@ -59,7 +59,8 @@ class ClassMapTraits {
 };
 
 
-static bool IsSameLibrary(const Library& a_lib, const Library& b_lib) {
+bool IsolateReloadContext::IsSameLibrary(
+    const Library& a_lib, const Library& b_lib) {
   const String& a_lib_url =
       String::Handle(a_lib.IsNull() ? String::null() : a_lib.url());
   const String& b_lib_url =
@@ -74,7 +75,8 @@ class LibraryMapTraits {
     if (!a.IsLibrary() || !b.IsLibrary()) {
       return false;
     }
-    return IsSameLibrary(Library::Cast(a), Library::Cast(b));
+    return IsolateReloadContext::IsSameLibrary(
+        Library::Cast(a), Library::Cast(b));
   }
 
   static uword Hash(const Object& obj) {

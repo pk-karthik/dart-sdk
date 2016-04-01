@@ -152,15 +152,7 @@ void Class::Reload(const Class& replacement) {
 bool Class::CanReload(const Class& replacement) {
 #if defined(DEBUG)
   {
-    const String& name = String::Handle(Name());
-    const String& new_name = String::Handle(replacement.Name());
-    ASSERT(name.Equals(new_name));
-
-    const Library& lib = Library::Handle(library());
-    const String& url = String::Handle(lib.url());
-    const Library& new_lib = Library::Handle(replacement.library());
-    const String& new_url = String::Handle(new_lib.url());
-    ASSERT(url.Equals(new_url));
+    ASSERT(IsolateReloadContext::IsSameClass(*this, replacement));
   }
 #endif
 
@@ -173,8 +165,17 @@ bool Class::CanReload(const Class& replacement) {
     }
   }
   // field count check.
+  const Array& original_fields = Array::Handle(fields());
+  const Array& replacement_fields = Array::Handle(replacement.fields());
+  if (original_fields.Length() != replacement_fields.Length()) {
+    return false;
+  }
+  // TODO(johnmccutchan): Verify that field names and storage offsets match.
   // native field count check.
-  // type parameter count check.
+  if (num_native_fields() != replacement.num_native_fields()) {
+    return false;
+  }
+  // TODO type parameter count check.
   return true;
 }
 

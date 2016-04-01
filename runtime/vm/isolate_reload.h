@@ -52,6 +52,9 @@ class IsolateReloadContext {
   RawError* error() const { return error_; }
   bool test_mode() const { return test_mode_; }
 
+  static bool IsSameLibrary(const Library& a_lib, const Library& b_lib);
+  static bool IsSameClass(const Class& a, const Class& b);
+
   RawClass* FindOriginalClass(const Class& cls);
 
  private:
