@@ -373,6 +373,96 @@ TEST_CASE(IsolateReload_SuperClassChanged) {
 }
 
 
+TEST_CASE(IsolateReload_ComplexInheritanceChange) {
+  const char* kScript =
+      "class A {\n"
+      "  String name;\n"
+      "  A(this.name);\n"
+      "}\n"
+      "class B extends A {\n"
+      "  B(name) : super(name);\n"
+      "}\n"
+      "class C extends B {\n"
+      "  C(name) : super(name);\n"
+      "}\n"
+      "var list = [ new A('a'), new B('b'), new C('c') ];\n"
+      "main() {\n"
+      "  return (list.map((x) {\n"
+      "    return '${x.name} is A(${x is A})/ B(${x is B})/ C(${x is C})';\n"
+      "  })).toString();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("(a is A(true)/ B(false)/ C(false),"
+               " b is A(true)/ B(true)/ C(false),"
+               " c is A(true)/ B(true)/ C(true))",
+               SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadScript =
+      "class C {\n"
+      "  String name;\n"
+      "  C(this.name);\n"
+      "}\n"
+      "class X extends C {\n"
+      "  X(name) : super(name);\n"
+      "}\n"
+      "class A extends X {\n"
+      "  A(name) : super(name);\n"
+      "}\n"
+      "var list;\n"
+      "main() {\n"
+      "  list.add(new X('x'));\n"
+      "  return (list.map((x) {\n"
+      "    return '${x.name} is A(${x is A})/ C(${x is C})/ X(${x is X})';\n"
+      "  })).toString();\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("(a is A(true)/ C(true)/ X(true),"
+               " b is A(true)/ C(true)/ X(true),"  // still extends A...
+               " c is A(false)/ C(true)/ X(false),"
+               " x is A(false)/ C(true)/ X(true))",
+               SimpleInvokeStr(lib, "main"));
+
+  // Revive the class B and make sure all allocated instances take
+  // their place in the inheritance hierarchy.
+  const char* kReloadScript2 =
+      "class X {\n"
+      "  String name;\n"
+      "  X(this.name);\n"
+      "}\n"
+      "class A extends X{\n"
+      "  A(name) : super(name);\n"
+      "}\n"
+      "class B extends X {\n"
+      "  B(name) : super(name);\n"
+      "}\n"
+      "class C extends A {\n"
+      "  C(name) : super(name);\n"
+      "}\n"
+      "var list;\n"
+      "main() {\n"
+      "  return (list.map((x) {\n"
+      "    return '${x.name} is '\n"
+      "           'A(${x is A})/ B(${x is B})/ C(${x is C})/ X(${x is X})';\n"
+      "  })).toString();\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript2);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("(a is A(true)/ B(false)/ C(false)/ X(true),"
+               " b is A(false)/ B(true)/ C(false)/ X(true),"
+               " c is A(true)/ B(false)/ C(true)/ X(true),"
+               " x is A(false)/ B(false)/ C(false)/ X(true))",
+               SimpleInvokeStr(lib, "main"));
+}
+
+
 TEST_CASE(IsolateReload_LiveStack) {
   const char* kScript =
       "import 'dart:developer';\n"
