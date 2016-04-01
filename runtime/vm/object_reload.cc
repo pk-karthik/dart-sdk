@@ -35,6 +35,36 @@ void Function::Reparent(const Class& new_cls) const {
 }
 
 
+void Class::CopyStaticFieldValues(const Class& old_cls) {
+  Field& old_field = Field::Handle();
+  Array& old_field_list = Array::Handle(old_cls.fields());
+
+  Array& field_list = Array::Handle(fields());
+  field_list = fields();
+  String& name = String::Handle();
+  Field& field = Field::Handle();
+  String& old_name = String::Handle();
+  Instance& value = Instance::Handle();
+  for (intptr_t i = 0; i < field_list.Length(); i++) {
+    field = Field::RawCast(field_list.At(i));
+    name = field.name();
+    if (field.is_static()) {
+      // Find the corresponding old field, if it exists, and migrate
+      // over the field value.
+      for (intptr_t j = 0; j < old_field_list.Length(); j++) {
+        old_field = Field::RawCast(old_field_list.At(j));
+        old_name = old_field.name();
+        if (name.Equals(old_name)) {
+          value = old_field.StaticValue();
+          field.SetStaticValue(value);
+        }
+      }
+    }
+  }
+
+}
+
+
 void Class::Reload(const Class& replacement) {
   // TODO(turnidge): This method is incomplete.
   //
