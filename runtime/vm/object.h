@@ -3573,6 +3573,10 @@ class Library : public Object {
 
   void DropDependencies() const;
 
+  bool corelib_imported() const { return raw_ptr()->corelib_imported_; }
+  void set_corelib_imported(bool corelib_imported) {
+    StoreNonPointer(&raw_ptr()->corelib_imported_, corelib_imported);
+  }
   // Resolving native methods for script loaded in the library.
   Dart_NativeEntryResolver native_entry_resolver() const {
     return raw_ptr()->native_entry_resolver_;
