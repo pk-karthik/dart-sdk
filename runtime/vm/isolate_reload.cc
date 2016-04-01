@@ -112,6 +112,7 @@ class UpdateClassesVisitor : public ObjectPointerVisitor {
     }
     UnorderedHashMap<ReverseMapTraits> reverse_map(reverse_map_storage_.raw());
 
+    TIR_Print("FIRST %p LAST %p\n", first, last);
     for (RawObject** p = first; p <= last; p++) {
       if (!(*p)->IsHeapObject()) {
         continue;
@@ -126,7 +127,7 @@ class UpdateClassesVisitor : public ObjectPointerVisitor {
       if (key_.raw() == value_.raw()) {
         continue;
       }
-      TIR_Print("REPLACED %p with %p\n", *p, value_.raw());
+      TIR_Print("REPLACED mem[%p] %p -> %p\n", p, *p, value_.raw());
       *p = value_.raw();
       replacement_count_++;
     }
@@ -394,7 +395,9 @@ void IsolateReloadContext::CommitReverseMap() {
     UpdateClassesVisitor ucv(isolate);
     // isolate->IterateObjectPointers(&ucv, true);
     TIR_Print("---- Scanning heap\n");
+    isolate->heap()->WriteProtectCode(false);
     isolate->heap()->VisitObjectPointers(&ucv);
+    isolate->heap()->WriteProtectCode(true);
     TIR_Print("---- Scanning object store\n");
     isolate->object_store()->VisitObjectPointers(&ucv);
     TIR_Print("---- Scanning stub code\n");
