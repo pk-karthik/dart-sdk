@@ -409,7 +409,7 @@ TEST_CASE(IsolateReload_MixinChanged) {
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
 
-  // The saved instance of B retains its old field value from mixin2,
+  // The saved instance of B retains its old field value from mixin1,
   // but it gets the new implementation of func from mixin2.
   EXPECT_STREQ("saved:field=mixin1,func=mixin2 "
                "newer:field=mixin2,func=mixin2",
