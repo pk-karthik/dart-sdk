@@ -159,6 +159,9 @@ class UpdateClassesVisitor : public ObjectPointerVisitor {
 
 
 bool IsolateReloadContext::IsSameClass(const Class& a, const Class& b) {
+  // TODO(turnidge): We need to look at generic type arguments for
+  // synthetic mixin classes.  Their names are not necessarily unique
+  // currently.
   const String& a_name = String::Handle(Class::Cast(a).Name());
   const String& b_name = String::Handle(Class::Cast(b).Name());
 

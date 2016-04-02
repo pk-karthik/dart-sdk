@@ -373,6 +373,50 @@ TEST_CASE(IsolateReload_SuperClassChanged) {
 }
 
 
+TEST_CASE(IsolateReload_MixinChanged) {
+  const char* kScript =
+      "class Mixin1 {\n"
+      "  var field = 'mixin1';\n"
+      "  func() => 'mixin1';\n"
+      "}\n"
+      "class B extends Object with Mixin1 {\n"
+      "}\n"
+      "var saved = new B();\n"
+      "main() {\n"
+      "  return 'saved:field=${saved.field},func=${saved.func()}';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("saved:field=mixin1,func=mixin1",
+               SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadScript =
+      "class Mixin2 {\n"
+      "  var field = 'mixin2';\n"
+      "  func() => 'mixin2';\n"
+      "}\n"
+      "class B extends Object with Mixin2 {\n"
+      "}\n"
+      "var saved = new B();\n"
+      "main() {\n"
+      "  var newer = new B();\n"
+      "  return 'saved:field=${saved.field},func=${saved.func()} '\n"
+      "         'newer:field=${newer.field},func=${newer.func()}';\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  // The saved instance of B retains its old field value from mixin2,
+  // but it gets the new implementation of func from mixin2.
+  EXPECT_STREQ("saved:field=mixin1,func=mixin2 "
+               "newer:field=mixin2,func=mixin2",
+               SimpleInvokeStr(lib, "main"));
+}
+
+
 TEST_CASE(IsolateReload_ComplexInheritanceChange) {
   const char* kScript =
       "class A {\n"
