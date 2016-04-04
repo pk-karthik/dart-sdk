@@ -511,7 +511,7 @@ TEST_CASE(IsolateReload_LiveStack) {
   const char* kScript =
       "import 'dart:developer';\n"
       "helper() => 7;\n"
-      "alpha() { reloadTest(); return 0 + helper(); }\n"
+      "alpha() { var x = helper(); reloadTest(); return x + helper(); }\n"
       "foo() => alpha();\n"
       "bar() => foo();\n"
       "main() {\n"
@@ -533,7 +533,7 @@ TEST_CASE(IsolateReload_LiveStack) {
 
   TestCase::SetReloadTestScript(kReloadScript);
 
-  EXPECT_EQ(100, SimpleInvoke(lib, "main"));
+  EXPECT_EQ(107, SimpleInvoke(lib, "main"));
 
   lib = TestCase::GetReloadErrorOrRootLibrary();
   EXPECT_VALID(lib);

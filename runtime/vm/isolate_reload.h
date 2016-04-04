@@ -69,14 +69,21 @@ class IsolateReloadContext {
   Isolate* isolate() { return isolate_; }
   ObjectStore* object_store();
 
+  void CheckpointClasses();
+  void CheckpointLibraries();
+  void CheckpointBeforeReload();
+
+  bool ValidateReload();
+
+  void Rollback();
+
   void CommitReverseMap();
-  void PostCommit();
   void ClearReplacedObjectBits();
 
-  void CheckpointClassTable();
+
   void CommitClassTable();
-  void RollbackClassTable();
-  bool ValidateReload();
+
+  void PostCommit();
 
   // atomic_install:
   void MarkAllFunctionsForRecompilation();
