@@ -105,14 +105,7 @@ static Dart_Handle IsolateReloadTestLibSource() {
 
 
 static void ReloadTest(Dart_NativeArguments native_args) {
-  Isolate* isolate = Isolate::Current();
-  {
-    TransitionNativeToVM transition(Thread::Current());
-    isolate->ReloadSources(/* test_mode = */ true);
-  }
-
-  Dart_Handle result = Dart_FinalizeLoading(false);
-  DART_CHECK_VALID(result);
+  TestCase::TriggerReload();
 }
 
 
@@ -271,6 +264,18 @@ void TestCase::SetReloadTestScript(const char* script) {
 }
 
 
+void TestCase::TriggerReload() {
+  Isolate* isolate = Isolate::Current();
+
+  {
+    TransitionNativeToVM transition(Thread::Current());
+    isolate->ReloadSources(/* test_mode = */ true);
+  }
+
+  Dart_Handle result = Dart_FinalizeLoading(false);
+  DART_CHECK_VALID(result);
+}
+
 
 Dart_Handle TestCase::GetReloadErrorOrRootLibrary() {
   Isolate* isolate = Isolate::Current();
@@ -289,15 +294,7 @@ Dart_Handle TestCase::GetReloadErrorOrRootLibrary() {
 Dart_Handle TestCase::ReloadTestScript(const char* script) {
   SetReloadTestScript(script);
 
-  Isolate* isolate = Isolate::Current();
-
-  {
-    TransitionNativeToVM transition(Thread::Current());
-    isolate->ReloadSources(/* test_mode = */ true);
-  }
-
-  Dart_Handle result = Dart_FinalizeLoading(false);
-  DART_CHECK_VALID(result);
+  TriggerReload();
 
   return GetReloadErrorOrRootLibrary();
 }
