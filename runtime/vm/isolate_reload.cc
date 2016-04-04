@@ -234,14 +234,12 @@ void IsolateReloadContext::ReportSuccess() {
 
 void IsolateReloadContext::StartReload() {
   Thread* thread = Thread::Current();
+
+  // Grab root library before calling CheckpointBeforeReload.
   const Library& root_lib = Library::Handle(object_store()->root_library());
   const String& root_lib_url = String::Handle(root_lib.url());
 
-  CheckpointClassTable();
-
-  // Clear the compile time constants cache.
-  // TODO(turnidge): Can this be moved into Commit?
-  I->object_store()->set_compile_time_constants(Object::null_array());
+  CheckpointBeforeReload();
 
   // Block class finalization attempts when calling into the library
   // tag handler.
@@ -250,6 +248,7 @@ void IsolateReloadContext::StartReload() {
   {
     TransitionVMToNative transition(thread);
     Api::Scope api_scope(thread);
+
     Dart_Handle retval =
         (I->library_tag_handler())(Dart_kScriptTag,
                                 Api::NewHandle(thread, Library::null()),
@@ -279,17 +278,19 @@ void IsolateReloadContext::FinishReload() {
     }
     PostCommit();
   } else {
-    RollbackClassTable();
+    Rollback();
   }
 }
 
 
-void IsolateReloadContext::CheckpointClassTable() {
-  TIR_Print("---- CHECKPOINTING CLASS TABLE\n");
+void IsolateReloadContext::CheckpointClasses() {
+  TIR_Print("---- CHECKPOINTING CLASSES\n");
   I->class_table()->PrintNonDartClasses();
-
   saved_num_cids_ = I->class_table()->NumCids();
+}
 
+
+void IsolateReloadContext::CheckpointLibraries() {
   // Build a new libraries array which only has the dart-scheme libs.
   const GrowableObjectArray& libs =
       GrowableObjectArray::Handle(object_store()->libraries());
@@ -315,25 +316,36 @@ void IsolateReloadContext::CheckpointClassTable() {
 }
 
 
-void IsolateReloadContext::RollbackClassTable() {
+void IsolateReloadContext::CheckpointBeforeReload() {
+  CheckpointClasses();
+  CheckpointLibraries();
+  // Clear the compile time constants cache.
+  // TODO(turnidge): Can this be moved into Commit?
+  I->object_store()->set_compile_time_constants(Object::null_array());
+}
+
+
+void IsolateReloadContext::Rollback() {
   TIR_Print("---- ROLLING BACK CLASS TABLE\n");
   Thread* thread = Thread::Current();
   ASSERT(saved_num_cids_ > 0);
   I->class_table()->DropNewClasses(saved_num_cids_);
   I->class_table()->PrintNonDartClasses();
 
+  TIR_Print("---- ROLLING BACK LIBRARY CHANGES\n");
   GrowableObjectArray& saved_libs = GrowableObjectArray::Handle(
       Z, saved_libraries());
   if (!saved_libs.IsNull()) {
     object_store()->set_libraries(saved_libs);
   }
-  set_saved_libraries(GrowableObjectArray::Handle());
 
   Library& saved_root_lib = Library::Handle(Z, saved_root_library());
   if (!saved_root_lib.IsNull()) {
     object_store()->set_root_library(saved_root_lib);
   }
+
   set_saved_root_library(Library::Handle());
+  set_saved_libraries(GrowableObjectArray::Handle());
 }
 
 
@@ -390,6 +402,18 @@ void IsolateReloadContext::CommitReverseMap() {
     }
 
     class_map.Release();
+  }
+
+  {
+    // Update the libraries array.
+    Library& lib = Library::Handle();
+    const GrowableObjectArray& libs = GrowableObjectArray::Handle(
+        I->object_store()->libraries());
+    for (intptr_t i = 0; i < libs.Length(); i++) {
+      lib = Library::RawCast(libs.At(i));
+      TIR_Print("Lib '%s' at index %" Pd "\n", lib.ToCString(), i);
+      lib.set_index(i);
+    }
   }
 
   {
