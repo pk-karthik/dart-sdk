@@ -182,16 +182,63 @@ bool Class::CanReload(const Class& replacement) {
       return false;
     }
   }
-  // field count check.
-  // TODO(johnmccutchan): Check super class sizes and fields as well.
-  // TODO(johnmccutchan): Verify that field names and storage offsets match.
-#if 0
-  if (NumInstanceFields() != replacement.NumInstanceFields()) {
-    IRC->ReportError(String::Handle(String::NewFormatted(
-        "Number of instance fields changed in %s", ToCString())));
-    return false;
+
+  if (is_finalized()) {
+    // Get the field maps for both classes. These field maps walk the class
+    // hierarchy.
+    const Array& fields =
+        Array::Handle(OffsetToFieldMap());
+    const Array& replacement_fields =
+        Array::Handle(replacement.OffsetToFieldMap());
+
+    // Check that we have the same number of fields.
+    if (fields.Length() != replacement_fields.Length()) {
+      IRC->ReportError(String::Handle(String::NewFormatted(
+          "Number of instance fields changed in %s", ToCString())));
+      return false;
+    }
+
+    // Verify that field names / offsets match across the entire hierarchy.
+    Field& field = Field::Handle();
+    String& field_name = String::Handle();
+    Field& replacement_field = Field::Handle();
+    String& replacement_field_name = String::Handle();
+    for (intptr_t i = 0; i < fields.Length(); i++) {
+      if (fields.At(i) == Field::null()) {
+        ASSERT(replacement_fields.At(i) == Field::null());
+        continue;
+      }
+      field = Field::RawCast(fields.At(i));
+      replacement_field = Field::RawCast(replacement_fields.At(i));
+      field_name = field.name();
+      replacement_field_name = replacement_field.name();
+      if (!field_name.Equals(replacement_field_name)) {
+        IRC->ReportError(String::Handle(String::NewFormatted(
+            "Name of instance field changed ('%s' vs '%s') in '%s'",
+            field_name.ToCString(),
+            replacement_field_name.ToCString(),
+            ToCString())));
+        return false;
+      }
+    }
+  } else if (is_prefinalized()) {
+    if (!replacement.is_prefinalized()) {
+      IRC->ReportError(String::Handle(String::NewFormatted(
+          "Original class ('%s') is prefinalized and replacement class ('%s')",
+          ToCString(), replacement.ToCString())));
+      return false;
+    }
+    if (instance_size() != replacement.instance_size()) {
+     IRC->ReportError(String::Handle(String::NewFormatted(
+         "Instance size mismatch between '%s' (%" Pd ") and replacement "
+         "'%s' ( %" Pd ")",
+         ToCString(),
+         instance_size(),
+         replacement.ToCString(),
+         replacement.instance_size())));
+     return false;
+    }
   }
-#endif
 
   // native field count check.
   if (num_native_fields() != replacement.num_native_fields()) {
