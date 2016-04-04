@@ -509,7 +509,7 @@ TEST_CASE(IsolateReload_ComplexInheritanceChange) {
 
 TEST_CASE(IsolateReload_LiveStack) {
   const char* kScript =
-      "import 'dart:developer';\n"
+      "import 'isolate_reload_test_helper';\n"
       "helper() => 7;\n"
       "alpha() { var x = helper(); reloadTest(); return x + helper(); }\n"
       "foo() => alpha();\n"
@@ -522,7 +522,7 @@ TEST_CASE(IsolateReload_LiveStack) {
   EXPECT_VALID(lib);
 
   const char* kReloadScript =
-      "import 'dart:developer';\n"
+      "import 'isolate_reload_test_helper';\n"
       "helper() => 100;\n"
       "alpha() => 5 + helper();\n"
       "foo() => alpha();\n"

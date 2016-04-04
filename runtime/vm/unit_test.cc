@@ -67,10 +67,12 @@ Dart_Isolate TestCase::CreateIsolate(const uint8_t* buffer, const char* name) {
 
 static const char* kPackageScheme = "package:";
 
+
 static bool IsPackageSchemeURL(const char* url_name) {
   static const intptr_t kPackageSchemeLen = strlen(kPackageScheme);
   return (strncmp(url_name, kPackageScheme, kPackageSchemeLen) == 0);
 }
+
 
 static bool IsImportableTestLib(const char* url_name) {
   const char* kImportTestLibUri = "importable_test_lib";
@@ -78,11 +80,49 @@ static bool IsImportableTestLib(const char* url_name) {
   return (strncmp(url_name, kImportTestLibUri, kImportTestLibUriLen) == 0);
 }
 
+
 static Dart_Handle ImportableTestLibSource() {
   return DartUtils::NewString(
     "importedFunc() => 'a';\n"
     "importedIntFunc() => 4;\n");
 }
+
+
+static bool IsIsolateReloadTestLib(const char* url_name) {
+  const char* kIsolateReloadTestLibUri = "isolate_reload_test_helper";
+  static const intptr_t kIsolateReloadTestLibUriLen =
+      strlen(kIsolateReloadTestLibUri);
+  return (strncmp(url_name,
+                  kIsolateReloadTestLibUri,
+                  kIsolateReloadTestLibUriLen) == 0);
+}
+
+
+static Dart_Handle IsolateReloadTestLibSource() {
+  // Special library with one function.
+  return DartUtils::NewString("void reloadTest() native 'Reload_Test';\n");
+}
+
+
+static void ReloadTest(Dart_NativeArguments native_args) {
+  Isolate* isolate = Isolate::Current();
+  {
+    TransitionNativeToVM transition(Thread::Current());
+    isolate->ReloadSources(/* test_mode = */ true);
+  }
+
+  Dart_Handle result = Dart_FinalizeLoading(false);
+  DART_CHECK_VALID(result);
+}
+
+
+static Dart_NativeFunction IsolateReloadTestNativeResolver(
+    Dart_Handle name,
+    int num_of_arguments,
+    bool* auto_setup_scope) {
+  return ReloadTest;
+}
+
 
 static Dart_Handle ResolvePackageUri(const char* uri_chars) {
   const int kNumArgs = 1;
@@ -93,6 +133,7 @@ static Dart_Handle ResolvePackageUri(const char* uri_chars) {
                      kNumArgs,
                      dart_args);
 }
+
 
 static ThreadLocalKey script_reload_key = kUnsetThreadLocalKey;
 
@@ -134,7 +175,7 @@ static Dart_Handle LibraryTagHandler(Dart_LibraryTag tag,
   bool is_io_library = DartUtils::IsDartIOLibURL(library_url_string);
   if (tag == Dart_kCanonicalizeUrl) {
     // Already canonicalized.
-    if (IsImportableTestLib(url_chars)) {
+    if (IsImportableTestLib(url_chars) || IsIsolateReloadTestLib(url_chars)) {
       return url;
     }
     // If this is a Dart Scheme URL then it is not modified as it will be
@@ -162,6 +203,13 @@ static Dart_Handle LibraryTagHandler(Dart_LibraryTag tag,
   }
   if (IsImportableTestLib(url_chars)) {
     return Dart_LoadLibrary(url, ImportableTestLibSource(), 0, 0);
+  }
+  if (IsIsolateReloadTestLib(url_chars)) {
+    Dart_Handle library =
+        Dart_LoadLibrary(url, IsolateReloadTestLibSource(), 0, 0);
+    DART_CHECK_VALID(library);
+    Dart_SetNativeResolver(library, IsolateReloadTestNativeResolver, 0);
+    return library;
   }
   if (is_io_library) {
     ASSERT(tag == Dart_kSourceTag);

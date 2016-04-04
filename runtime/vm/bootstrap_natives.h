@@ -68,7 +68,6 @@ namespace dart {
   V(Bigint_getUsed, 1)                                                         \
   V(Bigint_getDigits, 1)                                                       \
   V(Bigint_allocate, 4)                                                        \
-  V(Developer_reloadTest, 0)                                                   \
   V(Developer_debugger, 2)                                                     \
   V(Developer_inspect, 1)                                                      \
   V(Developer_lookupExtension, 1)                                              \
