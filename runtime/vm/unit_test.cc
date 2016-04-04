@@ -72,6 +72,18 @@ static bool IsPackageSchemeURL(const char* url_name) {
   return (strncmp(url_name, kPackageScheme, kPackageSchemeLen) == 0);
 }
 
+static bool IsImportableTestLib(const char* url_name) {
+  const char* kImportTestLibUri = "importable_test_lib";
+  static const intptr_t kImportTestLibUriLen = strlen(kImportTestLibUri);
+  return (strncmp(url_name, kImportTestLibUri, kImportTestLibUriLen) == 0);
+}
+
+static Dart_Handle ImportableTestLibSource() {
+  return DartUtils::NewString(
+    "importedFunc() => 'a';\n"
+    "importedIntFunc() => 4;\n");
+}
+
 static Dart_Handle ResolvePackageUri(const char* uri_chars) {
   const int kNumArgs = 1;
   Dart_Handle dart_args[kNumArgs];
@@ -121,6 +133,10 @@ static Dart_Handle LibraryTagHandler(Dart_LibraryTag tag,
   bool is_dart_scheme_url = DartUtils::IsDartSchemeURL(url_chars);
   bool is_io_library = DartUtils::IsDartIOLibURL(library_url_string);
   if (tag == Dart_kCanonicalizeUrl) {
+    // Already canonicalized.
+    if (IsImportableTestLib(url_chars)) {
+      return url;
+    }
     // If this is a Dart Scheme URL then it is not modified as it will be
     // handled by the VM internally.
     if (is_dart_scheme_url || is_io_library) {
@@ -143,6 +159,9 @@ static Dart_Handle LibraryTagHandler(Dart_LibraryTag tag,
     } else {
       return DartUtils::NewError("Do not know how to load '%s'", url_chars);
     }
+  }
+  if (IsImportableTestLib(url_chars)) {
+    return Dart_LoadLibrary(url, ImportableTestLibSource(), 0, 0);
   }
   if (is_io_library) {
     ASSERT(tag == Dart_kSourceTag);
