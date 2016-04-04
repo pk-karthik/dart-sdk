@@ -541,4 +541,119 @@ TEST_CASE(IsolateReload_LiveStack) {
   EXPECT_EQ(105, SimpleInvoke(lib, "main"));
 }
 
+
+TEST_CASE(IsolateReload_LibraryLookup) {
+  const char* kScript =
+      "main() {\n"
+      "  return importedFunc();\n"
+      "}\n";
+
+  Dart_Handle result;
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_ERROR(SimpleInvokeError(lib, "main"), "importedFunc");
+
+  // Fail to find 'importable_test_lib' in the isolate.
+  result = Dart_LookupLibrary(NewString("importable_test_lib"));
+  EXPECT(Dart_IsError(result));
+
+  const char* kReloadScript =
+      "import 'importable_test_lib';\n"
+      "main() {\n"
+      "  return importedFunc();\n"
+      "}\n";
+
+  // Reload and add 'importable_test_lib' to isolate.
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("a", SimpleInvokeStr(lib, "main"));
+
+  // Find 'importable_test_lib' in the isolate.
+  result = Dart_LookupLibrary(NewString("importable_test_lib"));
+  EXPECT(Dart_IsLibrary(result));
+
+  // Reload and remove 'dart:math' from isolate.
+  lib = TestCase::ReloadTestScript(kScript);
+  EXPECT_VALID(lib);
+
+  // Fail to find 'importable_test_lib' in the isolate.
+  result = Dart_LookupLibrary(NewString("importable_test_lib"));
+  EXPECT(Dart_IsError(result));
+}
+
+
+TEST_CASE(IsolateReload_LibraryHide) {
+  // Import 'importable_test_lib' with importedFunc hidden. Will result in an
+  // error.
+  const char* kScript =
+      "import 'importable_test_lib' hide importedFunc;\n"
+      "main() {\n"
+      "  return importedFunc();\n"
+      "}\n";
+
+  // Dart_Handle result;
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_ERROR(SimpleInvokeError(lib, "main"), "importedFunc");
+
+  // Import 'importable_test_lib'.
+  const char* kReloadScript =
+      "import 'importable_test_lib';\n"
+      "main() {\n"
+      "  return importedFunc();\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("a", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_LibraryShow) {
+  // Import 'importable_test_lib' with importedIntFunc visible. Will result in
+  // an error when 'main' is invoked.
+  const char* kScript =
+      "import 'importable_test_lib' show importedIntFunc;\n"
+      "main() {\n"
+      "  return importedFunc();\n"
+      "}\n"
+      "mainInt() {\n"
+      "  return importedIntFunc();\n"
+      "}\n";
+
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  // Works.
+  EXPECT_EQ(4, SimpleInvoke(lib, "mainInt"));
+  // Results in an error.
+  EXPECT_ERROR(SimpleInvokeError(lib, "main"), "importedFunc");
+
+  // Import 'importable_test_lib' with importedFunc visible. Will result in
+  // an error when 'mainInt' is invoked.
+  const char* kReloadScript =
+      "import 'importable_test_lib' show importedFunc;\n"
+      "main() {\n"
+      "  return importedFunc();\n"
+      "}\n"
+      "mainInt() {\n"
+      "  return importedIntFunc();\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  // Works.
+  EXPECT_STREQ("a", SimpleInvokeStr(lib, "main"));
+  // Results in an error.
+  EXPECT_ERROR(SimpleInvokeError(lib, "mainInt"), "importedIntFunc");
+}
+
 }  // namespace dart
