@@ -682,6 +682,8 @@ class MarkFunctionsForRecompilation : public ObjectVisitor {
   explicit MarkFunctionsForRecompilation(Isolate* isolate)
     : ObjectVisitor(isolate),
       handle_(Object::Handle()),
+      owning_class_(Class::Handle()),
+      owning_lib_(Library::Handle()),
       code_(Code::Handle()) {
   }
 
@@ -693,6 +695,10 @@ class MarkFunctionsForRecompilation : public ObjectVisitor {
     handle_ = obj;
     if (handle_.IsFunction()) {
       const Function& func = Function::Cast(handle_);
+
+      if (IsDartSchemeFunction(func)) {
+        // TODO(johnmccutchan): Determine how to keep dart: code alive.
+      }
 
       // Replace the instructions of most functions with the compilation stub so
       // unqualified invocations will be recompiled to the correct kind. But
@@ -713,7 +719,16 @@ class MarkFunctionsForRecompilation : public ObjectVisitor {
   }
 
  private:
+  bool IsDartSchemeFunction(const Function& func) {
+    ASSERT(!func.IsNull());
+    owning_class_ = func.Owner();
+    owning_lib_ = owning_class_.library();
+    return owning_lib_.is_dart_scheme();
+  }
+
   Object& handle_;
+  Class& owning_class_;
+  Library& owning_lib_;
   Code& code_;
 };
 
