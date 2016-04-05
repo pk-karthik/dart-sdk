@@ -243,7 +243,7 @@ void IsolateReloadContext::StartReload() {
   // Switch all functions on the stack to compiled, unoptimized code.
   SwitchStackToUnoptimizedCode();
 
-  CheckpointBeforeReload();
+  Checkpoint();
 
   // Block class finalization attempts when calling into the library
   // tag handler.
@@ -275,11 +275,7 @@ void IsolateReloadContext::FinishReload() {
   I->class_table()->PrintNonDartClasses();
 
   if (ValidateReload()) {
-    if (true) {
-      CommitReverseMap();
-    } else {
-      CommitClassTable();
-    }
+    Commit();
     PostCommit();
   } else {
     Rollback();
@@ -341,7 +337,7 @@ void IsolateReloadContext::CheckpointLibraries() {
 }
 
 
-void IsolateReloadContext::CheckpointBeforeReload() {
+void IsolateReloadContext::Checkpoint() {
   CheckpointClasses();
   CheckpointLibraries();
   // Clear the compile time constants cache.
@@ -390,7 +386,7 @@ void IsolateReloadContext::Rollback() {
 }
 
 
-void IsolateReloadContext::CommitReverseMap() {
+void IsolateReloadContext::Commit() {
   Thread* thread = Thread::Current();
   TIR_Print("---- COMMITTING REVERSE MAP\n");
 
@@ -519,89 +515,6 @@ bool IsolateReloadContext::IsDirty(const Library& lib) {
   }
   ASSERT((index >= 0) && (index < library_infos_.length()));
   return library_infos_[index].dirty;
-}
-
-
-void IsolateReloadContext::CommitClassTable() {
-  Thread* thread = Thread::Current();
-  TIR_Print("---- COMMITTING CLASS TABLE\n");
-
-  {
-    Class& cls = Class::Handle();
-    Class& new_cls = Class::Handle();
-
-    UnorderedHashMap<ClassMapTraits> class_map(class_map_storage_);
-
-    {
-      // Reload existing classes.
-      UnorderedHashMap<ClassMapTraits>::Iterator it(&class_map);
-      while (it.MoveNext()) {
-        const intptr_t entry = it.Current();
-        new_cls = Class::RawCast(class_map.GetKey(entry));
-        cls = Class::RawCast(class_map.GetPayload(entry, 0));
-        if (new_cls.raw() != cls.raw()) {
-          cls.Reload(new_cls);
-        }
-      }
-    }
-
-    {
-      // Remove unneeded classes from the class table.
-      UnorderedHashMap<ClassMapTraits>::Iterator it(&class_map);
-      while (it.MoveNext()) {
-        const intptr_t entry = it.Current();
-        ASSERT(entry != -1);
-        new_cls = Class::RawCast(class_map.GetKey(entry));
-        cls = Class::RawCast(class_map.GetPayload(entry, 0));
-        if (new_cls.raw() != cls.raw()) {
-          I->class_table()->ClearClassAt(new_cls.id());
-        }
-      }
-    }
-
-    // Release the class map.
-    class_map.Release();
-  }
-
-
-  {
-    Library& lib = Library::Handle();
-    Library& new_lib = Library::Handle();
-
-    UnorderedHashMap<LibraryMapTraits> lib_map(library_map_storage_);
-
-    {
-      // Reload existing libraries.
-      UnorderedHashMap<LibraryMapTraits>::Iterator it(&lib_map);
-
-      while (it.MoveNext()) {
-        const intptr_t entry = it.Current();
-        ASSERT(entry != -1);
-        new_lib = Library::RawCast(lib_map.GetKey(entry));
-        lib = Library::RawCast(lib_map.GetPayload(entry, 0));
-        if (new_lib.raw() != lib.raw()) {
-          lib.Reload(new_lib);
-        }
-      }
-    }
-
-    // Release the library map.
-    lib_map.Release();
-  }
-
-  I->class_table()->CompactNewClasses(saved_num_cids_);
-
-  // NO TWO.
-  GrowableObjectArray& libs = GrowableObjectArray::Handle(
-      Z, saved_libraries());
-  if (!libs.IsNull()) {
-    object_store()->set_libraries(libs);
-  }
-
-  Library& saved_root_lib = Library::Handle(Z, saved_root_library());
-  if (!saved_root_lib.IsNull()) {
-    object_store()->set_root_library(saved_root_lib);
-  }
 }
 
 

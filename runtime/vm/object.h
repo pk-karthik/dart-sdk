@@ -1382,7 +1382,6 @@ class Class : public Object {
 
   void CopyStaticFieldValues(const Class& old_cls) const;
   void PatchFieldsAndFunctions() const;
-  void Reload(const Class& replacement);
   bool CanReload(const Class& replacement);
 
  private:
@@ -3685,7 +3684,6 @@ class Library : public Object {
   // the library-specific key.
   static const char kPrivateKeySeparator = '@';
 
-  void Reload(const Library& replacement);
   bool CanReload(const Library& replacement);
 
  private:

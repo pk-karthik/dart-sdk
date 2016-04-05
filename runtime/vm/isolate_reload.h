@@ -73,23 +73,23 @@ class IsolateReloadContext {
 
   void SwitchStackToUnoptimizedCode();
 
+  void Checkpoint();
+
   void CheckpointClasses();
   void CheckpointLibraries();
-  void CheckpointBeforeReload();
 
   bool ValidateReload();
 
-  void RollbackClasses();
-  void RollbackLibraries();
   void Rollback();
 
-  void CommitReverseMap();
-  void ClearReplacedObjectBits();
+  void RollbackClasses();
+  void RollbackLibraries();
 
-
-  void CommitClassTable();
+  void Commit();
 
   void PostCommit();
+
+  void ClearReplacedObjectBits();
 
   // atomic_install:
   void MarkAllFunctionsForRecompilation();
