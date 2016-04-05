@@ -2254,6 +2254,9 @@ class Function : public Object {
   // Disables optimized code and switches to unoptimized code.
   void SwitchToUnoptimizedCode() const;
 
+  // Compiles unoptimized code (if necessary) and attaches it to the function.
+  void EnsureHasCompiledUnoptimizedCode() const;
+
   // Return the most recently compiled and installed code for this function.
   // It is not the only Code object that points to this function.
   RawCode* CurrentCode() const {

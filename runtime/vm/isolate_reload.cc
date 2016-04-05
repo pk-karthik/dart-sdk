@@ -239,6 +239,9 @@ void IsolateReloadContext::StartReload() {
   const Library& root_lib = Library::Handle(object_store()->root_library());
   const String& root_lib_url = String::Handle(root_lib.url());
 
+  // Switch all functions on the stack to compiled, unoptimized code.
+  SwitchStackToUnoptimizedCode();
+
   CheckpointBeforeReload();
 
   // Block class finalization attempts when calling into the library
@@ -279,6 +282,21 @@ void IsolateReloadContext::FinishReload() {
     PostCommit();
   } else {
     Rollback();
+  }
+}
+
+
+void IsolateReloadContext::SwitchStackToUnoptimizedCode() {
+  StackFrameIterator it(StackFrameIterator::kDontValidateFrames);
+
+  Function& func = Function::Handle();
+  while (it.HasNextFrame()) {
+    StackFrame* frame = it.NextFrame();
+    if (frame->IsDartFrame()) {
+      func = frame->LookupDartFunction();
+      ASSERT(!func.IsNull());
+      func.EnsureHasCompiledUnoptimizedCode();
+    }
   }
 }
 

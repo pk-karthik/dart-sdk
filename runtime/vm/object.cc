@@ -5328,6 +5328,19 @@ void Function::ClearCode() const {
 }
 
 
+void Function::EnsureHasCompiledUnoptimizedCode() const {
+  Thread* thread = Thread::Current();
+  Zone* zone = thread->zone();
+  ASSERT(thread->IsMutatorThread());
+
+  const Error& error = Error::Handle(zone,
+      Compiler::EnsureUnoptimizedCode(thread, *this));
+  if (!error.IsNull()) {
+    Exceptions::PropagateError(error);
+  }
+}
+
+
 void Function::SwitchToUnoptimizedCode() const {
   ASSERT(HasOptimizedCode());
   Thread* thread = Thread::Current();
