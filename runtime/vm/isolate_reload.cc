@@ -321,7 +321,12 @@ void IsolateReloadContext::CheckpointLibraries() {
     tmp_lib ^= libs.At(i);
     tmp_url ^= tmp_lib.url();
     if (tmp_lib.is_dart_scheme()) {
+      // Set the new index.
+      tmp_lib.set_index(new_libs.Length());
       new_libs.Add(tmp_lib, Heap::kOld);
+    } else {
+      // Clear the index.
+      tmp_lib.set_index(-1);
     }
   }
   set_saved_libraries(libs);
@@ -345,18 +350,28 @@ void IsolateReloadContext::CheckpointBeforeReload() {
 }
 
 
-void IsolateReloadContext::Rollback() {
+void IsolateReloadContext::RollbackClasses() {
   TIR_Print("---- ROLLING BACK CLASS TABLE\n");
-  Thread* thread = Thread::Current();
   ASSERT(saved_num_cids_ > 0);
   I->class_table()->DropNewClasses(saved_num_cids_);
   I->class_table()->PrintNonDartClasses();
 
+}
+
+
+void IsolateReloadContext::RollbackLibraries() {
   TIR_Print("---- ROLLING BACK LIBRARY CHANGES\n");
+  Thread* thread = Thread::Current();
+  Library& lib = Library::Handle();
   GrowableObjectArray& saved_libs = GrowableObjectArray::Handle(
       Z, saved_libraries());
   if (!saved_libs.IsNull()) {
     object_store()->set_libraries(saved_libs);
+    for (intptr_t i = 0; i < saved_libs.Length(); i++) {
+      lib = Library::RawCast(saved_libs.At(i));
+      // Restore indexes that were modified in CheckpointLibraries.
+      lib.set_index(i);
+    }
   }
 
   Library& saved_root_lib = Library::Handle(Z, saved_root_library());
@@ -366,6 +381,12 @@ void IsolateReloadContext::Rollback() {
 
   set_saved_root_library(Library::Handle());
   set_saved_libraries(GrowableObjectArray::Handle());
+}
+
+
+void IsolateReloadContext::Rollback() {
+  RollbackClasses();
+  RollbackLibraries();
 }
 
 
@@ -492,6 +513,10 @@ void IsolateReloadContext::CommitReverseMap() {
 
 bool IsolateReloadContext::IsDirty(const Library& lib) {
   const intptr_t index = lib.index();
+  if (index == static_cast<classid_t>(-1)) {
+    // Treat deleted libraries as dirty.
+    return true;
+  }
   ASSERT((index >= 0) && (index < library_infos_.length()));
   return library_infos_[index].dirty;
 }
@@ -739,12 +764,14 @@ void IsolateReloadContext::ResetMegamorphicCaches() {
 
 class MarkFunctionsForRecompilation : public ObjectVisitor {
  public:
-  explicit MarkFunctionsForRecompilation(Isolate* isolate)
+  MarkFunctionsForRecompilation(Isolate* isolate,
+                                IsolateReloadContext* reload_context)
     : ObjectVisitor(isolate),
       handle_(Object::Handle()),
       owning_class_(Class::Handle()),
       owning_lib_(Library::Handle()),
-      code_(Code::Handle()) {
+      code_(Code::Handle()),
+      reload_context_(reload_context) {
   }
 
   virtual void VisitObject(RawObject* obj) {
@@ -756,45 +783,43 @@ class MarkFunctionsForRecompilation : public ObjectVisitor {
     if (handle_.IsFunction()) {
       const Function& func = Function::Cast(handle_);
 
-      if (IsDartSchemeFunction(func)) {
-        // TODO(johnmccutchan): Determine how to keep dart: code alive.
+      // Clear collected type feedback and usage counters.
+      func.ClearICDataArray();
+      func.set_usage_counter(0);
+      func.set_deoptimization_counter(0);
+
+      if (IsFromDirtyLibrary(func)) {
+        code_ = func.CurrentCode();
+        if (!code_.IsStubCode()) {
+          // Clear all code.
+          func.ClearCode();
+        }
       }
 
-      // Replace the instructions of most functions with the compilation stub so
-      // unqualified invocations will be recompiled to the correct kind. But
-      // leave the stub to patch the function for extracted properties so they
-      // will still be patched if more than one modification happens before they
-      // are next called.
-      code_ = func.CurrentCode();
-      if (!code_.IsStubCode()) {
-        func.ClearICDataArray();  // Don't reuse IC data in next compilation.
-        func.ClearCode();
-
-        // Type feedback data is gone, don't trigger optimization again too
-        // soon.
-        func.set_usage_counter(0);
-        func.set_deoptimization_counter(0);
+      if (func.HasOptimizedCode()) {
+        // Clear optimized code and switch to unoptimized code.
+        func.SwitchToUnoptimizedCode();
       }
     }
   }
 
  private:
-  bool IsDartSchemeFunction(const Function& func) {
-    ASSERT(!func.IsNull());
+  bool IsFromDirtyLibrary(const Function& func) {
     owning_class_ = func.Owner();
     owning_lib_ = owning_class_.library();
-    return owning_lib_.is_dart_scheme();
+    return reload_context_->IsDirty(owning_lib_);
   }
 
   Object& handle_;
   Class& owning_class_;
   Library& owning_lib_;
   Code& code_;
+  IsolateReloadContext* reload_context_;
 };
 
 
 void IsolateReloadContext::MarkAllFunctionsForRecompilation() {
-  MarkFunctionsForRecompilation visitor(isolate_);
+  MarkFunctionsForRecompilation visitor(isolate_, this);
   NoSafepointScope no_safepoint;
   isolate_->heap()->VisitObjects(&visitor);
 }
