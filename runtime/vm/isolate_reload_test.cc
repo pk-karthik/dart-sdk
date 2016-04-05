@@ -3,6 +3,7 @@
 // BSD-style license that can be found in the LICENSE file.
 
 #include "include/dart_api.h"
+#include "include/dart_tools_api.h"
 #include "platform/assert.h"
 #include "vm/globals.h"
 #include "vm/isolate.h"
@@ -264,6 +265,45 @@ TEST_CASE(IsolateReload_LibraryImportRemoved) {
   EXPECT_VALID(lib);
 
   EXPECT_ERROR(SimpleInvokeError(lib, "main"), "max");;
+}
+
+
+TEST_CASE(IsolateReload_LibraryDebuggable) {
+  const char* kScript =
+      "main() {\n"
+      "  return 1;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  // The library is by default debuggable.  Make it not debuggable.
+  intptr_t lib_id = -1;
+  bool debuggable = false;
+  EXPECT_VALID(Dart_LibraryId(lib, &lib_id));
+  EXPECT_VALID(Dart_GetLibraryDebuggable(lib_id, &debuggable));
+  EXPECT_EQ(true, debuggable);
+  EXPECT_VALID(Dart_SetLibraryDebuggable(lib_id, false));
+  EXPECT_VALID(Dart_GetLibraryDebuggable(lib_id, &debuggable));
+  EXPECT_EQ(false, debuggable);
+
+  EXPECT_EQ(1, SimpleInvoke(lib, "main"));
+
+  const char* kReloadScript =
+      "main() {\n"
+      "  return 2;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_EQ(2, SimpleInvoke(lib, "main"));
+
+  // Library debuggability is preserved.
+  intptr_t new_lib_id = -1;
+  EXPECT_VALID(Dart_LibraryId(lib, &new_lib_id));
+  EXPECT_VALID(Dart_GetLibraryDebuggable(new_lib_id, &debuggable));
+  EXPECT_EQ(false, debuggable);
 }
 
 
