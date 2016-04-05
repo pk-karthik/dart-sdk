@@ -69,6 +69,8 @@ class IsolateReloadContext {
   Isolate* isolate() { return isolate_; }
   ObjectStore* object_store();
 
+  void SwitchStackToUnoptimizedCode();
+
   void CheckpointClasses();
   void CheckpointLibraries();
   void CheckpointBeforeReload();
