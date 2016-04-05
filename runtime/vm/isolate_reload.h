@@ -59,6 +59,8 @@ class IsolateReloadContext {
 
   RawClass* FindOriginalClass(const Class& cls);
 
+  bool IsDirty(const Library& lib);
+
  private:
   void set_saved_root_library(const Library& value);
 
@@ -77,6 +79,8 @@ class IsolateReloadContext {
 
   bool ValidateReload();
 
+  void RollbackClasses();
+  void RollbackLibraries();
   void Rollback();
 
   void CommitReverseMap();
@@ -103,8 +107,6 @@ class IsolateReloadContext {
     bool dirty;
   };
   MallocGrowableArray<LibraryInfo> library_infos_;
-
-  bool IsDirty(const Library& lib);
 
   RawClass* LinearFindOldClass(const Class& replacement_or_new);
   void BuildClassMapping();
