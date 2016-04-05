@@ -422,6 +422,31 @@ void IsolateReloadContext::CommitReverseMap() {
     class_map.Release();
   }
 
+  // Copy over certain properties of libraries, e.g. is the library
+  // debuggable?
+  {
+    Library& lib = Library::Handle();
+    Library& new_lib = Library::Handle();
+
+    UnorderedHashMap<LibraryMapTraits> lib_map(library_map_storage_);
+
+    {
+      // Reload existing libraries.
+      UnorderedHashMap<LibraryMapTraits>::Iterator it(&lib_map);
+
+      while (it.MoveNext()) {
+        const intptr_t entry = it.Current();
+        ASSERT(entry != -1);
+        new_lib = Library::RawCast(lib_map.GetKey(entry));
+        lib = Library::RawCast(lib_map.GetPayload(entry, 0));
+        new_lib.set_debuggable(lib.IsDebuggable());
+      }
+    }
+
+    // Release the library map.
+    lib_map.Release();
+  }
+
   {
     // Update the libraries array.
     Library& lib = Library::Handle();
