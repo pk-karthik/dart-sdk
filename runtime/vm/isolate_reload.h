@@ -98,6 +98,14 @@ class IsolateReloadContext {
   bool has_error_;
   intptr_t saved_num_cids_;
 
+  intptr_t num_saved_libs_;
+  struct LibraryInfo {
+    bool dirty;
+  };
+  MallocGrowableArray<LibraryInfo> library_infos_;
+
+  bool IsDirty(const Library& lib);
+
   RawClass* LinearFindOldClass(const Class& replacement_or_new);
   void BuildClassMapping();
 

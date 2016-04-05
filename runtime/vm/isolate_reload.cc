@@ -196,6 +196,7 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       test_mode_(test_mode),
       has_error_(false),
       saved_num_cids_(-1),
+      num_saved_libs_(-1),
       script_uri_(String::null()),
       error_(Error::null()),
       class_map_storage_(Array::null()),
@@ -325,6 +326,7 @@ void IsolateReloadContext::CheckpointLibraries() {
   }
   set_saved_libraries(libs);
   object_store()->set_libraries(new_libs);
+  num_saved_libs_ = new_libs.Length();
 
   // Reset the root library to null.
   const Library& root_lib =
@@ -457,6 +459,14 @@ void IsolateReloadContext::CommitReverseMap() {
       TIR_Print("Lib '%s' at index %" Pd "\n", lib.ToCString(), i);
       lib.set_index(i);
     }
+
+    // Initialize library side table.
+    library_infos_.SetLength(libs.Length());
+    for (intptr_t i = 0; i < libs.Length(); i++) {
+      lib = Library::RawCast(libs.At(i));
+      // Mark the library dirty if it comes after the libraries we saved.
+      library_infos_[i].dirty = i >= num_saved_libs_;
+    }
   }
 
   {
@@ -477,6 +487,13 @@ void IsolateReloadContext::CommitReverseMap() {
 
   TIR_Print("---- Compacting the class table\n");
   I->class_table()->CompactNewClasses(saved_num_cids_);
+}
+
+
+bool IsolateReloadContext::IsDirty(const Library& lib) {
+  const intptr_t index = lib.index();
+  ASSERT((index >= 0) && (index < library_infos_.length()));
+  return library_infos_[index].dirty;
 }
 
 
