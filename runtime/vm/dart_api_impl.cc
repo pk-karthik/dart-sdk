@@ -1678,25 +1678,43 @@ DART_EXPORT Dart_Handle Dart_HandleMessages() {
 }
 
 
+static bool HandleHelper(Thread* T, Isolate* I) {
+  if (I->IsReloading()) {
+    I->message_handler()->HandleLoaderMessages();
+    return false;
+  } else {
+    ASSERT(I->GetAndClearResumeRequest() == false);
+    MessageHandler::MessageStatus status =
+        I->message_handler()->HandleOOBMessages();
+    bool resume = I->GetAndClearResumeRequest();
+    return (status != MessageHandler::kOK) || resume;
+  }
+}
+
+
 DART_EXPORT bool Dart_HandleServiceMessages() {
   Thread* T = Thread::Current();
   Isolate* I = T->isolate();
   CHECK_API_SCOPE(T);
   CHECK_CALLBACK_STATE(T);
   API_TIMELINE_DURATION;
-  TransitionNativeToVM transition(T);
-  ASSERT(I->GetAndClearResumeRequest() == false);
-  MessageHandler::MessageStatus status =
-      I->message_handler()->HandleOOBMessages();
-  bool resume = I->GetAndClearResumeRequest();
-  return (status != MessageHandler::kOK) || resume;
+  if (T->execution_state() == Thread::kThreadInVM) {
+    return HandleHelper(T, I);
+  } else {
+    TransitionNativeToVM transition(T);
+    return HandleHelper(T, I);
+  }
 }
 
 
 DART_EXPORT bool Dart_HasServiceMessages() {
   Isolate* isolate = Isolate::Current();
   ASSERT(isolate);
-  return isolate->message_handler()->HasOOBMessages();
+  if (isolate->IsReloading()) {
+    return isolate->message_handler()->HasLoaderMessages();
+  } else {
+    return isolate->message_handler()->HasOOBMessages();
+  }
 }
 
 
@@ -1763,6 +1781,20 @@ DART_EXPORT Dart_Handle Dart_SendPortGetId(Dart_Handle port,
     RETURN_NULL_ERROR(port_id);
   }
   *port_id = send_port.Id();
+  return Api::Success();
+}
+
+
+DART_EXPORT Dart_Handle Dart_MakeLoaderPort(Dart_Handle port) {
+  DARTSCOPE(Thread::Current());
+  CHECK_CALLBACK_STATE(T);
+  API_TIMELINE_DURATION;
+  const ReceivePort& recv_port = Api::UnwrapReceivePortHandle(Z, port);
+  if (recv_port.IsNull()) {
+    RETURN_TYPE_ERROR(Z, port, RawReceivePort);
+  }
+  Dart_Port port_id = recv_port.Id();
+  PortMap::MakeLoaderPort(port_id);
   return Api::Success();
 }
 

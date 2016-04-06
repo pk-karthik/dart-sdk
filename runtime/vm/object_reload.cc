@@ -12,6 +12,7 @@
 namespace dart {
 
 DECLARE_FLAG(bool, trace_reload);
+DECLARE_FLAG(bool, two_args_smi_icd);
 
 #define IRC (Isolate::Current()->reload_context())
 
@@ -199,24 +200,7 @@ void ICData::Reset(bool is_static_call) const {
     ResetData();
     AddTarget(new_target);
   } else {
-    ResetData();
-
-    // Restore static prediction that + - = have smi receiver and argument.
-    // Cf. TwoArgsSmiOpInlineCacheEntry
-    if ((NumArgsTested() == 2) /*&& FLAG_two_args_smi_icd*/) {
-      const String& selector = String::Handle(target_name());
-      if ((selector.raw() == Symbols::Plus().raw()) ||
-          (selector.raw() == Symbols::Minus().raw()) ||
-          (selector.raw() == Symbols::Equals().raw())) {
-        const Class& smi_class = Class::Handle(Smi::Class());
-        const Function& smi_op_target = Function::Handle(
-            Resolver::ResolveDynamicAnyArgs(smi_class, selector));
-        GrowableArray<intptr_t> class_ids(2);
-        class_ids.Add(kSmiCid);
-        class_ids.Add(kSmiCid);
-        AddCheck(class_ids, smi_op_target);
-      }
-    }
+    ClearWithSentinel();
   }
 }
 

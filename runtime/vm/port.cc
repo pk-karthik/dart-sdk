@@ -123,6 +123,16 @@ void PortMap::SetPortState(Dart_Port port, PortState state) {
 }
 
 
+void PortMap::MakeLoaderPort(Dart_Port port) {
+  MutexLocker ml(mutex_);
+  intptr_t index = FindPort(port);
+  if (index < 0) {
+    return;
+  }
+  map_[index].loader_port = true;
+}
+
+
 void PortMap::MaintainInvariants() {
   intptr_t empty = capacity_ - used_ - deleted_;
   if (used_ > ((capacity_ / 4) * 3)) {
@@ -147,6 +157,7 @@ Dart_Port PortMap::CreatePort(MessageHandler* handler) {
   entry.port = AllocatePort();
   entry.handler = handler;
   entry.state = kNewPort;
+  entry.loader_port = false;
 
   // Search for the first unused slot. Make use of the knowledge that here is
   // currently no port with this id in the port map.
@@ -257,6 +268,8 @@ bool PortMap::PostMessage(Message* message) {
   MessageHandler* handler = map_[index].handler;
   ASSERT(map_[index].port != 0);
   ASSERT((handler != NULL) && (handler != deleted_entry_));
+  // Mark the message as a loader message.
+  message->loader_message_ = map_[index].loader_port;
   handler->PostMessage(message);
   return true;
 }

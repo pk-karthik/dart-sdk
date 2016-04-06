@@ -31,6 +31,7 @@
 #include "vm/parser.h"
 #include "vm/precompiler.h"
 #include "vm/profiler.h"
+#include "vm/resolver.h"
 #include "vm/reusable_handles.h"
 #include "vm/runtime_entry.h"
 #include "vm/scopes.h"
@@ -12241,6 +12242,10 @@ bool ICData::HasCheck(const GrowableArray<intptr_t>& cids) const {
     GetClassIdsAt(i, &class_ids);
     bool matches = true;
     for (intptr_t k = 0; k < class_ids.length(); k++) {
+      if (class_ids[k] == kIllegalCid) {
+        // We hit sentinel.
+        return false;
+      }
       if (class_ids[k] != cids[k]) {
         matches = false;
         break;
@@ -12253,6 +12258,91 @@ bool ICData::HasCheck(const GrowableArray<intptr_t>& cids) const {
   return false;
 }
 #endif  // DEBUG
+
+
+void ICData::WriteSentinelAt(intptr_t index) const {
+  const intptr_t len = NumberOfChecks();
+  ASSERT(index >= 0);
+  ASSERT(index < len);
+  Array& data = Array::Handle(ic_data());
+  const intptr_t start = index * TestEntryLength();
+  const intptr_t end = start + TestEntryLength();
+  for (intptr_t i = start; i < end; i++) {
+    data.SetAt(i, smi_illegal_cid());
+  }
+}
+
+
+void ICData::ClearCountAt(intptr_t index) const {
+  const intptr_t len = NumberOfChecks();
+  ASSERT(index >= 0);
+  ASSERT(index < len);
+  SetCountAt(index, 0);
+}
+
+
+void ICData::ClearWithSentinel() const {
+  // Write the sentinel value into all entries except the first one.
+  const intptr_t len = NumberOfChecks();
+  if (len == 0) {
+    return;
+  }
+  for (intptr_t i = len - 1; i > 0; i--) {
+    WriteSentinelAt(i);
+  }
+  if (NumArgsTested() != 2) {
+    // Not the smi fast path case, write sentinel to first one and exit.
+    WriteSentinelAt(0);
+    return;
+  }
+  if (IsSentinelAt(0)) {
+    return;
+  }
+  const String& name = String::Handle(target_name());
+  const Class& smi_class = Class::Handle(Smi::Class());
+  const Function& smi_op_target =
+      Function::Handle(Resolver::ResolveDynamicAnyArgs(smi_class, name));
+  GrowableArray<intptr_t> class_ids(2);
+  Function& target = Function::Handle();
+  GetCheckAt(0, &class_ids, &target);
+  if ((target.raw() == smi_op_target.raw()) &&
+      (class_ids[0] == kSmiCid) && (class_ids[1] == kSmiCid)) {
+    // The smi fast path case, preserve the initial entry but reset the count.
+    ClearCountAt(0);
+    return;
+  }
+  WriteSentinelAt(0);
+}
+
+
+// Add an initial Smi/Smi check with count 0.
+bool ICData::AddSmiSmiCheckForFastSmiStubs() const {
+  bool is_smi_two_args_op = false;
+
+  ASSERT(NumArgsTested() == 2);
+  const String& name = String::Handle(target_name());
+  const Class& smi_class = Class::Handle(Smi::Class());
+  const Function& smi_op_target =
+      Function::Handle(Resolver::ResolveDynamicAnyArgs(smi_class, name));
+  if (NumberOfChecks() == 0) {
+    GrowableArray<intptr_t> class_ids(2);
+    class_ids.Add(kSmiCid);
+    class_ids.Add(kSmiCid);
+    AddCheck(class_ids, smi_op_target);
+    // 'AddCheck' sets the initial count to 1.
+    SetCountAt(0, 0);
+    is_smi_two_args_op = true;
+  } else if (NumberOfChecks() == 1) {
+    GrowableArray<intptr_t> class_ids(2);
+    Function& target = Function::Handle();
+    GetCheckAt(0, &class_ids, &target);
+    if ((target.raw() == smi_op_target.raw()) &&
+        (class_ids[0] == kSmiCid) && (class_ids[1] == kSmiCid)) {
+      is_smi_two_args_op = true;
+    }
+  }
+  return is_smi_two_args_op;
+}
 
 
 // Used for unoptimized static calls when no class-ids are checked.
@@ -12324,10 +12414,10 @@ void ICData::AddCheck(const GrowableArray<intptr_t>& class_ids,
       return;
     }
   }
-  const intptr_t new_len = data.Length() + TestEntryLength();
-  data = Array::Grow(data, new_len, Heap::kOld);
-  WriteSentinel(data, TestEntryLength());
-  intptr_t data_pos = old_num * TestEntryLength();
+  intptr_t index = -1;
+  data = FindFreeIndex(&index);
+  ASSERT(!data.IsNull());
+  intptr_t data_pos = index * TestEntryLength();
   Smi& value = Smi::Handle();
   for (intptr_t i = 0; i < class_ids.length(); i++) {
     // kIllegalCid is used as terminating value, do not add it.
@@ -12345,6 +12435,40 @@ void ICData::AddCheck(const GrowableArray<intptr_t>& class_ids,
 }
 
 
+RawArray* ICData::FindFreeIndex(intptr_t* index) const {
+  const intptr_t len = NumberOfChecks();
+  Array& data = Array::Handle(ic_data());
+  *index = len;
+  for (intptr_t i = 0; i < len; i++) {
+    GrowableArray<intptr_t> class_ids;
+    GetClassIdsAt(i, &class_ids);
+    for (intptr_t k = 0; k < class_ids.length(); k++) {
+      if (class_ids[k] == kIllegalCid) {
+        // We've found the first empty slot.
+        *index = i;
+        break;
+      }
+    }
+  }
+  if (*index < len) {
+    // We've found a free slot.
+    return data.raw();
+  }
+  // Append case.
+  ASSERT(*index == len);
+  ASSERT(*index >= 0);
+  // Grow array.
+  const intptr_t new_len = data.Length() + TestEntryLength();
+  data = Array::Grow(data, new_len, Heap::kOld);
+  WriteSentinel(data, TestEntryLength());
+  return data.raw();
+}
+
+
+void ICData::ValidateSentinelLocations() const {
+}
+
+
 void ICData::AddReceiverCheck(intptr_t receiver_class_id,
                               const Function& target,
                               intptr_t count) const {
@@ -12357,12 +12481,9 @@ void ICData::AddReceiverCheck(intptr_t receiver_class_id,
   ASSERT(NumArgsTested() == 1);  // Otherwise use 'AddCheck'.
   ASSERT(receiver_class_id != kIllegalCid);
 
-  const intptr_t old_num = NumberOfChecks();
-  Array& data = Array::Handle(ic_data());
-  const intptr_t new_len = data.Length() + TestEntryLength();
-  data = Array::Grow(data, new_len, Heap::kOld);
-  WriteSentinel(data, TestEntryLength());
-  intptr_t data_pos = old_num * TestEntryLength();
+  intptr_t index = -1;
+  Array& data = Array::Handle(FindFreeIndex(&index));
+  intptr_t data_pos = index * TestEntryLength();
   if ((receiver_class_id == kSmiCid) && (data_pos > 0)) {
     ASSERT(GetReceiverClassIdAt(0) != kSmiCid);
     // Move class occupying position 0 to the data_pos.
@@ -12404,6 +12525,22 @@ void ICData::GetCheckAt(intptr_t index,
     class_ids->Add(Smi::Value(Smi::RawCast(data.At(data_pos++))));
   }
   (*target) ^= data.At(data_pos++);
+}
+
+
+bool ICData::IsSentinelAt(intptr_t index) const {
+  ASSERT(index <= NumberOfChecks());
+  if (index == NumberOfChecks()) {
+    return true;
+  }
+  const Array& data = Array::Handle(ic_data());
+  intptr_t data_pos = index * TestEntryLength();
+  for (intptr_t i = 0; i < NumArgsTested(); i++) {
+    if (Smi::Value(Smi::RawCast(data.At(data_pos++))) == kIllegalCid) {
+      return true;
+    }
+  }
+  return false;
 }
 
 

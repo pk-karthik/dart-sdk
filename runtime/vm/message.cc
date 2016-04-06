@@ -21,6 +21,11 @@ bool Message::RedirectToDeliveryFailurePort() {
 }
 
 
+bool Message::IsLoaderMessage() {
+  return loader_message_;
+}
+
+
 intptr_t Message::Id() const {
   // Messages are allocated on the C heap. Use the raw address as the id.
   return reinterpret_cast<intptr_t>(this);

@@ -58,6 +58,7 @@ const char* MessageHandler::MessageStatusString(MessageStatus status) {
 MessageHandler::MessageHandler()
     : queue_(new MessageQueue()),
       oob_queue_(new MessageQueue()),
+      loader_queue_(new MessageQueue()),
       oob_message_handling_allowed_(true),
       live_ports_(0),
       paused_(0),
@@ -79,6 +80,7 @@ MessageHandler::MessageHandler()
 MessageHandler::~MessageHandler() {
   delete queue_;
   delete oob_queue_;
+  delete loader_queue_;
 }
 
 
@@ -141,7 +143,9 @@ void MessageHandler::PostMessage(Message* message, bool before_events) {
     }
 
     saved_priority = message->priority();
-    if (message->IsOOB()) {
+    if (message->IsLoaderMessage()) {
+      loader_queue_->Enqueue(message, before_events);
+    } else if (message->IsOOB()) {
       oob_queue_->Enqueue(message, before_events);
     } else {
       queue_->Enqueue(message, before_events);
@@ -164,7 +168,11 @@ Message* MessageHandler::DequeueMessage(Message::Priority min_priority) {
   // TODO(turnidge): Add assert that monitor_ is held here.
   Message* message = oob_queue_->Dequeue();
   if ((message == NULL) && (min_priority < Message::kOOBPriority)) {
-    message = queue_->Dequeue();
+    // Process loader messages first.
+    message = loader_queue_->Dequeue();
+    if (message == NULL) {
+      message = queue_->Dequeue();
+    }
   }
   return message;
 }
@@ -280,6 +288,30 @@ MessageHandler::MessageStatus MessageHandler::HandleOOBMessages() {
   CheckAccess();
 #endif
   return HandleMessages(&ml, false, false);
+}
+
+
+MessageHandler::MessageStatus MessageHandler::HandleLoaderMessages() {
+  MonitorLocker ml(&monitor_);
+
+  while (true) {
+    Message* message = loader_queue_->Dequeue();
+    if (message == NULL) {
+      return kOK;
+    }
+    // Temporarily exit the monitor while processing the message.
+    ml.Exit();
+    HandleMessage(message);
+    // Enter the monitor again.
+    ml.Enter();
+  }
+  return kOK;
+}
+
+
+bool MessageHandler::HasLoaderMessages() {
+  MonitorLocker ml(&monitor_);
+  return !loader_queue_->IsEmpty();
 }
 
 
@@ -431,6 +463,7 @@ void MessageHandler::CloseAllPorts() {
   }
   queue_->Clear();
   oob_queue_->Clear();
+  loader_queue_->Clear();
 }
 
 

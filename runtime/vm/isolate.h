@@ -240,6 +240,7 @@ class Isolate : public BaseIsolate {
   void DoneLoading();
   void DoneFinalizing();
 
+  void OnStackReload();
   void ReloadSources(bool test_mode = false);
 
   bool MakeRunnable();

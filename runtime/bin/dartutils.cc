@@ -627,6 +627,15 @@ void FUNCTION_NAME(Builtin_DoneLoading)(Dart_NativeArguments args) {
 }
 
 
+void FUNCTION_NAME(Builtin_MakeLoaderPort)(Dart_NativeArguments args) {
+  Dart_Handle port = Dart_GetNativeArgument(args, 0);
+  Dart_Handle res = Dart_MakeLoaderPort(port);
+  if (Dart_IsError(res)) {
+    Dart_PropagateError(res);
+  }
+}
+
+
 void FUNCTION_NAME(Builtin_NativeLibraryExtension)(Dart_NativeArguments args) {
   const char* suffix = Platform::LibraryExtension();
   ASSERT(suffix != NULL);
