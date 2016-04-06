@@ -1387,6 +1387,7 @@ class Class : public Object {
   void SetTraceAllocation(bool trace_allocation) const;
 
   bool ValidatePostFinalizePatch(const Class& orig_class, Error* error) const;
+  void CopyStaticFieldValues(const Class& old_cls);
   void Reload(const Class& replacement);
   bool CanReload(const Class& replacement);
 
@@ -7152,6 +7153,8 @@ class Array : public Instance {
   RawArray* Slice(intptr_t start,
                   intptr_t count,
                   bool with_type_argument) const;
+
+  bool Contains(RawObject** p);
 
  protected:
   static RawArray* New(intptr_t class_id,

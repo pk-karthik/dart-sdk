@@ -20589,6 +20589,13 @@ RawArray* Array::Slice(intptr_t start,
 }
 
 
+bool Array::Contains(RawObject** p) {
+  RawObject* const* start = ObjectAddr(0);
+  RawObject* const* end = ObjectAddr(Length() - 1);
+  return (p >= start) && (p <= end);
+}
+
+
 void Array::MakeImmutable() const {
   if (IsImmutable()) return;
   NoSafepointScope no_safepoint;

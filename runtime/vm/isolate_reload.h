@@ -32,6 +32,7 @@ class RawObject;
 class RawString;
 class ObjectPointerVisitor;
 class ObjectStore;
+class UpdateClassesVisitor;
 
 class IsolateReloadContext {
  public:
@@ -68,6 +69,8 @@ class IsolateReloadContext {
   Isolate* isolate() { return isolate_; }
   ObjectStore* object_store();
 
+  void CommitReverseMap();
+  void PostCommit();
   void CheckpointClassTable();
   void CommitClassTable();
   void RollbackClassTable();
@@ -109,6 +112,7 @@ class IsolateReloadContext {
   RawGrowableObjectArray* saved_libraries_;
   RawObject** to() { return reinterpret_cast<RawObject**>(&saved_libraries_); }
 
+  friend class UpdateClassesVisitor;
   friend class Isolate;
 };
 
