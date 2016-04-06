@@ -33,6 +33,13 @@ const char* SimpleInvokeStr(Dart_Handle lib, const char* method) {
 }
 
 
+Dart_Handle SimpleInvokeError(Dart_Handle lib, const char* method) {
+  Dart_Handle result = Dart_Invoke(lib, NewString(method), 0, NULL);
+  EXPECT(Dart_IsError(result));
+  return result;
+}
+
+
 TEST_CASE(IsolateReload_FunctionReplacement) {
   const char* kScript =
       "main() {\n"
@@ -168,6 +175,54 @@ TEST_CASE(IsolateReload_ClassAdded) {
   EXPECT_VALID(lib);
 
   EXPECT_STREQ("hello from A", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_LibraryImportAdded) {
+  const char* kScript =
+      "main() {\n"
+      "  return max(3, 4);\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_ERROR(SimpleInvokeError(lib, "main"), "max");;
+
+  const char* kReloadScript =
+      "import 'dart:math';\n"
+      "main() {\n"
+      "  return max(3, 4);\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_EQ(4, SimpleInvoke(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_LibraryImportRemoved) {
+  const char* kScript =
+      "import 'dart:math';\n"
+      "main() {\n"
+      "  return max(3, 4);\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_EQ(4, SimpleInvoke(lib, "main"));
+
+  const char* kReloadScript =
+      "main() {\n"
+      "  return max(3, 4);\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_ERROR(SimpleInvokeError(lib, "main"), "max");;
 }
 
 

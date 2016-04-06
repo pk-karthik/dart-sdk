@@ -5,6 +5,7 @@
 #include "vm/object.h"
 
 #include "vm/isolate_reload.h"
+#include "vm/log.h"
 #include "vm/resolver.h"
 #include "vm/symbols.h"
 
@@ -161,12 +162,70 @@ bool Class::CanReload(const Class& replacement) {
 }
 
 
-void Library::Reload(const Library& replacement) {
-  StorePointer(&raw_ptr()->loaded_scripts_, Array::null());
+#if 0
+static void DumpLibraryDictionary(const Library& lib) {
+  DictionaryIterator it(lib);
+  Object& entry = Object::Handle();
+  String& name = String::Handle();
+  THR_Print("Dumping dictionary for %s\n", lib.ToCString());
+  while (it.HasNext()) {
+    entry = it.GetNext();
+    name = entry.DictionaryName();
+    THR_Print("%s -> %s\n", name.ToCString(), entry.ToCString());
+  }
+}
+#endif
 
+#if 0
+// library fields to handle reloading of.
+RawGrowableObjectArray* metadata_;  // Metadata on classes, methods etc.
+RawClass* toplevel_class_;  // Class containing top-level elements.
+RawGrowableObjectArray* patch_classes_;
+RawInstance* load_error_;      // Error iff load_state_ == kLoadError.
+RawArray* resolved_names_;     // Cache of resolved names in library scope.
+
+Dart_NativeEntryResolver native_entry_resolver_;  // Resolves natives.
+Dart_NativeEntrySymbol native_entry_symbol_resolver_;
+classid_t index_;             // Library id number.
+uint16_t num_imports_;        // Number of entries in imports_.
+int8_t load_state_;           // Of type LibraryState.
+bool corelib_imported_;
+bool is_dart_scheme_;
+bool debuggable_;             // True if debugger can stop in library.
+bool is_in_fullsnapshot_;     // True if library is in a full snapshot.
+#endif
+
+void Library::Reload(const Library& replacement) {
+  // Hollow out the library.
+  StorePointer(&raw_ptr()->loaded_scripts_, Array::null());
   const intptr_t kInitialNameCacheSize = 64;
   InitResolvedNamesCache(kInitialNameCacheSize);
   InitClassDictionary();
+  // Clears imports and exports.
+  DropDependencies();
+  InitImportList();
+
+  // Add imports.
+  Namespace& ns = Namespace::Handle();
+  const Array& imports = Array::Handle(replacement.imports());
+  for (intptr_t i = 0; i < imports.Length(); i++) {
+    if (imports.At(i) == Object::null()) {
+      // Skip null imports.
+      // TODO(johnmccutchan): Why does the imports list have a null entry?
+      continue;
+    }
+    ns = Namespace::RawCast(imports.At(i));
+    AddImport(ns);
+  }
+
+  // Add exports.
+  if (replacement.HasExports()) {
+    const Array& exports = Array::Handle(replacement.exports());
+    for (intptr_t i = 0; i < exports.Length(); i++) {
+      ns = Namespace::RawCast(exports.At(i));
+      AddExport(ns);
+    }
+  }
 
   // Migrate the dictionary from the replacement library back to the original.
   DictionaryIterator it(replacement);
@@ -189,6 +248,8 @@ void Library::Reload(const Library& replacement) {
       AddObject(entry, name);
     }
   }
+
+
 }
 
 
