@@ -15,6 +15,7 @@
 #include "vm/service_event.h"
 #include "vm/stack_frame.h"
 #include "vm/thread.h"
+#include "vm/timeline.h"
 #include "vm/visitor.h"
 
 namespace dart {
@@ -24,6 +25,10 @@ DEFINE_FLAG(bool, trace_reload, true, "Trace isolate reloading");
 #define I (isolate())
 #define Z (thread->zone())
 
+#define TIMELINE_SCOPE(name)                                                   \
+    TimelineDurationScope tds(Thread::Current(),                               \
+                              Timeline::GetIsolateStream(),                    \
+                              name)
 
 class ClassMapTraits {
  public:
@@ -284,6 +289,7 @@ void IsolateReloadContext::FinishReload() {
 
 
 void IsolateReloadContext::SwitchStackToUnoptimizedCode() {
+  TIMELINE_SCOPE("SwitchStackToUnoptimizedCode");
   StackFrameIterator it(StackFrameIterator::kDontValidateFrames);
 
   Function& func = Function::Handle();
@@ -299,6 +305,7 @@ void IsolateReloadContext::SwitchStackToUnoptimizedCode() {
 
 
 void IsolateReloadContext::CheckpointClasses() {
+  TIMELINE_SCOPE("CheckpointClasses");
   TIR_Print("---- CHECKPOINTING CLASSES\n");
   I->class_table()->PrintNonDartClasses();
   saved_num_cids_ = I->class_table()->NumCids();
@@ -306,6 +313,7 @@ void IsolateReloadContext::CheckpointClasses() {
 
 
 void IsolateReloadContext::CheckpointLibraries() {
+  TIMELINE_SCOPE("CheckpointLibraries");
   // Build a new libraries array which only has the dart-scheme libs.
   const GrowableObjectArray& libs =
       GrowableObjectArray::Handle(object_store()->libraries());
@@ -338,6 +346,7 @@ void IsolateReloadContext::CheckpointLibraries() {
 
 
 void IsolateReloadContext::Checkpoint() {
+  TIMELINE_SCOPE("Checkpoint");
   CheckpointClasses();
   CheckpointLibraries();
   // Clear the compile time constants cache.
@@ -387,6 +396,7 @@ void IsolateReloadContext::Rollback() {
 
 
 void IsolateReloadContext::Commit() {
+  TIMELINE_SCOPE("Commit");
   Thread* thread = Thread::Current();
   TIR_Print("---- COMMITTING REVERSE MAP\n");
 
@@ -487,6 +497,7 @@ void IsolateReloadContext::Commit() {
   }
 
   {
+    TIMELINE_SCOPE("CommitHeapWalk");
     HeapIterationScope heap_iteration_scope;
     Isolate* isolate = thread->isolate();
     UpdateClassesVisitor ucv(isolate);
@@ -519,6 +530,7 @@ bool IsolateReloadContext::IsDirty(const Library& lib) {
 
 
 void IsolateReloadContext::PostCommit() {
+  TIMELINE_SCOPE("PostCommit");
   ClearReplacedObjectBits();
   set_saved_root_library(Library::Handle());
   set_saved_libraries(GrowableObjectArray::Handle());
@@ -542,6 +554,7 @@ void IsolateReloadContext::ClearReplacedObjectBits() {
 
 
 bool IsolateReloadContext::ValidateReload() {
+  TIMELINE_SCOPE("ValidateReload");
   // Already built.
   ASSERT(class_map_storage_ != Array::null());
   UnorderedHashMap<ClassMapTraits> map(class_map_storage_);
@@ -736,6 +749,7 @@ class MarkFunctionsForRecompilation : public ObjectVisitor {
 
 
 void IsolateReloadContext::MarkAllFunctionsForRecompilation() {
+  TIMELINE_SCOPE("MarkAllFunctionsForRecompilation");
   MarkFunctionsForRecompilation visitor(isolate_, this);
   NoSafepointScope no_safepoint;
   isolate_->heap()->VisitObjects(&visitor);

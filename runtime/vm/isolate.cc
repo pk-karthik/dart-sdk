@@ -1002,6 +1002,10 @@ void Isolate::DoneLoading() {
 
 void Isolate::OnStackReload() {
   ASSERT(reload_context_ == NULL);
+  Thread* thread = Thread::Current();
+  TimelineDurationScope tds(thread,
+                            Timeline::GetIsolateStream(),
+                            "OnStackReload");
   ReloadSources(false);
   PauseEventHandler();
 }
