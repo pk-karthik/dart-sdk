@@ -1385,6 +1385,8 @@ class Class : public Object {
   void SetTraceAllocation(bool trace_allocation) const;
 
   bool ValidatePostFinalizePatch(const Class& orig_class, Error* error) const;
+  void Reload(const Class& replacement);
+  bool CanReload(const Class& replacement);
 
  private:
   enum MemberKind {
@@ -3686,6 +3688,9 @@ class Library : public Object {
   // Character used to separate private identifiers from
   // the library-specific key.
   static const char kPrivateKeySeparator = '@';
+
+  void Reload(const Library& replacement);
+  bool CanReload(const Library& replacement);
 
  private:
   static const int kInitialImportsCapacity = 4;
