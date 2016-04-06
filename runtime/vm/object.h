@@ -1389,7 +1389,7 @@ class Class : public Object {
   bool ValidatePostFinalizePatch(const Class& orig_class, Error* error) const;
   void CopyStaticFieldValues(const Class& old_cls) const;
   void PatchFieldsAndFunctions() const;
-  bool CanReload(const Class& replacement);
+  bool CanReload(const Class& replacement) const;
 
  private:
   enum MemberKind {
@@ -3727,7 +3727,7 @@ class Library : public Object {
   // the library-specific key.
   static const char kPrivateKeySeparator = '@';
 
-  bool CanReload(const Library& replacement);
+  bool CanReload(const Library& replacement) const;
 
  private:
   static const int kInitialImportsCapacity = 4;

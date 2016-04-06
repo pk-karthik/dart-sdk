@@ -692,7 +692,7 @@ class MarkFunctionsForRecompilation : public ObjectVisitor {
  public:
   MarkFunctionsForRecompilation(Isolate* isolate,
                                 IsolateReloadContext* reload_context)
-    : ObjectVisitor(isolate),
+    : ObjectVisitor(),
       handle_(Object::Handle()),
       owning_class_(Class::Handle()),
       owning_lib_(Library::Handle()),
@@ -721,8 +721,8 @@ class MarkFunctionsForRecompilation : public ObjectVisitor {
       }
 
       if (func.HasOptimizedCode()) {
-        // Clear optimized code and switch to unoptimized code.
-        // func.SwitchToUnoptimizedCode();
+        // TODO(johnmccutchan): Clear optimized code and switch to unoptimized
+        // code (if it is available).
       }
 
       // Clear counters counters.

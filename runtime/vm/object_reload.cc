@@ -88,7 +88,7 @@ void Class::PatchFieldsAndFunctions() const {
 }
 
 
-bool Class::CanReload(const Class& replacement) {
+bool Class::CanReload(const Class& replacement) const {
 #if defined(DEBUG)
   {
     ASSERT(IsolateReloadContext::IsSameClass(*this, replacement));
@@ -172,7 +172,7 @@ bool Class::CanReload(const Class& replacement) {
 }
 
 
-bool Library::CanReload(const Library& replacement) {
+bool Library::CanReload(const Library& replacement) const {
   return true;
 }
 
