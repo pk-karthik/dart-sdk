@@ -52,6 +52,7 @@ TEST_CASE(IsolateReload_FunctionReplacement) {
   EXPECT_EQ(4, SimpleInvoke(lib, "main"));
 
   const char* kReloadScript =
+      "var _unused;"
       "main() {\n"
       "  return 10;\n"
       "}\n";
@@ -80,13 +81,14 @@ TEST_CASE(IsolateReload_BadClass) {
   EXPECT_EQ(4, SimpleInvoke(lib, "main"));
 
   const char* kReloadScript =
-    "class Foo {\n"
-    "  final a kjsdf ksjdf ;\n"
-    "  Foo(this.a);\n"
-    "}\n"
-    "main() {\n"
-    "  new Foo(5);\n"
-    "  return 10;\n"
+      "var _unused;"
+      "class Foo {\n"
+      "  final a kjsdf ksjdf ;\n"
+      "  Foo(this.a);\n"
+      "}\n"
+      "main() {\n"
+      "  new Foo(5);\n"
+      "  return 10;\n"
       "}\n";
 
   Dart_Handle result = TestCase::ReloadTestScript(kReloadScript);
@@ -111,6 +113,7 @@ TEST_CASE(IsolateReload_StaticValuePreserved) {
                SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
+      "var _unused;"
       "init() => 'new value';\n"
       "var value = init();\n"
       "main() {\n"
@@ -122,6 +125,43 @@ TEST_CASE(IsolateReload_StaticValuePreserved) {
 
   EXPECT_STREQ("init()=new value,value=old value",
                SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_SavedClosure) {
+  // Create a closure in main which only exists in the original source.
+  const char* kScript =
+      "magic() {\n"
+      "  var x = 'ante';\n"
+      "  return x + 'diluvian';\n"
+      "}\n"
+      "var closure;\n"
+      "main() {\n"
+      "  closure = () { return magic().toString() + '!'; };\n"
+      "  return closure();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("antediluvian!", SimpleInvokeStr(lib, "main"));
+
+  // Remove the original closure from the source code.  The closure is
+  // able to be recompiled because its source is preserved in a
+  // special patch class.
+  const char* kReloadScript =
+      "magic() {\n"
+      "  return 'postapocalyptic';\n"
+      "}\n"
+      "var closure;\n"
+      "main() {\n"
+      "  return closure();\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("postapocalyptic!", SimpleInvokeStr(lib, "main"));
 }
 
 
@@ -164,6 +204,7 @@ TEST_CASE(IsolateReload_ClassAdded) {
   EXPECT_STREQ("hello", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
+      "var _unused;"
       "class A {\n"
       "  toString() => 'hello from A';\n"
       "}\n"
@@ -280,6 +321,7 @@ TEST_CASE(IsolateReload_ConstructorChanged) {
   EXPECT_STREQ("saved:20 new:20", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
+      "var _unused;"
       "class A {\n"
       "  int field;\n"
       "  A() { field = 10; }\n"
@@ -314,6 +356,7 @@ TEST_CASE(IsolateReload_SuperClassChanged) {
   EXPECT_STREQ("(true/false, true/true)", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
+      "var _unused;"
       "class B{\n"
       "}\n"
       "class A extends B {\n"

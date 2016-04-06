@@ -1387,7 +1387,8 @@ class Class : public Object {
   void SetTraceAllocation(bool trace_allocation) const;
 
   bool ValidatePostFinalizePatch(const Class& orig_class, Error* error) const;
-  void CopyStaticFieldValues(const Class& old_cls);
+  void CopyStaticFieldValues(const Class& old_cls) const;
+  void PatchFieldsAndFunctions() const;
   void Reload(const Class& replacement);
   bool CanReload(const Class& replacement);
 

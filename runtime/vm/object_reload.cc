@@ -35,15 +35,15 @@ void Function::Reparent(const Class& new_cls) const {
 }
 
 
-void Class::CopyStaticFieldValues(const Class& old_cls) {
+void Class::CopyStaticFieldValues(const Class& old_cls) const {
+  const Array& old_field_list = Array::Handle(old_cls.fields());
   Field& old_field = Field::Handle();
-  Array& old_field_list = Array::Handle(old_cls.fields());
-
-  Array& field_list = Array::Handle(fields());
-  field_list = fields();
-  String& name = String::Handle();
-  Field& field = Field::Handle();
   String& old_name = String::Handle();
+
+  const Array& field_list = Array::Handle(fields());
+  Field& field = Field::Handle();
+  String& name = String::Handle();
+
   Instance& value = Instance::Handle();
   for (intptr_t i = 0; i < field_list.Length(); i++) {
     field = Field::RawCast(field_list.At(i));
@@ -62,6 +62,28 @@ void Class::CopyStaticFieldValues(const Class& old_cls) {
     }
   }
 
+}
+
+
+void Class::PatchFieldsAndFunctions() const {
+  // Move all old functions and fields to a patch class so that they
+  // still refer to their original script.
+  const PatchClass& patch =
+      PatchClass::Handle(PatchClass::New(*this, Script::Handle(script())));
+
+  const Array& funcs = Array::Handle(functions());
+  Function& func = Function::Handle();
+  for (intptr_t i = 0; i < funcs.Length(); i++) {
+    func = Function::RawCast(funcs.At(i));
+    func.set_owner(patch);
+  }
+
+  const Array& old_field_list = Array::Handle(fields());
+  Field& old_field = Field::Handle();
+  for (intptr_t i = 0; i < old_field_list.Length(); i++) {
+    old_field = Field::RawCast(old_field_list.At(i));
+    old_field.set_owner(patch);
+  }
 }
 
 
@@ -102,53 +124,19 @@ void Class::Reload(const Class& replacement) {
 
   // Move all old functions and fields to a patch class so that they
   // still refer to their original script.
-  const PatchClass& patch =
-      PatchClass::Handle(PatchClass::New(*this, Script::Handle(script())));
-  Function& func = Function::Handle();
-  Array& funcs = Array::Handle(functions());
-  for (intptr_t i = 0; i < funcs.Length(); i++) {
-    func = Function::RawCast(funcs.At(i));
-    func.set_owner(patch);
-  }
-  Field& old_field = Field::Handle();
-  Array& old_field_list = Array::Handle(fields());
-  for (intptr_t i = 0; i < old_field_list.Length(); i++) {
-    old_field = Field::RawCast(old_field_list.At(i));
-    old_field.set_owner(patch);
-  }
+  PatchFieldsAndFunctions();
 
-  // Replace functions
-  funcs = replacement.functions();
+  // Move new functions to the old class.
+  const Array& funcs = Array::Handle(replacement.functions());
+  Function& func = Function::Handle();
   for (intptr_t i = 0; i < funcs.Length(); i++) {
     func ^= funcs.At(i);
     func.Reparent(*this);
   }
   SetFunctions(Array::Handle(replacement.functions()));
 
-  // Replace fields
-  Array& field_list = Array::Handle(fields());
-  field_list = replacement.fields();
-  String& name = String::Handle();
-  Field& field = Field::Handle();
-  String& old_name = String::Handle();
-  Instance& value = Instance::Handle();
-  for (intptr_t i = 0; i < field_list.Length(); i++) {
-    field = Field::RawCast(field_list.At(i));
-    field.set_owner(*this);
-    name = field.name();
-    if (field.is_static()) {
-      // Find the corresponding old field, if it exists, and migrate
-      // over the field value.
-      for (intptr_t j = 0; j < old_field_list.Length(); j++) {
-        old_field = Field::RawCast(old_field_list.At(j));
-        old_name = old_field.name();
-        if (name.Equals(old_name)) {
-          value = old_field.StaticValue();
-          field.SetStaticValue(value);
-        }
-      }
-    }
-  }
+  // Move new fields to the old class, preserving static field values.
+  replacement.CopyStaticFieldValues(*this);
   SetFields(Array::Handle(replacement.fields()));
 
   // TODO(turnidge): Do we really need to do this here?
