@@ -696,4 +696,28 @@ TEST_CASE(IsolateReload_LibraryShow) {
   EXPECT_ERROR(SimpleInvokeError(lib, "mainInt"), "importedIntFunc");
 }
 
+
+// Verifies that we clear the ICs for the functions live on the stack in a way
+// that is compatible with the fast path smi stubs.
+TEST_CASE(IsolateReload_SmiFastPathStubs) {
+  const char* kScript =
+      "import 'isolate_reload_test_helper';\n"
+      "import 'importable_test_lib' show importedIntFunc;\n"
+      "main() {\n"
+      "  var x = importedIntFunc();\n"
+      "  var y = importedIntFunc();\n"
+      "  reloadTest();\n"
+      "  return x + y;\n"
+      "}\n";
+
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  // Identity reload.
+  TestCase::SetReloadTestScript(kScript);
+
+  EXPECT_EQ(8, SimpleInvoke(lib, "main"));
+}
+
 }  // namespace dart

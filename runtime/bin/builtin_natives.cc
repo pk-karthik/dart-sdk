@@ -32,6 +32,7 @@ namespace bin {
   V(Builtin_DoneLoading, 0)                                                    \
   V(Builtin_NativeLibraryExtension, 0)                                         \
   V(Builtin_GetCurrentDirectory, 0)                                            \
+  V(Builtin_MakeLoaderPort, 1)                                                 \
 
 
 BUILTIN_NATIVE_LIST(DECLARE_FUNCTION);

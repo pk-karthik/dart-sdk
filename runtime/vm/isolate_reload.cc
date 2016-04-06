@@ -696,23 +696,27 @@ class MarkFunctionsForRecompilation : public ObjectVisitor {
     if (handle_.IsFunction()) {
       const Function& func = Function::Cast(handle_);
 
-      // Clear collected type feedback and usage counters.
-      func.ClearICDataArray();
-      func.set_usage_counter(0);
-      func.set_deoptimization_counter(0);
+      code_ = func.CurrentCode();
+      const bool clear_code = IsFromDirtyLibrary(func);
+      const bool stub_code = code_.IsStubCode();
 
-      if (IsFromDirtyLibrary(func)) {
-        code_ = func.CurrentCode();
-        if (!code_.IsStubCode()) {
-          // Clear all code.
+      func.ClearICDataArray();
+      if (clear_code) {
+        if (!stub_code) {
           func.ClearCode();
         }
       }
 
       if (func.HasOptimizedCode()) {
         // Clear optimized code and switch to unoptimized code.
-        func.SwitchToUnoptimizedCode();
+        // func.SwitchToUnoptimizedCode();
       }
+
+      // Clear counters counters.
+      func.set_usage_counter(0);
+      func.set_deoptimization_counter(0);
+      func.set_optimized_instruction_count(0);
+      func.set_optimized_call_site_count(0);
     }
   }
 

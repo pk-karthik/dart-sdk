@@ -1906,6 +1906,23 @@ class ICData : public Object {
     return OFFSET_OF(RawICData, owner_);
   }
 
+  // Replaces entry |index| with the sentinel.
+  void WriteSentinelAt(intptr_t index) const;
+  // Clears the count for entry |index|.
+  void ClearCountAt(intptr_t index) const;
+  // Clear all entries with the sentinel value (but will preserve initial
+  // smi smi checks).
+  void ClearWithSentinel() const;
+
+  // Returns the first index that should be used to for a new entry. Will
+  // grow the array if necessary.
+  RawArray* FindFreeIndex(intptr_t* index) const;
+
+  void ValidateSentinelLocations() const;
+
+  // Returns true if this is a two arg smi operation.
+  bool AddSmiSmiCheckForFastSmiStubs() const;
+
   // Used for unoptimized static calls when no class-ids are checked.
   void AddTarget(const Function& target) const;
 
@@ -1920,6 +1937,9 @@ class ICData : public Object {
   void AddReceiverCheck(intptr_t receiver_class_id,
                         const Function& target,
                         intptr_t count = 1) const;
+
+  // Does entry |index| contain the sentinel value?
+  bool IsSentinelAt(intptr_t index) const;
 
   // Retrieving checks.
 

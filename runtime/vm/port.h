@@ -34,6 +34,8 @@ class PortMap : public AllStatic {
   // dart language level.  The port remains live until it is closed.
   static void SetPortState(Dart_Port id, PortState kind);
 
+  static void MakeLoaderPort(Dart_Port id);
+
   // Close the port with id. All pending messages will be dropped.
   //
   // Returns true if the port is successfully closed.
@@ -70,6 +72,7 @@ class PortMap : public AllStatic {
     Dart_Port port;
     MessageHandler* handler;
     PortState state;
+    bool loader_port;
   } Entry;
 
   static const char* PortStateString(PortState state);

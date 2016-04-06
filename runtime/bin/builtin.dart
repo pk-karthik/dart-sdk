@@ -27,6 +27,7 @@ Function _getMainClosure() => main;
 // dart:core library.
 void _printString(String s) native "Builtin_PrintString";
 
+void _makeLoaderPort(RawReceivePort rrp) native "Builtin_MakeLoaderPort";
 
 void _print(arg) {
   _printString(arg.toString());
@@ -410,6 +411,7 @@ void _startLoadRequest(int tag, String uri, Uri resourceUri, context) {
     }
     assert(_dataPort == null);
     _dataPort = new RawReceivePort(_handleLoaderReply);
+    _makeLoaderPort(_dataPort);
   }
   // Register the load request and send it to the VM service isolate.
   var req = new _LoadRequest(tag, uri, resourceUri, context);
@@ -494,6 +496,7 @@ void _requestPackagesMap() {
   assert(_rootScript != null);
   // Create a port to receive the packages map on.
   _packagesPort = new RawReceivePort(_handlePackagesReply);
+  _makeLoaderPort(_packagesPort);
   var sp = _packagesPort.sendPort;
 
   var msg = new List(4);

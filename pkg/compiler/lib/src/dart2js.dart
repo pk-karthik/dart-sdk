@@ -4,6 +4,7 @@
 
 library dart2js.cmdline;
 
+import 'dart:developer';
 import 'dart:async'
     show Future, EventSink;
 import 'dart:convert' show UTF8, LineSplitter;
@@ -687,6 +688,9 @@ void helpAndFail(String message) {
 }
 
 void main(List<String> arguments) {
+  print('main before reload');
+  reloadIsolate();
+  print('main after reload');
   // Since the sdk/bin/dart2js script adds its own arguments in front of
   // user-supplied arguments we search for '--batch' at the end of the list.
   if (arguments.length > 0 && arguments.last == "--batch") {

@@ -1282,6 +1282,14 @@ DART_EXPORT Dart_Handle Dart_SendPortGetId(Dart_Handle port,
                                            Dart_Port* port_id);
 
 
+/**
+ * Turns the RawReceivePort into a loader port.
+ *
+ * \param port A RawReceivePort.
+ *
+ */
+DART_EXPORT Dart_Handle Dart_MakeLoaderPort(Dart_Handle port);
+
 /*
  * ======
  * Scopes

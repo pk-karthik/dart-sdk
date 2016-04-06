@@ -54,7 +54,8 @@ class Message {
         delivery_failure_port_(delivery_failure_port),
         data_(data),
         len_(len),
-        priority_(priority) {
+        priority_(priority),
+        loader_message_(false) {
     ASSERT((priority == kNormalPriority) ||
            (delivery_failure_port == kIllegalPort));
   }
@@ -70,7 +71,8 @@ class Message {
         delivery_failure_port_(delivery_failure_port),
         data_(reinterpret_cast<uint8_t*>(raw_obj)),
         len_(0),
-        priority_(priority) {
+        priority_(priority),
+        loader_message_(false) {
     ASSERT(!raw_obj->IsHeapObject() || raw_obj->IsVMHeapObject());
     ASSERT((priority == kNormalPriority) ||
            (delivery_failure_port == kIllegalPort));
@@ -101,12 +103,15 @@ class Message {
 
   bool RedirectToDeliveryFailurePort();
 
+  bool IsLoaderMessage();
+
   intptr_t Id() const;
 
   static const char* PriorityAsString(Priority priority);
 
  private:
   friend class MessageQueue;
+  friend class PortMap;
 
   Message* next_;
   Dart_Port dest_port_;
@@ -114,6 +119,7 @@ class Message {
   uint8_t* data_;
   intptr_t len_;
   Priority priority_;
+  bool loader_message_;
 
   DISALLOW_COPY_AND_ASSIGN(Message);
 };

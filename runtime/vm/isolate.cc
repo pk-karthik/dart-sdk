@@ -1000,6 +1000,13 @@ void Isolate::DoneLoading() {
 }
 
 
+void Isolate::OnStackReload() {
+  ASSERT(reload_context_ == NULL);
+  ReloadSources(false);
+  PauseEventHandler();
+}
+
+
 void Isolate::ReloadSources(bool test_mode) {
   ASSERT(reload_context_ == NULL);
   reload_context_ = new IsolateReloadContext(this, test_mode);
@@ -2151,6 +2158,7 @@ void Isolate::PauseEventHandler() {
       message_notify_callback();
   set_message_notify_callback(Isolate::WakePauseEventHandler);
 
+  const bool had_isolate_reload_context = reload_context() != NULL;
   bool resume = false;
   while (true) {
     // Handle all available vm service messages, up to a resume
@@ -2161,6 +2169,11 @@ void Isolate::PauseEventHandler() {
       ml.Enter();
     }
     if (resume) {
+      break;
+    }
+
+    if (had_isolate_reload_context && (reload_context() == NULL)) {
+      OS::Print("Reloading has finished!\n");
       break;
     }
 

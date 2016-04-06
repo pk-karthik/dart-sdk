@@ -70,9 +70,13 @@ class MessageHandler {
   // Returns true on success.
   MessageStatus HandleOOBMessages();
 
+  MessageStatus HandleLoaderMessages();
+
   // Returns true if there are pending OOB messages for this message
   // handler.
   bool HasOOBMessages();
+
+  bool HasLoaderMessages();
 
   // A message handler tracks how many live ports it has.
   bool HasLivePorts() const { return live_ports_ > 0; }
@@ -230,6 +234,7 @@ class MessageHandler {
   Monitor monitor_;  // Protects all fields in MessageHandler.
   MessageQueue* queue_;
   MessageQueue* oob_queue_;
+  MessageQueue* loader_queue_;
   // This flag is not thread safe and can only reliably be accessed on a single
   // thread.
   bool oob_message_handling_allowed_;
