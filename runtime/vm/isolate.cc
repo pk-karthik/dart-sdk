@@ -626,6 +626,10 @@ static MessageHandler::MessageStatus StoreError(Thread* thread,
 
 MessageHandler::MessageStatus IsolateMessageHandler::ProcessUnhandledException(
     const Error& result) {
+  if (I->IsReloading()) {
+    I->ReportReloadError(result);
+    return kOK;
+  }
   // Generate the error and stacktrace strings for the error message.
   String& exc_str = String::Handle(T->zone());
   String& stacktrace_str = String::Handle(T->zone());
@@ -997,6 +1001,14 @@ void Isolate::DoneLoading() {
     }
   }
   TokenStream::CloseSharedTokenList(this);
+}
+
+
+void Isolate::ReportReloadError(const Error& error) {
+  ASSERT(IsReloading());
+  reload_context_->AbortReload(error);
+  delete reload_context_;
+  reload_context_ = NULL;
 }
 
 

@@ -41,6 +41,7 @@ class IsolateReloadContext {
 
   void StartReload();
   void FinishReload();
+  void AbortReload(const Error& error);
 
   RawLibrary* saved_root_library() const;
 

@@ -1101,6 +1101,29 @@ class RefreshCommand extends DebuggerCommand {
       'Syntax: refresh <subcommand>\n';
 }
 
+class ReloadCommand extends DebuggerCommand {
+  ReloadCommand(Debugger debugger) : super(debugger, 'reload', []);
+
+  Future run(List<String> args) async {
+    if (debugger.isolate == null) {
+      debugger.console.print('There is no current vm');
+      return;
+    }
+
+    await debugger.isolate.reloadSources();
+
+    debugger.console.print('Isolate reloading....');
+  }
+
+  String helpShort = 'Reload the sources for the current isolate.';
+
+  String helpLong =
+      'Reload the sources for the current isolate.\n'
+      '\n'
+      'Syntax: reload\n';
+}
+
+
 class VmListCommand extends DebuggerCommand {
   VmListCommand(Debugger debugger) : super(debugger, 'list', []);
 
@@ -1356,6 +1379,7 @@ class ObservatoryDebugger extends Debugger {
         new PauseCommand(this),
         new PrintCommand(this),
         new RefreshCommand(this),
+        new ReloadCommand(this),
         new SetCommand(this),
         new SmartNextCommand(this),
         new StepCommand(this),
@@ -1648,6 +1672,15 @@ class ObservatoryDebugger extends Debugger {
       case ServiceEvent.kIsolateUpdate:
         var iso = event.owner;
         console.print("Isolate ${iso.number} renamed to '${iso.name}'");
+        break;
+
+      case ServiceEvent.kIsolateReload:
+        var reloadError = event.reloadError;
+        if (reloadError != null) {
+          console.print('Isolate reload failed: ${event.reloadError}');
+        } else {
+          console.print('Isolate reloaded.');
+        }
         break;
 
       case ServiceEvent.kPauseStart:

@@ -441,6 +441,8 @@ class Isolate : public BaseIsolate {
     return reload_context_;
   }
 
+  void ReportReloadError(const Error& error);
+
   uword user_tag() const {
     return user_tag_;
   }

@@ -288,6 +288,12 @@ void IsolateReloadContext::FinishReload() {
 }
 
 
+void IsolateReloadContext::AbortReload(const Error& error) {
+  ReportError(error);
+  Rollback();
+}
+
+
 void IsolateReloadContext::SwitchStackToUnoptimizedCode() {
   TIMELINE_SCOPE("SwitchStackToUnoptimizedCode");
   StackFrameIterator it(StackFrameIterator::kDontValidateFrames);
@@ -555,6 +561,9 @@ void IsolateReloadContext::ClearReplacedObjectBits() {
 
 bool IsolateReloadContext::ValidateReload() {
   TIMELINE_SCOPE("ValidateReload");
+  if (has_error_) {
+    return false;
+  }
   // Already built.
   ASSERT(class_map_storage_ != Array::null());
   UnorderedHashMap<ClassMapTraits> map(class_map_storage_);

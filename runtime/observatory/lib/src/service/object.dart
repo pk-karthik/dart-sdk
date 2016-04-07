@@ -1202,6 +1202,8 @@ class Isolate extends ServiceObjectOwner {
     if (event.reloadError != null) {
       // Failure.
       print('Reload failed: ${event.reloadError}');
+    } else {
+      _cache.clear();
     }
   }
 

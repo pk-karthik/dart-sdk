@@ -720,4 +720,26 @@ TEST_CASE(IsolateReload_SmiFastPathStubs) {
   EXPECT_EQ(8, SimpleInvoke(lib, "main"));
 }
 
+
+TEST_CASE(IsolateReload_TopLevelParseError) {
+  const char* kScript =
+      "main() {\n"
+      "  return 4;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_EQ(4, SimpleInvoke(lib, "main"));
+
+  const char* kReloadScript =
+      "kjsadkfjaksldfjklsadf;\n"
+      "main() {\n"
+      "  return 4;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_ERROR(lib, "unexpected token");
+}
+
 }  // namespace dart
