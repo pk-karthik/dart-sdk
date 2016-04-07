@@ -36,6 +36,53 @@ void Function::Reparent(const Class& new_cls) const {
 }
 
 
+void Function::ZeroEdgeCounters() const {
+  const Array& saved_ic_data = Array::Handle(ic_data_array());
+  if (saved_ic_data.IsNull()) {
+    return;
+  }
+  const intptr_t saved_ic_datalength = saved_ic_data.Length();
+  ASSERT(saved_ic_datalength > 0);
+  const Array& edge_counters_array =
+      Array::Handle(Array::RawCast(saved_ic_data.At(0)));
+  ASSERT(!edge_counters_array.IsNull());
+  // Fill edge counters array with zeros.
+  const Smi& zero = Smi::Handle(Smi::New(0));
+  for (intptr_t i = 0; i < edge_counters_array.Length(); i++) {
+    edge_counters_array.SetAt(i, zero);
+  }
+}
+
+
+static void ClearICs(const Function& function, const Code& code) {
+  if (function.ic_data_array() == Array::null()) {
+    return;  // Already reset in an earlier round.
+  }
+
+  Thread* thread = Thread::Current();
+  Zone* zone = thread->zone();
+
+  ZoneGrowableArray<const ICData*>* ic_data_array =
+      new(zone) ZoneGrowableArray<const ICData*>();
+  function.RestoreICDataMap(ic_data_array, false /* clone ic-data */);
+  const PcDescriptors& descriptors =
+      PcDescriptors::Handle(code.pc_descriptors());
+  PcDescriptors::Iterator iter(descriptors, RawPcDescriptors::kIcCall |
+                                            RawPcDescriptors::kUnoptStaticCall);
+  while (iter.MoveNext()) {
+    const ICData* ic_data = (*ic_data_array)[iter.DeoptId()];
+    bool is_static_call = iter.Kind() == RawPcDescriptors::kUnoptStaticCall;
+    ic_data->Reset(is_static_call);
+  }
+}
+
+
+void Function::FillICDataWithSentinels(const Code& code) const {
+  ASSERT(code.raw() == CurrentCode());
+  ClearICs(*this, code);
+}
+
+
 void Class::CopyStaticFieldValues(const Class& old_cls) const {
   const Array& old_field_list = Array::Handle(old_cls.fields());
   Field& old_field = Field::Handle();
@@ -182,6 +229,7 @@ void ICData::Reset(bool is_static_call) const {
     const Function& old_target = Function::Handle(GetTargetAt(0));
     ASSERT(!old_target.IsNull());
     if (!old_target.is_static()) {
+      // TODO(johnmccutchan): Improve this.
       TIR_Print("Cannot rebind super-call to %s from %s\n",
                 old_target.ToCString(),
                 Object::Handle(Owner()).ToCString());
@@ -192,13 +240,13 @@ void ICData::Reset(bool is_static_call) const {
     const Function& new_target =
         Function::Handle(cls.LookupStaticFunction(selector));
     if (new_target.IsNull()) {
+      // TODO(johnmccutchan): Improve this.
       TIR_Print("Cannot rebind static call to %s from %s\n",
                 old_target.ToCString(),
                 Object::Handle(Owner()).ToCString());
       return;
     }
-    ResetData();
-    AddTarget(new_target);
+    ClearAndSetStaticTarget(new_target);
   } else {
     ClearWithSentinel();
   }

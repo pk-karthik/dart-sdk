@@ -27,6 +27,7 @@
 #include "vm/hash_table.h"
 #include "vm/heap.h"
 #include "vm/intrinsifier.h"
+#include "vm/isolate_reload.h"
 #include "vm/object_store.h"
 #include "vm/parser.h"
 #include "vm/precompiler.h"
@@ -68,6 +69,7 @@ DECLARE_FLAG(charp, coverage_dir);
 DECLARE_FLAG(bool, show_invisible_frames);
 DECLARE_FLAG(bool, trace_deoptimization);
 DECLARE_FLAG(bool, trace_deoptimization_verbose);
+DECLARE_FLAG(bool, trace_reload);
 DECLARE_FLAG(bool, write_protect_code);
 
 
@@ -5365,6 +5367,34 @@ void Function::SwitchToUnoptimizedCode() const {
   AttachCode(unopt_code);
   unopt_code.Enable();
   isolate->TrackDeoptimizedCode(current_code);
+}
+
+
+void Function::SwitchToLazyCompiledUnoptimizedCode() const {
+  if (!HasOptimizedCode()) {
+    return;
+  }
+
+  Thread* thread = Thread::Current();
+  Zone* zone = thread->zone();
+  ASSERT(thread->IsMutatorThread());
+
+  const Code& current_code = Code::Handle(zone, CurrentCode());
+  TIR_Print("Disabling optimized code for %s\n", ToCString());
+  current_code.DisableDartCode();
+
+  const Code& unopt_code = Code::Handle(zone, unoptimized_code());
+  if (unopt_code.IsNull()) {
+    // Set the lazy compile code.
+    TIR_Print("Switched to lazy compile stub for %s\n", ToCString());
+    SetInstructions(Code::Handle(StubCode::LazyCompile_entry()->code()));
+    return;
+  }
+
+  TIR_Print("Switched to unoptimized code for %s\n", ToCString());
+
+  AttachCode(unopt_code);
+  unopt_code.Enable();
 }
 
 
@@ -12418,6 +12448,44 @@ void ICData::ClearWithSentinel() const {
 }
 
 
+void ICData::ClearAndSetStaticTarget(const Function& func) const {
+  const intptr_t len = NumberOfChecks();
+  if (len == 0) {
+    return;
+  }
+  if (NumArgsTested() == 0) {
+    // No type feedback is being collected.
+    const Array& data = Array::Handle(ic_data());
+    // Static calls with no argument checks hold only one target.
+    ASSERT(len == 1);
+    // Static calls with no argument checks only need two words.
+    ASSERT(TestEntryLength() == 2);
+    // Set the target.
+    data.SetAt(0, func);
+    // Set count to 0 as this is called during compilation, before the
+    // call has been executed.
+    const Smi& value = Smi::Handle(Smi::New(0));
+    data.SetAt(1, value);
+  } else {
+    // Type feedback on arguments is being collected.
+    const Array& data = Array::Handle(ic_data());
+
+    // Fill all but the first entry with the sentinel.
+    for (intptr_t i = len - 1; i > 0; i--) {
+      WriteSentinelAt(i);
+    }
+    // Rewrite the dummy entry.
+    const Smi& object_cid = Smi::Handle(Smi::New(kObjectCid));
+    for (intptr_t i = 0; i < NumArgsTested(); i++) {
+      data.SetAt(i, object_cid);
+    }
+    data.SetAt(NumArgsTested(), func);
+    const Smi& value = Smi::Handle(Smi::New(0));
+    data.SetAt(NumArgsTested() + 1, value);
+  }
+}
+
+
 // Add an initial Smi/Smi check with count 0.
 bool ICData::AddSmiSmiCheckForFastSmiStubs() const {
   bool is_smi_two_args_op = false;
@@ -12977,7 +13045,6 @@ RawICData* ICData::NewDescriptor(Zone* zone,
   result.SetNumArgsTested(num_args_tested);
   return result.raw();
 }
-
 
 
 void ICData::ResetData() const {

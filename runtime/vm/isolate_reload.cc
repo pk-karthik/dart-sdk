@@ -854,23 +854,27 @@ class MarkFunctionsForRecompilation : public ObjectVisitor {
     if (handle_.IsFunction()) {
       const Function& func = Function::Cast(handle_);
 
+      // Switch to unoptimized code or the lazy compilation stub.
+      func.SwitchToLazyCompiledUnoptimizedCode();
+
+      // Grab the current code.
       code_ = func.CurrentCode();
+      ASSERT(!code_.IsNull());
       const bool clear_code = IsFromDirtyLibrary(func);
       const bool stub_code = code_.IsStubCode();
 
-      func.ClearICDataArray();
-      if (clear_code) {
-        if (!stub_code) {
-          func.ClearCode();
+      // Zero edge counters.
+      func.ZeroEdgeCounters();
+
+      if (!stub_code) {
+        if (clear_code) {
+          ClearAllCode(func);
+        } else {
+          PreserveUnoptimizedCode(func);
         }
       }
 
-      if (func.HasOptimizedCode()) {
-        // TODO(johnmccutchan): Clear optimized code and switch to unoptimized
-        // code (if it is available).
-      }
-
-      // Clear counters counters.
+      // Clear counters.
       func.set_usage_counter(0);
       func.set_deoptimization_counter(0);
       func.set_optimized_instruction_count(0);
@@ -879,6 +883,19 @@ class MarkFunctionsForRecompilation : public ObjectVisitor {
   }
 
  private:
+  void ClearAllCode(const Function& func) {
+    // Null out the ICData array and code.
+    func.ClearICDataArray();
+    func.ClearCode();
+  }
+
+  void PreserveUnoptimizedCode(const Function& func) {
+    ASSERT(!code_.IsNull());
+    // We are preserving the unoptimized code, fill all ICData arrays with
+    // the sentinel values so that we have no stale type feedback.
+    func.FillICDataWithSentinels(code_);
+  }
+
   bool IsFromDirtyLibrary(const Function& func) {
     owning_class_ = func.Owner();
     owning_lib_ = owning_class_.library();
