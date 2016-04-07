@@ -26,9 +26,9 @@ DEFINE_FLAG(bool, trace_reload, true, "Trace isolate reloading");
 #define Z (thread->zone())
 
 #define TIMELINE_SCOPE(name)                                                   \
-    TimelineDurationScope tds(Thread::Current(),                               \
-                              Timeline::GetIsolateStream(),                    \
-                              name)
+    TimelineDurationScope tds##name(Thread::Current(),                         \
+                                   Timeline::GetIsolateStream(),               \
+                                   #name)
 
 class ClassMapTraits {
  public:
@@ -298,7 +298,6 @@ void IsolateReloadContext::FinishReload() {
   BuildClassMapping();
   BuildLibraryMapping();
   TIR_Print("---- DONE FINALIZING\n");
-  I->class_table()->PrintNonDartClasses();
 
   if (ValidateReload()) {
     Commit();
@@ -316,7 +315,7 @@ void IsolateReloadContext::AbortReload(const Error& error) {
 
 
 void IsolateReloadContext::SwitchStackToUnoptimizedCode() {
-  TIMELINE_SCOPE("SwitchStackToUnoptimizedCode");
+  TIMELINE_SCOPE(SwitchStackToUnoptimizedCode);
   StackFrameIterator it(StackFrameIterator::kDontValidateFrames);
 
   Function& func = Function::Handle();
@@ -332,15 +331,14 @@ void IsolateReloadContext::SwitchStackToUnoptimizedCode() {
 
 
 void IsolateReloadContext::CheckpointClasses() {
-  TIMELINE_SCOPE("CheckpointClasses");
+  TIMELINE_SCOPE(CheckpointClasses);
   TIR_Print("---- CHECKPOINTING CLASSES\n");
-  I->class_table()->PrintNonDartClasses();
   saved_num_cids_ = I->class_table()->NumCids();
 }
 
 
 void IsolateReloadContext::CheckpointLibraries() {
-  TIMELINE_SCOPE("CheckpointLibraries");
+  TIMELINE_SCOPE(CheckpointLibraries);
   // Build a new libraries array which only has the dart-scheme libs.
   const GrowableObjectArray& libs =
       GrowableObjectArray::Handle(object_store()->libraries());
@@ -374,7 +372,7 @@ void IsolateReloadContext::CheckpointLibraries() {
 
 
 void IsolateReloadContext::Checkpoint() {
-  TIMELINE_SCOPE("Checkpoint");
+  TIMELINE_SCOPE(Checkpoint);
   CheckpointClasses();
   CheckpointLibraries();
   // Clear the compile time constants cache.
@@ -387,8 +385,6 @@ void IsolateReloadContext::RollbackClasses() {
   TIR_Print("---- ROLLING BACK CLASS TABLE\n");
   ASSERT(saved_num_cids_ > 0);
   I->class_table()->DropNewClasses(saved_num_cids_);
-  I->class_table()->PrintNonDartClasses();
-
 }
 
 
@@ -488,6 +484,7 @@ void IsolateReloadContext::VerifyCanonicalTypeArguments() {
 
 
 void IsolateReloadContext::RehashCanonicalTypeArguments() {
+  TIMELINE_SCOPE(RehashCanonicalTypeArguments);
   Thread* thread = Thread::Current();
   // Last element of the array is the number of used elements.
   const Array& table =
@@ -531,7 +528,7 @@ void IsolateReloadContext::RehashCanonicalTypeArguments() {
 
 
 void IsolateReloadContext::Commit() {
-  TIMELINE_SCOPE("Commit");
+  TIMELINE_SCOPE(Commit);
   Thread* thread = Thread::Current();
   TIR_Print("---- COMMITTING REVERSE MAP\n");
 
@@ -540,6 +537,7 @@ void IsolateReloadContext::Commit() {
 #endif
 
   {
+    TIMELINE_SCOPE(CopyStaticFieldsAndPatchFieldsAndFunctions);
     // Copy static field values from the old classes to the new classes.
     // Patch fields and functions in the old classes so that they retain
     // the old script.
@@ -565,6 +563,7 @@ void IsolateReloadContext::Commit() {
   }
 
   {
+    TIMELINE_SCOPE(ReplaceClasses);
     // Move classes in the class table and update their cid.
     Class& cls = Class::Handle();
     Class& new_cls = Class::Handle();
@@ -593,6 +592,7 @@ void IsolateReloadContext::Commit() {
   // Copy over certain properties of libraries, e.g. is the library
   // debuggable?
   {
+    TIMELINE_SCOPE(CopyLibraryBits);
     Library& lib = Library::Handle();
     Library& new_lib = Library::Handle();
 
@@ -616,6 +616,7 @@ void IsolateReloadContext::Commit() {
   }
 
   {
+    TIMELINE_SCOPE(UpdateLibrariesArray);
     // Update the libraries array.
     Library& lib = Library::Handle();
     const GrowableObjectArray& libs = GrowableObjectArray::Handle(
@@ -636,7 +637,7 @@ void IsolateReloadContext::Commit() {
   }
 
   {
-    TIMELINE_SCOPE("CommitHeapWalk");
+    TIMELINE_SCOPE(CommitHeapWalk);
     HeapIterationScope heap_iteration_scope;
     Isolate* isolate = thread->isolate();
     UpdateHeapVisitor uhv(isolate);
@@ -652,8 +653,13 @@ void IsolateReloadContext::Commit() {
     TIR_Print("---- Performed %" Pd " replacements\n", uhv.replacement_count());
   }
 
-  TIR_Print("---- Compacting the class table\n");
-  I->class_table()->CompactNewClasses(saved_num_cids_);
+
+  {
+    TIMELINE_SCOPE(CompactNewClasses);
+    TIR_Print("---- Compacting the class table\n");
+    I->class_table()->CompactNewClasses(saved_num_cids_);
+  }
+
 
   // The canonical types were hashed based on the old class ids.  Rehash.
   RehashCanonicalTypeArguments();
@@ -672,7 +678,7 @@ bool IsolateReloadContext::IsDirty(const Library& lib) {
 
 
 void IsolateReloadContext::PostCommit() {
-  TIMELINE_SCOPE("PostCommit");
+  TIMELINE_SCOPE(PostCommit);
   ClearReplacedObjectBits();
   set_saved_root_library(Library::Handle());
   set_saved_libraries(GrowableObjectArray::Handle());
@@ -696,7 +702,7 @@ void IsolateReloadContext::ClearReplacedObjectBits() {
 
 
 bool IsolateReloadContext::ValidateReload() {
-  TIMELINE_SCOPE("ValidateReload");
+  TIMELINE_SCOPE(ValidateReload);
   if (has_error_) {
     return false;
   }
@@ -911,7 +917,7 @@ class MarkFunctionsForRecompilation : public ObjectVisitor {
 
 
 void IsolateReloadContext::MarkAllFunctionsForRecompilation() {
-  TIMELINE_SCOPE("MarkAllFunctionsForRecompilation");
+  TIMELINE_SCOPE(MarkAllFunctionsForRecompilation);
   MarkFunctionsForRecompilation visitor(isolate_, this);
   NoSafepointScope no_safepoint;
   isolate_->heap()->VisitObjects(&visitor);

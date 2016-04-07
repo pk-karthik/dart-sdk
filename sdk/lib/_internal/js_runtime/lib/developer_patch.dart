@@ -8,6 +8,10 @@ import 'dart:_js_helper' show patch, ForceInline;
 import 'dart:_foreign_helper' show JS;
 
 @patch
+void reloadIsolate() {
+}
+
+@patch
 @ForceInline()
 bool debugger({bool when: true, String message}) {
   if (when) {
