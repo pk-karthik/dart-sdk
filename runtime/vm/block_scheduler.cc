@@ -63,7 +63,9 @@ void BlockScheduler::AssignEdgeWeights() const {
     // Deferred loading cleared ic_data_array.
     Compiler::AbortBackgroundCompilation(Thread::kNoDeoptId);
   }
-  ASSERT(!ic_data_array.IsNull());
+  if (ic_data_array.IsNull()) {
+    return;
+  }
   Array& edge_counters = Array::Handle();
   edge_counters ^= ic_data_array.At(0);
 
