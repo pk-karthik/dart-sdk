@@ -95,10 +95,11 @@ class ReverseMapTraits {
 };
 
 
-class UpdateClassesVisitor : public ObjectPointerVisitor {
+class UpdateHeapVisitor : public ObjectPointerVisitor {
  public:
-  UpdateClassesVisitor(Isolate* isolate)
+  UpdateHeapVisitor(Isolate* isolate)
       : ObjectPointerVisitor(isolate),
+        class_table_(isolate->class_table()),
         key_(Object::Handle()),
         value_(Object::Handle()),
         reverse_map_storage_(Array::Handle(
@@ -123,6 +124,21 @@ class UpdateClassesVisitor : public ObjectPointerVisitor {
       if (!(*p)->IsReplacedObject()) {
         continue;
       }
+      if ((*p)->IsClass()) {
+        // Faster mapping for classes.
+        RawClass* raw_cls = reinterpret_cast<RawClass*>(*p);
+        const intptr_t cid = raw_cls->ptr()->id_;
+        RawClass* replacement_cls = GetClassAt(cid);
+        if (raw_cls != replacement_cls) {
+          *p = replacement_cls;
+        }
+        replacement_count_++;
+        continue;
+      }
+      if (!(*p)->IsLibrary()) {
+        // We only store libraries in the map.
+        continue;
+      }
       key_ = *p;
       const intptr_t entry = reverse_map.FindKey(key_);
       ASSERT(entry != -1);
@@ -140,6 +156,10 @@ class UpdateClassesVisitor : public ObjectPointerVisitor {
   intptr_t replacement_count() const { return replacement_count_; }
 
  private:
+  RawClass* GetClassAt(intptr_t index) {
+    return class_table_->At(index);
+  }
+
   bool IsContainedInIsolateReloadContext(RawObject** first) {
     if (reverse_map_storage_.Contains(first)) {
       return true;
@@ -153,6 +173,7 @@ class UpdateClassesVisitor : public ObjectPointerVisitor {
     return false;
   }
 
+  ClassTable* class_table_;
   Object& key_;
   Object& value_;
   Array& reverse_map_storage_;
@@ -325,6 +346,7 @@ void IsolateReloadContext::CheckpointLibraries() {
       GrowableObjectArray::Handle(object_store()->libraries());
   const GrowableObjectArray& new_libs = GrowableObjectArray::Handle(
       GrowableObjectArray::New(Heap::kOld));
+
   Library& tmp_lib = Library::Handle();
   String& tmp_url = String::Handle();
   for (intptr_t i = 0; i < libs.Length(); i++) {
@@ -506,17 +528,17 @@ void IsolateReloadContext::Commit() {
     TIMELINE_SCOPE("CommitHeapWalk");
     HeapIterationScope heap_iteration_scope;
     Isolate* isolate = thread->isolate();
-    UpdateClassesVisitor ucv(isolate);
+    UpdateHeapVisitor uhv(isolate);
     // isolate->IterateObjectPointers(&ucv, true);
     TIR_Print("---- Scanning heap\n");
     isolate->heap()->WriteProtectCode(false);
-    isolate->heap()->VisitObjectPointers(&ucv);
+    isolate->heap()->VisitObjectPointers(&uhv);
     isolate->heap()->WriteProtectCode(true);
     TIR_Print("---- Scanning object store\n");
-    isolate->object_store()->VisitObjectPointers(&ucv);
+    isolate->object_store()->VisitObjectPointers(&uhv);
     TIR_Print("---- Scanning stub code\n");
-    StubCode::VisitObjectPointers(&ucv);
-    TIR_Print("---- Performed %" Pd " replacements\n", ucv.replacement_count());
+    StubCode::VisitObjectPointers(&uhv);
+    TIR_Print("---- Performed %" Pd " replacements\n", uhv.replacement_count());
   }
 
   TIR_Print("---- Compacting the class table\n");
@@ -835,13 +857,7 @@ void IsolateReloadContext::BuildClassMapping() {
     } else {
       // Replaced class.
       AddClassMapping(replacement_or_new, old);
-
-      ASSERT(reverse_map_storage_ != Array::null());
-      UnorderedHashMap<ReverseMapTraits> reverse_map(reverse_map_storage_);
-      ASSERT(reverse_map.FindKey(old) == -1);
-      reverse_map.UpdateOrInsert(old, replacement_or_new);
       old.raw()->SetIsReplacedObject();
-      reverse_map_storage_ = reverse_map.Release().raw();
     }
   }
 }

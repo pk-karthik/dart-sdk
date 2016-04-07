@@ -450,6 +450,12 @@ class RawObject {
   bool IsDartInstance() {
     return (!IsHeapObject() || (GetClassId() >= kInstanceCid));
   }
+  bool IsClass() {
+    return ((GetClassId() == kClassCid));
+  }
+  bool IsLibrary() {
+    return ((GetClassId() == kLibraryCid));
+  }
   bool IsFreeListElement() {
     return ((GetClassId() == kFreeListElement));
   }
@@ -741,6 +747,7 @@ class RawClass : public RawObject {
   friend class RawInstance;
   friend class RawInstructions;
   friend class SnapshotReader;
+  friend class UpdateHeapVisitor;
 };
 
 
