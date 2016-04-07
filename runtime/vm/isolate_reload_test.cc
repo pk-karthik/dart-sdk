@@ -413,6 +413,40 @@ TEST_CASE(IsolateReload_SuperClassChanged) {
 }
 
 
+TEST_CASE(IsolateReload_Generics) {
+  // Reload a program with generics without changing the source.  We
+  // do this to produce duplication TypeArguments and make sure that
+  // the system doesn't die.
+  const char* kScript =
+      "class A {\n"
+      "}\n"
+      "class B<T extends A> {\n"
+      "}\n"
+      "main() {\n"
+      "  return new B<A>().toString();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("Instance of 'B<A>'", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadScript =
+      "class A {\n"
+      "}\n"
+      "class B<T extends A> {\n"
+      "}\n"
+      "main() {\n"
+      "  return new B<A>().toString();\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("Instance of 'B<A>'", SimpleInvokeStr(lib, "main"));
+}
+
+
 TEST_CASE(IsolateReload_MixinChanged) {
   const char* kScript =
       "class Mixin1 {\n"

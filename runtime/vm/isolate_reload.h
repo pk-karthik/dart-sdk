@@ -86,6 +86,13 @@ class IsolateReloadContext {
   void RollbackClasses();
   void RollbackLibraries();
 
+#ifdef DEBUG
+  void VerifyMaps();
+  void VerifyCanonicalTypeArguments();
+#endif
+
+  void RehashCanonicalTypeArguments();
+
   void Commit();
 
   void PostCommit();

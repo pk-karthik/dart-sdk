@@ -423,10 +423,121 @@ void IsolateReloadContext::Rollback() {
 }
 
 
+#ifdef DEBUG
+void IsolateReloadContext::VerifyMaps() {
+  Class& cls = Class::Handle();
+  Class& new_cls = Class::Handle();
+  Class& cls2 = Class::Handle();
+  Class& new_cls2 = Class::Handle();
+
+  // Verify that two old classes aren't both mapped to the same new
+  // class.  This could happen is the IsSameClass function is broken.
+  UnorderedHashMap<ClassMapTraits> class_map(class_map_storage_);
+  {
+    UnorderedHashMap<ClassMapTraits>::Iterator it(&class_map);
+    while (it.MoveNext()) {
+      const intptr_t entry = it.Current();
+      new_cls = Class::RawCast(class_map.GetKey(entry));
+      cls = Class::RawCast(class_map.GetPayload(entry, 0));
+      if (new_cls.raw() != cls.raw()) {
+        UnorderedHashMap<ClassMapTraits>::Iterator it2(&class_map);
+        while (it2.MoveNext()) {
+          new_cls2 = Class::RawCast(class_map.GetKey(entry));
+          if (new_cls.raw() == new_cls2.raw()) {
+            cls2 = Class::RawCast(class_map.GetPayload(entry, 0));
+            if (cls.raw() != cls2.raw()) {
+              OS::PrintErr(
+                  "Classes '%s' and '%s' are distinct classes but both map to "
+                  "class '%s'\n",
+                  cls.ToCString(), cls2.ToCString(), new_cls.ToCString());
+              UNREACHABLE();
+            }
+          }
+        }
+      }
+    }
+  }
+  class_map.Release();
+}
+
+
+void IsolateReloadContext::VerifyCanonicalTypeArguments() {
+  Thread* thread = Thread::Current();
+  const Array& table =
+      Array::Handle(Z, I->object_store()->canonical_type_arguments());
+  const intptr_t table_size = table.Length() - 1;
+  ASSERT(Utils::IsPowerOfTwo(table_size));
+  TypeArguments& element = TypeArguments::Handle(Z);
+  TypeArguments& other_element = TypeArguments::Handle();
+  for (intptr_t i = 0; i < table_size; i++) {
+    element ^= table.At(i);
+    for (intptr_t j = 0; j < table_size; j++) {
+      if ((i != j) && (table.At(j) != TypeArguments::null())) {
+        other_element ^= table.At(j);
+        if (element.Equals(other_element)) {
+          // Recursive types may be equal, but have different hashes.
+          ASSERT(element.IsRecursive());
+          ASSERT(other_element.IsRecursive());
+          ASSERT(element.Hash() != other_element.Hash());
+        }
+      }
+    }
+  }
+}
+#endif
+
+
+void IsolateReloadContext::RehashCanonicalTypeArguments() {
+  Thread* thread = Thread::Current();
+  // Last element of the array is the number of used elements.
+  const Array& table =
+      Array::Handle(Z, I->object_store()->canonical_type_arguments());
+  const intptr_t table_size = table.Length() - 1;
+  ASSERT(Utils::IsPowerOfTwo(table_size));
+  Array& new_table = Array::Handle(Z, Array::New(table_size + 1));
+  // Copy all elements from the original table to the newly allocated
+  // array.
+  TypeArguments& element = TypeArguments::Handle(Z);
+  TypeArguments& new_element = TypeArguments::Handle(Z);
+  for (intptr_t i = 0; i < table_size; i++) {
+    element ^= table.At(i);
+    if (!element.IsNull()) {
+      const intptr_t hash = element.Hash();
+      intptr_t index = hash & (table_size - 1);
+      new_element ^= new_table.At(index);
+      while (!new_element.IsNull()) {
+        if (new_element.Equals(element)) {
+          // When we replace old classes with new classes, we can
+          // sometimes produce duplication type arguments.
+          //
+          // TODO(turnidge): Talk to Regis about this case.
+          break;
+        }
+        index = (index + 1) & (table_size - 1);  // Move to next element.
+        new_element ^= new_table.At(index);
+      }
+      new_table.SetAt(index, element);
+    }
+  }
+  // Copy used count.
+  const Object& used_count = Object::Handle(Z, table.At(table_size));
+  new_table.SetAt(table_size, used_count);
+  // Remember the new table now.
+  I->object_store()->set_canonical_type_arguments(new_table);
+#ifdef DEBUG
+  VerifyCanonicalTypeArguments();
+#endif
+}
+
+
 void IsolateReloadContext::Commit() {
   TIMELINE_SCOPE("Commit");
   Thread* thread = Thread::Current();
   TIR_Print("---- COMMITTING REVERSE MAP\n");
+
+#ifdef DEBUG
+  VerifyMaps();
+#endif
 
   {
     // Copy static field values from the old classes to the new classes.
@@ -543,6 +654,9 @@ void IsolateReloadContext::Commit() {
 
   TIR_Print("---- Compacting the class table\n");
   I->class_table()->CompactNewClasses(saved_num_cids_);
+
+  // The canonical types were hashed based on the old class ids.  Rehash.
+  RehashCanonicalTypeArguments();
 }
 
 
