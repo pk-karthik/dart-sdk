@@ -12336,9 +12336,24 @@ intptr_t ICData::TestEntryLength() const {
 }
 
 
-intptr_t ICData::NumberOfChecks() const {
-  // Do not count the sentinel;
+intptr_t ICData::LengthWithoutSentinel() const {
+  // Do not count the sentinel.
   return (Smi::Value(ic_data()->ptr()->length_) / TestEntryLength()) - 1;
+}
+
+
+intptr_t ICData::NumberOfChecks() const {
+  // TODO(johnmccutchan): Speed this up.
+  const intptr_t length = LengthWithoutSentinel() + 1;
+  intptr_t number_of_checks = 0;
+  for (intptr_t i = 0; i < length; i++) {
+    if (IsSentinelAt(i)) {
+      return number_of_checks;
+    }
+    number_of_checks++;
+  }
+  UNREACHABLE();
+  return -1;
 }
 
 
@@ -12375,10 +12390,7 @@ bool ICData::HasCheck(const GrowableArray<intptr_t>& cids) const {
     GetClassIdsAt(i, &class_ids);
     bool matches = true;
     for (intptr_t k = 0; k < class_ids.length(); k++) {
-      if (class_ids[k] == kIllegalCid) {
-        // We hit sentinel.
-        return false;
-      }
+      ASSERT(class_ids[k] != kIllegalCid);
       if (class_ids[k] != cids[k]) {
         matches = false;
         break;
@@ -12394,7 +12406,7 @@ bool ICData::HasCheck(const GrowableArray<intptr_t>& cids) const {
 
 
 void ICData::WriteSentinelAt(intptr_t index) const {
-  const intptr_t len = NumberOfChecks();
+  const intptr_t len = LengthWithoutSentinel();
   ASSERT(index >= 0);
   ASSERT(index < len);
   Array& data = Array::Handle(ic_data());
@@ -12416,7 +12428,7 @@ void ICData::ClearCountAt(intptr_t index) const {
 
 void ICData::ClearWithSentinel() const {
   // Write the sentinel value into all entries except the first one.
-  const intptr_t len = NumberOfChecks();
+  const intptr_t len = LengthWithoutSentinel();
   if (len == 0) {
     return;
   }
@@ -12449,7 +12461,7 @@ void ICData::ClearWithSentinel() const {
 
 
 void ICData::ClearAndSetStaticTarget(const Function& func) const {
-  const intptr_t len = NumberOfChecks();
+  const intptr_t len = LengthWithoutSentinel();
   if (len == 0) {
     return;
   }
@@ -12607,7 +12619,7 @@ void ICData::AddCheck(const GrowableArray<intptr_t>& class_ids,
 
 
 RawArray* ICData::FindFreeIndex(intptr_t* index) const {
-  const intptr_t len = NumberOfChecks();
+  const intptr_t len = LengthWithoutSentinel();
   Array& data = Array::Handle(ic_data());
   *index = len;
   for (intptr_t i = 0; i < len; i++) {
@@ -12615,8 +12627,10 @@ RawArray* ICData::FindFreeIndex(intptr_t* index) const {
     GetClassIdsAt(i, &class_ids);
     for (intptr_t k = 0; k < class_ids.length(); k++) {
       if (class_ids[k] == kIllegalCid) {
-        // We've found the first empty slot.
-        *index = i;
+        if (i < *index) {
+          // We've found the first empty slot.
+          *index = i;
+        }
         break;
       }
     }
@@ -12633,6 +12647,26 @@ RawArray* ICData::FindFreeIndex(intptr_t* index) const {
   data = Array::Grow(data, new_len, Heap::kOld);
   WriteSentinel(data, TestEntryLength());
   return data.raw();
+}
+
+
+void ICData::DebugDump() const {
+  const Function& owner = Function::Handle(Owner());
+  THR_Print("ICData::DebugDump\n");
+  THR_Print("Owner = %s [deopt=%" Pd "]\n", owner.ToCString(), deopt_id());
+  THR_Print("NumArgsTested = %" Pd "\n", NumArgsTested());
+  THR_Print("LengthWithoutSentinel = %" Pd "\n", LengthWithoutSentinel());
+  THR_Print("NumberOfChecks = %" Pd "\n", NumberOfChecks());
+
+  GrowableArray<intptr_t> class_ids;
+  for (intptr_t i = 0; i < NumberOfChecks(); i++) {
+    THR_Print("Check[%" Pd "]:", i);
+    GetClassIdsAt(i, &class_ids);
+    for (intptr_t c = 0; c < class_ids.length(); c++) {
+      THR_Print(" %" Pd "", class_ids[c]);
+    }
+    THR_Print("--- %" Pd " hits\n", GetCountAt(i));
+  }
 }
 
 
@@ -12700,8 +12734,8 @@ void ICData::GetCheckAt(intptr_t index,
 
 
 bool ICData::IsSentinelAt(intptr_t index) const {
-  ASSERT(index <= NumberOfChecks());
-  if (index == NumberOfChecks()) {
+  ASSERT(index <= LengthWithoutSentinel());
+  if (index == LengthWithoutSentinel()) {
     return true;
   }
   const Array& data = Array::Handle(ic_data());
@@ -12717,7 +12751,7 @@ bool ICData::IsSentinelAt(intptr_t index) const {
 
 void ICData::GetClassIdsAt(intptr_t index,
                            GrowableArray<intptr_t>* class_ids) const {
-  ASSERT(index < NumberOfChecks());
+  ASSERT(index < LengthWithoutSentinel());
   ASSERT(class_ids != NULL);
   class_ids->Clear();
   const Array& data = Array::Handle(ic_data());
@@ -12757,7 +12791,7 @@ intptr_t ICData::GetClassIdAt(intptr_t index, intptr_t arg_nr) const {
 
 
 intptr_t ICData::GetReceiverClassIdAt(intptr_t index) const {
-  ASSERT(index < NumberOfChecks());
+  ASSERT(index < LengthWithoutSentinel());
   const intptr_t data_pos = index * TestEntryLength();
   NoSafepointScope no_safepoint;
   RawArray* raw_data = ic_data();

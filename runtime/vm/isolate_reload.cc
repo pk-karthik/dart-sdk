@@ -21,6 +21,9 @@
 namespace dart {
 
 DEFINE_FLAG(bool, trace_reload, true, "Trace isolate reloading");
+DEFINE_FLAG(bool, identity_reload, true, "Enable checks for identity reload.");
+DEFINE_FLAG(int, reload_every, 0, "Reload every N stack overflow checks.");
+DEFINE_FLAG(bool, reload_every_optimized, true, "Only from optimized code.");
 
 #define I (isolate())
 #define Z (thread->zone())
@@ -222,6 +225,7 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       test_mode_(test_mode),
       has_error_(false),
       saved_num_cids_(-1),
+      saved_num_libs_(-1),
       num_saved_libs_(-1),
       script_uri_(String::null()),
       error_(Error::null()),
@@ -344,6 +348,8 @@ void IsolateReloadContext::CheckpointLibraries() {
       GrowableObjectArray::Handle(object_store()->libraries());
   const GrowableObjectArray& new_libs = GrowableObjectArray::Handle(
       GrowableObjectArray::New(Heap::kOld));
+
+  saved_num_libs_ = libs.Length();
 
   Library& tmp_lib = Library::Handle();
   String& tmp_url = String::Handle();
@@ -660,6 +666,20 @@ void IsolateReloadContext::Commit() {
     I->class_table()->CompactNewClasses(saved_num_cids_);
   }
 
+  if (FLAG_identity_reload) {
+    if (saved_num_cids_ != I->class_table()->NumCids()) {
+      TIR_Print("Identity reload failed! B#C=%" Pd " A#C=%" Pd "\n",
+                saved_num_cids_,
+                I->class_table()->NumCids());
+    }
+    const GrowableObjectArray& libs =
+        GrowableObjectArray::Handle(I->object_store()->libraries());
+    if (saved_num_libs_ != libs.Length()) {
+     TIR_Print("Identity reload failed! B#L=%" Pd " A#L=%" Pd "\n",
+               saved_num_libs_,
+               libs.Length());
+    }
+  }
 
   // The canonical types were hashed based on the old class ids.  Rehash.
   RehashCanonicalTypeArguments();
@@ -809,6 +829,9 @@ void IsolateReloadContext::ResetUnoptimizedICsOnStack() {
       object_table = code.object_pool();
       intptr_t reset_count = 0;
       for (intptr_t i = 0; i < object_table.Length(); i++) {
+        if (object_table.InfoAt(i) != ObjectPool::kTaggedObject) {
+          continue;
+        }
         object_table_entry = object_table.ObjectAt(i);
         if (object_table_entry.IsCode()) {
           code ^= object_table_entry.raw();
@@ -989,6 +1012,11 @@ void IsolateReloadContext::BuildClassMapping() {
     replacement_or_new = class_table->At(i);
     old ^= LinearFindOldClass(replacement_or_new);
     if (old.IsNull()) {
+      if (FLAG_identity_reload) {
+        TIR_Print("Could not find replacement class for %s\n",
+                  replacement_or_new.ToCString());
+        UNREACHABLE();
+      }
       // New class.
       AddClassMapping(replacement_or_new, replacement_or_new);
     } else {

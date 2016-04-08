@@ -109,6 +109,7 @@ class IsolateReloadContext {
   bool test_mode_;
   bool has_error_;
   intptr_t saved_num_cids_;
+  intptr_t saved_num_libs_;
 
   intptr_t num_saved_libs_;
   struct LibraryInfo {

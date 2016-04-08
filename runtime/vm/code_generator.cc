@@ -20,6 +20,7 @@
 #include "vm/parser.h"
 #include "vm/resolver.h"
 #include "vm/runtime_entry.h"
+#include "vm/service_isolate.h"
 #include "vm/stack_frame.h"
 #include "vm/symbols.h"
 #include "vm/thread_registry.h"
@@ -64,6 +65,9 @@ DEFINE_FLAG(charp, stacktrace_filter, NULL,
             "Compute stacktrace in named function on stack overflow checks");
 DEFINE_FLAG(charp, deoptimize_filter, NULL,
             "Deoptimize in named function on stack overflow checks");
+
+DECLARE_FLAG(int, reload_every);
+DECLARE_FLAG(bool, reload_every_optimized);
 
 #ifdef DEBUG
 DEFINE_FLAG(charp, gc_at_instance_allocation, NULL,
@@ -1285,7 +1289,10 @@ DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
   // debugger stack tracing.
   bool do_deopt = false;
   bool do_stacktrace = false;
-  if ((FLAG_deoptimize_every > 0) || (FLAG_stacktrace_every > 0)) {
+  bool do_reload = false;
+  if ((FLAG_deoptimize_every > 0) ||
+      (FLAG_stacktrace_every > 0) ||
+      (FLAG_reload_every > 0)) {
     // TODO(turnidge): To make --deoptimize_every and
     // --stacktrace-every faster we could move this increment/test to
     // the generated code.
@@ -1298,8 +1305,16 @@ DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
         (count % FLAG_stacktrace_every) == 0) {
       do_stacktrace = true;
     }
+    if ((FLAG_reload_every > 0) &&
+        (count % FLAG_reload_every) == 0) {
+      do_reload = !ServiceIsolate::IsServiceIsolateDescendant(isolate) &&
+                  isolate->is_runnable() &&
+                  !isolate->IsReloading();
+    }
   }
-  if ((FLAG_deoptimize_filter != NULL) || (FLAG_stacktrace_filter != NULL)) {
+  if ((FLAG_deoptimize_filter != NULL) ||
+      (FLAG_stacktrace_filter != NULL) ||
+      FLAG_reload_every_optimized) {
     DartFrameIterator iterator;
     StackFrame* frame = iterator.NextFrame();
     ASSERT(frame != NULL);
@@ -1309,6 +1324,10 @@ DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
     ASSERT(!function.IsNull());
     const char* function_name = function.ToFullyQualifiedCString();
     ASSERT(function_name != NULL);
+    if (!code.is_optimized() && FLAG_reload_every_optimized) {
+      // Don't do the reload if we aren't inside optimized code.
+      do_reload = false;
+    }
     if (code.is_optimized() &&
         FLAG_deoptimize_filter != NULL &&
         strstr(function_name, FLAG_deoptimize_filter) != NULL) {
@@ -1326,6 +1345,9 @@ DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
   if (do_deopt) {
     // TODO(turnidge): Consider using DeoptimizeAt instead.
     DeoptimizeFunctionsOnStack();
+  }
+  if (do_reload) {
+    isolate->OnStackReload();
   }
   if (FLAG_support_debugger && do_stacktrace) {
     String& var_name = String::Handle();

@@ -1869,6 +1869,8 @@ class ICData : public Object {
   bool HasDeoptReason(ICData::DeoptReasonId reason) const;
   void AddDeoptReason(ICData::DeoptReasonId reason) const;
 
+  intptr_t LengthWithoutSentinel() const;
+
   intptr_t NumberOfChecks() const;
 
   // Discounts any checks with usage of zero.
@@ -1922,6 +1924,7 @@ class ICData : public Object {
   // grow the array if necessary.
   RawArray* FindFreeIndex(intptr_t* index) const;
 
+  void DebugDump() const;
   void ValidateSentinelLocations() const;
 
   // Returns true if this is a two arg smi operation.
