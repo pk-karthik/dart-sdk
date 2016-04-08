@@ -21,7 +21,7 @@
 namespace dart {
 
 DEFINE_FLAG(bool, trace_reload, true, "Trace isolate reloading");
-DEFINE_FLAG(bool, identity_reload, true, "Enable checks for identity reload.");
+DEFINE_FLAG(bool, identity_reload, false, "Enable checks for identity reload.");
 DEFINE_FLAG(int, reload_every, 0, "Reload every N stack overflow checks.");
 DEFINE_FLAG(bool, reload_every_optimized, true, "Only from optimized code.");
 
@@ -197,7 +197,7 @@ bool IsolateReloadContext::IsSameField(const Field& a, const Field& b) {
   }
 
   const String& a_name = String::Handle(a.name());
-  const String& b_name = String::Handle(a.name());
+  const String& b_name = String::Handle(b.name());
 
   return a_name.Equals(b_name);
 }
