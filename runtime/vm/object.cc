@@ -7981,6 +7981,18 @@ void Field::RecordStore(const Object& value) const {
 }
 
 
+void Field::ForceDynamicGuardedCidAndLength() const {
+  // Assume nothing about this field.
+  set_is_unboxing_candidate(false);
+  set_guarded_cid(kDynamicCid);
+  set_is_nullable(true);
+  set_guarded_list_length(Field::kNoFixedLength);
+  set_guarded_list_length_in_object_offset(Field::kUnknownLengthOffset);
+  // Drop any code that relied on the above assumptions.
+  DeoptimizeDependentCode();
+}
+
+
 void LiteralToken::set_literal(const String& literal) const {
   StorePointer(&raw_ptr()->literal_, literal.raw());
 }

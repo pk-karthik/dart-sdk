@@ -3243,6 +3243,9 @@ class Field : public Object {
   // deoptimization of dependent code is required.
   bool UpdateGuardedCidAndLength(const Object& value) const;
 
+  // Force this field's guard to be dynamic and deoptimize dependent code.
+  void ForceDynamicGuardedCidAndLength() const;
+
   void set_name(const String& value) const;
   void set_is_static(bool is_static) const {
     set_kind_bits(StaticBit::update(is_static, raw_ptr()->kind_bits_));

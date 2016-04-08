@@ -134,6 +134,7 @@ void Class::PatchFieldsAndFunctions() const {
   for (intptr_t i = 0; i < old_field_list.Length(); i++) {
     old_field = Field::RawCast(old_field_list.At(i));
     old_field.set_owner(patch);
+    old_field.ForceDynamicGuardedCidAndLength();
   }
 }
 

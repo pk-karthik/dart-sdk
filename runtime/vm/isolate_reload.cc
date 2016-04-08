@@ -354,6 +354,7 @@ void IsolateReloadContext::CheckpointClasses() {
   TIMELINE_SCOPE(CheckpointClasses);
   TIR_Print("---- CHECKPOINTING CLASSES\n");
   saved_num_cids_ = I->class_table()->NumCids();
+  TIR_Print("---- System had %" Pd "\n", saved_num_cids_);
 }
 
 
@@ -552,6 +553,7 @@ void IsolateReloadContext::RehashCanonicalTypeArguments() {
 void IsolateReloadContext::Commit() {
   TIMELINE_SCOPE(Commit);
   Thread* thread = Thread::Current();
+  I->class_table()->PrintNonDartClasses();
   TIR_Print("---- COMMITTING REVERSE MAP\n");
 
 #ifdef DEBUG
