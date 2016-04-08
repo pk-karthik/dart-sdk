@@ -84,6 +84,9 @@ void Function::FillICDataWithSentinels(const Code& code) const {
 
 
 void Class::CopyStaticFieldValues(const Class& old_cls) const {
+  IsolateReloadContext* reload_context = Isolate::Current()->reload_context();
+  ASSERT(reload_context != NULL);
+
   const Array& old_field_list = Array::Handle(old_cls.fields());
   Field& old_field = Field::Handle();
   String& old_name = String::Handle();
@@ -105,11 +108,11 @@ void Class::CopyStaticFieldValues(const Class& old_cls) const {
         if (name.Equals(old_name)) {
           value = old_field.StaticValue();
           field.SetStaticValue(value);
+          reload_context->AddStaticFieldMapping(old_field, field);
         }
       }
     }
   }
-
 }
 
 

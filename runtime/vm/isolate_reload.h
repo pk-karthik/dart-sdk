@@ -55,6 +55,7 @@ class IsolateReloadContext {
   RawError* error() const { return error_; }
   bool test_mode() const { return test_mode_; }
 
+  static bool IsSameField(const Field& a, const Field& b);
   static bool IsSameLibrary(const Library& a_lib, const Library& b_lib);
   static bool IsSameClass(const Class& a, const Class& b);
 
@@ -129,6 +130,8 @@ class IsolateReloadContext {
   void AddLibraryMapping(const Library& replacement_or_new,
                          const Library& original);
 
+  void AddStaticFieldMapping(const Field& old_field, const Field& new_field);
+
   RawClass* MappedClass(const Class& replacement_or_new);
   RawLibrary* MappedLibrary(const Library& replacement_or_new);
 
@@ -144,6 +147,7 @@ class IsolateReloadContext {
 
   friend class UpdateHeapVisitor;
   friend class Isolate;
+  friend class Class;  // AddStaticFieldMapping.
 };
 
 }  // namespace dart

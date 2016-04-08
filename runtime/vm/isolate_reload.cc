@@ -78,9 +78,10 @@ class ReverseMapTraits {
         return false;
       }
       return IsolateReloadContext::IsSameClass(Class::Cast(a), Class::Cast(b));
-    } else {
-      return false;
+    } else if (a.IsField() && b.IsField()) {
+      return IsolateReloadContext::IsSameField(Field::Cast(a), Field::Cast(b));
     }
+    return false;
   }
 
   static uword Hash(const Object& obj) {
@@ -91,9 +92,10 @@ class ReverseMapTraits {
         return 0;
       }
       return String::HashRawSymbol(Class::Cast(obj).Name());
-    } else {
-      return 0;
+    } else if (obj.IsField()) {
+      return String::HashRawSymbol(Field::Cast(obj).name());
     }
+    return 0;
   }
 };
 
@@ -136,10 +138,6 @@ class UpdateHeapVisitor : public ObjectPointerVisitor {
           *p = replacement_cls;
         }
         replacement_count_++;
-        continue;
-      }
-      if (!(*p)->IsLibrary()) {
-        // We only store libraries in the map.
         continue;
       }
       key_ = *p;
@@ -185,6 +183,24 @@ class UpdateHeapVisitor : public ObjectPointerVisitor {
   IsolateReloadContext* context_;
   intptr_t replacement_count_;
 };
+
+
+bool IsolateReloadContext::IsSameField(const Field& a, const Field& b) {
+  if (a.is_static() != b.is_static()) {
+    return false;
+  }
+  const Class& a_cls = Class::Handle(a.Owner());
+  const Class& b_cls = Class::Handle(b.Owner());
+
+  if (!IsSameClass(a_cls, b_cls)) {
+    return false;
+  }
+
+  const String& a_name = String::Handle(a.name());
+  const String& b_name = String::Handle(a.name());
+
+  return a_name.Equals(b_name);
+}
 
 
 bool IsolateReloadContext::IsSameClass(const Class& a, const Class& b) {
@@ -1107,5 +1123,18 @@ void IsolateReloadContext::AddLibraryMapping(const Library& replacement_or_new,
   library_map_storage_ = map.Release().raw();
 }
 
+
+void IsolateReloadContext::AddStaticFieldMapping(
+    const Field& old_field, const Field& new_field) {
+  ASSERT(old_field.is_static());
+  ASSERT(new_field.is_static());
+
+  ASSERT(reverse_map_storage_ != Array::null());
+  UnorderedHashMap<ReverseMapTraits> reverse_map(reverse_map_storage_);
+  ASSERT(reverse_map.FindKey(old_field) == -1);
+  old_field.raw()->SetIsReplacedObject();
+  reverse_map.UpdateOrInsert(old_field, new_field);
+  reverse_map_storage_ = reverse_map.Release().raw();
+}
 
 }  // namespace dart
