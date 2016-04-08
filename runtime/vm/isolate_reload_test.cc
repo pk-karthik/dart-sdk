@@ -776,4 +776,284 @@ TEST_CASE(IsolateReload_TopLevelParseError) {
   EXPECT_ERROR(lib, "unexpected token");
 }
 
+
+TEST_CASE(IsolateReload_PendingUnqualifiedCall_StaticToInstance) {
+  const char* kScript =
+      "import 'isolate_reload_test_helper';\n"
+      "class C {\n"
+      "  static foo() => 'static';\n"
+      "  test() {\n"
+      "    reloadTest();\n"
+      "    return foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  return new C().test();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'isolate_reload_test_helper';\n"
+      "class C {\n"
+      "  foo() => 'instance';\n"
+      "  test() {\n"
+      "    reloadTest();\n"
+      "    return foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  return new C().test();\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_EQ("instance", SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+
+  EXPECT_EQ("instance", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_PendingUnqualifiedCall_InstanceToStatic) {
+  const char* kScript =
+      "import 'isolate_reload_test_helper';\n"
+      "class C {\n"
+      "  foo() => 'instance';\n"
+      "  test() {\n"
+      "    reloadTest();\n"
+      "    return foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  return new C().test();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'isolate_reload_test_helper';\n"
+      "class C {\n"
+      "  static foo() => 'static';\n"
+      "  test() {\n"
+      "    reloadTest();\n"
+      "    return foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  return new C().test();\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_EQ("static", SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+
+  EXPECT_EQ("static", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_PendingConstructorCall_AbstractToConcrete) {
+  const char* kScript =
+      "import 'isolate_reload_test_helper';\n"
+      "abstract class Foo {}\n"
+      "class C {\n"
+      "  test() {\n"
+      "    reloadTest();\n"
+      "    return new Foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  try {\n"
+      "    new C().test();\n"
+      "    return 'okay';\n"
+      "  } catch (e) {\n"
+      "    return 'exception';\n"
+      "  }\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'isolate_reload_test_helper';\n"
+      "class Foo {}\n"
+      "class C {\n"
+      "  test() {\n"
+      "    reloadTest();\n"
+      "    return new Foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  try {\n"
+      "    new C().test();\n"
+      "    return 'okay';\n"
+      "  } catch (e) {\n"
+      "    return 'exception';\n"
+      "  }\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_EQ("okay", SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+
+  EXPECT_EQ("okay", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_PendingConstructorCall_ConcreteToAbstract) {
+  const char* kScript =
+      "import 'isolate_reload_test_helper';\n"
+      "class Foo {}\n"
+      "class C {\n"
+      "  test() {\n"
+      "    reloadTest();\n"
+      "    return new Foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  try {\n"
+      "    new C().test();\n"
+      "    return 'okay';\n"
+      "  } catch (e) {\n"
+      "    return 'exception';\n"
+      "  }\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'isolate_reload_test_helper';\n"
+      "abstract class Foo {}\n"
+      "class C {\n"
+      "  test() {\n"
+      "    reloadTest();\n"
+      "    return new Foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  try {\n"
+      "    new C().test();\n"
+      "    return 'okay';\n"
+      "  } catch (e) {\n"
+      "    return 'exception';\n"
+      "  }\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_EQ("exception", SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+
+  EXPECT_EQ("exception", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_PendingStaticCall_DefinedToNSM) {
+  const char* kScript =
+      "import 'isolate_reload_test_helper';\n"
+      "class C {\n"
+      "  static foo() => 'static'\n"
+      "  test() {\n"
+      "    reloadTest();\n"
+      "    return C.foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  try {\n"
+      "    return new C().test();\n"
+      "  } catch (e) {\n"
+      "    return 'exception';\n"
+      "  }\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'isolate_reload_test_helper';\n"
+      "class C {\n"
+      "  test() {\n"
+      "    reloadTest();\n"
+      "    return C.foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  try {\n"
+      "    return new C().test();\n"
+      "  } catch (e) {\n"
+      "    return 'exception';\n"
+      "  }\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_EQ("exception", SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+
+  EXPECT_EQ("exception", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_PendingStaticCall_NSMToDefined) {
+  const char* kScript =
+      "import 'isolate_reload_test_helper';\n"
+      "class C {\n"
+      "  test() {\n"
+      "    reloadTest();\n"
+      "    return C.foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  try {\n"
+      "    return new C().test();\n"
+      "  } catch (e) {\n"
+      "    return 'exception';\n"
+      "  }\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'isolate_reload_test_helper';\n"
+      "class C {\n"
+      "  static foo() => 'static'\n"
+      "  test() {\n"
+      "    reloadTest();\n"
+      "    return C.foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  try {\n"
+      "    return new C().test();\n"
+      "  } catch (e) {\n"
+      "    return 'exception';\n"
+      "  }\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_EQ("static", SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+
+  EXPECT_EQ("static", SimpleInvokeStr(lib, "main"));
+}
+
 }  // namespace dart
