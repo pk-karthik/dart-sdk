@@ -190,7 +190,9 @@ intptr_t RawObject::SizeFromClass() const {
       }
 #endif  // DEBUG
       RawClass* raw_class = class_table->At(class_id);
-      ASSERT(raw_class->ptr()->id_ == class_id);
+      // When reloading a class's class id may not match its index in
+      // the class table.
+      ASSERT(isolate->IsReloading() || (raw_class->ptr()->id_ == class_id));
       instance_size =
           raw_class->ptr()->instance_size_in_words_ << kWordSizeLog2;
     }

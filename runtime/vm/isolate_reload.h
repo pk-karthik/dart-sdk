@@ -109,7 +109,14 @@ class IsolateReloadContext {
   Isolate* isolate_;
   bool test_mode_;
   bool has_error_;
+
   intptr_t saved_num_cids_;
+
+  bool IsDeadClassAt(intptr_t index);
+  void MarkClassDeadAt(intptr_t index);
+  MallocGrowableArray<bool>* dead_classes_;
+  void CompactClassTable();
+
   intptr_t saved_num_libs_;
 
   intptr_t num_saved_libs_;

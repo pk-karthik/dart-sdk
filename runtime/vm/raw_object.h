@@ -447,6 +447,17 @@ class RawObject {
     return TryAcquireTagBit<RememberedBit>();
   }
 
+  void UpdateClassId(intptr_t id) {
+    uword tags = ptr()->tags_;
+    uword old_tags;
+    do {
+      old_tags = tags;
+      uword new_tags = ClassIdTag::update(id, old_tags);
+      tags = AtomicOperations::CompareAndSwapWord(
+          &ptr()->tags_, old_tags, new_tags);
+    } while (tags != old_tags);
+  }
+
   bool IsDartInstance() {
     return (!IsHeapObject() || (GetClassId() >= kInstanceCid));
   }

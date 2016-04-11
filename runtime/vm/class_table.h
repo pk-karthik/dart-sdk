@@ -170,8 +170,6 @@ class ClassTable {
   }
 
   void ClearClassAt(intptr_t index);
-  // Returns the number of classes after compaction.
-  intptr_t CompactNewClasses(intptr_t saved_num_cids);
   void DropNewClasses(intptr_t saved_num_cids);
 
   intptr_t NumCids() const { return top_; }
@@ -244,6 +242,7 @@ class ClassTable {
   friend class GCMarker;
   friend class ScavengerVisitor;
   friend class ClassHeapStatsTestHelper;
+  friend class IsolateReloadContext;
   static const int initial_capacity_ = 512;
   static const int capacity_increment_ = 256;
 

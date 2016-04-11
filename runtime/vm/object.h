@@ -1389,6 +1389,7 @@ class Class : public Object {
   bool ValidatePostFinalizePatch(const Class& orig_class, Error* error) const;
   void CopyStaticFieldValues(const Class& old_cls) const;
   void PatchFieldsAndFunctions() const;
+  void FixupEnumClassIDs(const Class& old_cls) const;
   bool CanReload(const Class& replacement) const;
 
  private:

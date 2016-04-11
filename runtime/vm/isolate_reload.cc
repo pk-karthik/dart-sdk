@@ -241,6 +241,7 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       test_mode_(test_mode),
       has_error_(false),
       saved_num_cids_(-1),
+      dead_classes_(NULL),
       saved_num_libs_(-1),
       num_saved_libs_(-1),
       script_uri_(String::null()),
@@ -354,7 +355,7 @@ void IsolateReloadContext::CheckpointClasses() {
   TIMELINE_SCOPE(CheckpointClasses);
   TIR_Print("---- CHECKPOINTING CLASSES\n");
   saved_num_cids_ = I->class_table()->NumCids();
-  TIR_Print("---- System had %" Pd "\n", saved_num_cids_);
+  TIR_Print("---- System had %" Pd " classes\n", saved_num_cids_);
 }
 
 
@@ -550,11 +551,59 @@ void IsolateReloadContext::RehashCanonicalTypeArguments() {
 }
 
 
+bool IsolateReloadContext::IsDeadClassAt(intptr_t index) {
+  ASSERT(dead_classes_ != NULL);
+  return dead_classes_->At(index);
+}
+
+
+void IsolateReloadContext::MarkClassDeadAt(intptr_t index) {
+  ASSERT(dead_classes_ != NULL);
+  (*dead_classes_)[index] = true;
+}
+
+
+void IsolateReloadContext::CompactClassTable() {
+  const intptr_t top = I->class_table()->NumCids();
+  intptr_t new_top = saved_num_cids_;
+  for (intptr_t free_index = saved_num_cids_; free_index < top; free_index++) {
+    // Scan forward until we find a cleared class.
+    if (!IsDeadClassAt(free_index)) {
+      new_top++;
+      continue;
+    }
+
+    for (intptr_t cls_index = free_index + 1; cls_index < top; cls_index++) {
+      // Scan forward until we find a live class.
+      if (IsDeadClassAt(cls_index)) {
+        continue;
+      }
+      // Move the class into the free slot.
+      I->class_table()->MoveClass(free_index, cls_index);
+      // Mark |cls_index| as dead.
+      MarkClassDeadAt(cls_index);
+      new_top++;
+      break;
+    }
+  }
+
+  I->class_table()->DropNewClasses(new_top);
+}
+
+
 void IsolateReloadContext::Commit() {
   TIMELINE_SCOPE(Commit);
   Thread* thread = Thread::Current();
-  I->class_table()->PrintNonDartClasses();
+  // I->class_table()->PrintNonDartClasses();
   TIR_Print("---- COMMITTING REVERSE MAP\n");
+
+  ASSERT(dead_classes_ == NULL);
+  // Initialize the dead classes array.
+  dead_classes_ = new MallocGrowableArray<bool>();
+  dead_classes_->SetLength(I->class_table()->NumCids());;
+  for (intptr_t i = 0; i < dead_classes_->length(); i++) {
+    (*dead_classes_)[i] = false;
+  }
 
 #ifdef DEBUG
   VerifyMaps();
@@ -605,6 +654,8 @@ void IsolateReloadContext::Commit() {
                     cls.ToCString(), cls.id(),
                     new_cls.ToCString(), new_cls.id());
           // Replace |cls| with |new_cls| in the class table.
+          ASSERT(!IsDeadClassAt(new_cls.id()));
+          MarkClassDeadAt(new_cls.id());
           I->class_table()->ReplaceClass(cls, new_cls);
         }
       }
@@ -679,9 +730,10 @@ void IsolateReloadContext::Commit() {
 
 
   {
-    TIMELINE_SCOPE(CompactNewClasses);
+    TIMELINE_SCOPE(CompactClassTable);
     TIR_Print("---- Compacting the class table\n");
-    I->class_table()->CompactNewClasses(saved_num_cids_);
+    CompactClassTable();
+    TIR_Print("---- System has %" Pd " classes\n", I->class_table()->NumCids());
   }
 
   if (FLAG_identity_reload) {
@@ -701,6 +753,9 @@ void IsolateReloadContext::Commit() {
 
   // The canonical types were hashed based on the old class ids.  Rehash.
   RehashCanonicalTypeArguments();
+
+  delete dead_classes_;
+  dead_classes_ = NULL;
 }
 
 

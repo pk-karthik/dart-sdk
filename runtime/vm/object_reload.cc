@@ -116,6 +116,33 @@ void Class::CopyStaticFieldValues(const Class& old_cls) const {
 }
 
 
+void Class::FixupEnumClassIDs(const Class& old_cls) const {
+  if (!is_enum_class()) {
+    return;
+  }
+  const intptr_t old_id = old_cls.id();
+
+  const Array& enum_fields = Array::Handle(fields());
+  Field& field = Field::Handle();
+  String& field_name = String::Handle();
+  Instance& ordinal_value = Instance::Handle();
+  OS::Print("FixupEnumClassIDs for %s\n", ToCString());
+  for (intptr_t i = 0; i < enum_fields.Length(); i++) {
+    field = Field::RawCast(enum_fields.At(i));
+    if (!field.is_static()) continue;
+    ordinal_value = field.StaticValue();
+    // It's not a smi.
+    ASSERT(!ordinal_value.IsSmi());
+    if (ordinal_value.GetClassId() == id()) {
+      field_name = field.name();
+      ordinal_value.raw()->UpdateClassId(old_id);
+      OS::Print("Fixed %s to have class id: %" Pd "\n",
+                field_name.ToCString(), old_id);
+    }
+  }
+}
+
+
 void Class::PatchFieldsAndFunctions() const {
   // Move all old functions and fields to a patch class so that they
   // still refer to their original script.
@@ -146,6 +173,13 @@ bool Class::CanReload(const Class& replacement) const {
   }
 #endif
 
+  if (is_enum_class() != replacement.is_enum_class()) {
+    IRC->ReportError(String::Handle(String::NewFormatted(
+        "New class and old class must both be enumeration classes: %s",
+        ToCString())));
+    return false;
+  }
+
   if (is_finalized()) {
     const Error& error =
         Error::Handle(replacement.EnsureIsFinalized(Thread::Current()));
@@ -153,6 +187,10 @@ bool Class::CanReload(const Class& replacement) const {
       IRC->ReportError(error);
       return false;
     }
+    // Finalizing an enum class will pollute the heap with enum instances with
+    // the new class id. We need to fix this up so that any passes over the
+    // heap (for reload, gc, etc) can still succeed.
+    replacement.FixupEnumClassIDs(*this);
   }
 
   if (is_finalized()) {
