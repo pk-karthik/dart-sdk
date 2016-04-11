@@ -84,6 +84,9 @@ void Function::FillICDataWithSentinels(const Code& code) const {
 
 
 void Class::CopyStaticFieldValues(const Class& old_cls) const {
+  // We only update values for non-enum classes.
+  const bool update_values = !is_enum_class();
+
   IsolateReloadContext* reload_context = Isolate::Current()->reload_context();
   ASSERT(reload_context != NULL);
 
@@ -106,13 +109,217 @@ void Class::CopyStaticFieldValues(const Class& old_cls) const {
         old_field = Field::RawCast(old_field_list.At(j));
         old_name = old_field.name();
         if (name.Equals(old_name)) {
-          value = old_field.StaticValue();
-          field.SetStaticValue(value);
+          if (update_values) {
+            value = old_field.StaticValue();
+            field.SetStaticValue(value);
+          }
           reload_context->AddStaticFieldMapping(old_field, field);
         }
       }
     }
   }
+}
+
+
+void Class::CopyCanonicalConstants(const Class& old_cls) const {
+  if (is_enum_class()) {
+    return;
+  }
+#if defined(DEBUG)
+  {
+    // Class has no canonical constants allocated.
+    const Array& my_constants = Array::Handle(constants());
+    ASSERT(my_constants.Length() == 0);
+  }
+#endif  // defined(DEBUG).
+  // Copy old constants into new class.
+  const Array& old_constants = Array::Handle(old_cls.constants());
+  if (old_constants.IsNull() || old_constants.Length() == 0) {
+    return;
+  }
+  TIR_Print("Copied %" Pd " canonical constants for class `%s`\n",
+            old_constants.Length(),
+            ToCString());
+  set_constants(old_constants);
+}
+
+
+static intptr_t IndexOfEnum(const Array& enum_names, const String& name) {
+  ASSERT(!enum_names.IsNull());
+  ASSERT(!name.IsNull());
+  String& enum_name = String::Handle();
+  for (intptr_t i = 0; i < enum_names.Length(); i++) {
+    enum_name = String::RawCast(enum_names.At(i));
+    ASSERT(!enum_name.IsNull());
+    if (enum_name.Equals(name)) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+
+static void UpdateEnumIndex(const Instance& enum_value,
+                            const Field& enum_index_field,
+                            const intptr_t index) {
+  enum_value.SetField(enum_index_field, Smi::Handle(Smi::New(index)));
+}
+
+
+// TODO(johnmccutchan): The code in the class finalizer canonicalizes all
+// instances and the values array. We probably should do the same thing.
+void Class::ReplaceEnum(const Class& old_enum) const {
+  // We only do this for finalized enum classes.
+  ASSERT(is_enum_class());
+  ASSERT(old_enum.is_enum_class());
+  ASSERT(is_finalized());
+  ASSERT(old_enum.is_finalized());
+
+  IsolateReloadContext* reload_context = Isolate::Current()->reload_context();
+  ASSERT(reload_context != NULL);
+
+  TIR_Print("ReplaceEnum `%s` (%" Pd " and %" Pd ")\n",
+            ToCString(), id(), old_enum.id());
+
+  // Grab '_enum_names' from |old_enum|.
+  const Field& old_enum_names_field = Field::Handle(
+      old_enum.LookupStaticField(Symbols::_EnumNames()));
+  ASSERT(!old_enum_names_field.IsNull());
+  const Array& old_enum_names =
+      Array::Handle(Array::RawCast(old_enum_names_field.StaticValue()));
+  ASSERT(!old_enum_names.IsNull());
+
+  // Grab 'values' from |old_enum|.
+  const Field& old_enum_values_field = Field::Handle(
+      old_enum.LookupStaticField(Symbols::Values()));
+  ASSERT(!old_enum_values_field.IsNull());
+  const Array& old_enum_values =
+      Array::Handle(Array::RawCast(old_enum_values_field.StaticValue()));
+  ASSERT(!old_enum_values.IsNull());
+
+  // Grab _enum_names from |this|.
+  const Field& enum_names_field = Field::Handle(
+      LookupStaticField(Symbols::_EnumNames()));
+  ASSERT(!enum_names_field.IsNull());
+  Array& enum_names =
+      Array::Handle(Array::RawCast(enum_names_field.StaticValue()));
+  ASSERT(!enum_names.IsNull());
+
+  // Grab values from |this|.
+  const Field& enum_values_field = Field::Handle(
+      LookupStaticField(Symbols::Values()));
+  ASSERT(!enum_values_field.IsNull());
+  Array& enum_values =
+      Array::Handle(Array::RawCast(enum_values_field.StaticValue()));
+  ASSERT(!enum_values.IsNull());
+
+  // Grab the |index| field.
+  const Field& index_field =
+      Field::Handle(old_enum.LookupField(Symbols::Index()));
+  ASSERT(!index_field.IsNull());
+
+  // Build list of enum from |old_enum| that aren't present in |this|.
+  // This array holds pairs: (name, value).
+  const GrowableObjectArray& to_add =
+      GrowableObjectArray::Handle(GrowableObjectArray::New());
+  const String& enum_class_name = String::Handle(UserVisibleName());
+  String& enum_name = String::Handle();
+  String& enum_field_name = String::Handle();
+  Object& enum_value = Object::Handle();
+  Field& enum_field = Field::Handle();
+
+  for (intptr_t i = 0; i < old_enum_names.Length(); i++) {
+    enum_name = String::RawCast(old_enum_names.At(i));
+    const intptr_t index_in_new_cls = IndexOfEnum(enum_names, enum_name);
+    if (index_in_new_cls < 0) {
+      // Doesn't exist in new enum, add.
+      enum_value = old_enum_values.At(i);
+      ASSERT(!enum_value.IsNull());
+      to_add.Add(enum_name);
+      to_add.Add(enum_value);
+    } else {
+      // Exists in both the new and the old.
+      TIR_Print("Moving enum value `%s` to %" Pd "\n",
+                enum_name.ToCString(),
+                index_in_new_cls);
+      // Grab old value.
+      enum_value = old_enum_values.At(i);
+      // Update index to the be new index.
+      UpdateEnumIndex(Instance::Cast(enum_value),
+                      index_field,
+                      index_in_new_cls);
+      // Chop off the 'EnumClass.'
+      enum_field_name = String::SubString(enum_name,
+                                          enum_class_name.Length() + 1);
+      ASSERT(!enum_field_name.IsNull());
+      // Grab the static field.
+      enum_field = LookupStaticField(enum_field_name);
+      ASSERT(!enum_field.IsNull());
+      // Use old value with updated index.
+      enum_field.SetStaticValue(Instance::Cast(enum_value), true);
+    }
+  }
+
+  if (to_add.Length() == 0) {
+    // Nothing to do.
+    TIR_Print("Found no missing enums in %s\n", ToCString());
+    return;
+  }
+
+  // Grow the values and enum_names arrays.
+  const intptr_t offset = enum_names.Length();
+  const intptr_t num_to_add = to_add.Length() / 2;
+  ASSERT(offset == enum_values.Length());
+  enum_names = Array::Grow(enum_names,
+                           enum_names.Length() + num_to_add,
+                           Heap::kOld);
+  enum_values = Array::Grow(enum_values,
+                            enum_values.Length() + num_to_add,
+                            Heap::kOld);
+
+  // Install new names and values into the grown arrays. Also, update
+  // the index of the new enum values and add static fields for the new
+  // enum values.
+  Field& enum_value_field = Field::Handle();
+  for (intptr_t i = 0; i < num_to_add; i++) {
+    const intptr_t target_index = offset + i;
+    enum_name = String::RawCast(to_add.At(i * 2));
+    enum_value = to_add.At(i * 2 + 1);
+
+    // Update the enum value's index into the new arrays.
+    TIR_Print("Updating index of %s in %s to %" Pd "\n",
+              enum_name.ToCString(),
+              ToCString(),
+              target_index);
+    UpdateEnumIndex(Instance::Cast(enum_value), index_field, target_index);
+
+    enum_names.SetAt(target_index, enum_name);
+    enum_values.SetAt(target_index, enum_value);
+
+    // Install new static field into class.
+    // Chop off the 'EnumClass.'
+    enum_field_name = String::SubString(enum_name,
+                                        enum_class_name.Length() + 1);
+    ASSERT(!enum_field_name.IsNull());
+    enum_field_name = Symbols::New(enum_field_name);
+    enum_value_field = Field::New(enum_field_name,
+                                  /* is_static = */ true,
+                                  /* is_final = */ true,
+                                  /* is_const = */ true,
+                                  /* is_reflectable = */ true,
+                                  *this,
+                                  Object::dynamic_type(),
+                                  token_pos());
+    enum_value_field.set_has_initializer(false);
+    enum_value_field.SetStaticValue(Instance::Cast(enum_value), true);
+    enum_value_field.RecordStore(Instance::Cast(enum_value));
+    AddField(enum_value_field);
+  }
+
+  // Replace the arrays stored in the static fields.
+  enum_names_field.SetStaticValue(enum_names, true);
+  enum_values_field.SetStaticValue(enum_values, true);
 }
 
 
@@ -126,7 +333,7 @@ void Class::FixupEnumClassIDs(const Class& old_cls) const {
   Field& field = Field::Handle();
   String& field_name = String::Handle();
   Instance& ordinal_value = Instance::Handle();
-  OS::Print("FixupEnumClassIDs for %s\n", ToCString());
+  TIR_Print("FixupEnumClassIDs for %s\n", ToCString());
   for (intptr_t i = 0; i < enum_fields.Length(); i++) {
     field = Field::RawCast(enum_fields.At(i));
     if (!field.is_static()) continue;
@@ -136,7 +343,7 @@ void Class::FixupEnumClassIDs(const Class& old_cls) const {
     if (ordinal_value.GetClassId() == id()) {
       field_name = field.name();
       ordinal_value.raw()->UpdateClassId(old_id);
-      OS::Print("Fixed %s to have class id: %" Pd "\n",
+      TIR_Print("Fixed %s to have class id: %" Pd "\n",
                 field_name.ToCString(), old_id);
     }
   }
@@ -194,6 +401,7 @@ bool Class::CanReload(const Class& replacement) const {
       IRC->ReportError(error);
       return false;
     }
+    TIR_Print("Finalized replacement class for %s\n", ToCString());
     // Finalizing an enum class will pollute the heap with enum instances with
     // the new class id. We need to fix this up so that any passes over the
     // heap (for reload, gc, etc) can still succeed.
@@ -263,7 +471,13 @@ bool Class::CanReload(const Class& replacement) const {
         "Number of native fields changed in %s", ToCString())));
     return false;
   }
+
   // TODO type parameter count check.
+
+  TIR_Print("Class `%s` can be reloaded (%" Pd " and %" Pd ")\n",
+            ToCString(),
+            id(),
+            replacement.id());
   return true;
 }
 

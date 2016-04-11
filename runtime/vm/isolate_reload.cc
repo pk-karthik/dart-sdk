@@ -626,7 +626,12 @@ void IsolateReloadContext::Commit() {
         new_cls = Class::RawCast(class_map.GetKey(entry));
         cls = Class::RawCast(class_map.GetPayload(entry, 0));
         if (new_cls.raw() != cls.raw()) {
+          ASSERT(new_cls.is_enum_class() == cls.is_enum_class());
+          if (new_cls.is_enum_class() && new_cls.is_finalized()) {
+            new_cls.ReplaceEnum(cls);
+          }
           new_cls.CopyStaticFieldValues(cls);
+          new_cls.CopyCanonicalConstants(cls);
           cls.PatchFieldsAndFunctions();
         }
       }

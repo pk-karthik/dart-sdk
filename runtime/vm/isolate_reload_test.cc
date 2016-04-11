@@ -1056,6 +1056,45 @@ TEST_CASE(IsolateReload_PendingStaticCall_NSMToDefined) {
   EXPECT_EQ("static", SimpleInvokeStr(lib, "main"));
 }
 
+
+TEST_CASE(IsolateReload_EnumEquality) {
+  const char* kScript =
+      "enum Fruit {\n"
+      "  Apple,\n"
+      "  Banana,\n"
+      "}\n"
+      "var x;\n"
+      "main() {\n"
+      "  x = Fruit.Banana;\n"
+      "  return Fruit.Apple.toString();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadScript =
+      "enum Fruit {\n"
+      "  Apple,\n"
+      "  Banana,\n"
+      "}\n"
+      "var x;\n"
+      "main() {\n"
+      "  if (x == Fruit.Banana) {\n"
+      "    return 'yes';\n"
+      "  } else {\n"
+      "    return 'no';\n"
+      "  }\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("yes", SimpleInvokeStr(lib, "main"));
+}
+
+
 TEST_CASE(IsolateReload_EnumIdentical) {
   const char* kScript =
       "enum Fruit {\n"
@@ -1132,44 +1171,6 @@ TEST_CASE(IsolateReload_EnumReorderIdentical) {
 }
 
 
-TEST_CASE(IsolateReload_EnumReorderIndex) {
-  const char* kScript =
-      "enum Fruit {\n"
-      "  Apple,\n"
-      "  Banana,\n"
-      "}\n"
-      "var x;\n"
-      "main() {\n"
-      "  x = Fruit.Banana.index;\n"
-      "  return Fruit.Apple.toString();\n"
-      "}\n";
-
-  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
-  EXPECT_VALID(lib);
-
-  EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
-
-  const char* kReloadScript =
-      "enum Fruit {\n"
-      "  Banana,\n"
-      "  Apple,\n"
-      "}\n"
-      "var x;\n"
-      "main() {\n"
-      "  if (identical(x, Fruit.Banana.index)) {\n"
-      "    return 'yes';\n"
-      "  } else {\n"
-      "    return 'no';\n"
-      "  }\n"
-      "}\n";
-
-  lib = TestCase::ReloadTestScript(kReloadScript);
-  EXPECT_VALID(lib);
-
-  EXPECT_STREQ("yes", SimpleInvokeStr(lib, "main"));
-}
-
-
 TEST_CASE(IsolateReload_EnumAddition) {
   const char* kScript =
       "enum Fruit {\n"
@@ -1178,7 +1179,6 @@ TEST_CASE(IsolateReload_EnumAddition) {
       "}\n"
       "var x;\n"
       "main() {\n"
-      "  x = Fruit.Banana;\n"
       "  return Fruit.Apple.toString();\n"
       "}\n";
 
@@ -1195,48 +1195,17 @@ TEST_CASE(IsolateReload_EnumAddition) {
       "}\n"
       "var x;\n"
       "main() {\n"
-      "  return Fruit.Cantalope.toString();\n"
+      "  String r = '${Fruit.Apple.index}/${Fruit.Apple} ';\n"
+      "  r += '${Fruit.Cantalope.index}/${Fruit.Cantalope} ';\n"
+      "  r += '${Fruit.Banana.index}/${Fruit.Banana}';\n"
+      "  return r;\n"
       "}\n";
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
 
-  EXPECT_STREQ("Fruit.Cantalope", SimpleInvokeStr(lib, "main"));
-}
-
-
-TEST_CASE(IsolateReload_EnumValuesArray) {
-  const char* kScript =
-      "enum Fruit {\n"
-      "  Apple,\n"
-      "  Banana,\n"
-      "}\n"
-      "var x;\n"
-      "main() {\n"
-      "  x = Fruit.values;\n"
-      "  return Fruit.Apple.toString();\n"
-      "}\n";
-
-  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
-  EXPECT_VALID(lib);
-
-  EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
-
-  const char* kReloadScript =
-      "enum Fruit {\n"
-      "  Apple,\n"
-      "  Cantalope,\n"
-      "  Banana,\n"
-      "}\n"
-      "var x;\n"
-      "main() {\n"
-      "  return (x == Fruit.values) ? 'yes' : 'no';\n"
-      "}\n";
-
-  lib = TestCase::ReloadTestScript(kReloadScript);
-  EXPECT_VALID(lib);
-
-  EXPECT_STREQ("yes", SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("0/Fruit.Apple 1/Fruit.Cantalope 2/Fruit.Banana",
+               SimpleInvokeStr(lib, "main"));
 }
 
 
@@ -1292,8 +1261,133 @@ TEST_CASE(IsolateReload_NotEnumToEnum) {
   EXPECT_ERROR(result, "Class cannot be redefined to be a enum class");
 }
 
-// Enum deletion.
 
-// Enum re-order, deletion, and addition.
+TEST_CASE(IsolateReload_EnumDelete) {
+  const char* kScript =
+      "enum Fruit {\n"
+      "  Apple,\n"
+      "  Banana,\n"
+      "  Cantalope,\n"
+      "}\n"
+      "var x;\n"
+      "main() {\n"
+      "  return Fruit.Apple.toString();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
+
+  // Delete 'Cantalope'.
+
+  const char* kReloadScript =
+      "enum Fruit {\n"
+      "  Apple,\n"
+      "  Banana,\n"
+      "}\n"
+      "var x;\n"
+      "main() {\n"
+      "  String r = '${Fruit.Apple.index}/${Fruit.Apple} ';\n"
+      "  r += '${Fruit.Banana.index}/${Fruit.Banana} ';\n"
+      "  r += '${Fruit.Cantalope.index}/${Fruit.Cantalope}';\n"
+      "  return r;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("0/Fruit.Apple 1/Fruit.Banana 2/Fruit.Cantalope",
+               SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_EnumComplex) {
+  const char* kScript =
+      "enum Fruit {\n"
+      "  Apple,\n"
+      "  Banana,\n"
+      "  Cantalope,\n"
+      "}\n"
+      "var x;\n"
+      "var y;\n"
+      "var z;\n"
+      "main() {\n"
+      "  x = Fruit.Apple;\n"
+      "  y = Fruit.Banana;\n"
+      "  z = Fruit.Cantalope;\n"
+      "  return Fruit.Apple.toString();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
+
+  // Delete 'Cantalope'. Add 'Dragon'. Move 'Apple' and 'Banana'.
+
+  const char* kReloadScript =
+      "enum Fruit {\n"
+      "  Dragon,\n"
+      "  Apple,\n"
+      "  Banana,\n"
+      "}\n"
+      "var x;\n"
+      "var y;\n"
+      "var z;\n"
+      "main() {\n"
+      "  String r = '';\n"
+      "  r += '${identical(x, Fruit.Apple)}';\n"
+      "  r += ' ${identical(y, Fruit.Banana)}';\n"
+      "  r += ' ${identical(z, Fruit.Cantalope)}';\n"
+      "  r += ' ${Fruit.Dragon}';\n"
+      "  return r;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("true true true Fruit.Dragon", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_ConstantIdentical) {
+  const char* kScript =
+      "class Fruit {\n"
+      "  final String name;\n"
+      "  const Fruit(this.name);\n"
+      "  String toString() => name;\n"
+      "}\n"
+      "var x;\n"
+      "main() {\n"
+      "  x = const Fruit('Pear');\n"
+      "  return x.toString();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("Pear", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadScript =
+      "class Fruit {\n"
+      "  final String name;\n"
+      "  const Fruit(this.name);\n"
+      "  String toString() => name;\n"
+      "}\n"
+      "var x;\n"
+      "main() {\n"
+      "  if (identical(x, const Fruit('Pear'))) {\n"
+      "    return 'yes';\n"
+      "  } else {\n"
+      "    return 'no';\n"
+      "  }\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("yes", SimpleInvokeStr(lib, "main"));
+}
 
 }  // namespace dart

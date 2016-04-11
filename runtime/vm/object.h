@@ -1387,9 +1387,11 @@ class Class : public Object {
   void SetTraceAllocation(bool trace_allocation) const;
 
   bool ValidatePostFinalizePatch(const Class& orig_class, Error* error) const;
+  void ReplaceEnum(const Class& old_enum) const;
   void CopyStaticFieldValues(const Class& old_cls) const;
   void PatchFieldsAndFunctions() const;
   void FixupEnumClassIDs(const Class& old_cls) const;
+  void CopyCanonicalConstants(const Class& old_cls) const;
   bool CanReload(const Class& replacement) const;
 
  private:
