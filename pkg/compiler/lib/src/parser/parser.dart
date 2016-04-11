@@ -3,7 +3,6 @@
 // BSD-style license that can be found in the LICENSE file.
 
 library dart2js.parser;
-import 'dart:developer';
 
 import '../options.dart' show
     ParserOptions;
@@ -154,15 +153,8 @@ class Parser {
     return token;
   }
 
-  static int icount = 0;
   /// import uri (if (test) uri)* (as identifier)? combinator* ';'
   Token parseImport(Token token) {
-    icount++;
-    if (icount == 3) {
-      print('reloading');
-      reloadIsolate();
-      print('done reloading');
-    }
     Token importKeyword = token;
     listener.beginImport(importKeyword);
     assert(optional('import', token));
