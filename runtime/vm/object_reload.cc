@@ -173,9 +173,16 @@ bool Class::CanReload(const Class& replacement) const {
   }
 #endif
 
-  if (is_enum_class() != replacement.is_enum_class()) {
+  if (is_enum_class() && !replacement.is_enum_class()) {
     IRC->ReportError(String::Handle(String::NewFormatted(
-        "New class and old class must both be enumeration classes: %s",
+        "Enum class cannot be redefined to be a non-enum class: %s",
+        ToCString())));
+    return false;
+  }
+
+  if (!is_enum_class() && replacement.is_enum_class()) {
+    IRC->ReportError(String::Handle(String::NewFormatted(
+        "Class cannot be redefined to be a enum class: %s",
         ToCString())));
     return false;
   }
