@@ -1309,6 +1309,7 @@ DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
         (count % FLAG_reload_every) == 0) {
       do_reload = !ServiceIsolate::IsServiceIsolateDescendant(isolate) &&
                   isolate->is_runnable() &&
+                  isolate->CanReloadNow() &&
                   !isolate->IsReloading();
     }
   }

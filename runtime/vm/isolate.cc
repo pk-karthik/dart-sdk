@@ -136,6 +136,21 @@ NoOOBMessageScope::~NoOOBMessageScope() {
 
 
 
+NoReloadScope::NoReloadScope(Isolate* isolate, Thread* thread)
+    : StackResource(thread),
+      isolate_(isolate) {
+  ASSERT(isolate_ != NULL);
+  isolate_->reload_blocked_++;
+  ASSERT(isolate_->reload_blocked_ >= 0);
+}
+
+
+NoReloadScope::~NoReloadScope() {
+  isolate_->reload_blocked_--;
+  ASSERT(isolate_->reload_blocked_ >= 0);
+}
+
+
 void Isolate::RegisterClass(const Class& cls) {
   class_table()->Register(cls);
 }
@@ -805,6 +820,7 @@ Isolate::Isolate(const Dart_IsolateFlags& api_flags)
       boxed_field_list_(GrowableObjectArray::null()),
       spawn_count_monitor_(new Monitor()),
       spawn_count_(0),
+      reload_blocked_(0),
       reload_context_(NULL) {
   NOT_IN_PRODUCT(FlagsCopyFrom(api_flags));
   // TODO(asiva): A Thread is not available here, need to figure out

@@ -92,6 +92,18 @@ class NoOOBMessageScope : public StackResource {
 };
 
 
+// Disallow isolate reload.
+class NoReloadScope : public StackResource {
+ public:
+  NoReloadScope(Isolate* isolate, Thread* thread);
+  ~NoReloadScope();
+
+ private:
+  Isolate* isolate_;
+  DISALLOW_COPY_AND_ASSIGN(NoReloadScope);
+};
+
+
 class Isolate : public BaseIsolate {
  public:
   // Keep both these enums in sync with isolate_patch.dart.
@@ -431,6 +443,10 @@ class Isolate : public BaseIsolate {
 
   VMTagCounters* vm_tag_counters() {
     return &vm_tag_counters_;
+  }
+
+  bool CanReloadNow() const {
+    return reload_blocked_ == 0;
   }
 
   bool IsReloading() const {
@@ -775,6 +791,7 @@ class Isolate : public BaseIsolate {
   Monitor* spawn_count_monitor_;
   intptr_t spawn_count_;
 
+  intptr_t reload_blocked_;  // we can only reload when this is 0.
   IsolateReloadContext* reload_context_;
 
 #define ISOLATE_METRIC_VARIABLE(type, variable, name, unit)                    \
@@ -810,6 +827,7 @@ REUSABLE_HANDLE_LIST(REUSABLE_FRIEND_DECLARATION)
   friend class ServiceIsolate;
   friend class Thread;
   friend class Timeline;
+  friend class NoReloadScope;  // reload_block
 
 
   DISALLOW_COPY_AND_ASSIGN(Isolate);

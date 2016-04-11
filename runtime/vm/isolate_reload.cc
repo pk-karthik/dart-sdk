@@ -873,6 +873,9 @@ static void ResetICs(const Function& function, const Code& code) {
   ZoneGrowableArray<const ICData*>* ic_data_array =
       new(zone) ZoneGrowableArray<const ICData*>();
   function.RestoreICDataMap(ic_data_array, false /* clone ic-data */);
+  if (ic_data_array->length() == 0) {
+    return;
+  }
   const PcDescriptors& descriptors =
       PcDescriptors::Handle(code.pc_descriptors());
   PcDescriptors::Iterator iter(descriptors, RawPcDescriptors::kIcCall |

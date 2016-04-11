@@ -1439,7 +1439,10 @@ RawObject* Compiler::EvaluateStaticInitializer(const Field& field) {
   // evaluating the initializer value.
   ASSERT(field.StaticValue() == Object::transition_sentinel().raw());
   LongJumpScope jump;
+  Thread* thread = Thread::Current();
   if (setjmp(*jump.Set()) == 0) {
+    NoOOBMessageScope no_msg_scope(thread);
+    NoReloadScope no_reload_scope(thread->isolate(), thread);
     // Under lazy compilation initializer has not yet been created, so create
     // it now, but don't bother remembering it because it won't be used again.
     ASSERT(!field.HasPrecompiledInitializer());
@@ -1485,6 +1488,9 @@ RawObject* Compiler::ExecuteOnce(SequenceNode* fragment) {
     // Don't allow message interrupts while executing constant
     // expressions.  They can cause bogus recursive compilation.
     NoOOBMessageScope no_msg_scope(thread);
+    // Don't allow reload requests to come in.
+    NoReloadScope no_reload_scope(thread->isolate(), thread);
+
     if (FLAG_trace_compiler) {
       THR_Print("compiling expression: ");
       if (FLAG_support_ast_printer) {

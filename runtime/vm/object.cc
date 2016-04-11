@@ -7778,6 +7778,8 @@ void Field::SetSavedInitialStaticValue(const Instance& value) const {
 void Field::EvaluateInitializer() const {
   ASSERT(IsOriginal());
   ASSERT(is_static());
+  Thread* thread = Thread::Current();
+  NoReloadScope no_reload_scope(thread->isolate(), thread);
   if (StaticValue() == Object::sentinel().raw()) {
     SetStaticValue(Object::transition_sentinel());
     const Object& value =
