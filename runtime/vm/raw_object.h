@@ -646,6 +646,7 @@ class RawObject {
   friend class Closure;
   friend class Code;
   friend class Double;
+  friend class ForwardPointersVisitor;  // StorePointer
   friend class FreeListElement;
   friend class Function;
   friend class GCMarker;

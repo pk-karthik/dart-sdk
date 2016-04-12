@@ -18,7 +18,7 @@ namespace dart {
 class ForwardPointersVisitor : public ObjectPointerVisitor {
  public:
   explicit ForwardPointersVisitor(Isolate* isolate)
-      : ObjectPointerVisitor(isolate) { }
+      : ObjectPointerVisitor(isolate), visiting_object_(NULL) { }
 
   virtual void VisitPointers(RawObject** first, RawObject** last) {
     for (RawObject** p = first; p <= last; p++) {
@@ -28,13 +28,38 @@ class ForwardPointersVisitor : public ObjectPointerVisitor {
         uword addr = reinterpret_cast<uword>(old_target) - kHeapObjectTag;
         FreeListElement* forwarder = reinterpret_cast<FreeListElement*>(addr);
         RawObject* new_target = reinterpret_cast<RawObject*>(forwarder->next());
-        *p = new_target;
+        if (visiting_object_ == NULL) {
+          *p = new_target;
+        } else {
+          visiting_object_->StorePointer(p, new_target);
+        }
       }
     }
   }
 
+  void VisitingObject(RawObject* obj) { visiting_object_ = obj; }
+
  private:
+  RawObject* visiting_object_;
+
   DISALLOW_COPY_AND_ASSIGN(ForwardPointersVisitor);
+};
+
+
+class ForwardHeapPointersVisitor : public ObjectVisitor {
+ public:
+  explicit ForwardHeapPointersVisitor(ForwardPointersVisitor* pointer_visitor)
+      : pointer_visitor_(pointer_visitor) { }
+
+  virtual void VisitObject(RawObject* obj) {
+    pointer_visitor_->VisitingObject(obj);
+    obj->VisitPointers(pointer_visitor_);
+  }
+
+ private:
+  ForwardPointersVisitor* pointer_visitor_;
+
+  DISALLOW_COPY_AND_ASSIGN(ForwardHeapPointersVisitor);
 };
 
 
@@ -101,9 +126,6 @@ void Become::ElementsForwardIdentity(const Array& before, const Array& after) {
       // cases do not arise in Dart, better to prohibit it.
       FATAL("become: No indirect chains of forwarding");
     }
-    if (before_obj->IsOldObject() && !after_obj->IsSmiOrOldObject()) {
-      UNIMPLEMENTED();  // Requires store buffer update.
-    }
 
     intptr_t size_before = before_obj->Size();
 
@@ -121,9 +143,14 @@ void Become::ElementsForwardIdentity(const Array& before, const Array& after) {
 
   {
     // Follow forwarding pointers.
-    ForwardPointersVisitor visitor(isolate);
-    isolate->VisitObjectPointers(&visitor, true);
-    heap->VisitObjectPointers(&visitor);
+    //   C++ pointers
+    ForwardPointersVisitor pointer_visitor(isolate);
+    isolate->VisitObjectPointers(&pointer_visitor, true);
+
+    //   Heap pointers (may require updating the rememebered set)
+    ForwardHeapPointersVisitor object_visitor(&pointer_visitor);
+    heap->VisitObjects(&object_visitor);
+    pointer_visitor.VisitingObject(NULL);
   }
 
 #if defined(DEBUG)
