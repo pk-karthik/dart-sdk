@@ -1351,6 +1351,116 @@ TEST_CASE(IsolateReload_EnumComplex) {
 }
 
 
+TEST_CASE(IsolateReload_EnumValuesArray) {
+  const char* kScript =
+      "enum Fruit {\n"
+      "  Apple,\n"
+      "  Banana,\n"
+      "  Cantalope,\n"
+      "}\n"
+      "var x;\n"
+      "main() {\n"
+      "  x = Fruit.Cantalope;\n"
+      "  return Fruit.Apple.toString();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
+
+  // Delete 'Cantalope'.
+
+  const char* kReloadScript =
+      "enum Fruit {\n"
+      "  Apple,\n"
+      "  Banana,\n"
+      "}\n"
+      "var x;\n"
+      "bool identityCheck(Fruit f) {\n"
+      "  return identical(Fruit.values[f.index], f);\n"
+      "}\n"
+      "main() {\n"
+      "  if ((x is Fruit) && identical(x, Fruit.Cantalope)) {\n"
+      "    String r = '${identityCheck(Fruit.Apple)}';\n"
+      "    r += ' ${identityCheck(Fruit.Banana)}';\n"
+      "    r += ' ${identityCheck(Fruit.Cantalope)}';\n"
+      "    r += ' ${identityCheck(x)}';\n"
+      "    return r;\n"
+      "  }\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("true true true true",
+               SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_EnumIdentityReload) {
+  const char* kScript =
+      "enum Fruit {\n"
+      "  Apple,\n"
+      "  Banana,\n"
+      "  Cantalope,\n"
+      "}\n"
+      "var x;\n"
+      "var y;\n"
+      "var z;\n"
+      "var w;\n"
+      "main() {\n"
+      "  x = { Fruit.Apple: Fruit.Apple.index,\n"
+      "        Fruit.Banana: Fruit.Banana.index,\n"
+      "        Fruit.Cantalope: Fruit.Cantalope.index};\n"
+      "  y = Fruit.Apple;\n"
+      "  z = Fruit.Banana;\n"
+      "  w = Fruit.Cantalope;\n"
+      "  return Fruit.Apple.toString();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
+
+  // Delete 'Cantalope'.
+
+  const char* kReloadScript =
+      "enum Fruit {\n"
+      "  Apple,\n"
+      "  Banana,\n"
+      "  Cantalope,\n"
+      "}\n"
+      "var x;\n"
+      "var y;\n"
+      "var z;\n"
+      "var w;\n"
+      "bool identityCheck(Fruit f, int index) {\n"
+      "  return identical(Fruit.values[index], f);\n"
+      "}\n"
+      "main() {\n"
+      "  String r = '';\n"
+      "  x.forEach((key, value) {\n"
+      "    r += '${identityCheck(key, value)} ';\n"
+      "  });\n"
+      "  r += '${x[Fruit.Apple] == Fruit.Apple.index} ';\n"
+      "  r += '${x[Fruit.Banana] == Fruit.Banana.index} ';\n"
+      "  r += '${x[Fruit.Cantalope] == Fruit.Cantalope.index} ';\n"
+      "  r += '${identical(y, Fruit.values[x[Fruit.Apple]])} ';\n"
+      "  r += '${identical(z, Fruit.values[x[Fruit.Banana]])} ';\n"
+      "  r += '${identical(w, Fruit.values[x[Fruit.Cantalope]])} ';\n"
+      "  return r;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("true true true true true true true true true ",
+               SimpleInvokeStr(lib, "main"));
+}
+
+
 TEST_CASE(IsolateReload_ConstantIdentical) {
   const char* kScript =
       "class Fruit {\n"

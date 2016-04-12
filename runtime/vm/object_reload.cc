@@ -258,6 +258,7 @@ void Class::ReplaceEnum(const Class& old_enum) const {
       ASSERT(!enum_field.IsNull());
       // Use old value with updated index.
       enum_field.SetStaticValue(Instance::Cast(enum_value), true);
+      enum_values.SetAt(i, enum_value);
     }
   }
 
