@@ -15,7 +15,7 @@ class Become : public AllStatic {
  public:
   // Smalltalk's one-way bulk become (Array>>#elementsForwardIdentityTo:).
   // Redirects all pointers to elements of 'before' to the corresponding element
-  // in 'after'. Every element in 'before' is guarenteed to be dead after this
+  // in 'after'. Every element in 'before' is guaranteed to be dead after this
   // operation, though we won't finalize them until the next GC discovers this.
   // Useful for atomically applying behavior and schema changes.
   static void ElementsForwardIdentity(const Array& before, const Array& after);
