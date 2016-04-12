@@ -820,7 +820,7 @@ class Isolate : public BaseIsolate {
 REUSABLE_HANDLE_LIST(REUSABLE_FRIEND_DECLARATION)
 #undef REUSABLE_FRIEND_DECLARATION
 
-  friend class IsolateReloadContext;  // VisitObjectPointers
+  friend class Become;  // VisitObjectPointers
   friend class GCMarker;  // VisitObjectPointers
   friend class SafepointHandler;
   friend class Scavenger;  // VisitObjectPointers

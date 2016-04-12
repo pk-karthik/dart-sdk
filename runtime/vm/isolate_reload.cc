@@ -4,6 +4,7 @@
 
 #include "vm/isolate_reload.h"
 
+#include "vm/become.h"
 #include "vm/code_generator.h"
 #include "vm/dart_api_impl.h"
 #include "vm/hash_table.h"
@@ -64,24 +65,10 @@ class LibraryMapTraits {
 };
 
 
-class ReverseMapTraits {
+class BecomeMapTraits {
  public:
   static bool IsMatch(const Object& a, const Object& b) {
-    if (a.IsLibrary() && b.IsLibrary()) {
-      return IsolateReloadContext::IsSameLibrary(
-          Library::Cast(a), Library::Cast(b));
-    } else if (a.IsClass() && b.IsClass()) {
-      if (Class::Cast(a).id() == kFreeListElement) {
-        return false;
-      }
-      if (Class::Cast(b).id() == kFreeListElement) {
-        return false;
-      }
-      return IsolateReloadContext::IsSameClass(Class::Cast(a), Class::Cast(b));
-    } else if (a.IsField() && b.IsField()) {
-      return IsolateReloadContext::IsSameField(Field::Cast(a), Field::Cast(b));
-    }
-    return false;
+    return a.raw() == b.raw();
   }
 
   static uword Hash(const Object& obj) {
@@ -97,91 +84,6 @@ class ReverseMapTraits {
     }
     return 0;
   }
-};
-
-
-class UpdateHeapVisitor : public ObjectPointerVisitor {
- public:
-  UpdateHeapVisitor(Isolate* isolate)
-      : ObjectPointerVisitor(isolate),
-        class_table_(isolate->class_table()),
-        key_(Object::Handle()),
-        value_(Object::Handle()),
-        reverse_map_storage_(Array::Handle(
-            isolate->reload_context()->reverse_map_storage_)),
-        class_map_storage_(Array::Handle(
-            isolate->reload_context()->class_map_storage_)),
-        library_map_storage_(Array::Handle(
-            isolate->reload_context()->library_map_storage_)),
-        context_(isolate->reload_context()),
-        replacement_count_(0) {
-  }
-
-  virtual void VisitPointers(RawObject** first, RawObject** last) {
-    if (IsContainedInIsolateReloadContext(first)) {
-      return;
-    }
-    UnorderedHashMap<ReverseMapTraits> reverse_map(reverse_map_storage_.raw());
-    for (RawObject** p = first; p <= last; p++) {
-      if (!(*p)->IsHeapObject()) {
-        continue;
-      }
-      if (!(*p)->IsReplacedObject()) {
-        continue;
-      }
-      if ((*p)->IsClass()) {
-        // Faster mapping for classes.
-        RawClass* raw_cls = reinterpret_cast<RawClass*>(*p);
-        const intptr_t cid = raw_cls->ptr()->id_;
-        RawClass* replacement_cls = GetClassAt(cid);
-        if (raw_cls != replacement_cls) {
-          *p = replacement_cls;
-        }
-        replacement_count_++;
-        continue;
-      }
-      key_ = *p;
-      const intptr_t entry = reverse_map.FindKey(key_);
-      ASSERT(entry != -1);
-      value_ = reverse_map.GetPayload(entry, 0);
-      if (key_.raw() == value_.raw()) {
-        continue;
-      }
-      *p = value_.raw();
-      replacement_count_++;
-    }
-
-    reverse_map.Release();
-  }
-
-  intptr_t replacement_count() const { return replacement_count_; }
-
- private:
-  RawClass* GetClassAt(intptr_t index) {
-    return class_table_->At(index);
-  }
-
-  bool IsContainedInIsolateReloadContext(RawObject** first) {
-    if (reverse_map_storage_.Contains(first)) {
-      return true;
-    }
-    if (class_map_storage_.Contains(first)) {
-      return true;
-    }
-    if (library_map_storage_.Contains(first)) {
-      return true;
-    }
-    return false;
-  }
-
-  ClassTable* class_table_;
-  Object& key_;
-  Object& value_;
-  Array& reverse_map_storage_;
-  Array& class_map_storage_;
-  Array& library_map_storage_;
-  IsolateReloadContext* context_;
-  intptr_t replacement_count_;
 };
 
 
@@ -248,7 +150,7 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       error_(Error::null()),
       class_map_storage_(Array::null()),
       library_map_storage_(Array::null()),
-      reverse_map_storage_(Array::null()),
+      become_map_storage_(Array::null()),
       saved_root_library_(Library::null()),
       saved_libraries_(GrowableObjectArray::null()) {
 }
@@ -314,8 +216,8 @@ void IsolateReloadContext::StartReload() {
 
 
 void IsolateReloadContext::FinishReload() {
-  reverse_map_storage_ =
-      HashTables::New<UnorderedHashMap<ReverseMapTraits> >(4);
+  become_map_storage_ =
+      HashTables::New<UnorderedHashMap<BecomeMapTraits> >(4);
   BuildClassMapping();
   BuildLibraryMapping();
   TIR_Print("---- DONE FINALIZING\n");
@@ -593,7 +495,6 @@ void IsolateReloadContext::CompactClassTable() {
 
 void IsolateReloadContext::Commit() {
   TIMELINE_SCOPE(Commit);
-  Thread* thread = Thread::Current();
   // I->class_table()->PrintNonDartClasses();
   TIR_Print("---- COMMITTING REVERSE MAP\n");
 
@@ -661,7 +562,10 @@ void IsolateReloadContext::Commit() {
           // Replace |cls| with |new_cls| in the class table.
           ASSERT(!IsDeadClassAt(new_cls.id()));
           MarkClassDeadAt(new_cls.id());
+          // TODO(rmacnak): Should be handled by the become forward.
           I->class_table()->ReplaceClass(cls, new_cls);
+
+          AddBecomeMapping(cls, new_cls);
         }
       }
     }
@@ -717,20 +621,25 @@ void IsolateReloadContext::Commit() {
   }
 
   {
-    TIMELINE_SCOPE(CommitHeapWalk);
-    HeapIterationScope heap_iteration_scope;
-    Isolate* isolate = thread->isolate();
-    UpdateHeapVisitor uhv(isolate);
-    // isolate->IterateObjectPointers(&ucv, true);
-    TIR_Print("---- Scanning heap\n");
-    isolate->heap()->WriteProtectCode(false);
-    isolate->heap()->VisitObjectPointers(&uhv);
-    isolate->heap()->WriteProtectCode(true);
-    TIR_Print("---- Scanning object store\n");
-    isolate->object_store()->VisitObjectPointers(&uhv);
-    TIR_Print("---- Scanning stub code\n");
-    StubCode::VisitObjectPointers(&uhv);
-    TIR_Print("---- Performed %" Pd " replacements\n", uhv.replacement_count());
+    UnorderedHashMap<BecomeMapTraits> become_map(become_map_storage_);
+    intptr_t replacement_count = become_map.NumOccupied();
+    const Array& before = Array::Handle(Array::New(replacement_count));
+    const Array& after = Array::Handle(Array::New(replacement_count));
+    Object& obj = Object::Handle();
+    intptr_t replacement_index = 0;
+    UnorderedHashMap<BecomeMapTraits>::Iterator it(&become_map);
+    while (it.MoveNext()) {
+      const intptr_t entry = it.Current();
+      obj = become_map.GetKey(entry);
+      before.SetAt(replacement_index, obj);
+      obj = become_map.GetPayload(entry, 0);
+      after.SetAt(replacement_index, obj);
+      replacement_index++;
+    }
+    ASSERT(replacement_index == replacement_count);
+    become_map.Release();
+
+    Become::ElementsForwardIdentity(before, after);
   }
 
 
@@ -777,25 +686,9 @@ bool IsolateReloadContext::IsDirty(const Library& lib) {
 
 void IsolateReloadContext::PostCommit() {
   TIMELINE_SCOPE(PostCommit);
-  ClearReplacedObjectBits();
   set_saved_root_library(Library::Handle());
   set_saved_libraries(GrowableObjectArray::Handle());
   InvalidateWorld();
-}
-
-
-void IsolateReloadContext::ClearReplacedObjectBits() {
-  UnorderedHashMap<ReverseMapTraits> reverse_map(reverse_map_storage_);
-  UnorderedHashMap<ReverseMapTraits>::Iterator it(&reverse_map);
-
-  Object& obj = Object::Handle();
-  while (it.MoveNext()) {
-    const intptr_t entry = it.Current();
-    obj = reverse_map.GetKey(entry);
-    obj.raw()->ClearIsReplacedObject();
-  }
-
-  reverse_map.Release();
 }
 
 
@@ -1103,7 +996,6 @@ void IsolateReloadContext::BuildClassMapping() {
     } else {
       // Replaced class.
       AddClassMapping(replacement_or_new, old);
-      old.raw()->SetIsReplacedObject();
     }
   }
 }
@@ -1146,12 +1038,7 @@ void IsolateReloadContext::BuildLibraryMapping() {
       // Replaced class.
       AddLibraryMapping(replacement_or_new, old);
 
-      ASSERT(reverse_map_storage_ != Array::null());
-      UnorderedHashMap<ReverseMapTraits> reverse_map(reverse_map_storage_);
-      ASSERT(reverse_map.FindKey(old) == -1);
-      old.raw()->SetIsReplacedObject();
-      reverse_map.UpdateOrInsert(old, replacement_or_new);
-      reverse_map_storage_ = reverse_map.Release().raw();
+      AddBecomeMapping(old, replacement_or_new);
     }
   }
 }
@@ -1164,9 +1051,8 @@ void IsolateReloadContext::AddClassMapping(const Class& replacement_or_new,
     class_map_storage_ = HashTables::New<UnorderedHashMap<ClassMapTraits> >(4);
   }
   UnorderedHashMap<ClassMapTraits> map(class_map_storage_);
-  // Not present.
-  ASSERT(map.FindKey(replacement_or_new) == -1);
-  map.UpdateOrInsert(replacement_or_new, original);
+  bool update = map.UpdateOrInsert(replacement_or_new, original);
+  ASSERT(!update);
   // The storage given to the map may have been reallocated, remember the new
   // address.
   class_map_storage_ = map.Release().raw();
@@ -1180,9 +1066,8 @@ void IsolateReloadContext::AddLibraryMapping(const Library& replacement_or_new,
     library_map_storage_ = HashTables::New<UnorderedHashMap<ClassMapTraits> >(4);
   }
   UnorderedHashMap<LibraryMapTraits> map(library_map_storage_);
-  // Not present.
-  ASSERT(map.FindKey(replacement_or_new) == -1);
-  map.UpdateOrInsert(replacement_or_new, original);
+  bool update = map.UpdateOrInsert(replacement_or_new, original);
+  ASSERT(!update);
   // The storage given to the map may have been reallocated, remember the new
   // address.
   library_map_storage_ = map.Release().raw();
@@ -1194,12 +1079,17 @@ void IsolateReloadContext::AddStaticFieldMapping(
   ASSERT(old_field.is_static());
   ASSERT(new_field.is_static());
 
-  ASSERT(reverse_map_storage_ != Array::null());
-  UnorderedHashMap<ReverseMapTraits> reverse_map(reverse_map_storage_);
-  ASSERT(reverse_map.FindKey(old_field) == -1);
-  old_field.raw()->SetIsReplacedObject();
-  reverse_map.UpdateOrInsert(old_field, new_field);
-  reverse_map_storage_ = reverse_map.Release().raw();
+  AddBecomeMapping(old_field, new_field);
+}
+
+
+void IsolateReloadContext::AddBecomeMapping(const Object& old,
+                                            const Object& neu) {
+  ASSERT(become_map_storage_ != Array::null());
+  UnorderedHashMap<BecomeMapTraits> become_map(become_map_storage_);
+  bool update = become_map.UpdateOrInsert(old, neu);
+  ASSERT(!update);
+  become_map_storage_ = become_map.Release().raw();
 }
 
 }  // namespace dart

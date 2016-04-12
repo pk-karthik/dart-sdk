@@ -363,6 +363,7 @@ class Heap {
 
   int pretenure_policy_;
 
+  friend class Become;  // VisitObjectPointers
   friend class ServiceEvent;
   friend class PageSpace;  // VerifyGC
   friend class IsolateReloadContext;

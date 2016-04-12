@@ -5,6 +5,7 @@
 #include "platform/globals.h"
 
 #include "platform/assert.h"
+#include "vm/become.h"
 #include "vm/dart_api_impl.h"
 #include "vm/globals.h"
 #include "vm/heap.h"
@@ -289,4 +290,38 @@ TEST_CASE(IterateReadOnly) {
   EXPECT(heap->Contains(RawObject::ToAddr(obj.raw())));
 }
 
-}  // namespace dart.
+
+void TestBecomeForward(Heap::Space space) {
+  Isolate* isolate = Isolate::Current();
+  Heap* heap = isolate->heap();
+
+  const String& before_obj = String::Handle(String::New("old", space));
+  const String& after_obj = String::Handle(String::New("new", space));
+
+  EXPECT(before_obj.raw() != after_obj.raw());
+
+  const Array& before = Array::Handle(Array::New(1));
+  before.SetAt(0, before_obj);
+  const Array& after = Array::Handle(Array::New(1));
+  after.SetAt(0, after_obj);
+
+  Become::ElementsForwardIdentity(before, after);
+
+  EXPECT(before_obj.raw() == after_obj.raw());
+
+  heap->CollectAllGarbage();
+
+  EXPECT(before_obj.raw() == after_obj.raw());
+}
+
+
+VM_TEST_CASE(BecomeFowardOld) {
+  TestBecomeForward(Heap::kOld);
+}
+
+
+VM_TEST_CASE(BecomeFowardNew) {
+  TestBecomeForward(Heap::kNew);
+}
+
+}  // namespace dart

@@ -46,6 +46,8 @@
     'atomic_test.cc',
     'atomic_win.h',
     'base_isolate.h',
+    'become.h',
+    'become.cc',
     'benchmark_test.cc',
     'benchmark_test.h',
     'bigint_test.cc',

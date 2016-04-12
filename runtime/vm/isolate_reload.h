@@ -36,7 +36,7 @@ class UpdateClassesVisitor;
 
 class IsolateReloadContext {
  public:
-  IsolateReloadContext(Isolate* isolate, bool test_mode = false);
+  explicit IsolateReloadContext(Isolate* isolate, bool test_mode = false);
   ~IsolateReloadContext();
 
   void StartReload();
@@ -139,6 +139,8 @@ class IsolateReloadContext {
 
   void AddStaticFieldMapping(const Field& old_field, const Field& new_field);
 
+  void AddBecomeMapping(const Object& old, const Object& nue);
+
   RawClass* MappedClass(const Class& replacement_or_new);
   RawLibrary* MappedLibrary(const Library& replacement_or_new);
 
@@ -147,7 +149,7 @@ class IsolateReloadContext {
   RawError* error_;
   RawArray* class_map_storage_;
   RawArray* library_map_storage_;
-  RawArray* reverse_map_storage_;
+  RawArray* become_map_storage_;
   RawLibrary* saved_root_library_;
   RawGrowableObjectArray* saved_libraries_;
   RawObject** to() { return reinterpret_cast<RawObject**>(&saved_libraries_); }
