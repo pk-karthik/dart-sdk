@@ -215,19 +215,27 @@ void IsolateReloadContext::StartReload() {
 }
 
 
+void IsolateReloadContext::VerifyHeap() {
+  VerifyPointersVisitor::VerifyPointers();
+  Isolate::Current()->heap()->Verify();
+}
+
+
 void IsolateReloadContext::FinishReload() {
   become_map_storage_ =
       HashTables::New<UnorderedHashMap<BecomeMapTraits> >(4);
   BuildClassMapping();
   BuildLibraryMapping();
   TIR_Print("---- DONE FINALIZING\n");
-
+  VerifyHeap();
   if (ValidateReload()) {
     Commit();
+    VerifyHeap();
     PostCommit();
   } else {
     Rollback();
   }
+  VerifyHeap();
 }
 
 
@@ -417,7 +425,7 @@ void IsolateReloadContext::RehashCanonicalTypeArguments() {
       Array::Handle(Z, I->object_store()->canonical_type_arguments());
   const intptr_t table_size = table.Length() - 1;
   ASSERT(Utils::IsPowerOfTwo(table_size));
-  Array& new_table = Array::Handle(Z, Array::New(table_size + 1));
+  Array& new_table = Array::Handle(Z, Array::New(table_size + 1, Heap::kOld));
   // Copy all elements from the original table to the newly allocated
   // array.
   TypeArguments& element = TypeArguments::Handle(Z);
@@ -564,7 +572,6 @@ void IsolateReloadContext::Commit() {
           MarkClassDeadAt(new_cls.id());
           // TODO(rmacnak): Should be handled by the become forward.
           I->class_table()->ReplaceClass(cls, new_cls);
-
           AddBecomeMapping(cls, new_cls);
         }
       }
@@ -623,8 +630,10 @@ void IsolateReloadContext::Commit() {
   {
     UnorderedHashMap<BecomeMapTraits> become_map(become_map_storage_);
     intptr_t replacement_count = become_map.NumOccupied();
-    const Array& before = Array::Handle(Array::New(replacement_count));
-    const Array& after = Array::Handle(Array::New(replacement_count));
+    const Array& before =
+        Array::Handle(Array::New(replacement_count, Heap::kOld));
+    const Array& after =
+        Array::Handle(Array::New(replacement_count, Heap::kOld));
     Object& obj = Object::Handle();
     intptr_t replacement_index = 0;
     UnorderedHashMap<BecomeMapTraits>::Iterator it(&become_map);
@@ -916,22 +925,22 @@ class MarkFunctionsForRecompilation : public ObjectVisitor {
 void IsolateReloadContext::MarkAllFunctionsForRecompilation() {
   TIMELINE_SCOPE(MarkAllFunctionsForRecompilation);
   MarkFunctionsForRecompilation visitor(isolate_, this);
-  NoSafepointScope no_safepoint;
   isolate_->heap()->VisitObjects(&visitor);
 }
 
 
 void IsolateReloadContext::InvalidateWorld() {
-  // Discard all types of cached lookup, which are all potentially invalid.
-  // - ICs and MegamorphicCaches
-  // - Optimized code (inlining)
-  // - Unoptimized code (unqualifed invocations were early bound to static
-  //   or instance invocations)
+  ResetMegamorphicCaches();
 
   DeoptimizeFunctionsOnStack();
-  ResetUnoptimizedICsOnStack();
-  ResetMegamorphicCaches();
-  MarkAllFunctionsForRecompilation();
+
+  {
+    NoSafepointScope no_safepoint;
+    HeapIterationScope heap_iteration_scope;
+
+    ResetUnoptimizedICsOnStack();
+    MarkAllFunctionsForRecompilation();
+  }
 }
 
 

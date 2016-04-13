@@ -6,41 +6,82 @@
 
 #include "platform/assert.h"
 #include "platform/utils.h"
-#include "vm/raw_object.h"
+
+#include "vm/dart_api_state.h"
+#include "vm/freelist.h"
+#include "vm/isolate_reload.h"
 #include "vm/object.h"
+#include "vm/raw_object.h"
 #include "vm/safepoint.h"
 #include "vm/timeline.h"
-#include "vm/freelist.h"
 #include "vm/visitor.h"
 
 namespace dart {
 
+DECLARE_FLAG(bool, trace_reload);
+
+static bool IsForwardingObject(RawObject* object) {
+  return object->IsHeapObject() && object->IsFreeListElement();
+}
+
+
+static RawObject* GetForwardedObject(RawObject* object) {
+  ASSERT(IsForwardingObject(object));
+  uword addr = reinterpret_cast<uword>(object) - kHeapObjectTag;
+  FreeListElement* forwarder = reinterpret_cast<FreeListElement*>(addr);
+  RawObject* new_target = reinterpret_cast<RawObject*>(forwarder->next());
+  return new_target;
+}
+
+
+static void ForwardObjectTo(RawObject* before_obj, RawObject* after_obj) {
+  const intptr_t size_before = before_obj->Size();
+
+  // TODO(rmacnak): We should use different cids for forwarding corpses and
+  // free list elements.
+  uword corpse_addr = reinterpret_cast<uword>(before_obj) - kHeapObjectTag;
+  FreeListElement* forwarder = FreeListElement::AsElement(corpse_addr,
+                                                          size_before);
+  forwarder->set_next(reinterpret_cast<FreeListElement*>(after_obj));
+  if (!IsForwardingObject(before_obj)) {
+    FATAL("become: ForwardObjectTo failure.");
+  }
+  // Still need to be able to iterate over the forwarding corpse.
+  const intptr_t size_after = before_obj->Size();
+  if (size_before != size_after) {
+    FATAL("become: Before and after sizes do not match.");
+  }
+  ASSERT(size_before == size_after);
+}
+
+
 class ForwardPointersVisitor : public ObjectPointerVisitor {
  public:
   explicit ForwardPointersVisitor(Isolate* isolate)
-      : ObjectPointerVisitor(isolate), visiting_object_(NULL) { }
+      : ObjectPointerVisitor(isolate), visiting_object_(NULL), count_(0) { }
 
   virtual void VisitPointers(RawObject** first, RawObject** last) {
     for (RawObject** p = first; p <= last; p++) {
       RawObject* old_target = *p;
-      if (old_target->IsHeapObject() &&
-          old_target->IsFreeListElement()) {
-        uword addr = reinterpret_cast<uword>(old_target) - kHeapObjectTag;
-        FreeListElement* forwarder = reinterpret_cast<FreeListElement*>(addr);
-        RawObject* new_target = reinterpret_cast<RawObject*>(forwarder->next());
+      if (IsForwardingObject(old_target)) {
+        RawObject* new_target = GetForwardedObject(old_target);
         if (visiting_object_ == NULL) {
           *p = new_target;
         } else {
           visiting_object_->StorePointer(p, new_target);
         }
+        count_++;
       }
     }
   }
 
   void VisitingObject(RawObject* obj) { visiting_object_ = obj; }
 
+  intptr_t count() const { return count_; }
+
  private:
   RawObject* visiting_object_;
+  intptr_t count_;
 
   DISALLOW_COPY_AND_ASSIGN(ForwardPointersVisitor);
 };
@@ -60,6 +101,29 @@ class ForwardHeapPointersVisitor : public ObjectVisitor {
   ForwardPointersVisitor* pointer_visitor_;
 
   DISALLOW_COPY_AND_ASSIGN(ForwardHeapPointersVisitor);
+};
+
+
+class ForwardHeapPointersHandleVisitor : public HandleVisitor {
+ public:
+  ForwardHeapPointersHandleVisitor()
+      : HandleVisitor(Thread::Current()), count_(0) { }
+
+  virtual void VisitHandle(uword addr) {
+    FinalizablePersistentHandle* handle =
+        reinterpret_cast<FinalizablePersistentHandle*>(addr);
+    if (IsForwardingObject(handle->raw())) {
+      *handle->raw_addr() = GetForwardedObject(handle->raw());
+      count_++;
+    }
+  }
+
+  intptr_t count() const { return count_; }
+
+ private:
+  int count_;
+
+  DISALLOW_COPY_AND_ASSIGN(ForwardHeapPointersHandleVisitor);
 };
 
 
@@ -90,8 +154,7 @@ void Become::ElementsForwardIdentity(const Array& before, const Array& after) {
   Heap* heap = isolate->heap();
 
   TIMELINE_FUNCTION_GC_DURATION(thread, "Become::ElementsForwardIdentity");
-  SafepointOperationScope safepoint_scope(thread);
-  NoSafepointScope no_safepoints;
+  HeapIterationScope his;
 
 #if defined(DEBUG)
   {
@@ -114,11 +177,20 @@ void Become::ElementsForwardIdentity(const Array& before, const Array& after) {
     if (!before_obj->IsHeapObject()) {
       FATAL("become: Cannot forward immediates");
     }
+    if (!after_obj->IsHeapObject()) {
+      FATAL("become: Cannot become an immediates");
+    }
     if (before_obj->IsVMHeapObject()) {
       FATAL("become: Cannot forward VM heap objects");
     }
     if (before_obj->IsFreeListElement()) {
       FATAL("become: Cannot forward to multiple objects");
+    }
+    if (!before_obj->IsOldObject()) {
+      FATAL("become: Cannot forward new space objects");
+    }
+    if (!after_obj->IsOldObject()) {
+      FATAL("become: Cannot become new space objects");
     }
     if (after_obj->IsFreeListElement()) {
       // The Smalltalk become does allow this, and for very special cases
@@ -127,30 +199,28 @@ void Become::ElementsForwardIdentity(const Array& before, const Array& after) {
       FATAL("become: No indirect chains of forwarding");
     }
 
-    intptr_t size_before = before_obj->Size();
-
-    // TODO(rmacnak): We should use different cids for forwarding corpses and
-    // free list elements.
-    uword corpse_addr = reinterpret_cast<uword>(before_obj) - kHeapObjectTag;
-    FreeListElement* forwarder = FreeListElement::AsElement(corpse_addr,
-                                                            size_before);
-    forwarder->set_next(reinterpret_cast<FreeListElement*>(after_obj));
-
-    // Still need to be able to iterate over the forwarding corpse.
-    intptr_t size_after = before_obj->Size();
-    ASSERT(size_before == size_after);
+    ForwardObjectTo(before_obj, after_obj);
   }
 
   {
     // Follow forwarding pointers.
-    //   C++ pointers
+
+    // C++ pointers
     ForwardPointersVisitor pointer_visitor(isolate);
     isolate->VisitObjectPointers(&pointer_visitor, true);
 
-    //   Heap pointers (may require updating the rememebered set)
+    // Weak persistent handles.
+    ForwardHeapPointersHandleVisitor handle_visitor;
+    isolate->VisitWeakPersistentHandles(&handle_visitor);
+
+    //   Heap pointers (may require updating the remembered set)
     ForwardHeapPointersVisitor object_visitor(&pointer_visitor);
     heap->VisitObjects(&object_visitor);
     pointer_visitor.VisitingObject(NULL);
+
+    TIR_Print("Performed %" Pd " heap and %" Pd " handle replacements\n",
+              pointer_visitor.count(),
+              handle_visitor.count());
   }
 
 #if defined(DEBUG)

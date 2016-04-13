@@ -222,7 +222,7 @@ void Class::ReplaceEnum(const Class& old_enum) const {
   // Build list of enum from |old_enum| that aren't present in |this|.
   // This array holds pairs: (name, value).
   const GrowableObjectArray& to_add =
-      GrowableObjectArray::Handle(GrowableObjectArray::New());
+      GrowableObjectArray::Handle(GrowableObjectArray::New(Heap::kOld));
   const String& enum_class_name = String::Handle(UserVisibleName());
   String& enum_name = String::Handle();
   String& enum_field_name = String::Handle();
@@ -356,6 +356,7 @@ void Class::PatchFieldsAndFunctions() const {
   // still refer to their original script.
   const PatchClass& patch =
       PatchClass::Handle(PatchClass::New(*this, Script::Handle(script())));
+  ASSERT(!patch.IsNull());
 
   const Array& funcs = Array::Handle(functions());
   Function& func = Function::Handle();

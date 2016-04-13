@@ -73,6 +73,8 @@ class IsolateReloadContext {
   Isolate* isolate() { return isolate_; }
   ObjectStore* object_store();
 
+  void VerifyHeap();
+
   void SwitchStackToUnoptimizedCode();
 
   void Checkpoint();
