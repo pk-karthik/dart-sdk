@@ -775,6 +775,9 @@ static void ResetICs(const Function& function, const Code& code) {
                                             RawPcDescriptors::kUnoptStaticCall);
   while (iter.MoveNext()) {
     const ICData* ic_data = (*ic_data_array)[iter.DeoptId()];
+    if (ic_data == NULL) {
+      continue;
+    }
     bool is_static_call = iter.Kind() == RawPcDescriptors::kUnoptStaticCall;
     ic_data->Reset(is_static_call);
   }

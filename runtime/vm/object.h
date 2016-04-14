@@ -2717,6 +2717,8 @@ class Function : public Object {
     return RoundedAllocationSize(sizeof(RawFunction));
   }
 
+  int32_t kind_tag() const { return raw_ptr()->kind_tag_; }
+
   static RawFunction* New(const String& name,
                           RawFunction::Kind kind,
                           bool is_static,

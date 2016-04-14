@@ -65,12 +65,18 @@ static void ClearICs(const Function& function, const Code& code) {
   ZoneGrowableArray<const ICData*>* ic_data_array =
       new(zone) ZoneGrowableArray<const ICData*>();
   function.RestoreICDataMap(ic_data_array, false /* clone ic-data */);
+  if (ic_data_array->length() == 0) {
+    return;
+  }
   const PcDescriptors& descriptors =
       PcDescriptors::Handle(code.pc_descriptors());
   PcDescriptors::Iterator iter(descriptors, RawPcDescriptors::kIcCall |
                                             RawPcDescriptors::kUnoptStaticCall);
   while (iter.MoveNext()) {
     const ICData* ic_data = (*ic_data_array)[iter.DeoptId()];
+    if (ic_data == NULL) {
+      continue;
+    }
     bool is_static_call = iter.Kind() == RawPcDescriptors::kUnoptStaticCall;
     ic_data->Reset(is_static_call);
   }
