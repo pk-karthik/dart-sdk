@@ -7376,6 +7376,8 @@ AstNode* Parser::LoadReceiver(TokenPosition token_pos) {
   const bool kTestOnly = false;
   LocalVariable* receiver = LookupReceiver(current_block_->scope, kTestOnly);
   if (receiver == NULL) {
+    OS::Print("illegal implicit access to receiver 'this'\n");
+    ReloadDump();
     ReportError(token_pos, "illegal implicit access to receiver 'this'");
   }
   return new(Z) LoadLocalNode(TokenPos(), receiver);
@@ -10213,10 +10215,7 @@ void Parser::ExpectSemicolon() {
 }
 
 
-void Parser::UnexpectedToken() {
-  OS::Print("unexpected token '%s'",
-            CurrentToken() == Token::kIDENT ?
-               CurrentLiteral()->ToCString() : Token::Str(CurrentToken()));
+void Parser::ReloadDump() {
   OS::Print("ParsedFunction DUMP\n");
   OS::Print("Function: %s\n", parsed_function_->function_.ToCString());
   const Class& owner = Class::Handle(parsed_function_->function_.Owner());
@@ -10234,6 +10233,14 @@ void Parser::UnexpectedToken() {
   const String& source = String::Handle(parsed_function_->function_.GetSource());
   OS::Print("Source code:\n%s\n", source.ToCString());
   UNREACHABLE();
+}
+
+
+void Parser::UnexpectedToken() {
+  OS::Print("unexpected token '%s'",
+            CurrentToken() == Token::kIDENT ?
+               CurrentLiteral()->ToCString() : Token::Str(CurrentToken()));
+  ReloadDump();
   ReportError("unexpected token '%s'",
               CurrentToken() == Token::kIDENT ?
                   CurrentLiteral()->ToCString() : Token::Str(CurrentToken()));
