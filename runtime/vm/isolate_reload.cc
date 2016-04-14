@@ -215,27 +215,18 @@ void IsolateReloadContext::StartReload() {
 }
 
 
-void IsolateReloadContext::VerifyHeap() {
-  VerifyPointersVisitor::VerifyPointers();
-  Isolate::Current()->heap()->Verify();
-}
-
-
 void IsolateReloadContext::FinishReload() {
   become_map_storage_ =
       HashTables::New<UnorderedHashMap<BecomeMapTraits> >(4);
   BuildClassMapping();
   BuildLibraryMapping();
   TIR_Print("---- DONE FINALIZING\n");
-  VerifyHeap();
   if (ValidateReload()) {
     Commit();
-    VerifyHeap();
     PostCommit();
   } else {
     Rollback();
   }
-  VerifyHeap();
 }
 
 

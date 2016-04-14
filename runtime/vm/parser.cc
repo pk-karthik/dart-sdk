@@ -10214,6 +10214,10 @@ void Parser::ExpectSemicolon() {
 
 
 void Parser::UnexpectedToken() {
+  OS::Print("unexpected token '%s'",
+            CurrentToken() == Token::kIDENT ?
+               CurrentLiteral()->ToCString() : Token::Str(CurrentToken()));
+  UNREACHABLE();
   ReportError("unexpected token '%s'",
               CurrentToken() == Token::kIDENT ?
                   CurrentLiteral()->ToCString() : Token::Str(CurrentToken()));
