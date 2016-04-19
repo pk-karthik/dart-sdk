@@ -372,8 +372,6 @@ class Parser : public ValueObject {
 
   AstNode* DartPrint(const char* str);
 
-  void ReloadDump();
-
   void CheckConstructorCallTypeArguments(TokenPosition pos,
                                          const Function& constructor,
                                          const TypeArguments& type_arguments);

@@ -186,12 +186,6 @@ void Become::ElementsForwardIdentity(const Array& before, const Array& after) {
     if (before_obj->IsFreeListElement()) {
       FATAL("become: Cannot forward to multiple objects");
     }
-    if (!before_obj->IsOldObject()) {
-      FATAL("become: Cannot forward new space objects");
-    }
-    if (!after_obj->IsOldObject()) {
-      FATAL("become: Cannot become new space objects");
-    }
     if (after_obj->IsFreeListElement()) {
       // The Smalltalk become does allow this, and for very special cases
       // it is important (shape changes to Class or Mixin), but as these
