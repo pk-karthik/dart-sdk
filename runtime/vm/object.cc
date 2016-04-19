@@ -6961,6 +6961,8 @@ RawClass* Function::origin() const {
 
 
 RawScript* Function::script() const {
+  // NOTE(turnidge): If you update this function, you probably want to
+  // update Class::PatchFieldsAndFunctions() at the same time.
   if (token_pos() == TokenPosition::kMinSource) {
     // Testing for position 0 is an optimization that relies on temporary
     // eval functions having token position 0.
@@ -7434,6 +7436,8 @@ RawClass* Field::Origin() const {
 
 
 RawScript* Field::Script() const {
+  // NOTE(turnidge): If you update this function, you probably want to
+  // update Class::PatchFieldsAndFunctions() at the same time.
   const Field& field = Field::Handle(Original());
   ASSERT(field.IsOriginal());
   const Object& obj = Object::Handle(field.raw_ptr()->owner_);
@@ -9073,7 +9077,8 @@ RawScript* Script::New(const String& url,
 
 
 const char* Script::ToCString() const {
-  return "Script";
+  const String& name = String::Handle(url());
+  return OS::SCreate(Thread::Current()->zone(), "Script(%s)", name.ToCString());
 }
 
 

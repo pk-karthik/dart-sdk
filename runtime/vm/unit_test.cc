@@ -82,9 +82,13 @@ static bool IsImportableTestLib(const char* url_name) {
 
 
 static Dart_Handle ImportableTestLibSource() {
-  return DartUtils::NewString(
-    "importedFunc() => 'a';\n"
-    "importedIntFunc() => 4;\n");
+  const char* kScript =
+      "importedFunc() => 'a';\n"
+      "importedIntFunc() => 4;\n"
+      "class ImportedMixin {\n"
+      "  mixinFunc() => 'mixin';\n"
+      "}\n";
+  return DartUtils::NewString(kScript);
 }
 
 

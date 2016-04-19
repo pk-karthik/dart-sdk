@@ -366,17 +366,38 @@ void Class::PatchFieldsAndFunctions() const {
 
   const Array& funcs = Array::Handle(functions());
   Function& func = Function::Handle();
+  Object& owner = Object::Handle();
   for (intptr_t i = 0; i < funcs.Length(); i++) {
     func = Function::RawCast(funcs.At(i));
-    func.set_owner(patch);
+    if ((func.token_pos() == TokenPosition::kMinSource) ||
+        func.IsClosureFunction()) {
+      // Eval functions do not need to have their script updated.
+      //
+      // Closure functions refer to the parent's script which we can
+      // rely on being updated for us, if necessary.
+      continue;
+    }
+
+    // If the source for this function is already patched, leave it alone.
+    owner = func.RawOwner();
+    ASSERT(!owner.IsNull());
+    if (!owner.IsPatchClass()) {
+      ASSERT(owner.raw() == this->raw());
+      func.set_owner(patch);
+    }
   }
 
-  const Array& old_field_list = Array::Handle(fields());
-  Field& old_field = Field::Handle();
-  for (intptr_t i = 0; i < old_field_list.Length(); i++) {
-    old_field = Field::RawCast(old_field_list.At(i));
-    old_field.set_owner(patch);
-    old_field.ForceDynamicGuardedCidAndLength();
+  const Array& field_list = Array::Handle(fields());
+  Field& field = Field::Handle();
+  for (intptr_t i = 0; i < field_list.Length(); i++) {
+    field = Field::RawCast(field_list.At(i));
+    owner = field.RawOwner();
+    ASSERT(!owner.IsNull());
+    if (!owner.IsPatchClass()) {
+      ASSERT(owner.raw() == this->raw());
+      field.set_owner(patch);
+    }
+    field.ForceDynamicGuardedCidAndLength();
   }
 }
 

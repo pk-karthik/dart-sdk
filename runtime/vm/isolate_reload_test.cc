@@ -755,6 +755,39 @@ TEST_CASE(IsolateReload_SmiFastPathStubs) {
 }
 
 
+// Verifies that we assign the correct patch classes for imported
+// mixins when we reload.
+TEST_CASE(IsolateReload_ImportedMixinFunction) {
+  const char* kScript =
+      "import 'importable_test_lib' show ImportedMixin;\n"
+      "class A extends Object with ImportedMixin {\n"
+      "}"
+      "var func = new A().mixinFunc;\n"
+      "main() {\n"
+      "  return func();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("mixin", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadScript =
+      "import 'importable_test_lib' show ImportedMixin;\n"
+      "class A extends Object with ImportedMixin {\n"
+      "}"
+      "var func;\n"
+      "main() {\n"
+      "  return func();\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("mixin", SimpleInvokeStr(lib, "main"));
+}
+
+
 TEST_CASE(IsolateReload_TopLevelParseError) {
   const char* kScript =
       "main() {\n"
