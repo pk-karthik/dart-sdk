@@ -806,6 +806,7 @@ Isolate::Isolate(const Dart_IsolateFlags& api_flags)
       deoptimized_code_array_(GrowableObjectArray::null()),
       sticky_error_(Error::null()),
       background_compiler_(NULL),
+      background_compiler_disabled_(0),
       pending_service_extension_calls_(GrowableObjectArray::null()),
       registered_service_extension_handlers_(GrowableObjectArray::null()),
       metrics_list_head_(NULL),

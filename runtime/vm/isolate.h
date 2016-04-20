@@ -401,6 +401,22 @@ class Isolate : public BaseIsolate {
     background_compiler_ = value;
   }
 
+  void disable_background_compiler() {
+    background_compiler_disabled_++;
+  }
+
+  bool is_background_compiler_disabled() const {
+    return background_compiler_disabled_ > 0;
+  }
+
+  void enable_background_compiler() {
+    background_compiler_disabled_--;
+    if (background_compiler_disabled_ < 0) {
+      FATAL("Mismatched number of calls to disable_background_compiler and "
+            "enable_background_compiler.");
+    }
+  }
+
   void UpdateLastAllocationProfileAccumulatorResetTimestamp() {
     last_allocationprofile_accumulator_reset_timestamp_ =
         OS::GetCurrentTimeMillis();
@@ -742,6 +758,7 @@ class Isolate : public BaseIsolate {
 
   // Background compilation.
   BackgroundCompiler* background_compiler_;
+  intptr_t background_compiler_disabled_;
 
   // We use 6 list entries for each pending service extension calls.
   enum {

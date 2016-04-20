@@ -1475,17 +1475,19 @@ DEFINE_RUNTIME_ENTRY(OptimizeInvokedFunction, 1) {
       if (FLAG_enable_inlining_annotations) {
         FATAL("Cannot enable inlining annotations and background compilation");
       }
-      // Reduce the chance of triggering optimization while the function is
-      // being optimized in the background. INT_MIN should ensure that it takes
-      // long time to trigger optimization.
-      // Note that the background compilation queue rejects duplicate entries.
-      function.set_usage_counter(INT_MIN);
-      BackgroundCompiler::EnsureInit(thread);
-      ASSERT(isolate->background_compiler() != NULL);
-      isolate->background_compiler()->CompileOptimized(function);
-      // Continue in the same code.
-      arguments.SetReturn(Code::Handle(zone, function.CurrentCode()));
-      return;
+      if (!BackgroundCompiler::IsDisabled()) {
+        // Reduce the chance of triggering optimization while the function is
+        // being optimized in the background. INT_MIN should ensure that it
+        // takes long time to trigger optimization.
+        // Note that the background compilation queue rejects duplicate entries.
+        function.set_usage_counter(INT_MIN);
+        BackgroundCompiler::EnsureInit(thread);
+        ASSERT(isolate->background_compiler() != NULL);
+        isolate->background_compiler()->CompileOptimized(function);
+        // Continue in the same code.
+        arguments.SetReturn(Code::Handle(zone, function.CurrentCode()));
+        return;
+      }
     }
 
     // Reset usage counter for reoptimization before calling optimizer to

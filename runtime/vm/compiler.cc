@@ -1782,6 +1782,41 @@ void BackgroundCompiler::Stop(BackgroundCompiler* task) {
 }
 
 
+void BackgroundCompiler::Disable() {
+  Thread* thread = Thread::Current();
+  ASSERT(thread != NULL);
+  Isolate* isolate = thread->isolate();
+  MutexLocker ml(isolate->mutex());
+  BackgroundCompiler* task = isolate->background_compiler();
+  if (task != NULL) {
+    // We should only ever have to stop the task if this is the first call to
+    // Disable.
+    ASSERT(!isolate->is_background_compiler_disabled());
+    BackgroundCompiler::Stop(task);
+  }
+  ASSERT(isolate->background_compiler() == NULL);
+  isolate->disable_background_compiler();
+}
+
+
+bool BackgroundCompiler::IsDisabled() {
+  Thread* thread = Thread::Current();
+  ASSERT(thread != NULL);
+  Isolate* isolate = thread->isolate();
+  MutexLocker ml(isolate->mutex());
+  return isolate->is_background_compiler_disabled();
+}
+
+
+void BackgroundCompiler::Enable() {
+  Thread* thread = Thread::Current();
+  ASSERT(thread != NULL);
+  Isolate* isolate = thread->isolate();
+  MutexLocker ml(isolate->mutex());
+  isolate->enable_background_compiler();
+}
+
+
 void BackgroundCompiler::EnsureInit(Thread* thread) {
   ASSERT(thread->IsMutatorThread());
   // Finalize NoSuchMethodError, _Mint; occasionally needed in optimized

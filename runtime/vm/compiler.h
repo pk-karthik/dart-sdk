@@ -160,6 +160,12 @@ class BackgroundCompiler : public ThreadPool::Task {
 
   static void Stop(BackgroundCompiler* task);
 
+  static void Disable();
+
+  static void Enable();
+
+  static bool IsDisabled();
+
   // Call to optimize a function in the background, enters the function in the
   // compilation queue.
   void CompileOptimized(const Function& function);
@@ -178,7 +184,6 @@ class BackgroundCompiler : public ThreadPool::Task {
   bool* done_;         // True if the thread is done.
   Monitor* queue_monitor_;  // Controls access to the queue.
   Monitor* done_monitor_;   // Notify/wait that the thread is done.
-
   BackgroundCompilationQueue* function_queue_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(BackgroundCompiler);
