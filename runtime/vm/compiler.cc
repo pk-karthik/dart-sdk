@@ -1334,7 +1334,7 @@ NOT_IN_PRODUCT(
   // Optimization must happen in non-mutator/Dart thread if background
   // compilation is on. OSR compilation still occurs in the main thread.
   ASSERT((osr_id != kNoOSRDeoptId) || !FLAG_background_compilation ||
-         !thread->IsMutatorThread());
+         !thread->IsMutatorThread() || BackgroundCompiler::IsDisabled());
   CompilationPipeline* pipeline =
       CompilationPipeline::New(thread->zone(), function);
   return CompileFunctionHelper(pipeline,
@@ -1867,6 +1867,7 @@ DEFINE_RUNTIME_ENTRY(CompileFunction, 1) {
 }
 
 
+
 bool Compiler::IsBackgroundCompilation() {
   UNREACHABLE();
   return false;
@@ -1961,6 +1962,22 @@ void BackgroundCompiler::Stop(BackgroundCompiler* task) {
 
 void BackgroundCompiler::EnsureInit(Thread* thread) {
   UNREACHABLE();
+}
+
+
+void BackgroundCompiler::Disable() {
+  // TODO(johnmccutchan): Do we want this to UNREACHABLE() ?
+}
+
+
+void BackgroundCompiler::Enable() {
+  // TODO(johnmccutchan): Do we want this to UNREACHABLE() ?
+}
+
+
+bool BackgroundCompiler::IsDisabled() {
+  // TODO(johnmccutchan): Do we want this to UNREACHABLE() ?
+  return true;
 }
 
 #endif  // DART_PRECOMPILED_RUNTIME

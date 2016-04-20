@@ -6,6 +6,7 @@
 
 #include "vm/become.h"
 #include "vm/code_generator.h"
+#include "vm/compiler.h"
 #include "vm/dart_api_impl.h"
 #include "vm/hash_table.h"
 #include "vm/isolate.h"
@@ -216,8 +217,13 @@ void IsolateReloadContext::StartReload() {
 
 
 void IsolateReloadContext::FinishReload() {
+  // Disable the background compiler while we are performing the reload.
+  BackgroundCompiler::Disable();
+
   become_map_storage_ =
       HashTables::New<UnorderedHashMap<BecomeMapTraits> >(4);
+
+
   BuildClassMapping();
   BuildLibraryMapping();
   TIR_Print("---- DONE FINALIZING\n");
@@ -227,6 +233,8 @@ void IsolateReloadContext::FinishReload() {
   } else {
     Rollback();
   }
+
+  BackgroundCompiler::Enable();
 }
 
 
