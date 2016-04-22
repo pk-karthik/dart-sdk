@@ -13,12 +13,12 @@ import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
 import 'package:analyzer/dart/element/visitor.dart';
 import 'package:analyzer/src/dart/ast/ast.dart';
-import 'package:analyzer/src/dart/ast/token.dart';
 import 'package:analyzer/src/dart/ast/utilities.dart';
 import 'package:analyzer/src/dart/element/element.dart';
-import 'package:analyzer/src/dart/element/member.dart';
 import 'package:analyzer/src/dart/element/type.dart';
 import 'package:analyzer/src/dart/element/utilities.dart';
+import 'package:analyzer/src/dart/resolver/inheritance_manager.dart';
+import 'package:analyzer/src/dart/resolver/scope.dart';
 import 'package:analyzer/src/generated/constant.dart';
 import 'package:analyzer/src/generated/element_resolver.dart';
 import 'package:analyzer/src/generated/engine.dart';
@@ -33,6 +33,8 @@ import 'package:analyzer/src/generated/utilities_dart.dart';
 import 'package:analyzer/src/task/strong/info.dart'
     show InferredType, StaticInfo;
 
+export 'package:analyzer/src/dart/resolver/inheritance_manager.dart';
+export 'package:analyzer/src/dart/resolver/scope.dart';
 export 'package:analyzer/src/generated/type_system.dart';
 
 /**
@@ -1093,61 +1095,6 @@ class BuildLibraryElementUtils {
 }
 
 /**
- * Instances of the class `ClassScope` implement the scope defined by a class.
- */
-class ClassScope extends EnclosedScope {
-  /**
-   * Initialize a newly created scope enclosed within another scope.
-   *
-   * @param enclosingScope the scope in which this scope is lexically enclosed
-   * @param typeElement the element representing the type represented by this scope
-   */
-  ClassScope(Scope enclosingScope, ClassElement typeElement)
-      : super(enclosingScope) {
-    if (typeElement == null) {
-      throw new IllegalArgumentException("class element cannot be null");
-    }
-    _defineMembers(typeElement);
-  }
-
-  @override
-  AnalysisError getErrorForDuplicate(Element existing, Element duplicate) {
-    if (existing is PropertyAccessorElement && duplicate is MethodElement) {
-      if (existing.nameOffset < duplicate.nameOffset) {
-        return new AnalysisError(
-            duplicate.source,
-            duplicate.nameOffset,
-            duplicate.nameLength,
-            CompileTimeErrorCode.METHOD_AND_GETTER_WITH_SAME_NAME,
-            [existing.displayName]);
-      } else {
-        return new AnalysisError(
-            existing.source,
-            existing.nameOffset,
-            existing.nameLength,
-            CompileTimeErrorCode.GETTER_AND_METHOD_WITH_SAME_NAME,
-            [existing.displayName]);
-      }
-    }
-    return super.getErrorForDuplicate(existing, duplicate);
-  }
-
-  /**
-   * Define the instance members defined by the class.
-   *
-   * @param typeElement the element representing the type represented by this scope
-   */
-  void _defineMembers(ClassElement typeElement) {
-    for (PropertyAccessorElement accessor in typeElement.accessors) {
-      define(accessor);
-    }
-    for (MethodElement method in typeElement.methods) {
-      define(method);
-    }
-  }
-}
-
-/**
  * Instances of the class `ConstantVerifier` traverse an AST structure looking for additional
  * errors and warnings not covered by the parser and resolver. In particular, it looks for errors
  * and warnings related to constant expressions.
@@ -1932,6 +1879,21 @@ class DeadCodeVerifier extends RecursiveAstVisitor<Object> {
   }
 
   @override
+  Object visitExportDirective(ExportDirective node) {
+    ExportElement exportElement = node.element;
+    if (exportElement != null) {
+      // The element is null when the URI is invalid
+      LibraryElement library = exportElement.exportedLibrary;
+      if (library != null) {
+        for (Combinator combinator in node.combinators) {
+          _checkCombinator(exportElement.exportedLibrary, combinator);
+        }
+      }
+    }
+    return super.visitExportDirective(node);
+  }
+
+  @override
   Object visitIfStatement(IfStatement node) {
     Expression conditionExpression = node.condition;
     conditionExpression?.accept(this);
@@ -1958,6 +1920,21 @@ class DeadCodeVerifier extends RecursiveAstVisitor<Object> {
       }
     }
     return super.visitIfStatement(node);
+  }
+
+  @override
+  Object visitImportDirective(ImportDirective node) {
+    ImportElement importElement = node.element;
+    if (importElement != null) {
+      // The element is null when the URI is invalid
+      LibraryElement library = importElement.importedLibrary;
+      if (library != null) {
+        for (Combinator combinator in node.combinators) {
+          _checkCombinator(library, combinator);
+        }
+      }
+    }
+    return super.visitImportDirective(node);
   }
 
   @override
@@ -2057,6 +2034,35 @@ class DeadCodeVerifier extends RecursiveAstVisitor<Object> {
     }
     node.body?.accept(this);
     return null;
+  }
+
+  /**
+   * Resolve the names in the given [combinator] in the scope of the given
+   * [library].
+   */
+  void _checkCombinator(LibraryElement library, Combinator combinator) {
+    Namespace namespace =
+        new NamespaceBuilder().createExportNamespaceForLibrary(library);
+    NodeList<SimpleIdentifier> names;
+    ErrorCode hintCode;
+    if (combinator is HideCombinator) {
+      names = combinator.hiddenNames;
+      hintCode = HintCode.UNDEFINED_HIDDEN_NAME;
+    } else {
+      names = (combinator as ShowCombinator).shownNames;
+      hintCode = HintCode.UNDEFINED_SHOWN_NAME;
+    }
+    for (SimpleIdentifier name in names) {
+      String nameStr = name.name;
+      Element element = namespace.get(nameStr);
+      if (element == null) {
+        element = namespace.get("$nameStr=");
+      }
+      if (element == null) {
+        _errorReporter
+            .reportErrorForNode(hintCode, name, [library.identifier, nameStr]);
+      }
+    }
   }
 
   /**
@@ -2388,9 +2394,9 @@ class DeclarationResolver extends RecursiveAstVisitor<Object>
             accessors = _enclosingUnit.accessors;
           }
           PropertyAccessorElement accessor;
-          if ((property as KeywordToken).keyword == Keyword.GET) {
+          if (property.keyword == Keyword.GET) {
             accessor = _findIdentifier(accessors, functionName);
-          } else if ((property as KeywordToken).keyword == Keyword.SET) {
+          } else if (property.keyword == Keyword.SET) {
             accessor = _findWithNameAndOffset(accessors, functionName,
                 functionName.name + '=', functionName.offset);
             _expectedElements.remove(accessor);
@@ -2501,9 +2507,9 @@ class DeclarationResolver extends RecursiveAstVisitor<Object>
         methodName.staticElement = _enclosingExecutable;
       } else {
         PropertyAccessorElement accessor;
-        if ((property as KeywordToken).keyword == Keyword.GET) {
+        if (property.keyword == Keyword.GET) {
           accessor = _findIdentifier(_enclosingClass.accessors, methodName);
-        } else if ((property as KeywordToken).keyword == Keyword.SET) {
+        } else if (property.keyword == Keyword.SET) {
           accessor = _findWithNameAndOffset(_enclosingClass.accessors,
               methodName, nameOfMethod + '=', methodName.offset);
           _expectedElements.remove(accessor);
@@ -2847,7 +2853,7 @@ class DirectiveResolver extends SimpleAstVisitor with ExistingElementResolver {
    */
   ExportElement _findExport(
       ExportDirective node, List<ExportElement> exports, Source source) {
-    if (source == null || !_enclosingUnit.context.exists(source)) {
+    if (source == null) {
       return null;
     }
     for (ExportElement export in exports) {
@@ -2862,6 +2868,9 @@ class DirectiveResolver extends SimpleAstVisitor with ExistingElementResolver {
         return export;
       }
     }
+    if (!_enclosingUnit.context.exists(source)) {
+      return null;
+    }
     _mismatch("Could not find export element for '$source'", node);
     return null; // Never reached
   }
@@ -2873,7 +2882,7 @@ class DirectiveResolver extends SimpleAstVisitor with ExistingElementResolver {
    */
   ImportElement _findImport(
       ImportDirective node, List<ImportElement> imports, Source source) {
-    if (source == null || !_enclosingUnit.context.exists(source)) {
+    if (source == null) {
       return null;
     }
     SimpleIdentifier prefix = node.prefix;
@@ -2894,6 +2903,9 @@ class DirectiveResolver extends SimpleAstVisitor with ExistingElementResolver {
         // So, either the combinators are the same, or we build new elements.
         return element;
       }
+    }
+    if (!_enclosingUnit.context.exists(source)) {
+      return null;
     }
     if (foundSource) {
       if (prefix == null) {
@@ -3288,80 +3300,6 @@ class ElementMismatchException extends AnalysisException {
    */
   ElementMismatchException(String message, [CaughtException cause = null])
       : super(message, cause);
-}
-
-/**
- * Instances of the class `EnclosedScope` implement a scope that is lexically enclosed in
- * another scope.
- */
-class EnclosedScope extends Scope {
-  /**
-   * The scope in which this scope is lexically enclosed.
-   */
-  @override
-  final Scope enclosingScope;
-
-  /**
-   * A table mapping names that will be defined in this scope, but right now are not initialized.
-   * According to the scoping rules these names are hidden, even if they were defined in an outer
-   * scope.
-   */
-  HashMap<String, Element> _hiddenElements = new HashMap<String, Element>();
-
-  /**
-   * A flag indicating whether there are any names defined in this scope.
-   */
-  bool _hasHiddenName = false;
-
-  /**
-   * Initialize a newly created scope enclosed within another scope.
-   *
-   * @param enclosingScope the scope in which this scope is lexically enclosed
-   */
-  EnclosedScope(this.enclosingScope);
-
-  @override
-  AnalysisErrorListener get errorListener => enclosingScope.errorListener;
-
-  /**
-   * Record that given element is declared in this scope, but hasn't been initialized yet, so it is
-   * error to use. If there is already an element with the given name defined in an outer scope,
-   * then it will become unavailable.
-   *
-   * @param element the element declared, but not initialized in this scope
-   */
-  void hide(Element element) {
-    if (element != null) {
-      String name = element.name;
-      if (name != null && !name.isEmpty) {
-        _hiddenElements[name] = element;
-        _hasHiddenName = true;
-      }
-    }
-  }
-
-  @override
-  Element internalLookup(
-      Identifier identifier, String name, LibraryElement referencingLibrary) {
-    Element element = localLookup(name, referencingLibrary);
-    if (element != null) {
-      return element;
-    }
-    // May be there is a hidden Element.
-    if (_hasHiddenName) {
-      Element hiddenElement = _hiddenElements[name];
-      if (hiddenElement != null) {
-        errorListener.onError(new AnalysisError(
-            getSource(identifier),
-            identifier.offset,
-            identifier.length,
-            CompileTimeErrorCode.REFERENCED_BEFORE_DECLARATION, []));
-        return hiddenElement;
-      }
-    }
-    // Check enclosing scope.
-    return enclosingScope.internalLookup(identifier, name, referencingLibrary);
-  }
 }
 
 /**
@@ -3983,103 +3921,6 @@ class ExitDetector extends GeneralizingAstVisitor<bool> {
 }
 
 /**
- * The scope defined by a function.
- */
-class FunctionScope extends EnclosedScope {
-  /**
-   * The element representing the function that defines this scope.
-   */
-  final ExecutableElement _functionElement;
-
-  /**
-   * A flag indicating whether the parameters have already been defined, used to
-   * prevent the parameters from being defined multiple times.
-   */
-  bool _parametersDefined = false;
-
-  /**
-   * Initialize a newly created scope enclosed within the [enclosingScope] that
-   * represents the given [_functionElement].
-   */
-  FunctionScope(Scope enclosingScope, this._functionElement)
-      : super(new EnclosedScope(new EnclosedScope(enclosingScope))) {
-    if (_functionElement == null) {
-      throw new IllegalArgumentException("function element cannot be null");
-    }
-    _defineTypeParameters();
-  }
-
-  /**
-   * Define the parameters for the given function in the scope that encloses
-   * this function.
-   */
-  void defineParameters() {
-    if (_parametersDefined) {
-      return;
-    }
-    _parametersDefined = true;
-    Scope parameterScope = enclosingScope;
-    for (ParameterElement parameter in _functionElement.parameters) {
-      if (!parameter.isInitializingFormal) {
-        parameterScope.define(parameter);
-      }
-    }
-  }
-
-  /**
-   * Define the type parameters for the function.
-   */
-  void _defineTypeParameters() {
-    Scope typeParameterScope = enclosingScope.enclosingScope;
-    for (TypeParameterElement typeParameter
-        in _functionElement.typeParameters) {
-      typeParameterScope.define(typeParameter);
-    }
-  }
-}
-
-/**
- * The scope defined by a function type alias.
- */
-class FunctionTypeScope extends EnclosedScope {
-  final FunctionTypeAliasElement _typeElement;
-
-  bool _parametersDefined = false;
-
-  /**
-   * Initialize a newly created scope enclosed within the [enclosingScope] that
-   * represents the given [_typeElement].
-   */
-  FunctionTypeScope(Scope enclosingScope, this._typeElement)
-      : super(new EnclosedScope(enclosingScope)) {
-    _defineTypeParameters();
-  }
-
-  /**
-   * Define the parameters for the function type alias.
-   */
-  void defineParameters() {
-    if (_parametersDefined) {
-      return;
-    }
-    _parametersDefined = true;
-    for (ParameterElement parameter in _typeElement.parameters) {
-      define(parameter);
-    }
-  }
-
-  /**
-   * Define the type parameters for the function type alias.
-   */
-  void _defineTypeParameters() {
-    Scope typeParameterScope = enclosingScope;
-    for (TypeParameterElement typeParameter in _typeElement.typeParameters) {
-      typeParameterScope.define(typeParameter);
-    }
-  }
-}
-
-/**
  * A visitor that visits ASTs and fills [UsedImportedElements].
  */
 class GatherUsedImportedElementsVisitor extends RecursiveAstVisitor {
@@ -4104,24 +3945,32 @@ class GatherUsedImportedElementsVisitor extends RecursiveAstVisitor {
   }
 
   @override
-  void visitPrefixedIdentifier(PrefixedIdentifier node) {
-    // If the prefixed identifier references some A.B, where A is a library
-    // prefix, then we can lookup the associated ImportDirective in
-    // prefixElementMap and remove it from the unusedImports list.
-    SimpleIdentifier prefixIdentifier = node.prefix;
-    Element element = prefixIdentifier.staticElement;
-    if (element is PrefixElement) {
-      usedElements.prefixes.add(element);
-      return;
-    }
-    // Otherwise, pass the prefixed identifier element and name onto
-    // visitIdentifier.
-    _visitIdentifier(element, prefixIdentifier.name);
+  void visitSimpleIdentifier(SimpleIdentifier node) {
+    _visitIdentifier(node, node.staticElement);
   }
 
-  @override
-  void visitSimpleIdentifier(SimpleIdentifier node) {
-    _visitIdentifier(node.staticElement, node.name);
+  /**
+   * If the given [identifier] is prefixed with a [PrefixElement], fill the
+   * corresponding `UsedImportedElements.prefixMap` entry and return `true`.
+   */
+  bool _recordPrefixMap(SimpleIdentifier identifier, Element element) {
+    bool recordIfTargetIsPrefixElement(Expression target) {
+      if (target is SimpleIdentifier && target.staticElement is PrefixElement) {
+        List<Element> prefixedElements = usedElements.prefixMap
+            .putIfAbsent(target.staticElement, () => <Element>[]);
+        prefixedElements.add(element);
+        return true;
+      }
+      return false;
+    }
+    AstNode parent = identifier.parent;
+    if (parent is MethodInvocation && parent.methodName == identifier) {
+      return recordIfTargetIsPrefixElement(parent.target);
+    }
+    if (parent is PrefixedIdentifier && parent.identifier == identifier) {
+      return recordIfTargetIsPrefixElement(parent.prefix);
+    }
+    return false;
   }
 
   /**
@@ -4132,7 +3981,7 @@ class GatherUsedImportedElementsVisitor extends RecursiveAstVisitor {
     directive.metadata.accept(this);
   }
 
-  void _visitIdentifier(Element element, String name) {
+  void _visitIdentifier(SimpleIdentifier identifier, Element element) {
     if (element == null) {
       return;
     }
@@ -4141,11 +3990,18 @@ class GatherUsedImportedElementsVisitor extends RecursiveAstVisitor {
     if (element is MultiplyDefinedElement) {
       MultiplyDefinedElement multiplyDefinedElement = element;
       for (Element elt in multiplyDefinedElement.conflictingElements) {
-        _visitIdentifier(elt, name);
+        _visitIdentifier(identifier, elt);
       }
       return;
-    } else if (element is PrefixElement) {
-      usedElements.prefixes.add(element);
+    }
+
+    // Record `importPrefix.identifier` into 'prefixMap'.
+    if (_recordPrefixMap(identifier, element)) {
+      return;
+    }
+
+    if (element is PrefixElement) {
+      usedElements.prefixMap.putIfAbsent(element, () => <Element>[]);
       return;
     } else if (element.enclosingElement is! CompilationUnitElement) {
       // Identifiers that aren't a prefix element and whose enclosing element
@@ -4375,6 +4231,7 @@ class HintGenerator {
             .removeUsedElements(_usedImportedElementsVisitor.usedElements);
         importsVerifier.generateDuplicateImportHints(definingUnitErrorReporter);
         importsVerifier.generateUnusedImportHints(definingUnitErrorReporter);
+        importsVerifier.generateUnusedShownNameHints(definingUnitErrorReporter);
       }
       _library.accept(new UnusedLocalElementsVerifier(
           _errorListener, _usedLocalElementsVisitor.usedElements));
@@ -4406,71 +4263,23 @@ class HintGenerator {
 }
 
 /**
- * Instances of the class `ImplicitLabelScope` represent the scope statements
- * that can be the target of unlabeled break and continue statements.
- */
-class ImplicitLabelScope {
-  /**
-   * The implicit label scope associated with the top level of a function.
-   */
-  static const ImplicitLabelScope ROOT = const ImplicitLabelScope._(null, null);
-
-  /**
-   * The implicit label scope enclosing this implicit label scope.
-   */
-  final ImplicitLabelScope outerScope;
-
-  /**
-   * The statement that acts as a target for break and/or continue statements
-   * at this scoping level.
-   */
-  final Statement statement;
-
-  /**
-   * Private constructor.
-   */
-  const ImplicitLabelScope._(this.outerScope, this.statement);
-
-  /**
-   * Get the statement which should be the target of an unlabeled `break` or
-   * `continue` statement, or `null` if there is no appropriate target.
-   */
-  Statement getTarget(bool isContinue) {
-    if (outerScope == null) {
-      // This scope represents the toplevel of a function body, so it doesn't
-      // match either break or continue.
-      return null;
-    }
-    if (isContinue && statement is SwitchStatement) {
-      return outerScope.getTarget(isContinue);
-    }
-    return statement;
-  }
-
-  /**
-   * Initialize a newly created scope to represent a switch statement or loop
-   * nested within the current scope.  [statement] is the statement associated
-   * with the newly created scope.
-   */
-  ImplicitLabelScope nest(Statement statement) =>
-      new ImplicitLabelScope._(this, statement);
-}
-
-/**
- * Instances of the class `ImportsVerifier` visit all of the referenced libraries in the
- * source code verifying that all of the imports are used, otherwise a
- * [HintCode.UNUSED_IMPORT] is generated with
- * [generateUnusedImportHints].
+ * Instances of the class `ImportsVerifier` visit all of the referenced libraries in the source code
+ * verifying that all of the imports are used, otherwise a [HintCode.UNUSED_IMPORT] hint is
+ * generated with [generateUnusedImportHints].
+ *
+ * Additionally, [generateDuplicateImportHints] generates [HintCode.DUPLICATE_IMPORT] hints and
+ * [HintCode.UNUSED_SHOWN_NAME] hints.
  *
  * While this class does not yet have support for an "Organize Imports" action, this logic built up
  * in this class could be used for such an action in the future.
  */
 class ImportsVerifier {
   /**
-   * A list of [ImportDirective]s that the current library imports, as identifiers are visited
-   * by this visitor and an import has been identified as being used by the library, the
-   * [ImportDirective] is removed from this list. After all the sources in the library have
-   * been evaluated, this list represents the set of unused imports.
+   * A list of [ImportDirective]s that the current library imports, but does not use.
+   *
+   * As identifiers are visited by this visitor and an import has been identified as being used
+   * by the library, the [ImportDirective] is removed from this list. After all the sources in the
+   * library have been evaluated, this list represents the set of unused imports.
    *
    * See [ImportsVerifier.generateUnusedImportErrors].
    */
@@ -4483,15 +4292,14 @@ class ImportsVerifier {
   final List<ImportDirective> _duplicateImports = <ImportDirective>[];
 
   /**
-   * This is a map between the set of [LibraryElement]s that the current library imports, and
-   * a list of [ImportDirective]s that imports the library. In cases where the current library
-   * imports a library with a single directive (such as `import lib1.dart;`), the library
+   * This is a map between the set of [LibraryElement]s that the current library imports, and the
+   * list of [ImportDirective]s that import each [LibraryElement]. In cases where the current
+   * library imports a library with a single directive (such as `import lib1.dart;`), the library
    * element will map to a list of one [ImportDirective], which will then be removed from the
    * [unusedImports] list. In cases where the current library imports a library with multiple
-   * directives (such as `import lib1.dart; import lib1.dart show C;`), the
-   * [LibraryElement] will be mapped to a list of the import directives, and the namespace
-   * will need to be used to compute the correct [ImportDirective] being used, see
-   * [namespaceMap].
+   * directives (such as `import lib1.dart; import lib1.dart show C;`), the [LibraryElement] will
+   * be mapped to a list of the import directives, and the namespace will need to be used to
+   * compute the correct [ImportDirective] being used; see [_namespaceMap].
    */
   final HashMap<LibraryElement, List<ImportDirective>> _libraryMap =
       new HashMap<LibraryElement, List<ImportDirective>>();
@@ -4518,44 +4326,62 @@ class ImportsVerifier {
   final HashMap<PrefixElement, List<ImportDirective>> _prefixElementMap =
       new HashMap<PrefixElement, List<ImportDirective>>();
 
+  /**
+   * A map of identifiers that the current library's imports show, but that the library does not
+   * use.
+   *
+   * Each import directive maps to a list of the identifiers that are imported via the "show"
+   * keyword.
+   *
+   * As each identifier is visited by this visitor, it is identified as being used by the library,
+   * and the identifier is removed from this map (under the import that imported it). After all the
+   * sources in the library have been evaluated, each list in this map's values present the set of
+   * unused shown elements.
+   *
+   * See [ImportsVerifier.generateUnusedShownNameHints].
+   */
+  final HashMap<ImportDirective, List<SimpleIdentifier>> _unusedShownNamesMap =
+      new HashMap<ImportDirective, List<SimpleIdentifier>>();
+
   void addImports(CompilationUnit node) {
     for (Directive directive in node.directives) {
       if (directive is ImportDirective) {
         ImportDirective importDirective = directive;
         LibraryElement libraryElement = importDirective.uriElement;
-        if (libraryElement != null) {
-          _unusedImports.add(importDirective);
-          //
-          // Initialize prefixElementMap
-          //
-          if (importDirective.asKeyword != null) {
-            SimpleIdentifier prefixIdentifier = importDirective.prefix;
-            if (prefixIdentifier != null) {
-              Element element = prefixIdentifier.staticElement;
-              if (element is PrefixElement) {
-                PrefixElement prefixElementKey = element;
-                List<ImportDirective> list =
-                    _prefixElementMap[prefixElementKey];
-                if (list == null) {
-                  list = new List<ImportDirective>();
-                  _prefixElementMap[prefixElementKey] = list;
-                }
-                list.add(importDirective);
-              }
-              // TODO (jwren) Can the element ever not be a PrefixElement?
-            }
-          }
-          //
-          // Initialize libraryMap: libraryElement -> importDirective
-          //
-          _putIntoLibraryMap(libraryElement, importDirective);
-          //
-          // For this new addition to the libraryMap, also recursively add any
-          // exports from the libraryElement.
-          //
-          _addAdditionalLibrariesForExports(
-              libraryElement, importDirective, new List<LibraryElement>());
+        if (libraryElement == null) {
+          continue;
         }
+        _unusedImports.add(importDirective);
+        //
+        // Initialize prefixElementMap
+        //
+        if (importDirective.asKeyword != null) {
+          SimpleIdentifier prefixIdentifier = importDirective.prefix;
+          if (prefixIdentifier != null) {
+            Element element = prefixIdentifier.staticElement;
+            if (element is PrefixElement) {
+              PrefixElement prefixElementKey = element;
+              List<ImportDirective> list = _prefixElementMap[prefixElementKey];
+              if (list == null) {
+                list = new List<ImportDirective>();
+                _prefixElementMap[prefixElementKey] = list;
+              }
+              list.add(importDirective);
+            }
+            // TODO (jwren) Can the element ever not be a PrefixElement?
+          }
+        }
+        //
+        // Initialize libraryMap: libraryElement -> importDirective
+        //
+        _putIntoLibraryMap(libraryElement, importDirective);
+        //
+        // For this new addition to the libraryMap, also recursively add any
+        // exports from the libraryElement.
+        //
+        _addAdditionalLibrariesForExports(
+            libraryElement, importDirective, new HashSet<LibraryElement>());
+        _addShownNames(importDirective);
       }
     }
     if (_unusedImports.length > 1) {
@@ -4598,12 +4424,12 @@ class ImportsVerifier {
   }
 
   /**
-   * After all of the compilation units have been visited by this visitor, this method can be called
-   * to report an [HintCode.UNUSED_IMPORT] hint for each of the import directives in the
-   * [unusedImports] list.
+   * Report an [HintCode.UNUSED_IMPORT] hint for each unused import.
    *
-   * @param errorReporter the error reporter to report the set of [HintCode.UNUSED_IMPORT]
-   *          hints to
+   * Only call this method after all of the compilation units have been visited by this visitor.
+   *
+   * @param errorReporter the error reporter used to report the set of [HintCode.UNUSED_IMPORT]
+   *          hints
    */
   void generateUnusedImportHints(ErrorReporter errorReporter) {
     for (ImportDirective unusedImport in _unusedImports) {
@@ -4621,32 +4447,60 @@ class ImportsVerifier {
   }
 
   /**
+   * Report an [HintCode.UNUSED_SHOWN_NAME] hint for each unused shown name.
+   *
+   * Only call this method after all of the compilation units have been visited by this visitor.
+   *
+   * @param errorReporter the error reporter used to report the set of [HintCode.UNUSED_SHOWN_NAME]
+   *          hints
+   */
+  void generateUnusedShownNameHints(ErrorReporter reporter) {
+    _unusedShownNamesMap.forEach(
+        (ImportDirective importDirective, List<SimpleIdentifier> identifiers) {
+      if (_unusedImports.contains(importDirective)) {
+        // This import is actually wholly unused, not just one or more shown names from it.
+        // This is then an "unused import", rather than unused shown names.
+        return;
+      }
+      for (Identifier identifier in identifiers) {
+        reporter.reportErrorForNode(
+            HintCode.UNUSED_SHOWN_NAME, identifier, [identifier.name]);
+      }
+    });
+  }
+
+  /**
    * Remove elements from [_unusedImports] using the given [usedElements].
    */
   void removeUsedElements(UsedImportedElements usedElements) {
-    // Stop if all the imports are known to be used.
-    if (_unusedImports.isEmpty) {
+    // Stop if all the imports and shown names are known to be used.
+    if (_unusedImports.isEmpty && _unusedShownNamesMap.isEmpty) {
       return;
     }
     // Process import prefixes.
-    for (PrefixElement prefix in usedElements.prefixes) {
+    usedElements.prefixMap
+        .forEach((PrefixElement prefix, List<Element> elements) {
       List<ImportDirective> importDirectives = _prefixElementMap[prefix];
       if (importDirectives != null) {
         for (ImportDirective importDirective in importDirectives) {
           _unusedImports.remove(importDirective);
+          for (Element element in elements) {
+            _removeFromUnusedShownNamesMap(element, importDirective);
+          }
         }
       }
-    }
+    });
     // Process top-level elements.
     for (Element element in usedElements.elements) {
-      // Stop if all the imports are known to be used.
-      if (_unusedImports.isEmpty) {
+      // Stop if all the imports and shown names are known to be used.
+      if (_unusedImports.isEmpty && _unusedShownNamesMap.isEmpty) {
         return;
       }
-      // Prepare import directives for this library.
+      // Prepare import directives for this element's library.
       LibraryElement library = element.library;
       List<ImportDirective> importsLibrary = _libraryMap[library];
       if (importsLibrary == null) {
+        // element's library is not imported. Must be the current library.
         continue;
       }
       // If there is only one import directive for this library, then it must be
@@ -4655,6 +4509,7 @@ class ImportsVerifier {
       if (importsLibrary.length == 1) {
         ImportDirective usedImportDirective = importsLibrary[0];
         _unusedImports.remove(usedImportDirective);
+        _removeFromUnusedShownNamesMap(element, usedImportDirective);
         continue;
       }
       // Otherwise, find import directives using namespaces.
@@ -4663,6 +4518,7 @@ class ImportsVerifier {
         Namespace namespace = _computeNamespace(importDirective);
         if (namespace != null && namespace.get(name) != null) {
           _unusedImports.remove(importDirective);
+          _removeFromUnusedShownNamesMap(element, importDirective);
         }
       }
     }
@@ -4672,22 +4528,41 @@ class ImportsVerifier {
    * Recursively add any exported library elements into the [libraryMap].
    */
   void _addAdditionalLibrariesForExports(LibraryElement library,
-      ImportDirective importDirective, List<LibraryElement> exportPath) {
-    if (exportPath.contains(library)) {
+      ImportDirective importDirective, Set<LibraryElement> visitedLibraries) {
+    if (!visitedLibraries.add(library)) {
       return;
     }
-    exportPath.add(library);
-    for (LibraryElement exportedLibraryElt in library.exportedLibraries) {
-      _putIntoLibraryMap(exportedLibraryElt, importDirective);
+    for (ExportElement exportElt in library.exports) {
+      LibraryElement exportedLibrary = exportElt.exportedLibrary;
+      _putIntoLibraryMap(exportedLibrary, importDirective);
       _addAdditionalLibrariesForExports(
-          exportedLibraryElt, importDirective, exportPath);
+          exportedLibrary, importDirective, visitedLibraries);
     }
   }
 
   /**
-   * Lookup and return the [Namespace] from the [namespaceMap], if the map does not
-   * have the computed namespace, compute it and cache it in the map. If the import directive is not
-   * resolved or is not resolvable, `null` is returned.
+   * Add every shown name from [importDirective] into [_unusedShownNamesMap].
+   */
+  void _addShownNames(ImportDirective importDirective) {
+    if (importDirective.combinators == null) {
+      return;
+    }
+    List<SimpleIdentifier> identifiers = new List<SimpleIdentifier>();
+    _unusedShownNamesMap[importDirective] = identifiers;
+    for (Combinator combinator in importDirective.combinators) {
+      if (combinator is ShowCombinator) {
+        for (SimpleIdentifier name in combinator.shownNames) {
+          identifiers.add(name);
+        }
+      }
+    }
+  }
+
+  /**
+   * Lookup and return the [Namespace] from the [_namespaceMap].
+   *
+   * If the map does not have the computed namespace, compute it and cache it in the map. If
+   * [importDirective] is not resolved or is not resolvable, `null` is returned.
    *
    * @param importDirective the import directive used to compute the returned namespace
    * @return the computed or looked up [Namespace]
@@ -4721,6 +4596,35 @@ class ImportsVerifier {
       _libraryMap[libraryElement] = importList;
     }
     importList.add(importDirective);
+  }
+
+  /**
+   * Remove [element] from the list of names shown by [importDirective].
+   */
+  void _removeFromUnusedShownNamesMap(
+      Element element, ImportDirective importDirective) {
+    List<SimpleIdentifier> identifiers = _unusedShownNamesMap[importDirective];
+    if (identifiers == null) {
+      return;
+    }
+    for (Identifier identifier in identifiers) {
+      if (element is PropertyAccessorElement) {
+        // If the getter or setter of a variable is used, then the variable (the
+        // shown name) is used.
+        if (identifier.staticElement == element.variable) {
+          identifiers.remove(identifier);
+          break;
+        }
+      } else {
+        if (identifier.staticElement == element) {
+          identifiers.remove(identifier);
+          break;
+        }
+      }
+    }
+    if (identifiers.isEmpty) {
+      _unusedShownNamesMap.remove(importDirective);
+    }
   }
 }
 
@@ -4991,1041 +4895,6 @@ class InferenceContext {
 }
 
 /**
- * Instances of the class `InheritanceManager` manage the knowledge of where class members
- * (methods, getters & setters) are inherited from.
- */
-class InheritanceManager {
-  /**
-   * The [LibraryElement] that is managed by this manager.
-   */
-  LibraryElement _library;
-
-  /**
-   * This is a mapping between each [ClassElement] and a map between the [String] member
-   * names and the associated [ExecutableElement] in the mixin and superclass chain.
-   */
-  HashMap<ClassElement, MemberMap> _classLookup;
-
-  /**
-   * This is a mapping between each [ClassElement] and a map between the [String] member
-   * names and the associated [ExecutableElement] in the interface set.
-   */
-  HashMap<ClassElement, MemberMap> _interfaceLookup;
-
-  /**
-   * A map between each visited [ClassElement] and the set of [AnalysisError]s found on
-   * the class element.
-   */
-  HashMap<ClassElement, HashSet<AnalysisError>> _errorsInClassElement =
-      new HashMap<ClassElement, HashSet<AnalysisError>>();
-
-  /**
-   * Initialize a newly created inheritance manager.
-   *
-   * @param library the library element context that the inheritance mappings are being generated
-   */
-  InheritanceManager(LibraryElement library) {
-    this._library = library;
-    _classLookup = new HashMap<ClassElement, MemberMap>();
-    _interfaceLookup = new HashMap<ClassElement, MemberMap>();
-  }
-
-  /**
-   * Set the new library element context.
-   *
-   * @param library the new library element
-   */
-  void set libraryElement(LibraryElement library) {
-    this._library = library;
-  }
-
-  /**
-   * Return the set of [AnalysisError]s found on the passed [ClassElement], or
-   * `null` if there are none.
-   *
-   * @param classElt the class element to query
-   * @return the set of [AnalysisError]s found on the passed [ClassElement], or
-   *         `null` if there are none
-   */
-  HashSet<AnalysisError> getErrors(ClassElement classElt) =>
-      _errorsInClassElement[classElt];
-
-  /**
-   * Get and return a mapping between the set of all string names of the members inherited from the
-   * passed [ClassElement] superclass hierarchy, and the associated [ExecutableElement].
-   *
-   * @param classElt the class element to query
-   * @return a mapping between the set of all members inherited from the passed [ClassElement]
-   *         superclass hierarchy, and the associated [ExecutableElement]
-   */
-  MemberMap getMapOfMembersInheritedFromClasses(ClassElement classElt) =>
-      _computeClassChainLookupMap(classElt, new HashSet<ClassElement>());
-
-  /**
-   * Get and return a mapping between the set of all string names of the members inherited from the
-   * passed [ClassElement] interface hierarchy, and the associated [ExecutableElement].
-   *
-   * @param classElt the class element to query
-   * @return a mapping between the set of all string names of the members inherited from the passed
-   *         [ClassElement] interface hierarchy, and the associated [ExecutableElement].
-   */
-  MemberMap getMapOfMembersInheritedFromInterfaces(ClassElement classElt) =>
-      _computeInterfaceLookupMap(classElt, new HashSet<ClassElement>());
-
-  /**
-   * Given some [ClassElement] and some member name, this returns the
-   * [ExecutableElement] that the class inherits from the mixins,
-   * superclasses or interfaces, that has the member name, if no member is inherited `null` is
-   * returned.
-   *
-   * @param classElt the class element to query
-   * @param memberName the name of the executable element to find and return
-   * @return the inherited executable element with the member name, or `null` if no such
-   *         member exists
-   */
-  ExecutableElement lookupInheritance(
-      ClassElement classElt, String memberName) {
-    if (memberName == null || memberName.isEmpty) {
-      return null;
-    }
-    ExecutableElement executable =
-        _computeClassChainLookupMap(classElt, new HashSet<ClassElement>())
-            .get(memberName);
-    if (executable == null) {
-      return _computeInterfaceLookupMap(classElt, new HashSet<ClassElement>())
-          .get(memberName);
-    }
-    return executable;
-  }
-
-  /**
-   * Given some [ClassElement] and some member name, this returns the
-   * [ExecutableElement] that the class either declares itself, or
-   * inherits, that has the member name, if no member is inherited `null` is returned.
-   *
-   * @param classElt the class element to query
-   * @param memberName the name of the executable element to find and return
-   * @return the inherited executable element with the member name, or `null` if no such
-   *         member exists
-   */
-  ExecutableElement lookupMember(ClassElement classElt, String memberName) {
-    ExecutableElement element = _lookupMemberInClass(classElt, memberName);
-    if (element != null) {
-      return element;
-    }
-    return lookupInheritance(classElt, memberName);
-  }
-
-  /**
-   * Determine the set of methods which is overridden by the given class member. If no member is
-   * inherited, an empty list is returned. If one of the inherited members is a
-   * [MultiplyInheritedExecutableElement], then it is expanded into its constituent inherited
-   * elements.
-   *
-   * @param classElt the class to query
-   * @param memberName the name of the class member to query
-   * @return a list of overridden methods
-   */
-  List<ExecutableElement> lookupOverrides(
-      ClassElement classElt, String memberName) {
-    List<ExecutableElement> result = new List<ExecutableElement>();
-    if (memberName == null || memberName.isEmpty) {
-      return result;
-    }
-    List<MemberMap> interfaceMaps =
-        _gatherInterfaceLookupMaps(classElt, new HashSet<ClassElement>());
-    if (interfaceMaps != null) {
-      for (MemberMap interfaceMap in interfaceMaps) {
-        ExecutableElement overriddenElement = interfaceMap.get(memberName);
-        if (overriddenElement != null) {
-          if (overriddenElement is MultiplyInheritedExecutableElement) {
-            MultiplyInheritedExecutableElement multiplyInheritedElement =
-                overriddenElement;
-            for (ExecutableElement element
-                in multiplyInheritedElement.inheritedElements) {
-              result.add(element);
-            }
-          } else {
-            result.add(overriddenElement);
-          }
-        }
-      }
-    }
-    return result;
-  }
-
-  /**
-   * This method takes some inherited [FunctionType], and resolves all the parameterized types
-   * in the function type, dependent on the class in which it is being overridden.
-   *
-   * @param baseFunctionType the function type that is being overridden
-   * @param memberName the name of the member, this is used to lookup the inheritance path of the
-   *          override
-   * @param definingType the type that is overriding the member
-   * @return the passed function type with any parameterized types substituted
-   */
-  // TODO(jmesserly): investigate why this is needed in ErrorVerifier's override
-  // checking. There seems to be some rare cases where we get partially
-  // substituted type arguments, and the function types don't compare equally.
-  FunctionType substituteTypeArgumentsInMemberFromInheritance(
-      FunctionType baseFunctionType,
-      String memberName,
-      InterfaceType definingType) {
-    // if the baseFunctionType is null, or does not have any parameters,
-    // return it.
-    if (baseFunctionType == null ||
-        baseFunctionType.typeArguments.length == 0) {
-      return baseFunctionType;
-    }
-    // First, generate the path from the defining type to the overridden member
-    Queue<InterfaceType> inheritancePath = new Queue<InterfaceType>();
-    _computeInheritancePath(inheritancePath, definingType, memberName);
-    if (inheritancePath == null || inheritancePath.isEmpty) {
-      // TODO(jwren) log analysis engine error
-      return baseFunctionType;
-    }
-    FunctionType functionTypeToReturn = baseFunctionType;
-    // loop backward through the list substituting as we go:
-    while (!inheritancePath.isEmpty) {
-      InterfaceType lastType = inheritancePath.removeLast();
-      List<DartType> parameterTypes = lastType.element.type.typeArguments;
-      List<DartType> argumentTypes = lastType.typeArguments;
-      functionTypeToReturn =
-          functionTypeToReturn.substitute2(argumentTypes, parameterTypes);
-    }
-    return functionTypeToReturn;
-  }
-
-  /**
-   * Compute and return a mapping between the set of all string names of the members inherited from
-   * the passed [ClassElement] superclass hierarchy, and the associated
-   * [ExecutableElement].
-   *
-   * @param classElt the class element to query
-   * @param visitedClasses a set of visited classes passed back into this method when it calls
-   *          itself recursively
-   * @return a mapping between the set of all string names of the members inherited from the passed
-   *         [ClassElement] superclass hierarchy, and the associated [ExecutableElement]
-   */
-  MemberMap _computeClassChainLookupMap(
-      ClassElement classElt, HashSet<ClassElement> visitedClasses) {
-    MemberMap resultMap = _classLookup[classElt];
-    if (resultMap != null) {
-      return resultMap;
-    } else {
-      resultMap = new MemberMap();
-    }
-    ClassElement superclassElt = null;
-    InterfaceType supertype = classElt.supertype;
-    if (supertype != null) {
-      superclassElt = supertype.element;
-    } else {
-      // classElt is Object
-      _classLookup[classElt] = resultMap;
-      return resultMap;
-    }
-    if (superclassElt != null) {
-      if (!visitedClasses.contains(superclassElt)) {
-        visitedClasses.add(superclassElt);
-        try {
-          resultMap = new MemberMap.from(
-              _computeClassChainLookupMap(superclassElt, visitedClasses));
-          //
-          // Substitute the super types down the hierarchy.
-          //
-          _substituteTypeParametersDownHierarchy(supertype, resultMap);
-          //
-          // Include the members from the superclass in the resultMap.
-          //
-          _recordMapWithClassMembers(resultMap, supertype, false);
-        } finally {
-          visitedClasses.remove(superclassElt);
-        }
-      } else {
-        // This case happens only when the superclass was previously visited and
-        // not in the lookup, meaning this is meant to shorten the compute for
-        // recursive cases.
-        _classLookup[superclassElt] = resultMap;
-        return resultMap;
-      }
-    }
-    //
-    // Include the members from the mixins in the resultMap.  If there are
-    // multiple mixins, visit them in the order listed so that methods in later
-    // mixins will overwrite identically-named methods in earlier mixins.
-    //
-    List<InterfaceType> mixins = classElt.mixins;
-    for (InterfaceType mixin in mixins) {
-      ClassElement mixinElement = mixin.element;
-      if (mixinElement != null) {
-        if (!visitedClasses.contains(mixinElement)) {
-          visitedClasses.add(mixinElement);
-          try {
-            MemberMap map = new MemberMap.from(
-                _computeClassChainLookupMap(mixinElement, visitedClasses));
-            //
-            // Substitute the super types down the hierarchy.
-            //
-            _substituteTypeParametersDownHierarchy(mixin, map);
-            //
-            // Include the members from the superclass in the resultMap.
-            //
-            _recordMapWithClassMembers(map, mixin, false);
-            //
-            // Add the members from map into result map.
-            //
-            for (int j = 0; j < map.size; j++) {
-              String key = map.getKey(j);
-              ExecutableElement value = map.getValue(j);
-              if (key != null) {
-                ClassElement definingClass = value
-                    .getAncestor((Element element) => element is ClassElement);
-                if (!definingClass.type.isObject) {
-                  ExecutableElement existingValue = resultMap.get(key);
-                  if (existingValue == null ||
-                      (existingValue != null && !_isAbstract(value))) {
-                    resultMap.put(key, value);
-                  }
-                }
-              }
-            }
-          } finally {
-            visitedClasses.remove(mixinElement);
-          }
-        } else {
-          // This case happens only when the superclass was previously visited
-          // and not in the lookup, meaning this is meant to shorten the compute
-          // for recursive cases.
-          _classLookup[mixinElement] = resultMap;
-          return resultMap;
-        }
-      }
-    }
-    _classLookup[classElt] = resultMap;
-    return resultMap;
-  }
-
-  /**
-   * Compute and return the inheritance path given the context of a type and a member that is
-   * overridden in the inheritance path (for which the type is in the path).
-   *
-   * @param chain the inheritance path that is built up as this method calls itself recursively,
-   *          when this method is called an empty [LinkedList] should be provided
-   * @param currentType the current type in the inheritance path
-   * @param memberName the name of the member that is being looked up the inheritance path
-   */
-  void _computeInheritancePath(Queue<InterfaceType> chain,
-      InterfaceType currentType, String memberName) {
-    // TODO (jwren) create a public version of this method which doesn't require
-    // the initial chain to be provided, then provided tests for this
-    // functionality in InheritanceManagerTest
-    chain.add(currentType);
-    ClassElement classElt = currentType.element;
-    InterfaceType supertype = classElt.supertype;
-    // Base case- reached Object
-    if (supertype == null) {
-      // Looked up the chain all the way to Object, return null.
-      // This should never happen.
-      return;
-    }
-    // If we are done, return the chain
-    // We are not done if this is the first recursive call on this method.
-    if (chain.length != 1) {
-      // We are done however if the member is in this classElt
-      if (_lookupMemberInClass(classElt, memberName) != null) {
-        return;
-      }
-    }
-    // Mixins- note that mixins call lookupMemberInClass, not lookupMember
-    List<InterfaceType> mixins = classElt.mixins;
-    for (int i = mixins.length - 1; i >= 0; i--) {
-      ClassElement mixinElement = mixins[i].element;
-      if (mixinElement != null) {
-        ExecutableElement elt = _lookupMemberInClass(mixinElement, memberName);
-        if (elt != null) {
-          // this is equivalent (but faster than) calling this method
-          // recursively
-          // (return computeInheritancePath(chain, mixins[i], memberName);)
-          chain.add(mixins[i]);
-          return;
-        }
-      }
-    }
-    // Superclass
-    ClassElement superclassElt = supertype.element;
-    if (lookupMember(superclassElt, memberName) != null) {
-      _computeInheritancePath(chain, supertype, memberName);
-      return;
-    }
-    // Interfaces
-    List<InterfaceType> interfaces = classElt.interfaces;
-    for (InterfaceType interfaceType in interfaces) {
-      ClassElement interfaceElement = interfaceType.element;
-      if (interfaceElement != null &&
-          lookupMember(interfaceElement, memberName) != null) {
-        _computeInheritancePath(chain, interfaceType, memberName);
-        return;
-      }
-    }
-  }
-
-  /**
-   * Compute and return a mapping between the set of all string names of the members inherited from
-   * the passed [ClassElement] interface hierarchy, and the associated
-   * [ExecutableElement].
-   *
-   * @param classElt the class element to query
-   * @param visitedInterfaces a set of visited classes passed back into this method when it calls
-   *          itself recursively
-   * @return a mapping between the set of all string names of the members inherited from the passed
-   *         [ClassElement] interface hierarchy, and the associated [ExecutableElement]
-   */
-  MemberMap _computeInterfaceLookupMap(
-      ClassElement classElt, HashSet<ClassElement> visitedInterfaces) {
-    MemberMap resultMap = _interfaceLookup[classElt];
-    if (resultMap != null) {
-      return resultMap;
-    }
-    List<MemberMap> lookupMaps =
-        _gatherInterfaceLookupMaps(classElt, visitedInterfaces);
-    if (lookupMaps == null) {
-      resultMap = new MemberMap();
-    } else {
-      HashMap<String, List<ExecutableElement>> unionMap =
-          _unionInterfaceLookupMaps(lookupMaps);
-      resultMap = _resolveInheritanceLookup(classElt, unionMap);
-    }
-    _interfaceLookup[classElt] = resultMap;
-    return resultMap;
-  }
-
-  /**
-   * Collect a list of interface lookup maps whose elements correspond to all of the classes
-   * directly above [classElt] in the class hierarchy (the direct superclass if any, all
-   * mixins, and all direct superinterfaces). Each item in the list is the interface lookup map
-   * returned by [computeInterfaceLookupMap] for the corresponding super, except with type
-   * parameters appropriately substituted.
-   *
-   * @param classElt the class element to query
-   * @param visitedInterfaces a set of visited classes passed back into this method when it calls
-   *          itself recursively
-   * @return `null` if there was a problem (such as a loop in the class hierarchy) or if there
-   *         are no classes above this one in the class hierarchy. Otherwise, a list of interface
-   *         lookup maps.
-   */
-  List<MemberMap> _gatherInterfaceLookupMaps(
-      ClassElement classElt, HashSet<ClassElement> visitedInterfaces) {
-    InterfaceType supertype = classElt.supertype;
-    ClassElement superclassElement =
-        supertype != null ? supertype.element : null;
-    List<InterfaceType> mixins = classElt.mixins;
-    List<InterfaceType> interfaces = classElt.interfaces;
-    // Recursively collect the list of mappings from all of the interface types
-    List<MemberMap> lookupMaps = new List<MemberMap>();
-    //
-    // Superclass element
-    //
-    if (superclassElement != null) {
-      if (!visitedInterfaces.contains(superclassElement)) {
-        try {
-          visitedInterfaces.add(superclassElement);
-          //
-          // Recursively compute the map for the super type.
-          //
-          MemberMap map =
-              _computeInterfaceLookupMap(superclassElement, visitedInterfaces);
-          map = new MemberMap.from(map);
-          //
-          // Substitute the super type down the hierarchy.
-          //
-          _substituteTypeParametersDownHierarchy(supertype, map);
-          //
-          // Add any members from the super type into the map as well.
-          //
-          _recordMapWithClassMembers(map, supertype, true);
-          lookupMaps.add(map);
-        } finally {
-          visitedInterfaces.remove(superclassElement);
-        }
-      } else {
-        return null;
-      }
-    }
-    //
-    // Mixin elements
-    //
-    for (int i = mixins.length - 1; i >= 0; i--) {
-      InterfaceType mixinType = mixins[i];
-      ClassElement mixinElement = mixinType.element;
-      if (mixinElement != null) {
-        if (!visitedInterfaces.contains(mixinElement)) {
-          try {
-            visitedInterfaces.add(mixinElement);
-            //
-            // Recursively compute the map for the mixin.
-            //
-            MemberMap map =
-                _computeInterfaceLookupMap(mixinElement, visitedInterfaces);
-            map = new MemberMap.from(map);
-            //
-            // Substitute the mixin type down the hierarchy.
-            //
-            _substituteTypeParametersDownHierarchy(mixinType, map);
-            //
-            // Add any members from the mixin type into the map as well.
-            //
-            _recordMapWithClassMembers(map, mixinType, true);
-            lookupMaps.add(map);
-          } finally {
-            visitedInterfaces.remove(mixinElement);
-          }
-        } else {
-          return null;
-        }
-      }
-    }
-    //
-    // Interface elements
-    //
-    for (InterfaceType interfaceType in interfaces) {
-      ClassElement interfaceElement = interfaceType.element;
-      if (interfaceElement != null) {
-        if (!visitedInterfaces.contains(interfaceElement)) {
-          try {
-            visitedInterfaces.add(interfaceElement);
-            //
-            // Recursively compute the map for the interfaces.
-            //
-            MemberMap map =
-                _computeInterfaceLookupMap(interfaceElement, visitedInterfaces);
-            map = new MemberMap.from(map);
-            //
-            // Substitute the supertypes down the hierarchy
-            //
-            _substituteTypeParametersDownHierarchy(interfaceType, map);
-            //
-            // And add any members from the interface into the map as well.
-            //
-            _recordMapWithClassMembers(map, interfaceType, true);
-            lookupMaps.add(map);
-          } finally {
-            visitedInterfaces.remove(interfaceElement);
-          }
-        } else {
-          return null;
-        }
-      }
-    }
-    if (lookupMaps.length == 0) {
-      return null;
-    }
-    return lookupMaps;
-  }
-
-  /**
-   * Given some [ClassElement], this method finds and returns the [ExecutableElement] of
-   * the passed name in the class element. Static members, members in super types and members not
-   * accessible from the current library are not considered.
-   *
-   * @param classElt the class element to query
-   * @param memberName the name of the member to lookup in the class
-   * @return the found [ExecutableElement], or `null` if no such member was found
-   */
-  ExecutableElement _lookupMemberInClass(
-      ClassElement classElt, String memberName) {
-    List<MethodElement> methods = classElt.methods;
-    for (MethodElement method in methods) {
-      if (memberName == method.name &&
-          method.isAccessibleIn(_library) &&
-          !method.isStatic) {
-        return method;
-      }
-    }
-    List<PropertyAccessorElement> accessors = classElt.accessors;
-    for (PropertyAccessorElement accessor in accessors) {
-      if (memberName == accessor.name &&
-          accessor.isAccessibleIn(_library) &&
-          !accessor.isStatic) {
-        return accessor;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Record the passed map with the set of all members (methods, getters and setters) in the type
-   * into the passed map.
-   *
-   * @param map some non-`null` map to put the methods and accessors from the passed
-   *          [ClassElement] into
-   * @param type the type that will be recorded into the passed map
-   * @param doIncludeAbstract `true` if abstract members will be put into the map
-   */
-  void _recordMapWithClassMembers(
-      MemberMap map, InterfaceType type, bool doIncludeAbstract) {
-    List<MethodElement> methods = type.methods;
-    for (MethodElement method in methods) {
-      if (method.isAccessibleIn(_library) &&
-          !method.isStatic &&
-          (doIncludeAbstract || !method.isAbstract)) {
-        map.put(method.name, method);
-      }
-    }
-    List<PropertyAccessorElement> accessors = type.accessors;
-    for (PropertyAccessorElement accessor in accessors) {
-      if (accessor.isAccessibleIn(_library) &&
-          !accessor.isStatic &&
-          (doIncludeAbstract || !accessor.isAbstract)) {
-        map.put(accessor.name, accessor);
-      }
-    }
-  }
-
-  /**
-   * This method is used to report errors on when they are found computing inheritance information.
-   * See [ErrorVerifier.checkForInconsistentMethodInheritance] to see where these generated
-   * error codes are reported back into the analysis engine.
-   *
-   * @param classElt the location of the source for which the exception occurred
-   * @param offset the offset of the location of the error
-   * @param length the length of the location of the error
-   * @param errorCode the error code to be associated with this error
-   * @param arguments the arguments used to build the error message
-   */
-  void _reportError(ClassElement classElt, int offset, int length,
-      ErrorCode errorCode, List<Object> arguments) {
-    HashSet<AnalysisError> errorSet = _errorsInClassElement[classElt];
-    if (errorSet == null) {
-      errorSet = new HashSet<AnalysisError>();
-      _errorsInClassElement[classElt] = errorSet;
-    }
-    errorSet.add(new AnalysisError(
-        classElt.source, offset, length, errorCode, arguments));
-  }
-
-  /**
-   * Given the set of methods defined by classes above [classElt] in the class hierarchy,
-   * apply the appropriate inheritance rules to determine those methods inherited by or overridden
-   * by [classElt]. Also report static warnings
-   * [StaticTypeWarningCode.INCONSISTENT_METHOD_INHERITANCE] and
-   * [StaticWarningCode.INCONSISTENT_METHOD_INHERITANCE_GETTER_AND_METHOD] if appropriate.
-   *
-   * @param classElt the class element to query.
-   * @param unionMap a mapping from method name to the set of unique (in terms of signature) methods
-   *          defined in superclasses of [classElt].
-   * @return the inheritance lookup map for [classElt].
-   */
-  MemberMap _resolveInheritanceLookup(ClassElement classElt,
-      HashMap<String, List<ExecutableElement>> unionMap) {
-    MemberMap resultMap = new MemberMap();
-    unionMap.forEach((String key, List<ExecutableElement> list) {
-      int numOfEltsWithMatchingNames = list.length;
-      if (numOfEltsWithMatchingNames == 1) {
-        //
-        // Example: class A inherits only 1 method named 'm'.
-        // Since it is the only such method, it is inherited.
-        // Another example: class A inherits 2 methods named 'm' from 2
-        // different interfaces, but they both have the same signature, so it is
-        // the method inherited.
-        //
-        resultMap.put(key, list[0]);
-      } else {
-        //
-        // Then numOfEltsWithMatchingNames > 1, check for the warning cases.
-        //
-        bool allMethods = true;
-        bool allSetters = true;
-        bool allGetters = true;
-        for (ExecutableElement executableElement in list) {
-          if (executableElement is PropertyAccessorElement) {
-            allMethods = false;
-            if (executableElement.isSetter) {
-              allGetters = false;
-            } else {
-              allSetters = false;
-            }
-          } else {
-            allGetters = false;
-            allSetters = false;
-          }
-        }
-        //
-        // If there isn't a mixture of methods with getters, then continue,
-        // otherwise create a warning.
-        //
-        if (allMethods || allGetters || allSetters) {
-          //
-          // Compute the element whose type is the subtype of all of the other
-          // types.
-          //
-          List<ExecutableElement> elements = new List.from(list);
-          List<FunctionType> executableElementTypes =
-              new List<FunctionType>(numOfEltsWithMatchingNames);
-          for (int i = 0; i < numOfEltsWithMatchingNames; i++) {
-            executableElementTypes[i] = elements[i].type;
-          }
-          List<int> subtypesOfAllOtherTypesIndexes = new List<int>();
-          for (int i = 0; i < numOfEltsWithMatchingNames; i++) {
-            FunctionType subtype = executableElementTypes[i];
-            if (subtype == null) {
-              continue;
-            }
-            bool subtypeOfAllTypes = true;
-            TypeSystem typeSystem = _library.context.typeSystem;
-            for (int j = 0;
-                j < numOfEltsWithMatchingNames && subtypeOfAllTypes;
-                j++) {
-              if (i != j) {
-                if (!typeSystem.isSubtypeOf(
-                    subtype, executableElementTypes[j])) {
-                  subtypeOfAllTypes = false;
-                  break;
-                }
-              }
-            }
-            if (subtypeOfAllTypes) {
-              subtypesOfAllOtherTypesIndexes.add(i);
-            }
-          }
-          //
-          // The following is split into three cases determined by the number of
-          // elements in subtypesOfAllOtherTypes
-          //
-          if (subtypesOfAllOtherTypesIndexes.length == 1) {
-            //
-            // Example: class A inherited only 2 method named 'm'.
-            // One has the function type '() -> dynamic' and one has the
-            // function type '([int]) -> dynamic'. Since the second method is a
-            // subtype of all the others, it is the inherited method.
-            // Tests: InheritanceManagerTest.
-            // test_getMapOfMembersInheritedFromInterfaces_union_oneSubtype_*
-            //
-            resultMap.put(key, elements[subtypesOfAllOtherTypesIndexes[0]]);
-          } else {
-            if (subtypesOfAllOtherTypesIndexes.isEmpty) {
-              //
-              // Determine if the current class has a method or accessor with
-              // the member name, if it does then then this class does not
-              // "inherit" from any of the supertypes. See issue 16134.
-              //
-              bool classHasMember = false;
-              if (allMethods) {
-                classHasMember = classElt.getMethod(key) != null;
-              } else {
-                List<PropertyAccessorElement> accessors = classElt.accessors;
-                for (int i = 0; i < accessors.length; i++) {
-                  if (accessors[i].name == key) {
-                    classHasMember = true;
-                  }
-                }
-              }
-              //
-              // Example: class A inherited only 2 method named 'm'.
-              // One has the function type '() -> int' and one has the function
-              // type '() -> String'. Since neither is a subtype of the other,
-              // we create a warning, and have this class inherit nothing.
-              //
-              if (!classHasMember) {
-                String firstTwoFuntionTypesStr =
-                    "${executableElementTypes[0]}, ${executableElementTypes[1]}";
-                _reportError(
-                    classElt,
-                    classElt.nameOffset,
-                    classElt.nameLength,
-                    StaticTypeWarningCode.INCONSISTENT_METHOD_INHERITANCE,
-                    [key, firstTwoFuntionTypesStr]);
-              }
-            } else {
-              //
-              // Example: class A inherits 2 methods named 'm'.
-              // One has the function type '(int) -> dynamic' and one has the
-              // function type '(num) -> dynamic'. Since they are both a subtype
-              // of the other, a synthetic function '(dynamic) -> dynamic' is
-              // inherited.
-              // Tests: test_getMapOfMembersInheritedFromInterfaces_
-              // union_multipleSubtypes_*
-              //
-              List<ExecutableElement> elementArrayToMerge =
-                  new List<ExecutableElement>(
-                      subtypesOfAllOtherTypesIndexes.length);
-              for (int i = 0; i < elementArrayToMerge.length; i++) {
-                elementArrayToMerge[i] =
-                    elements[subtypesOfAllOtherTypesIndexes[i]];
-              }
-              ExecutableElement mergedExecutableElement =
-                  _computeMergedExecutableElement(elementArrayToMerge);
-              resultMap.put(key, mergedExecutableElement);
-            }
-          }
-        } else {
-          _reportError(
-              classElt,
-              classElt.nameOffset,
-              classElt.nameLength,
-              StaticWarningCode
-                  .INCONSISTENT_METHOD_INHERITANCE_GETTER_AND_METHOD,
-              [key]);
-        }
-      }
-    });
-    return resultMap;
-  }
-
-  /**
-   * Loop through all of the members in some [MemberMap], performing type parameter
-   * substitutions using a passed supertype.
-   *
-   * @param superType the supertype to substitute into the members of the [MemberMap]
-   * @param map the MemberMap to perform the substitutions on
-   */
-  void _substituteTypeParametersDownHierarchy(
-      InterfaceType superType, MemberMap map) {
-    for (int i = 0; i < map.size; i++) {
-      ExecutableElement executableElement = map.getValue(i);
-      if (executableElement is MethodMember) {
-        executableElement =
-            MethodMember.from(executableElement as MethodMember, superType);
-        map.setValue(i, executableElement);
-      } else if (executableElement is PropertyAccessorMember) {
-        executableElement = PropertyAccessorMember.from(
-            executableElement as PropertyAccessorMember, superType);
-        map.setValue(i, executableElement);
-      }
-    }
-  }
-
-  /**
-   * Union all of the [lookupMaps] together into a single map, grouping the ExecutableElements
-   * into a list where none of the elements are equal where equality is determined by having equal
-   * function types. (We also take note too of the kind of the element: ()->int and () -> int may
-   * not be equal if one is a getter and the other is a method.)
-   *
-   * @param lookupMaps the maps to be unioned together.
-   * @return the resulting union map.
-   */
-  HashMap<String, List<ExecutableElement>> _unionInterfaceLookupMaps(
-      List<MemberMap> lookupMaps) {
-    HashMap<String, List<ExecutableElement>> unionMap =
-        new HashMap<String, List<ExecutableElement>>();
-    for (MemberMap lookupMap in lookupMaps) {
-      int lookupMapSize = lookupMap.size;
-      for (int i = 0; i < lookupMapSize; i++) {
-        // Get the string key, if null, break.
-        String key = lookupMap.getKey(i);
-        if (key == null) {
-          break;
-        }
-        // Get the list value out of the unionMap
-        List<ExecutableElement> list = unionMap[key];
-        // If we haven't created such a map for this key yet, do create it and
-        // put the list entry into the unionMap.
-        if (list == null) {
-          list = new List<ExecutableElement>();
-          unionMap[key] = list;
-        }
-        // Fetch the entry out of this lookupMap
-        ExecutableElement newExecutableElementEntry = lookupMap.getValue(i);
-        if (list.isEmpty) {
-          // If the list is empty, just the new value
-          list.add(newExecutableElementEntry);
-        } else {
-          // Otherwise, only add the newExecutableElementEntry if it isn't
-          // already in the list, this covers situation where a class inherits
-          // two methods (or two getters) that are identical.
-          bool alreadyInList = false;
-          bool isMethod1 = newExecutableElementEntry is MethodElement;
-          for (ExecutableElement executableElementInList in list) {
-            bool isMethod2 = executableElementInList is MethodElement;
-            if (isMethod1 == isMethod2 &&
-                executableElementInList.type ==
-                    newExecutableElementEntry.type) {
-              alreadyInList = true;
-              break;
-            }
-          }
-          if (!alreadyInList) {
-            list.add(newExecutableElementEntry);
-          }
-        }
-      }
-    }
-    return unionMap;
-  }
-
-  /**
-   * Given some array of [ExecutableElement]s, this method creates a synthetic element as
-   * described in 8.1.1:
-   *
-   * Let <i>numberOfPositionals</i>(<i>f</i>) denote the number of positional parameters of a
-   * function <i>f</i>, and let <i>numberOfRequiredParams</i>(<i>f</i>) denote the number of
-   * required parameters of a function <i>f</i>. Furthermore, let <i>s</i> denote the set of all
-   * named parameters of the <i>m<sub>1</sub>, &hellip;, m<sub>k</sub></i>. Then let
-   * * <i>h = max(numberOfPositionals(m<sub>i</sub>)),</i>
-   * * <i>r = min(numberOfRequiredParams(m<sub>i</sub>)), for all <i>i</i>, 1 <= i <= k.</i>
-   * Then <i>I</i> has a method named <i>n</i>, with <i>r</i> required parameters of type
-   * <b>dynamic</b>, <i>h</i> positional parameters of type <b>dynamic</b>, named parameters
-   * <i>s</i> of type <b>dynamic</b> and return type <b>dynamic</b>.
-   *
-   */
-  static ExecutableElement _computeMergedExecutableElement(
-      List<ExecutableElement> elementArrayToMerge) {
-    int h = _getNumOfPositionalParameters(elementArrayToMerge[0]);
-    int r = _getNumOfRequiredParameters(elementArrayToMerge[0]);
-    Set<String> namedParametersList = new HashSet<String>();
-    for (int i = 1; i < elementArrayToMerge.length; i++) {
-      ExecutableElement element = elementArrayToMerge[i];
-      int numOfPositionalParams = _getNumOfPositionalParameters(element);
-      if (h < numOfPositionalParams) {
-        h = numOfPositionalParams;
-      }
-      int numOfRequiredParams = _getNumOfRequiredParameters(element);
-      if (r > numOfRequiredParams) {
-        r = numOfRequiredParams;
-      }
-      namedParametersList.addAll(_getNamedParameterNames(element));
-    }
-    return _createSyntheticExecutableElement(
-        elementArrayToMerge,
-        elementArrayToMerge[0].displayName,
-        r,
-        h - r,
-        new List.from(namedParametersList));
-  }
-
-  /**
-   * Used by [computeMergedExecutableElement] to actually create the
-   * synthetic element.
-   *
-   * @param elementArrayToMerge the array used to create the synthetic element
-   * @param name the name of the method, getter or setter
-   * @param numOfRequiredParameters the number of required parameters
-   * @param numOfPositionalParameters the number of positional parameters
-   * @param namedParameters the list of [String]s that are the named parameters
-   * @return the created synthetic element
-   */
-  static ExecutableElement _createSyntheticExecutableElement(
-      List<ExecutableElement> elementArrayToMerge,
-      String name,
-      int numOfRequiredParameters,
-      int numOfPositionalParameters,
-      List<String> namedParameters) {
-    DynamicTypeImpl dynamicType = DynamicTypeImpl.instance;
-    SimpleIdentifier nameIdentifier =
-        new SimpleIdentifier(new StringToken(TokenType.IDENTIFIER, name, 0));
-    ExecutableElementImpl executable;
-    if (elementArrayToMerge[0] is MethodElement) {
-      MultiplyInheritedMethodElementImpl unionedMethod =
-          new MultiplyInheritedMethodElementImpl(nameIdentifier);
-      unionedMethod.inheritedElements = elementArrayToMerge;
-      executable = unionedMethod;
-    } else {
-      MultiplyInheritedPropertyAccessorElementImpl unionedPropertyAccessor =
-          new MultiplyInheritedPropertyAccessorElementImpl(nameIdentifier);
-      unionedPropertyAccessor.getter =
-          (elementArrayToMerge[0] as PropertyAccessorElement).isGetter;
-      unionedPropertyAccessor.setter =
-          (elementArrayToMerge[0] as PropertyAccessorElement).isSetter;
-      unionedPropertyAccessor.inheritedElements = elementArrayToMerge;
-      executable = unionedPropertyAccessor;
-    }
-    int numOfParameters = numOfRequiredParameters +
-        numOfPositionalParameters +
-        namedParameters.length;
-    List<ParameterElement> parameters =
-        new List<ParameterElement>(numOfParameters);
-    int i = 0;
-    for (int j = 0; j < numOfRequiredParameters; j++, i++) {
-      ParameterElementImpl parameter = new ParameterElementImpl("", 0);
-      parameter.type = dynamicType;
-      parameter.parameterKind = ParameterKind.REQUIRED;
-      parameters[i] = parameter;
-    }
-    for (int k = 0; k < numOfPositionalParameters; k++, i++) {
-      ParameterElementImpl parameter = new ParameterElementImpl("", 0);
-      parameter.type = dynamicType;
-      parameter.parameterKind = ParameterKind.POSITIONAL;
-      parameters[i] = parameter;
-    }
-    for (int m = 0; m < namedParameters.length; m++, i++) {
-      ParameterElementImpl parameter =
-          new ParameterElementImpl(namedParameters[m], 0);
-      parameter.type = dynamicType;
-      parameter.parameterKind = ParameterKind.NAMED;
-      parameters[i] = parameter;
-    }
-    executable.returnType = dynamicType;
-    executable.parameters = parameters;
-    FunctionTypeImpl methodType = new FunctionTypeImpl(executable);
-    executable.type = methodType;
-    return executable;
-  }
-
-  /**
-   * Given some [ExecutableElement], return the list of named parameters.
-   */
-  static List<String> _getNamedParameterNames(
-      ExecutableElement executableElement) {
-    List<String> namedParameterNames = new List<String>();
-    List<ParameterElement> parameters = executableElement.parameters;
-    for (int i = 0; i < parameters.length; i++) {
-      ParameterElement parameterElement = parameters[i];
-      if (parameterElement.parameterKind == ParameterKind.NAMED) {
-        namedParameterNames.add(parameterElement.name);
-      }
-    }
-    return namedParameterNames;
-  }
-
-  /**
-   * Given some [ExecutableElement] return the number of parameters of the specified kind.
-   */
-  static int _getNumOfParameters(
-      ExecutableElement executableElement, ParameterKind parameterKind) {
-    int parameterCount = 0;
-    List<ParameterElement> parameters = executableElement.parameters;
-    for (int i = 0; i < parameters.length; i++) {
-      ParameterElement parameterElement = parameters[i];
-      if (parameterElement.parameterKind == parameterKind) {
-        parameterCount++;
-      }
-    }
-    return parameterCount;
-  }
-
-  /**
-   * Given some [ExecutableElement] return the number of positional parameters.
-   *
-   * Note: by positional we mean [ParameterKind.REQUIRED] or [ParameterKind.POSITIONAL].
-   */
-  static int _getNumOfPositionalParameters(
-          ExecutableElement executableElement) =>
-      _getNumOfParameters(executableElement, ParameterKind.REQUIRED) +
-      _getNumOfParameters(executableElement, ParameterKind.POSITIONAL);
-
-  /**
-   * Given some [ExecutableElement] return the number of required parameters.
-   */
-  static int _getNumOfRequiredParameters(ExecutableElement executableElement) =>
-      _getNumOfParameters(executableElement, ParameterKind.REQUIRED);
-
-  /**
-   * Given some [ExecutableElement] returns `true` if it is an abstract member of a
-   * class.
-   *
-   * @param executableElement some [ExecutableElement] to evaluate
-   * @return `true` if the given element is an abstract member of a class
-   */
-  static bool _isAbstract(ExecutableElement executableElement) {
-    if (executableElement is MethodElement) {
-      return executableElement.isAbstract;
-    } else if (executableElement is PropertyAccessorElement) {
-      return executableElement.isAbstract;
-    }
-    return false;
-  }
-}
-
-/**
  * This enum holds one of four states of a field initialization state through a constructor
  * signature, not initialized, initialized in the field declaration, initialized in the field
  * formal, and finally, initialized in the initializers list.
@@ -6050,802 +4919,6 @@ class INIT_STATE extends Enum<INIT_STATE> {
   ];
 
   const INIT_STATE(String name, int ordinal) : super(name, ordinal);
-}
-
-/**
- * Instances of the class `LabelScope` represent a scope in which a single label is defined.
- */
-class LabelScope {
-  /**
-   * The label scope enclosing this label scope.
-   */
-  final LabelScope _outerScope;
-
-  /**
-   * The label defined in this scope.
-   */
-  final String _label;
-
-  /**
-   * The element to which the label resolves.
-   */
-  final LabelElement element;
-
-  /**
-   * The AST node to which the label resolves.
-   */
-  final AstNode node;
-
-  /**
-   * Initialize a newly created scope to represent the label [_label].
-   * [_outerScope] is the scope enclosing the new label scope.  [node] is the
-   * AST node the label resolves to.  [element] is the element the label
-   * resolves to.
-   */
-  LabelScope(this._outerScope, this._label, this.node, this.element);
-
-  /**
-   * Return the LabelScope which defines [targetLabel], or `null` if it is not
-   * defined in this scope.
-   */
-  LabelScope lookup(String targetLabel) {
-    if (_label == targetLabel) {
-      return this;
-    } else if (_outerScope != null) {
-      return _outerScope.lookup(targetLabel);
-    } else {
-      return null;
-    }
-  }
-}
-
-/**
- * Instances of the class `LibraryImportScope` represent the scope containing all of the names
- * available from imported libraries.
- */
-class LibraryImportScope extends Scope {
-  /**
-   * The element representing the library in which this scope is enclosed.
-   */
-  final LibraryElement _definingLibrary;
-
-  /**
-   * The listener that is to be informed when an error is encountered.
-   */
-  @override
-  final AnalysisErrorListener errorListener;
-
-  /**
-   * A list of the namespaces representing the names that are available in this scope from imported
-   * libraries.
-   */
-  List<Namespace> _importedNamespaces;
-
-  /**
-   * Initialize a newly created scope representing the names imported into the given library.
-   *
-   * @param definingLibrary the element representing the library that imports the names defined in
-   *          this scope
-   * @param errorListener the listener that is to be informed when an error is encountered
-   */
-  LibraryImportScope(this._definingLibrary, this.errorListener) {
-    _createImportedNamespaces();
-  }
-
-  @override
-  void define(Element element) {
-    if (!Scope.isPrivateName(element.displayName)) {
-      super.define(element);
-    }
-  }
-
-  @override
-  Source getSource(AstNode node) {
-    Source source = super.getSource(node);
-    if (source == null) {
-      source = _definingLibrary.definingCompilationUnit.source;
-    }
-    return source;
-  }
-
-  @override
-  Element internalLookup(
-      Identifier identifier, String name, LibraryElement referencingLibrary) {
-    Element foundElement = localLookup(name, referencingLibrary);
-    if (foundElement != null) {
-      return foundElement;
-    }
-    for (int i = 0; i < _importedNamespaces.length; i++) {
-      Namespace nameSpace = _importedNamespaces[i];
-      Element element = nameSpace.get(name);
-      if (element != null) {
-        if (foundElement == null) {
-          foundElement = element;
-        } else if (!identical(foundElement, element)) {
-          foundElement = MultiplyDefinedElementImpl.fromElements(
-              _definingLibrary.context, foundElement, element);
-        }
-      }
-    }
-    if (foundElement is MultiplyDefinedElementImpl) {
-      foundElement = _removeSdkElements(
-          identifier, name, foundElement as MultiplyDefinedElementImpl);
-    }
-    if (foundElement is MultiplyDefinedElementImpl) {
-      String foundEltName = foundElement.displayName;
-      List<Element> conflictingMembers = foundElement.conflictingElements;
-      int count = conflictingMembers.length;
-      List<String> libraryNames = new List<String>(count);
-      for (int i = 0; i < count; i++) {
-        libraryNames[i] = _getLibraryName(conflictingMembers[i]);
-      }
-      libraryNames.sort();
-      errorListener.onError(new AnalysisError(
-          getSource(identifier),
-          identifier.offset,
-          identifier.length,
-          StaticWarningCode.AMBIGUOUS_IMPORT, [
-        foundEltName,
-        StringUtilities.printListOfQuotedNames(libraryNames)
-      ]));
-      return foundElement;
-    }
-    if (foundElement != null) {
-      defineNameWithoutChecking(name, foundElement);
-    }
-    return foundElement;
-  }
-
-  /**
-   * Create all of the namespaces associated with the libraries imported into this library. The
-   * names are not added to this scope, but are stored for later reference.
-   *
-   * @param definingLibrary the element representing the library that imports the libraries for
-   *          which namespaces will be created
-   */
-  void _createImportedNamespaces() {
-    NamespaceBuilder builder = new NamespaceBuilder();
-    List<ImportElement> imports = _definingLibrary.imports;
-    int count = imports.length;
-    _importedNamespaces = new List<Namespace>(count);
-    for (int i = 0; i < count; i++) {
-      _importedNamespaces[i] =
-          builder.createImportNamespaceForDirective(imports[i]);
-    }
-  }
-
-  /**
-   * Returns the name of the library that defines given element.
-   *
-   * @param element the element to get library name
-   * @return the name of the library that defines given element
-   */
-  String _getLibraryName(Element element) {
-    if (element == null) {
-      return StringUtilities.EMPTY;
-    }
-    LibraryElement library = element.library;
-    if (library == null) {
-      return StringUtilities.EMPTY;
-    }
-    List<ImportElement> imports = _definingLibrary.imports;
-    int count = imports.length;
-    for (int i = 0; i < count; i++) {
-      if (identical(imports[i].importedLibrary, library)) {
-        return library.definingCompilationUnit.displayName;
-      }
-    }
-    List<String> indirectSources = new List<String>();
-    for (int i = 0; i < count; i++) {
-      LibraryElement importedLibrary = imports[i].importedLibrary;
-      if (importedLibrary != null) {
-        for (LibraryElement exportedLibrary
-            in importedLibrary.exportedLibraries) {
-          if (identical(exportedLibrary, library)) {
-            indirectSources
-                .add(importedLibrary.definingCompilationUnit.displayName);
-          }
-        }
-      }
-    }
-    int indirectCount = indirectSources.length;
-    StringBuffer buffer = new StringBuffer();
-    buffer.write(library.definingCompilationUnit.displayName);
-    if (indirectCount > 0) {
-      buffer.write(" (via ");
-      if (indirectCount > 1) {
-        indirectSources.sort();
-        buffer.write(StringUtilities.printListOfQuotedNames(indirectSources));
-      } else {
-        buffer.write(indirectSources[0]);
-      }
-      buffer.write(")");
-    }
-    return buffer.toString();
-  }
-
-  /**
-   * Given a collection of elements (captured by the [foundElement]) that the
-   * [identifier] (with the given [name]) resolved to, remove from the list all
-   * of the names defined in the SDK and return the element(s) that remain.
-   */
-  Element _removeSdkElements(Identifier identifier, String name,
-      MultiplyDefinedElementImpl foundElement) {
-    List<Element> conflictingElements = foundElement.conflictingElements;
-    List<Element> nonSdkElements = new List<Element>();
-    Element sdkElement = null;
-    for (Element member in conflictingElements) {
-      if (member.library.isInSdk) {
-        sdkElement = member;
-      } else {
-        nonSdkElements.add(member);
-      }
-    }
-    if (sdkElement != null && nonSdkElements.length > 0) {
-      String sdkLibName = _getLibraryName(sdkElement);
-      String otherLibName = _getLibraryName(nonSdkElements[0]);
-      errorListener.onError(new AnalysisError(
-          getSource(identifier),
-          identifier.offset,
-          identifier.length,
-          StaticWarningCode.CONFLICTING_DART_IMPORT,
-          [name, sdkLibName, otherLibName]));
-    }
-    if (nonSdkElements.length == conflictingElements.length) {
-      // None of the members were removed
-      return foundElement;
-    } else if (nonSdkElements.length == 1) {
-      // All but one member was removed
-      return nonSdkElements[0];
-    } else if (nonSdkElements.length == 0) {
-      // All members were removed
-      AnalysisEngine.instance.logger
-          .logInformation("Multiply defined SDK element: $foundElement");
-      return foundElement;
-    }
-    return new MultiplyDefinedElementImpl(
-        _definingLibrary.context, nonSdkElements);
-  }
-}
-
-/**
- * Instances of the class `LibraryScope` implement a scope containing all of the names defined
- * in a given library.
- */
-class LibraryScope extends EnclosedScope {
-  /**
-   * Initialize a newly created scope representing the names defined in the given library.
-   *
-   * @param definingLibrary the element representing the library represented by this scope
-   * @param errorListener the listener that is to be informed when an error is encountered
-   */
-  LibraryScope(
-      LibraryElement definingLibrary, AnalysisErrorListener errorListener)
-      : super(new LibraryImportScope(definingLibrary, errorListener)) {
-    _defineTopLevelNames(definingLibrary);
-  }
-
-  @override
-  AnalysisError getErrorForDuplicate(Element existing, Element duplicate) {
-    if (existing is PrefixElement) {
-      // TODO(scheglov) consider providing actual 'nameOffset' from the
-      // synthetic accessor
-      int offset = duplicate.nameOffset;
-      if (duplicate is PropertyAccessorElement) {
-        PropertyAccessorElement accessor = duplicate;
-        if (accessor.isSynthetic) {
-          offset = accessor.variable.nameOffset;
-        }
-      }
-      return new AnalysisError(
-          duplicate.source,
-          offset,
-          duplicate.nameLength,
-          CompileTimeErrorCode.PREFIX_COLLIDES_WITH_TOP_LEVEL_MEMBER,
-          [existing.displayName]);
-    }
-    return super.getErrorForDuplicate(existing, duplicate);
-  }
-
-  /**
-   * Add to this scope all of the public top-level names that are defined in the given compilation
-   * unit.
-   *
-   * @param compilationUnit the compilation unit defining the top-level names to be added to this
-   *          scope
-   */
-  void _defineLocalNames(CompilationUnitElement compilationUnit) {
-    for (PropertyAccessorElement element in compilationUnit.accessors) {
-      define(element);
-    }
-    for (ClassElement element in compilationUnit.enums) {
-      define(element);
-    }
-    for (FunctionElement element in compilationUnit.functions) {
-      define(element);
-    }
-    for (FunctionTypeAliasElement element
-        in compilationUnit.functionTypeAliases) {
-      define(element);
-    }
-    for (ClassElement element in compilationUnit.types) {
-      define(element);
-    }
-  }
-
-  /**
-   * Add to this scope all of the names that are explicitly defined in the given library.
-   *
-   * @param definingLibrary the element representing the library that defines the names in this
-   *          scope
-   */
-  void _defineTopLevelNames(LibraryElement definingLibrary) {
-    for (PrefixElement prefix in definingLibrary.prefixes) {
-      define(prefix);
-    }
-    _defineLocalNames(definingLibrary.definingCompilationUnit);
-    for (CompilationUnitElement compilationUnit in definingLibrary.parts) {
-      _defineLocalNames(compilationUnit);
-    }
-  }
-}
-
-/**
- * This class is used to replace uses of `HashMap<String, ExecutableElement>`
- * which are not as performant as this class.
- */
-class MemberMap {
-  /**
-   * The current size of this map.
-   */
-  int _size = 0;
-
-  /**
-   * The array of keys.
-   */
-  List<String> _keys;
-
-  /**
-   * The array of ExecutableElement values.
-   */
-  List<ExecutableElement> _values;
-
-  /**
-   * Initialize a newly created member map to have the given [initialCapacity].
-   * The map will grow if needed.
-   */
-  MemberMap([int initialCapacity = 10]) {
-    _initArrays(initialCapacity);
-  }
-
-  /**
-   * Initialize a newly created member map to contain the same members as the
-   * given [memberMap].
-   */
-  MemberMap.from(MemberMap memberMap) {
-    _initArrays(memberMap._size + 5);
-    for (int i = 0; i < memberMap._size; i++) {
-      _keys[i] = memberMap._keys[i];
-      _values[i] = memberMap._values[i];
-    }
-    _size = memberMap._size;
-  }
-
-  /**
-   * The size of the map.
-   *
-   * @return the size of the map.
-   */
-  int get size => _size;
-
-  /**
-   * Given some key, return the ExecutableElement value from the map, if the key does not exist in
-   * the map, `null` is returned.
-   *
-   * @param key some key to look up in the map
-   * @return the associated ExecutableElement value from the map, if the key does not exist in the
-   *         map, `null` is returned
-   */
-  ExecutableElement get(String key) {
-    for (int i = 0; i < _size; i++) {
-      if (_keys[i] != null && _keys[i] == key) {
-        return _values[i];
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Get and return the key at the specified location. If the key/value pair has been removed from
-   * the set, then `null` is returned.
-   *
-   * @param i some non-zero value less than size
-   * @return the key at the passed index
-   * @throw ArrayIndexOutOfBoundsException this exception is thrown if the passed index is less than
-   *        zero or greater than or equal to the capacity of the arrays
-   */
-  String getKey(int i) => _keys[i];
-
-  /**
-   * Get and return the ExecutableElement at the specified location. If the key/value pair has been
-   * removed from the set, then then `null` is returned.
-   *
-   * @param i some non-zero value less than size
-   * @return the key at the passed index
-   * @throw ArrayIndexOutOfBoundsException this exception is thrown if the passed index is less than
-   *        zero or greater than or equal to the capacity of the arrays
-   */
-  ExecutableElement getValue(int i) => _values[i];
-
-  /**
-   * Given some key/value pair, store the pair in the map. If the key exists already, then the new
-   * value overrides the old value.
-   *
-   * @param key the key to store in the map
-   * @param value the ExecutableElement value to store in the map
-   */
-  void put(String key, ExecutableElement value) {
-    // If we already have a value with this key, override the value
-    for (int i = 0; i < _size; i++) {
-      if (_keys[i] != null && _keys[i] == key) {
-        _values[i] = value;
-        return;
-      }
-    }
-    // If needed, double the size of our arrays and copy values over in both
-    // arrays
-    if (_size == _keys.length) {
-      int newArrayLength = _size * 2;
-      List<String> keys_new_array = new List<String>(newArrayLength);
-      List<ExecutableElement> values_new_array =
-          new List<ExecutableElement>(newArrayLength);
-      for (int i = 0; i < _size; i++) {
-        keys_new_array[i] = _keys[i];
-      }
-      for (int i = 0; i < _size; i++) {
-        values_new_array[i] = _values[i];
-      }
-      _keys = keys_new_array;
-      _values = values_new_array;
-    }
-    // Put new value at end of array
-    _keys[_size] = key;
-    _values[_size] = value;
-    _size++;
-  }
-
-  /**
-   * Given some [String] key, this method replaces the associated key and value pair with
-   * `null`. The size is not decremented with this call, instead it is expected that the users
-   * check for `null`.
-   *
-   * @param key the key of the key/value pair to remove from the map
-   */
-  void remove(String key) {
-    for (int i = 0; i < _size; i++) {
-      if (_keys[i] == key) {
-        _keys[i] = null;
-        _values[i] = null;
-        return;
-      }
-    }
-  }
-
-  /**
-   * Sets the ExecutableElement at the specified location.
-   *
-   * @param i some non-zero value less than size
-   * @param value the ExecutableElement value to store in the map
-   */
-  void setValue(int i, ExecutableElement value) {
-    _values[i] = value;
-  }
-
-  /**
-   * Initializes [keys] and [values].
-   */
-  void _initArrays(int initialCapacity) {
-    _keys = new List<String>(initialCapacity);
-    _values = new List<ExecutableElement>(initialCapacity);
-  }
-}
-
-/**
- * Instances of the class `Namespace` implement a mapping of identifiers to the elements
- * represented by those identifiers. Namespaces are the building blocks for scopes.
- */
-class Namespace {
-  /**
-   * An empty namespace.
-   */
-  static Namespace EMPTY = new Namespace(new HashMap<String, Element>());
-
-  /**
-   * A table mapping names that are defined in this namespace to the element representing the thing
-   * declared with that name.
-   */
-  final HashMap<String, Element> _definedNames;
-
-  /**
-   * Initialize a newly created namespace to have the given defined names.
-   *
-   * @param definedNames the mapping from names that are defined in this namespace to the
-   *          corresponding elements
-   */
-  Namespace(this._definedNames);
-
-  /**
-   * Return a table containing the same mappings as those defined by this namespace.
-   *
-   * @return a table containing the same mappings as those defined by this namespace
-   */
-  Map<String, Element> get definedNames => _definedNames;
-
-  /**
-   * Return the element in this namespace that is available to the containing scope using the given
-   * name.
-   *
-   * @param name the name used to reference the
-   * @return the element represented by the given identifier
-   */
-  Element get(String name) => _definedNames[name];
-}
-
-/**
- * Instances of the class `NamespaceBuilder` are used to build a `Namespace`. Namespace
- * builders are thread-safe and re-usable.
- */
-class NamespaceBuilder {
-  /**
-   * Create a namespace representing the export namespace of the given [ExportElement].
-   *
-   * @param element the export element whose export namespace is to be created
-   * @return the export namespace that was created
-   */
-  Namespace createExportNamespaceForDirective(ExportElement element) {
-    LibraryElement exportedLibrary = element.exportedLibrary;
-    if (exportedLibrary == null) {
-      //
-      // The exported library will be null if the URI does not reference a valid
-      // library.
-      //
-      return Namespace.EMPTY;
-    }
-    HashMap<String, Element> exportedNames = _getExportMapping(exportedLibrary);
-    exportedNames = _applyCombinators(exportedNames, element.combinators);
-    return new Namespace(exportedNames);
-  }
-
-  /**
-   * Create a namespace representing the export namespace of the given library.
-   *
-   * @param library the library whose export namespace is to be created
-   * @return the export namespace that was created
-   */
-  Namespace createExportNamespaceForLibrary(LibraryElement library) {
-    HashMap<String, Element> exportedNames = _getExportMapping(library);
-    return new Namespace(exportedNames);
-  }
-
-  /**
-   * Create a namespace representing the import namespace of the given library.
-   *
-   * @param library the library whose import namespace is to be created
-   * @return the import namespace that was created
-   */
-  Namespace createImportNamespaceForDirective(ImportElement element) {
-    LibraryElement importedLibrary = element.importedLibrary;
-    if (importedLibrary == null) {
-      //
-      // The imported library will be null if the URI does not reference a valid
-      // library.
-      //
-      return Namespace.EMPTY;
-    }
-    HashMap<String, Element> exportedNames = _getExportMapping(importedLibrary);
-    exportedNames = _applyCombinators(exportedNames, element.combinators);
-    exportedNames = _applyPrefix(exportedNames, element.prefix);
-    return new Namespace(exportedNames);
-  }
-
-  /**
-   * Create a namespace representing the public namespace of the given library.
-   *
-   * @param library the library whose public namespace is to be created
-   * @return the public namespace that was created
-   */
-  Namespace createPublicNamespaceForLibrary(LibraryElement library) {
-    HashMap<String, Element> definedNames = new HashMap<String, Element>();
-    _addPublicNames(definedNames, library.definingCompilationUnit);
-    for (CompilationUnitElement compilationUnit in library.parts) {
-      _addPublicNames(definedNames, compilationUnit);
-    }
-    return new Namespace(definedNames);
-  }
-
-  /**
-   * Add all of the names in the given namespace to the given mapping table.
-   *
-   * @param definedNames the mapping table to which the names in the given namespace are to be added
-   * @param namespace the namespace containing the names to be added to this namespace
-   */
-  void _addAllFromNamespace(
-      Map<String, Element> definedNames, Namespace namespace) {
-    if (namespace != null) {
-      definedNames.addAll(namespace.definedNames);
-    }
-  }
-
-  /**
-   * Add the given element to the given mapping table if it has a publicly visible name.
-   *
-   * @param definedNames the mapping table to which the public name is to be added
-   * @param element the element to be added
-   */
-  void _addIfPublic(Map<String, Element> definedNames, Element element) {
-    String name = element.name;
-    if (name != null && !Scope.isPrivateName(name)) {
-      definedNames[name] = element;
-    }
-  }
-
-  /**
-   * Add to the given mapping table all of the public top-level names that are defined in the given
-   * compilation unit.
-   *
-   * @param definedNames the mapping table to which the public names are to be added
-   * @param compilationUnit the compilation unit defining the top-level names to be added to this
-   *          namespace
-   */
-  void _addPublicNames(Map<String, Element> definedNames,
-      CompilationUnitElement compilationUnit) {
-    for (PropertyAccessorElement element in compilationUnit.accessors) {
-      _addIfPublic(definedNames, element);
-    }
-    for (ClassElement element in compilationUnit.enums) {
-      _addIfPublic(definedNames, element);
-    }
-    for (FunctionElement element in compilationUnit.functions) {
-      _addIfPublic(definedNames, element);
-    }
-    for (FunctionTypeAliasElement element
-        in compilationUnit.functionTypeAliases) {
-      _addIfPublic(definedNames, element);
-    }
-    for (ClassElement element in compilationUnit.types) {
-      _addIfPublic(definedNames, element);
-    }
-  }
-
-  /**
-   * Apply the given combinators to all of the names in the given mapping table.
-   *
-   * @param definedNames the mapping table to which the namespace operations are to be applied
-   * @param combinators the combinators to be applied
-   */
-  HashMap<String, Element> _applyCombinators(
-      HashMap<String, Element> definedNames,
-      List<NamespaceCombinator> combinators) {
-    for (NamespaceCombinator combinator in combinators) {
-      if (combinator is HideElementCombinator) {
-        definedNames = _hide(definedNames, combinator.hiddenNames);
-      } else if (combinator is ShowElementCombinator) {
-        definedNames = _show(definedNames, combinator.shownNames);
-      } else {
-        // Internal error.
-        AnalysisEngine.instance.logger
-            .logError("Unknown type of combinator: ${combinator.runtimeType}");
-      }
-    }
-    return definedNames;
-  }
-
-  /**
-   * Apply the given prefix to all of the names in the table of defined names.
-   *
-   * @param definedNames the names that were defined before this operation
-   * @param prefixElement the element defining the prefix to be added to the names
-   */
-  HashMap<String, Element> _applyPrefix(
-      HashMap<String, Element> definedNames, PrefixElement prefixElement) {
-    if (prefixElement != null) {
-      String prefix = prefixElement.name;
-      HashMap<String, Element> newNames = new HashMap<String, Element>();
-      definedNames.forEach((String name, Element element) {
-        newNames["$prefix.$name"] = element;
-      });
-      return newNames;
-    } else {
-      return definedNames;
-    }
-  }
-
-  /**
-   * Create a mapping table representing the export namespace of the given library.
-   *
-   * @param library the library whose public namespace is to be created
-   * @param visitedElements a set of libraries that do not need to be visited when processing the
-   *          export directives of the given library because all of the names defined by them will
-   *          be added by another library
-   * @return the mapping table that was created
-   */
-  HashMap<String, Element> _computeExportMapping(
-      LibraryElement library, HashSet<LibraryElement> visitedElements) {
-    visitedElements.add(library);
-    try {
-      HashMap<String, Element> definedNames = new HashMap<String, Element>();
-      for (ExportElement element in library.exports) {
-        LibraryElement exportedLibrary = element.exportedLibrary;
-        if (exportedLibrary != null &&
-            !visitedElements.contains(exportedLibrary)) {
-          //
-          // The exported library will be null if the URI does not reference a
-          // valid library.
-          //
-          HashMap<String, Element> exportedNames =
-              _computeExportMapping(exportedLibrary, visitedElements);
-          exportedNames = _applyCombinators(exportedNames, element.combinators);
-          definedNames.addAll(exportedNames);
-        }
-      }
-      _addAllFromNamespace(
-          definedNames,
-          (library.context as InternalAnalysisContext)
-              .getPublicNamespace(library));
-      return definedNames;
-    } finally {
-      visitedElements.remove(library);
-    }
-  }
-
-  HashMap<String, Element> _getExportMapping(LibraryElement library) {
-    if (library is LibraryElementImpl) {
-      if (library.exportNamespace != null) {
-        return library.exportNamespace.definedNames;
-      } else {
-        HashMap<String, Element> exportMapping =
-            _computeExportMapping(library, new HashSet<LibraryElement>());
-        library.exportNamespace = new Namespace(exportMapping);
-        return exportMapping;
-      }
-    }
-    return _computeExportMapping(library, new HashSet<LibraryElement>());
-  }
-
-  /**
-   * Return a new map of names which has all the names from [definedNames]
-   * with exception of [hiddenNames].
-   */
-  Map<String, Element> _hide(
-      HashMap<String, Element> definedNames, List<String> hiddenNames) {
-    HashMap<String, Element> newNames =
-        new HashMap<String, Element>.from(definedNames);
-    for (String name in hiddenNames) {
-      newNames.remove(name);
-      newNames.remove("$name=");
-    }
-    return newNames;
-  }
-
-  /**
-   * Return a new map of names which has only [shownNames] from [definedNames].
-   */
-  HashMap<String, Element> _show(
-      HashMap<String, Element> definedNames, List<String> shownNames) {
-    HashMap<String, Element> newNames = new HashMap<String, Element>();
-    for (String name in shownNames) {
-      Element element = definedNames[name];
-      if (element != null) {
-        newNames[name] = element;
-      }
-      String setterName = "$name=";
-      element = definedNames[setterName];
-      if (element != null) {
-        newNames[setterName] = element;
-      }
-    }
-    return newNames;
-  }
 }
 
 /**
@@ -7318,13 +5391,6 @@ class ResolverVisitor extends ScopedVisitor {
    * The type system in use during resolution.
    */
   TypeSystem typeSystem;
-
-  /**
-   * The class element representing the class containing the current node,
-   * or `null` if the current node is not contained in a class.
-   */
-  @override
-  ClassElement enclosingClass = null;
 
   /**
    * The class declaration representing the class containing the current node, or `null` if
@@ -7966,16 +6032,6 @@ class ResolverVisitor extends ScopedVisitor {
 
   @override
   Object visitCompilationUnit(CompilationUnit node) {
-    //
-    // TODO(brianwilkerson) The goal of the code below is to visit the
-    // declarations in such an order that we can infer type information for
-    // top-level variables before we visit references to them. This is better
-    // than making no effort, but still doesn't completely satisfy that goal
-    // (consider for example "final var a = b; final var b = 0;"; we'll infer a
-    // type of 'int' for 'b', but not for 'a' because of the order of the
-    // visits). Ideally we would create a dependency graph, but that would
-    // require references to be resolved, which they are not.
-    //
     _overrideManager.enterScope();
     try {
       NodeList<Directive> directives = node.directives;
@@ -7986,16 +6042,7 @@ class ResolverVisitor extends ScopedVisitor {
       NodeList<CompilationUnitMember> declarations = node.declarations;
       int declarationCount = declarations.length;
       for (int i = 0; i < declarationCount; i++) {
-        CompilationUnitMember declaration = declarations[i];
-        if (declaration is! ClassDeclaration) {
-          declaration.accept(this);
-        }
-      }
-      for (int i = 0; i < declarationCount; i++) {
-        CompilationUnitMember declaration = declarations[i];
-        if (declaration is ClassDeclaration) {
-          declaration.accept(this);
-        }
+        declarations[i].accept(this);
       }
     } finally {
       _overrideManager.exitScope();
@@ -8404,7 +6451,7 @@ class ResolverVisitor extends ScopedVisitor {
     Expression condition = node.condition;
     condition?.accept(this);
     Map<VariableElement, DartType> thenOverrides =
-        new HashMap<VariableElement, DartType>();
+        const <VariableElement, DartType>{};
     Statement thenStatement = node.thenStatement;
     if (thenStatement != null) {
       _overrideManager.enterScope();
@@ -8428,7 +6475,7 @@ class ResolverVisitor extends ScopedVisitor {
       }
     }
     Map<VariableElement, DartType> elseOverrides =
-        new HashMap<VariableElement, DartType>();
+        const <VariableElement, DartType>{};
     Statement elseStatement = node.elseStatement;
     if (elseStatement != null) {
       _overrideManager.enterScope();
@@ -8453,7 +6500,7 @@ class ResolverVisitor extends ScopedVisitor {
       _overrideManager.applyOverrides(elseOverrides);
     } else if (!thenIsAbrupt && !elseIsAbrupt) {
       List<Map<VariableElement, DartType>> perBranchOverrides =
-          new List<Map<VariableElement, DartType>>();
+          <Map<VariableElement, DartType>>[];
       perBranchOverrides.add(thenOverrides);
       perBranchOverrides.add(elseOverrides);
       _overrideManager.mergeOverrides(perBranchOverrides);
@@ -9280,38 +7327,42 @@ class ResolverVisitor extends ScopedVisitor {
       List<ParameterElement> parameters,
       void onError(ErrorCode errorCode, AstNode node, [List<Object> arguments]),
       {bool reportAsError: false}) {
-    List<ParameterElement> requiredParameters = new List<ParameterElement>();
-    List<ParameterElement> positionalParameters = new List<ParameterElement>();
-    HashMap<String, ParameterElement> namedParameters =
-        new HashMap<String, ParameterElement>();
+    if (parameters.isEmpty && argumentList.arguments.isEmpty) {
+      return const <ParameterElement>[];
+    }
+    int requiredParameterCount = 0;
+    int unnamedParameterCount = 0;
+    List<ParameterElement> unnamedParameters = new List<ParameterElement>();
+    HashMap<String, ParameterElement> namedParameters = null;
     for (ParameterElement parameter in parameters) {
       ParameterKind kind = parameter.parameterKind;
       if (kind == ParameterKind.REQUIRED) {
-        requiredParameters.add(parameter);
+        unnamedParameters.add(parameter);
+        unnamedParameterCount++;
+        requiredParameterCount++;
       } else if (kind == ParameterKind.POSITIONAL) {
-        positionalParameters.add(parameter);
+        unnamedParameters.add(parameter);
+        unnamedParameterCount++;
       } else {
+        namedParameters ??= new HashMap<String, ParameterElement>();
         namedParameters[parameter.name] = parameter;
       }
     }
-    List<ParameterElement> unnamedParameters =
-        new List<ParameterElement>.from(requiredParameters);
-    unnamedParameters.addAll(positionalParameters);
-    int unnamedParameterCount = unnamedParameters.length;
     int unnamedIndex = 0;
     NodeList<Expression> arguments = argumentList.arguments;
     int argumentCount = arguments.length;
     List<ParameterElement> resolvedParameters =
         new List<ParameterElement>(argumentCount);
     int positionalArgumentCount = 0;
-    HashSet<String> usedNames = new HashSet<String>();
+    HashSet<String> usedNames = null;
     bool noBlankArguments = true;
     for (int i = 0; i < argumentCount; i++) {
       Expression argument = arguments[i];
       if (argument is NamedExpression) {
         SimpleIdentifier nameNode = argument.name.label;
         String name = nameNode.name;
-        ParameterElement element = namedParameters[name];
+        ParameterElement element =
+            namedParameters != null ? namedParameters[name] : null;
         if (element == null) {
           ErrorCode errorCode = (reportAsError
               ? CompileTimeErrorCode.UNDEFINED_NAMED_PARAMETER
@@ -9323,6 +7374,7 @@ class ResolverVisitor extends ScopedVisitor {
           resolvedParameters[i] = element;
           nameNode.staticElement = element;
         }
+        usedNames ??= new HashSet<String>();
         if (!usedNames.add(name)) {
           if (onError != null) {
             onError(CompileTimeErrorCode.DUPLICATE_NAMED_ARGUMENT, nameNode,
@@ -9339,14 +7391,13 @@ class ResolverVisitor extends ScopedVisitor {
         }
       }
     }
-    if (positionalArgumentCount < requiredParameters.length &&
-        noBlankArguments) {
+    if (positionalArgumentCount < requiredParameterCount && noBlankArguments) {
       ErrorCode errorCode = (reportAsError
           ? CompileTimeErrorCode.NOT_ENOUGH_REQUIRED_ARGUMENTS
           : StaticWarningCode.NOT_ENOUGH_REQUIRED_ARGUMENTS);
       if (onError != null) {
         onError(errorCode, argumentList,
-            [requiredParameters.length, positionalArgumentCount]);
+            [requiredParameterCount, positionalArgumentCount]);
       }
     } else if (positionalArgumentCount > unnamedParameterCount &&
         noBlankArguments) {
@@ -9360,200 +7411,6 @@ class ResolverVisitor extends ScopedVisitor {
     }
     return resolvedParameters;
   }
-}
-
-/**
- * The abstract class `Scope` defines the behavior common to name scopes used by the resolver
- * to determine which names are visible at any given point in the code.
- */
-abstract class Scope {
-  /**
-   * The prefix used to mark an identifier as being private to its library.
-   */
-  static int PRIVATE_NAME_PREFIX = 0x5F;
-
-  /**
-   * The suffix added to the declared name of a setter when looking up the setter. Used to
-   * disambiguate between a getter and a setter that have the same name.
-   */
-  static String SETTER_SUFFIX = "=";
-
-  /**
-   * The name used to look up the method used to implement the unary minus operator. Used to
-   * disambiguate between the unary and binary operators.
-   */
-  static String UNARY_MINUS = "unary-";
-
-  /**
-   * A table mapping names that are defined in this scope to the element representing the thing
-   * declared with that name.
-   */
-  HashMap<String, Element> _definedNames = new HashMap<String, Element>();
-
-  /**
-   * A flag indicating whether there are any names defined in this scope.
-   */
-  bool _hasName = false;
-
-  /**
-   * Return the scope in which this scope is lexically enclosed.
-   *
-   * @return the scope in which this scope is lexically enclosed
-   */
-  Scope get enclosingScope => null;
-
-  /**
-   * Return the listener that is to be informed when an error is encountered.
-   *
-   * @return the listener that is to be informed when an error is encountered
-   */
-  AnalysisErrorListener get errorListener;
-
-  /**
-   * Add the given element to this scope. If there is already an element with the given name defined
-   * in this scope, then an error will be generated and the original element will continue to be
-   * mapped to the name. If there is an element with the given name in an enclosing scope, then a
-   * warning will be generated but the given element will hide the inherited element.
-   *
-   * @param element the element to be added to this scope
-   */
-  void define(Element element) {
-    String name = _getName(element);
-    if (name != null && !name.isEmpty) {
-      if (_definedNames.containsKey(name)) {
-        errorListener
-            .onError(getErrorForDuplicate(_definedNames[name], element));
-      } else {
-        _definedNames[name] = element;
-        _hasName = true;
-      }
-    }
-  }
-
-  /**
-   * Add the given element to this scope without checking for duplication or hiding.
-   *
-   * @param name the name of the element to be added
-   * @param element the element to be added to this scope
-   */
-  void defineNameWithoutChecking(String name, Element element) {
-    _definedNames[name] = element;
-    _hasName = true;
-  }
-
-  /**
-   * Add the given element to this scope without checking for duplication or hiding.
-   *
-   * @param element the element to be added to this scope
-   */
-  void defineWithoutChecking(Element element) {
-    _definedNames[_getName(element)] = element;
-    _hasName = true;
-  }
-
-  /**
-   * Return the error code to be used when reporting that a name being defined locally conflicts
-   * with another element of the same name in the local scope.
-   *
-   * @param existing the first element to be declared with the conflicting name
-   * @param duplicate another element declared with the conflicting name
-   * @return the error code used to report duplicate names within a scope
-   */
-  AnalysisError getErrorForDuplicate(Element existing, Element duplicate) {
-    // TODO(brianwilkerson) Customize the error message based on the types of
-    // elements that share the same name.
-    // TODO(jwren) There are 4 error codes for duplicate, but only 1 is being
-    // generated.
-    Source source = duplicate.source;
-    return new AnalysisError(source, duplicate.nameOffset, duplicate.nameLength,
-        CompileTimeErrorCode.DUPLICATE_DEFINITION, [existing.displayName]);
-  }
-
-  /**
-   * Return the source that contains the given identifier, or the source associated with this scope
-   * if the source containing the identifier could not be determined.
-   *
-   * @param identifier the identifier whose source is to be returned
-   * @return the source that contains the given identifier
-   */
-  Source getSource(AstNode node) {
-    CompilationUnit unit = node.getAncestor((node) => node is CompilationUnit);
-    if (unit != null) {
-      CompilationUnitElement unitElement = unit.element;
-      if (unitElement != null) {
-        return unitElement.source;
-      }
-    }
-    return null;
-  }
-
-  /**
-   * Return the element with which the given name is associated, or `null` if the name is not
-   * defined within this scope.
-   *
-   * @param identifier the identifier node to lookup element for, used to report correct kind of a
-   *          problem and associate problem with
-   * @param name the name associated with the element to be returned
-   * @param referencingLibrary the library that contains the reference to the name, used to
-   *          implement library-level privacy
-   * @return the element with which the given name is associated
-   */
-  Element internalLookup(
-      Identifier identifier, String name, LibraryElement referencingLibrary);
-
-  /**
-   * Return the element with which the given name is associated, or `null` if the name is not
-   * defined within this scope. This method only returns elements that are directly defined within
-   * this scope, not elements that are defined in an enclosing scope.
-   *
-   * @param name the name associated with the element to be returned
-   * @param referencingLibrary the library that contains the reference to the name, used to
-   *          implement library-level privacy
-   * @return the element with which the given name is associated
-   */
-  Element localLookup(String name, LibraryElement referencingLibrary) {
-    if (_hasName) {
-      return _definedNames[name];
-    }
-    return null;
-  }
-
-  /**
-   * Return the element with which the given identifier is associated, or `null` if the name
-   * is not defined within this scope.
-   *
-   * @param identifier the identifier associated with the element to be returned
-   * @param referencingLibrary the library that contains the reference to the name, used to
-   *          implement library-level privacy
-   * @return the element with which the given identifier is associated
-   */
-  Element lookup(Identifier identifier, LibraryElement referencingLibrary) =>
-      internalLookup(identifier, identifier.name, referencingLibrary);
-
-  /**
-   * Return the name that will be used to look up the given element.
-   *
-   * @param element the element whose look-up name is to be returned
-   * @return the name that will be used to look up the given element
-   */
-  String _getName(Element element) {
-    if (element is MethodElement) {
-      MethodElement method = element;
-      if (method.name == "-" && method.parameters.length == 0) {
-        return UNARY_MINUS;
-      }
-    }
-    return element.name;
-  }
-
-  /**
-   * Return `true` if the given name is a library-private name.
-   *
-   * @param name the name being tested
-   * @return `true` if the given name is a library-private name
-   */
-  static bool isPrivateName(String name) =>
-      name != null && StringUtilities.startsWithChar(name, PRIVATE_NAME_PREFIX);
 }
 
 /**
@@ -10703,37 +8560,6 @@ class TypeOverrideManager_TypeOverrideScope {
 }
 
 /**
- * Instances of the class `TypeParameterScope` implement the scope defined by the type
- * parameters in a class.
- */
-class TypeParameterScope extends EnclosedScope {
-  /**
-   * Initialize a newly created scope enclosed within another scope.
-   *
-   * @param enclosingScope the scope in which this scope is lexically enclosed
-   * @param typeElement the element representing the type represented by this scope
-   */
-  TypeParameterScope(Scope enclosingScope, ClassElement typeElement)
-      : super(enclosingScope) {
-    if (typeElement == null) {
-      throw new IllegalArgumentException("class element cannot be null");
-    }
-    _defineTypeParameters(typeElement);
-  }
-
-  /**
-   * Define the type parameters for the class.
-   *
-   * @param typeElement the element representing the type represented by this scope
-   */
-  void _defineTypeParameters(ClassElement typeElement) {
-    for (TypeParameterElement typeParameter in typeElement.typeParameters) {
-      define(typeParameter);
-    }
-  }
-}
-
-/**
  * Instances of the class `TypePromotionManager` manage the ability to promote types of local
  * variables and formal parameters from their declared types based on control flow.
  */
@@ -11458,13 +9284,20 @@ class TypeResolverVisitor extends ScopedVisitor {
 
   @override
   void visitClassMembersInScope(ClassDeclaration node) {
+    node.documentationComment?.accept(this);
+    node.metadata.accept(this);
     //
     // Process field declarations before constructors and methods so that the
     // types of field formal parameters can be correctly resolved.
     //
     List<ClassMember> nonFields = new List<ClassMember>();
-    node.visitChildren(
-        new _TypeResolverVisitor_visitClassMembersInScope(this, nonFields));
+    for (ClassMember member in node.members) {
+      if (member is ConstructorDeclaration) {
+        nonFields.add(member);
+      } else {
+        member.accept(this);
+      }
+    }
     int count = nonFields.length;
     for (int i = 0; i < count; i++) {
       nonFields[i].accept(this);
@@ -12566,9 +10399,10 @@ class UnusedLocalElementsVerifier extends RecursiveElementVisitor {
  */
 class UsedImportedElements {
   /**
-   * The set of referenced [PrefixElement]s.
+   * The map of referenced [PrefixElement]s and the [Element]s that they prefix.
    */
-  final Set<PrefixElement> prefixes = new HashSet<PrefixElement>();
+  final Map<PrefixElement, List<Element>> prefixMap =
+      new HashMap<PrefixElement, List<Element>>();
 
   /**
    * The set of referenced top-level [Element]s.
@@ -12948,39 +10782,4 @@ class _ResolverVisitor_isVariablePotentiallyMutatedIn
     }
     return null;
   }
-}
-
-class _TypeResolverVisitor_visitClassMembersInScope
-    extends UnifyingAstVisitor<Object> {
-  final TypeResolverVisitor TypeResolverVisitor_this;
-
-  List<ClassMember> nonFields;
-
-  _TypeResolverVisitor_visitClassMembersInScope(
-      this.TypeResolverVisitor_this, this.nonFields)
-      : super();
-
-  @override
-  Object visitConstructorDeclaration(ConstructorDeclaration node) {
-    nonFields.add(node);
-    return null;
-  }
-
-  @override
-  Object visitExtendsClause(ExtendsClause node) => null;
-
-  @override
-  Object visitImplementsClause(ImplementsClause node) => null;
-
-  @override
-  Object visitMethodDeclaration(MethodDeclaration node) {
-    nonFields.add(node);
-    return null;
-  }
-
-  @override
-  Object visitNode(AstNode node) => node.accept(TypeResolverVisitor_this);
-
-  @override
-  Object visitWithClause(WithClause node) => null;
 }

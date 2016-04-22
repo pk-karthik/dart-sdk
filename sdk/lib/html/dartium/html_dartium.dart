@@ -401,7 +401,6 @@ final htmlBlinkMap = {
   'MimeType': () => MimeType.instanceRuntimeType,
   'MimeTypeArray': () => MimeTypeArray.instanceRuntimeType,
   'MouseEvent': () => MouseEvent.instanceRuntimeType,
-  'MutationEvent': () => _MutationEvent.instanceRuntimeType,
   'MutationObserver': () => MutationObserver.instanceRuntimeType,
   'MutationRecord': () => MutationRecord.instanceRuntimeType,
   'NamedNodeMap': () => _NamedNodeMap.instanceRuntimeType,
@@ -673,7 +672,40 @@ Type _getSvgType(String key) {
   return null;
 }
 
-// TODO(jacobr): it would be nice to place this in a consistent place for dart2js and dartium.
+// TODO(jacobr): it would be nice to place these conversion methods in a consistent place for dart2js and dartium.
+
+WindowBase _convertNativeToDart_Window(win) {
+  if (win == null) return null;
+  return _DOMWindowCrossFrame._createSafe(win);
+}
+
+EventTarget _convertNativeToDart_EventTarget(e) {
+  if (e == null) {
+    return null;
+  }
+  // Assume it's a Window if it contains the postMessage property.  It may be
+  // from a different frame - without a patched prototype - so we cannot
+  // rely on Dart type checking.
+  try {
+    if (js.JsNative.hasProperty(e, "postMessage")) {
+      var window = _DOMWindowCrossFrame._createSafe(e);
+      // If it's a native window.
+      if (window is EventTarget) {
+        return window;
+      }
+      return null;
+    }
+  } catch (err) {
+    print("Error calling _convertNativeToDart_EventTarget... $err");
+  }
+  return e;
+}
+
+EventTarget _convertDartToNative_EventTarget(e) {
+  // _DOMWindowCrossFrame uses an interceptor so we don't need to do anything unlike Dart2Js.
+  return e;
+}
+
 _convertNativeToDart_XHR_Response(o) {
   if (o is Document) {
     return o;
@@ -737,10 +769,6 @@ debug_or_assert(message, expression) {
   }
 }
 
-// TODO(jacobr): we shouldn't be generating this call in the dart:html
-// bindings but we are.
-_convertDartToNative_EventTarget(target) => target;
-
 @Deprecated("Internal Use Only")
 Map<String, dynamic> convertNativeObjectToDartMap(js.JsObject jsObject) {
   var result = new Map();
@@ -777,12 +805,12 @@ abstract class AbstractWorker extends DartHtmlDomObject implements EventTarget {
    */
   @DomName('AbstractWorker.errorEvent')
   @DocsEditable()
-  static const EventStreamProvider<ErrorEvent> errorEvent = const EventStreamProvider<ErrorEvent>('error');
+  static const EventStreamProvider<Event> errorEvent = const EventStreamProvider<Event>('error');
 
   /// Stream of `error` events handled by this [AbstractWorker].
   @DomName('AbstractWorker.onerror')
   @DocsEditable()
-  Stream<ErrorEvent> get onError => errorEvent.forTarget(this);
+  Stream<Event> get onError => errorEvent.forTarget(this);
 }
 // Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 // for details. All rights reserved. Use of this source code is governed by a
@@ -800,7 +828,7 @@ class AnchorElement extends HtmlElement implements UrlUtils {
   @DomName('HTMLAnchorElement.HTMLAnchorElement')
   @DocsEditable()
   factory AnchorElement({String href}) {
-    var e = document.createElement("a");
+    AnchorElement e = document.createElement("a");
     if (href != null) e.href = href;
     return e;
   }
@@ -3029,7 +3057,7 @@ class CanvasElement extends HtmlElement implements CanvasImageSource {
   @DomName('HTMLCanvasElement.HTMLCanvasElement')
   @DocsEditable()
   factory CanvasElement({int width, int height}) {
-    var e = document.createElement("canvas");
+    CanvasElement e = document.createElement("canvas");
     if (width != null) e.width = width;
     if (height != null) e.height = height;
     return e;
@@ -4433,7 +4461,7 @@ class CompositionEvent extends UIEvent {
     if (view == null) {
       view = window;
     }
-    var e = document._createEvent("CompositionEvent");
+    CompositionEvent e = document._createEvent("CompositionEvent");
 
       e._initCompositionEvent(type, canBubble, cancelable, view, data);
 
@@ -9734,7 +9762,7 @@ class DeviceOrientationEvent extends Event {
   factory DeviceOrientationEvent(String type,
       {bool canBubble: true, bool cancelable: true, num alpha: 0, num beta: 0,
       num gamma: 0, bool absolute: false}) {
-    var e = document._createEvent("DeviceOrientationEvent");
+    DeviceOrientationEvent e = document._createEvent("DeviceOrientationEvent");
     e._initDeviceOrientationEvent(type, canBubble, cancelable, alpha, beta,
         gamma, absolute);
     return e;
@@ -10193,7 +10221,7 @@ class Document extends Node
   
   @DomName('Document.defaultView')
   @DocsEditable()
-  WindowBase get window => _blink.BlinkDocument.instance.defaultView_Getter_(this);
+  WindowBase get window => _convertNativeToDart_Window(_blink.BlinkDocument.instance.defaultView_Getter_(this));
   
   @DomName('Document.documentElement')
   @DocsEditable()
@@ -10295,7 +10323,7 @@ class Document extends Node
   @DomName('Document.visibilityState')
   @DocsEditable()
   @Experimental() // untriaged
-  String get visibilityState => _blink.BlinkDocument.instance.visibilityState_Getter_(this);
+  String get _visibilityState => _blink.BlinkDocument.instance.visibilityState_Getter_(this);
   
   @DomName('Document.webkitFullscreenElement')
   @DocsEditable()
@@ -10910,9 +10938,8 @@ class Document extends Node
    * For details about CSS selector syntax, see the
    * [CSS selector specification](http://www.w3.org/TR/css3-selectors/).
    */
-  ElementList<Element> querySelectorAll(String selectors) {
-    return new _FrozenElementList._wrap(_querySelectorAll(selectors));
-  }
+  ElementList<Element /*=T*/> querySelectorAll/*<T extends Element>*/(String selectors) =>
+    new _FrozenElementList/*<T>*/._wrap(_querySelectorAll(selectors));
 
   /**
    * Alias for [querySelector]. Note this function is deprecated because its
@@ -10930,7 +10957,7 @@ class Document extends Node
   @deprecated
   @Experimental()
   @DomName('Document.querySelectorAll')
-  ElementList<Element> queryAll(String relativeSelectors) =>
+  ElementList<Element /*=T*/> queryAll/*<T extends Element>*/(String relativeSelectors) =>
       querySelectorAll(relativeSelectors);
 
   /// Checks if [registerElement] is supported on the current platform.
@@ -10957,6 +10984,13 @@ class Document extends Node
       _blink.BlinkDocument.instance.createElementNS_Callback_3_(this, namespaceURI, qualifiedName, typeExtension);    
   }
 
+
+  @DomName('Document.visibilityState')
+  @SupportedBrowser(SupportedBrowser.CHROME)
+  @SupportedBrowser(SupportedBrowser.FIREFOX)
+  @SupportedBrowser(SupportedBrowser.IE, '10')
+  @Experimental()
+  String get visibilityState => _visibilityState;
 }
 // Copyright (c) 2011, the Dart project authors.  Please see the AUTHORS file
 // for details. All rights reserved. Use of this source code is governed by a
@@ -10995,7 +11029,7 @@ class DocumentFragment extends Node implements NonElementParentNode, ParentNode 
 
   set children(List<Element> value) {
     // Copy list first since we don't want liveness during iteration.
-    List copy = new List.from(value);
+    var copy = value.toList();
     var children = this.children;
     children.clear();
     children.addAll(copy);
@@ -11012,8 +11046,9 @@ class DocumentFragment extends Node implements NonElementParentNode, ParentNode 
    * For details about CSS selector syntax, see the
    * [CSS selector specification](http://www.w3.org/TR/css3-selectors/).
    */
-  ElementList<Element> querySelectorAll(String selectors) =>
-    new _FrozenElementList._wrap(_querySelectorAll(selectors));
+  ElementList<Element /*=T*/> querySelectorAll/*<T extends Element>*/(String selectors) =>
+    new _FrozenElementList/*<T>*/._wrap(_querySelectorAll(selectors));
+
 
   String get innerHtml {
     final e = new Element.tag("div");
@@ -11070,9 +11105,8 @@ class DocumentFragment extends Node implements NonElementParentNode, ParentNode 
   @deprecated
   @Experimental()
   @DomName('DocumentFragment.querySelectorAll')
-  ElementList<Element> queryAll(String relativeSelectors) {
-    return querySelectorAll(relativeSelectors);
-  }
+  ElementList<Element /*=T*/> queryAll/*<T extends Element>*/(String relativeSelectors) =>
+    querySelectorAll(relativeSelectors);
   // To suppress missing implicit constructor warnings.
   factory DocumentFragment._() { throw new UnsupportedError("Not supported"); }
 
@@ -12452,7 +12486,7 @@ class _ChildrenElementList extends ListBase<Element>
     _filter(test, true);
   }
 
-  void _filter(bool test(var element), bool retainMatching) {
+  void _filter(bool test(Element element), bool retainMatching) {
     var removed;
     if (retainMatching) {
       removed = _element.children.where((e) => !test(e));
@@ -13107,8 +13141,8 @@ abstract class ElementList<T extends Element> extends ListBase<T> {
 // declared to return `ElementList`.  This provides all the static analysis
 // benefit so there is no need for this class have a constrained type parameter.
 //
-class _FrozenElementList extends ListBase
-    implements ElementList, NodeListWrapper {
+class _FrozenElementList<E extends Element> extends ListBase<E>
+    implements ElementList<E>, NodeListWrapper {
   final List<Node> _nodeList;
 
   var dartClass_instance;
@@ -13119,9 +13153,9 @@ class _FrozenElementList extends ListBase
 
   int get length => _nodeList.length;
 
-  Element operator [](int index) => _nodeList[index];
+  E operator [](int index) => _downcast/*<Node, E>*/(_nodeList[index]);
 
-  void operator []=(int index, Element value) {
+  void operator []=(int index, E value) {
     throw new UnsupportedError('Cannot modify list');
   }
 
@@ -13129,7 +13163,7 @@ class _FrozenElementList extends ListBase
     throw new UnsupportedError('Cannot modify list');
   }
 
-  void sort([Comparator<Element> compare]) {
+  void sort([Comparator<E> compare]) {
     throw new UnsupportedError('Cannot sort list');
   }
 
@@ -13137,11 +13171,11 @@ class _FrozenElementList extends ListBase
     throw new UnsupportedError('Cannot shuffle list');
   }
 
-  Element get first => _nodeList.first;
+  E get first => _downcast/*<Node, E>*/(_nodeList.first);
 
-  Element get last => _nodeList.last;
+  E get last => _downcast/*<Node, E>*/(_nodeList.last);
 
-  Element get single => _nodeList.single;
+  E get single => _downcast/*<Node, E>*/(_nodeList.single);
 
   CssClassSet get classes => new _MultiElementCssClassSet(this);
 
@@ -13155,7 +13189,7 @@ class _FrozenElementList extends ListBase
     //
     // as the code below converts the Iterable[value] to a string multiple
     // times.  Maybe compute the string and set className here.
-    _nodeList.forEach((e) => e.classes = value);
+    forEach((e) => e.classes = value);
   }
 
   CssRect get contentEdge => new _ContentCssListRect(this);
@@ -13898,7 +13932,7 @@ class Element extends Node implements NonDocumentTypeChildNode, GlobalEventHandl
 
   set children(List<Element> value) {
     // Copy list first since we don't want liveness during iteration.
-    List copy = new List.from(value);
+    var copy = value.toList();
     var children = this.children;
     children.clear();
     children.addAll(copy);
@@ -13916,8 +13950,8 @@ class Element extends Node implements NonDocumentTypeChildNode, GlobalEventHandl
    * [CSS selector specification](http://www.w3.org/TR/css3-selectors/).
    */
   @DomName('Element.querySelectorAll')
-  ElementList<Element> querySelectorAll(String selectors) =>
-    new _FrozenElementList._wrap(_querySelectorAll(selectors));
+  ElementList<Element /*=T*/> querySelectorAll/*<T extends Element>*/(String selectors) =>
+    new _FrozenElementList/*<T>*/._wrap(_querySelectorAll(selectors));
 
   /**
    * Alias for [querySelector]. Note this function is deprecated because its
@@ -13935,7 +13969,7 @@ class Element extends Node implements NonDocumentTypeChildNode, GlobalEventHandl
   @deprecated
   @DomName('Element.querySelectorAll')
   @Experimental()
-  ElementList<Element> queryAll(String relativeSelectors) =>
+  ElementList<Element /*=T*/> queryAll/*<T extends Element>*/(String relativeSelectors) =>
       querySelectorAll(relativeSelectors);
 
   /**
@@ -14133,15 +14167,14 @@ class Element extends Node implements NonDocumentTypeChildNode, GlobalEventHandl
       throw new ArgumentError("The frames parameter should be a List of Maps "
           "with frame information");
     }
-    var convertedFrames = frames;
-    if (convertedFrames is Iterable) {
+    var convertedFrames;
+    if (frames is Iterable) {
       convertedFrames = convertDartToNative_List(
           frames.map(convertDartToNative_Dictionary).toList());
+    } else {
+      convertedFrames = frames;
     }
-    var convertedTiming = timing;
-    if (convertedTiming is Map) {
-      convertedTiming = convertDartToNative_Dictionary(convertedTiming);
-    }
+    var convertedTiming = timing is Map ? convertDartToNative_Dictionary(timing) : timing;
     return convertedTiming == null
       ? _animate(convertedFrames)
       : _animate(convertedFrames, convertedTiming);
@@ -14469,7 +14502,7 @@ class Element extends Node implements NonDocumentTypeChildNode, GlobalEventHandl
 
       // Workaround for Safari bug. Was also previously Chrome bug 229142
       // - URIs are not resolved in new doc.
-      var base = _parseDocument.createElement('base');
+      BaseElement base = _parseDocument.createElement('base');
       base.href = document.baseUri;
       _parseDocument.head.append(base);
     }
@@ -16611,7 +16644,7 @@ class Event extends DartHtmlDomObject {
     e._initEvent(name, canBubble, cancelable);
     return e;
   }
-  
+
   /** The CSS selector involved with event delegation. */
   String _selector;
 
@@ -16625,8 +16658,8 @@ class Event extends DartHtmlDomObject {
       throw new UnsupportedError('Cannot call matchingTarget if this Event did'
           ' not arise as a result of event delegation.');
     }
-    var currentTarget = this.currentTarget;
-    var target = this.target;
+    Element currentTarget = this.currentTarget;
+    Element target = this.target;
     var matchedTarget;
     do {
       if (target.matches(_selector)) return target;
@@ -16699,7 +16732,7 @@ class Event extends DartHtmlDomObject {
   
   @DomName('Event.currentTarget')
   @DocsEditable()
-  EventTarget get currentTarget => _blink.BlinkEvent.instance.currentTarget_Getter_(this);
+  EventTarget get currentTarget => _convertNativeToDart_EventTarget(_blink.BlinkEvent.instance.currentTarget_Getter_(this));
   
   @DomName('Event.defaultPrevented')
   @DocsEditable()
@@ -16726,7 +16759,7 @@ class Event extends DartHtmlDomObject {
   
   @DomName('Event.target')
   @DocsEditable()
-  EventTarget get target => _blink.BlinkEvent.instance.target_Getter_(this);
+  EventTarget get target => _convertNativeToDart_EventTarget(_blink.BlinkEvent.instance.target_Getter_(this));
   
   @DomName('Event.timeStamp')
   @DocsEditable()
@@ -16916,26 +16949,24 @@ class Events {
 }
 
 class ElementEvents extends Events {
-  /* Raw event target. */
-  final Element _ptr;
   static final webkitEvents = {
-    'animationend' : 'webkitAnimationEnd', 
-    'animationiteration' : 'webkitAnimationIteration', 
-    'animationstart' : 'webkitAnimationStart', 
-    'fullscreenchange' : 'webkitfullscreenchange', 
+    'animationend' : 'webkitAnimationEnd',
+    'animationiteration' : 'webkitAnimationIteration',
+    'animationstart' : 'webkitAnimationStart',
+    'fullscreenchange' : 'webkitfullscreenchange',
     'fullscreenerror' : 'webkitfullscreenerror',
-    'keyadded' : 'webkitkeyadded', 
-    'keyerror' : 'webkitkeyerror', 
-    'keymessage' : 'webkitkeymessage', 
-    'needkey' : 'webkitneedkey', 
-    'pointerlockchange' : 'webkitpointerlockchange', 
-    'pointerlockerror' : 'webkitpointerlockerror', 
-    'resourcetimingbufferfull' : 'webkitresourcetimingbufferfull', 
+    'keyadded' : 'webkitkeyadded',
+    'keyerror' : 'webkitkeyerror',
+    'keymessage' : 'webkitkeymessage',
+    'needkey' : 'webkitneedkey',
+    'pointerlockchange' : 'webkitpointerlockchange',
+    'pointerlockerror' : 'webkitpointerlockerror',
+    'resourcetimingbufferfull' : 'webkitresourcetimingbufferfull',
     'transitionend': 'webkitTransitionEnd',
     'speechchange' : 'webkitSpeechChange'
   };
 
-  ElementEvents(Element ptr) : this._ptr = ptr, super(ptr);
+  ElementEvents(Element ptr) : super(ptr);
 
   Stream operator [](String type) {
     if (webkitEvents.keys.contains(type.toLowerCase())) {
@@ -17943,7 +17974,7 @@ class FocusEvent extends UIEvent {
 
   @DomName('FocusEvent.relatedTarget')
   @DocsEditable()
-  EventTarget get relatedTarget => _blink.BlinkFocusEvent.instance.relatedTarget_Getter_(this);
+  EventTarget get relatedTarget => _convertNativeToDart_EventTarget(_blink.BlinkFocusEvent.instance.relatedTarget_Getter_(this));
   
 }
 // Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
@@ -18678,7 +18709,10 @@ class Geolocation extends DartHtmlDomObject {
     }
 
     int watchId;
-    var controller;
+    // TODO(jacobr): it seems like a bug that we have to specifiy the static
+    // type here for controller.stream to have the right type.
+    // dartbug.com/26278
+    StreamController<Geoposition> controller;
     controller = new StreamController<Geoposition>(sync: true,
       onListen: () {
         assert(watchId == null);
@@ -19729,11 +19763,11 @@ class HtmlCollection extends DartHtmlDomObject with ListMixin<Node>, ImmutableLi
 
   @DomName('HTMLCollection.item')
   @DocsEditable()
-  Element item(int index) => _blink.BlinkHTMLCollection.instance.item_Callback_1_(this, index);
+  Node item(int index) => _blink.BlinkHTMLCollection.instance.item_Callback_1_(this, index);
   
   @DomName('HTMLCollection.namedItem')
   @DocsEditable()
-  Element namedItem(String name) => _blink.BlinkHTMLCollection.instance.namedItem_Callback_1_(this, name);
+  Object namedItem(String name) => (_blink.BlinkHTMLCollection.instance.namedItem_Callback_1_(this, name));
   
 }
 // Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
@@ -19865,59 +19899,6 @@ class HtmlDocument extends Document {
     _webkitExitFullscreen();
   }
 
-  /**
-   * Returns the element, if any, that is currently displayed in fullscreen.
-   *
-   * Returns null if there is currently no fullscreen element. You can use
-   * this to determine if the page is in fullscreen mode.
-   *
-   *     myVideo = new VideoElement();
-   *     if (document.fullscreenElement == null) {
-   *       myVideo.requestFullscreen();
-   *       print(document.fullscreenElement == myVideo); // true
-   *     }
-   *
-   * ## Other resources
-   *
-   * * [Using the fullscreen
-   *   API](http://docs.webplatform.org/wiki/tutorials/using_the_full-screen_api)
-   *   from WebPlatform.org.
-   * * [Fullscreen specification](http://www.w3.org/TR/fullscreen/) from W3C.
-   */
-  @DomName('Document.webkitFullscreenElement')
-  @SupportedBrowser(SupportedBrowser.CHROME)
-  @SupportedBrowser(SupportedBrowser.SAFARI)
-  @Experimental()
-  Element get fullscreenElement => _webkitFullscreenElement;
-
-  /**
-   * Returns true if this document can display elements in fullscreen mode.
-   *
-   * ## Other resources
-   *
-   * * [Using the fullscreen
-   *   API](http://docs.webplatform.org/wiki/tutorials/using_the_full-screen_api)
-   *   from WebPlatform.org.
-   * * [Fullscreen specification](http://www.w3.org/TR/fullscreen/) from W3C.
-   */
-  @DomName('Document.webkitFullscreenEnabled')
-  @SupportedBrowser(SupportedBrowser.CHROME)
-  @SupportedBrowser(SupportedBrowser.SAFARI)
-  @Experimental()
-  bool get fullscreenEnabled => _webkitFullscreenEnabled;
-
-  @DomName('Document.webkitHidden')
-  @SupportedBrowser(SupportedBrowser.CHROME)
-  @SupportedBrowser(SupportedBrowser.SAFARI)
-  @Experimental()
-  bool get hidden => _webkitHidden;
-
-  @DomName('Document.visibilityState')
-  @SupportedBrowser(SupportedBrowser.CHROME)
-  @SupportedBrowser(SupportedBrowser.FIREFOX)
-  @SupportedBrowser(SupportedBrowser.IE, '10')
-  @Experimental()
-  String get visibilityState => _webkitVisibilityState;
 
   /**
    * Internal routine to find the DOM JS class name being extended for custom
@@ -20165,6 +20146,10 @@ class HtmlDocument extends Document {
       js.JsNative.setProperty(elemProto, 'createdCallback', js.allowInteropCaptureThis(($this) {
         // The created callback has already been called by the very act of passing a JS
         // custom element from JS to Dart.
+
+        //  Make element's interceptor a CustomElementClass.
+        _blink.Blink_Utils.setInstanceInterceptorCustomUpgrade($this);
+
         if (oldCreatedCallback != null)
           oldCreatedCallback.apply([], thisArg: $this);
       }));
@@ -21948,7 +21933,7 @@ class IFrameElement extends HtmlElement {
   
   @DomName('HTMLIFrameElement.contentWindow')
   @DocsEditable()
-  WindowBase get contentWindow => _blink.BlinkHTMLIFrameElement.instance.contentWindow_Getter_(this);
+  WindowBase get contentWindow => _convertNativeToDart_Window(_blink.BlinkHTMLIFrameElement.instance.contentWindow_Getter_(this));
   
   @DomName('HTMLIFrameElement.height')
   @DocsEditable()
@@ -22093,7 +22078,7 @@ class ImageElement extends HtmlElement implements CanvasImageSource {
   @DomName('HTMLImageElement.HTMLImageElement')
   @DocsEditable()
   factory ImageElement({String src, int width, int height}) {
-    var e = document.createElement("img");
+    ImageElement e = document.createElement("img");
     if (src != null) e.src = src;
     if (width != null) e.width = width;
     if (height != null) e.height = height;
@@ -22302,7 +22287,7 @@ class InputElement extends HtmlElement implements
     ButtonInputElement {
 
   factory InputElement({String type}) {
-    var e = document.createElement("input");
+    InputElement e = document.createElement("input");
     if (type != null) {
       try {
         // IE throws an exception for unknown types.
@@ -25877,11 +25862,11 @@ class MessageEvent extends Event {
   factory MessageEvent(String type,
       {bool canBubble: false, bool cancelable: false, Object data,
       String origin, String lastEventId,
-      Window source, List messagePorts}) {
+      Window source, List<MessagePort> messagePorts}) {
     if (source == null) {
       source = window;
     }
-    var event = document._createEvent("MessageEvent");
+    MessageEvent event = document._createEvent("MessageEvent");
     event._initMessageEvent(type, canBubble, cancelable, data, origin,
         lastEventId, source, messagePorts);
     return event;
@@ -25926,7 +25911,7 @@ class MessageEvent extends Event {
   
   @DomName('MessageEvent.source')
   @DocsEditable()
-  EventTarget get source => _blink.BlinkMessageEvent.instance.source_Getter_(this);
+  EventTarget get source => _convertNativeToDart_EventTarget(_blink.BlinkMessageEvent.instance.source_Getter_(this));
   
   @DomName('MessageEvent.initMessageEvent')
   @DocsEditable()
@@ -26790,7 +26775,7 @@ class MouseEvent extends UIEvent {
   
   @DomName('MouseEvent.relatedTarget')
   @DocsEditable()
-  EventTarget get relatedTarget => _blink.BlinkMouseEvent.instance.relatedTarget_Getter_(this);
+  EventTarget get relatedTarget => _convertNativeToDart_EventTarget(_blink.BlinkMouseEvent.instance.relatedTarget_Getter_(this));
   
   @DomName('MouseEvent.screenX')
   @DocsEditable()
@@ -27756,7 +27741,7 @@ class Node extends EventTarget {
   set nodes(Iterable<Node> value) {
     // Copy list first since we don't want liveness during iteration.
     // TODO(jacobr): there is a better way to do this.
-    List copy = new List.from(value);
+    var copy = value.toList();
     text = '';
     for (Node node in copy) {
       append(node);
@@ -31464,7 +31449,7 @@ class RelatedEvent extends Event {
   @DomName('RelatedEvent.relatedTarget')
   @DocsEditable()
   @Experimental() // untriaged
-  EventTarget get relatedTarget => _blink.BlinkRelatedEvent.instance.relatedTarget_Getter_(this);
+  EventTarget get relatedTarget => _convertNativeToDart_EventTarget(_blink.BlinkRelatedEvent.instance.relatedTarget_Getter_(this));
   
 }
 // Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
@@ -32884,8 +32869,7 @@ class SelectElement extends HtmlElement {
   // Override default options, since IE returns SelectElement itself and it
   // does not operate as a List.
   List<OptionElement> get options {
-    var options = this.querySelectorAll('option').where(
-        (e) => e is OptionElement).toList();
+    var options = new List<OptionElement>.from(this.querySelectorAll('option'));
     return new UnmodifiableListView(options);
   }
 
@@ -35090,11 +35074,11 @@ class Storage extends DartHtmlDomObject
   }
 
   // TODO(nweiz): update this when maps support lazy iteration
-  bool containsValue(String value) => values.any((e) => e == value);
+  bool containsValue(Object value) => values.any((e) => e == value);
 
-  bool containsKey(String key) => _getItem(key) != null;
+  bool containsKey(Object key) => _getItem(key) != null;
 
-  String operator [](String key) => _getItem(key);
+  String operator [](Object key) => _getItem(key);
 
   void operator []=(String key, String value) { _setItem(key, value); }
 
@@ -35103,7 +35087,7 @@ class Storage extends DartHtmlDomObject
     return this[key];
   }
 
-  String remove(String key) {
+  String remove(Object key) {
     final value = this[key];
     _removeItem(key);
     return value;
@@ -35121,13 +35105,13 @@ class Storage extends DartHtmlDomObject
   }
 
   Iterable<String> get keys {
-    final keys = [];
+    final keys = <String>[];
     forEach((k, v) => keys.add(k));
     return keys;
   }
 
   Iterable<String> get values {
-    final values = [];
+    final values = <String>[];
     forEach((k, v) => values.add(v));
     return values;
   }
@@ -35229,7 +35213,7 @@ class StorageEvent extends Event {
     {bool canBubble: false, bool cancelable: false, String key, String oldValue,
     String newValue, String url, Storage storageArea}) {
 
-    var e = document._createEvent("StorageEvent");
+    StorageEvent e = document._createEvent("StorageEvent");
     e._initStorageEvent(type, canBubble, cancelable, key, oldValue,
         newValue, url, storageArea);
     return e;
@@ -36374,7 +36358,7 @@ class TextEvent extends UIEvent {
     if (view == null) {
       view = window;
     }
-    var e = document._createEvent("TextEvent");
+    TextEvent e = document._createEvent("TextEvent");
     e._initTextEvent(type, canBubble, cancelable, view, data);
     return e;
   }
@@ -36997,7 +36981,7 @@ class Touch extends DartHtmlDomObject {
   
   @DomName('Touch.target')
   @DocsEditable()
-  EventTarget get target => _blink.BlinkTouch.instance.target_Getter_(this);
+  EventTarget get target => _convertNativeToDart_EventTarget(_blink.BlinkTouch.instance.target_Getter_(this));
   
 
 // As of Chrome 37, these all changed from long to double.  This code
@@ -37057,7 +37041,7 @@ class TouchEvent extends UIEvent {
     if (view == null) {
       view = window;
     }
-    var e = document._createEvent("TouchEvent");
+    TouchEvent e = document._createEvent("TouchEvent");
     e._initTouchEvent(touches, targetTouches, changedTouches, type, view,
         screenX, screenY, clientX, clientY, ctrlKey, altKey, shiftKey, metaKey);
     return e;
@@ -37573,7 +37557,7 @@ class UIEvent extends Event {
     if (view == null) {
       view = window;
     }
-    final e = document._createEvent("UIEvent");
+    UIEvent e = document._createEvent("UIEvent");
     e._initUIEvent(type, canBubble, cancelable, view, detail);
     return e;
   }
@@ -37617,7 +37601,7 @@ class UIEvent extends Event {
   
   @DomName('UIEvent.view')
   @DocsEditable()
-  WindowBase get view => _blink.BlinkUIEvent.instance.view_Getter_(this);
+  WindowBase get view => _convertNativeToDart_Window(_blink.BlinkUIEvent.instance.view_Getter_(this));
   
   @DomName('UIEvent.which')
   @DocsEditable()
@@ -39724,7 +39708,7 @@ class Window extends EventTarget implements WindowEventHandlers, WindowBase, Glo
   
   @DomName('Window.opener')
   @DocsEditable()
-  WindowBase get opener => _blink.BlinkWindow.instance.opener_Getter_(this);
+  WindowBase get opener => _convertNativeToDart_Window(_blink.BlinkWindow.instance.opener_Getter_(this));
   
   @DomName('Window.opener')
   @DocsEditable()
@@ -39795,7 +39779,7 @@ class Window extends EventTarget implements WindowEventHandlers, WindowBase, Glo
   
   @DomName('Window.parent')
   @DocsEditable()
-  WindowBase get parent => _blink.BlinkWindow.instance.parent_Getter_(this);
+  WindowBase get parent => _convertNativeToDart_Window(_blink.BlinkWindow.instance.parent_Getter_(this));
   
   /**
    * Timing and navigation data for this window.
@@ -39907,7 +39891,7 @@ class Window extends EventTarget implements WindowEventHandlers, WindowBase, Glo
    */
   @DomName('Window.self')
   @DocsEditable()
-  WindowBase get self => _blink.BlinkWindow.instance.self_Getter_(this);
+  WindowBase get self => _convertNativeToDart_Window(_blink.BlinkWindow.instance.self_Getter_(this));
   
   /**
    * Storage for this window that is cleared when this session ends.
@@ -39994,7 +39978,7 @@ class Window extends EventTarget implements WindowEventHandlers, WindowBase, Glo
   
   @DomName('Window.top')
   @DocsEditable()
-  WindowBase get top => _blink.BlinkWindow.instance.top_Getter_(this);
+  WindowBase get top => _convertNativeToDart_Window(_blink.BlinkWindow.instance.top_Getter_(this));
   
   /**
    * The current window.
@@ -40006,7 +39990,7 @@ class Window extends EventTarget implements WindowEventHandlers, WindowBase, Glo
    */
   @DomName('Window.window')
   @DocsEditable()
-  WindowBase get window => _blink.BlinkWindow.instance.window_Getter_(this);
+  WindowBase get window => _convertNativeToDart_Window(_blink.BlinkWindow.instance.window_Getter_(this));
   
   WindowBase __getter__(index_OR_name) {
     if ((index_OR_name is int)) {
@@ -40122,7 +40106,7 @@ class Window extends EventTarget implements WindowEventHandlers, WindowBase, Glo
   
   @DomName('Window.open')
   @DocsEditable()
-  WindowBase open(String url, String target, [String features]) => _blink.BlinkWindow.instance.open_Callback_3_(this, url, target, features);
+  WindowBase open(String url, String target, [String features]) => _convertNativeToDart_Window(_blink.BlinkWindow.instance.open_Callback_3_(this, url, target, features));
   
   SqlDatabase openDatabase(String name, String version, String displayName, int estimatedSize, [DatabaseCallback creationCallback]) {
     if (creationCallback != null) {
@@ -41708,16 +41692,6 @@ class _Attr extends Node {
   @Experimental() // untriaged
   String get nodeValue => _blink.BlinkAttr.instance.nodeValue_Getter_(this);
   
-  @DomName('Attr.textContent')
-  @DocsEditable()
-  @Experimental() // untriaged
-  String get text => _blink.BlinkAttr.instance.textContent_Getter_(this);
-  
-  @DomName('Attr.textContent')
-  @DocsEditable()
-  @Experimental() // untriaged
-  set text(String value) => _blink.BlinkAttr.instance.textContent_Setter_(this, value);
-  
   @DomName('Attr.value')
   @DocsEditable()
   String get value => _blink.BlinkAttr.instance.value_Getter_(this);
@@ -42666,36 +42640,6 @@ class _HTMLMarqueeElement extends HtmlElement {
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-
-@DomName('MutationEvent')
-// http://www.w3.org/TR/DOM-Level-3-Events/#events-mutationevents
-@deprecated
-class _MutationEvent extends Event {
-  factory _MutationEvent(String type,
-      {bool canBubble: false, bool cancelable: false, Node relatedNode,
-      String prevValue, String newValue, String attrName, int attrChange: 0}) {
-
-    var event = document._createEvent('MutationEvent');
-    event._initMutationEvent(type, canBubble, cancelable, relatedNode,
-        prevValue, newValue, attrName, attrChange);
-    return event;
-  }
-  // To suppress missing implicit constructor warnings.
-  factory _MutationEvent._() { throw new UnsupportedError("Not supported"); }
-
-
-  @Deprecated("Internal Use Only")
-  external static Type get instanceRuntimeType;
-
-  @Deprecated("Internal Use Only")
-  _MutationEvent.internal_() : super.internal_();
-
-
-}
-// Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
-// for details. All rights reserved. Use of this source code is governed by a
-// BSD-style license that can be found in the LICENSE file.
-
 // WARNING: Do not edit - generated code.
 
 
@@ -43345,7 +43289,7 @@ abstract class _AttributeMap implements Map<String, String> {
     other.forEach((k, v) { this[k] = v; });
   }
 
-  bool containsValue(String value) {
+  bool containsValue(Object value) {
     for (var v in this.values) {
       if (value == v) {
         return true;
@@ -43377,10 +43321,11 @@ abstract class _AttributeMap implements Map<String, String> {
   Iterable<String> get keys {
     // TODO: generate a lazy collection instead.
     var attributes = _element._attributes;
-    var keys = new List<String>();
+    var keys = <String>[];
     for (int i = 0, len = attributes.length; i < len; i++) {
-      if (_matches(attributes[i])) {
-        keys.add(attributes[i].name);
+      _Attr attr = attributes[i];
+      if (_matches(attr)) {
+        keys.add(attr.name);
       }
     }
     return keys;
@@ -43389,10 +43334,11 @@ abstract class _AttributeMap implements Map<String, String> {
   Iterable<String> get values {
     // TODO: generate a lazy collection instead.
     var attributes = _element._attributes;
-    var values = new List<String>();
+    var values = <String>[];
     for (int i = 0, len = attributes.length; i < len; i++) {
-      if (_matches(attributes[i])) {
-        values.add(attributes[i].value);
+      _Attr attr = attributes[i];
+      if (_matches(attr)) {
+        values.add(attr.value);
       }
     }
     return values;
@@ -43423,11 +43369,11 @@ class _ElementAttributeMap extends _AttributeMap {
 
   _ElementAttributeMap(Element element): super(element);
 
-  bool containsKey(String key) {
+  bool containsKey(Object key) {
     return _element._hasAttribute(key);
   }
 
-  String operator [](String key) {
+  String operator [](Object key) {
     return _element.getAttribute(key);
   }
 
@@ -43435,7 +43381,7 @@ class _ElementAttributeMap extends _AttributeMap {
     _element.setAttribute(key, value);
   }
 
-  String remove(String key) {
+  String remove(Object key) {
     String value = _element.getAttribute(key);
     _element._removeAttribute(key);
     return value;
@@ -43460,11 +43406,11 @@ class _NamespacedAttributeMap extends _AttributeMap {
 
   _NamespacedAttributeMap(Element element, this._namespace): super(element);
 
-  bool containsKey(String key) {
+  bool containsKey(Object key) {
     return _element._hasAttributeNS(_namespace, key);
   }
 
-  String operator [](String key) {
+  String operator [](Object key) {
     return _element.getAttributeNS(_namespace, key);
   }
 
@@ -43472,7 +43418,7 @@ class _NamespacedAttributeMap extends _AttributeMap {
     _element.setAttributeNS(_namespace, key, value);
   }
 
-  String remove(String key) {
+  String remove(Object key) {
     String value = this[key];
     _element._removeAttributeNS(_namespace, key);
     return value;
@@ -43506,11 +43452,11 @@ class _DataAttributeMap implements Map<String, String> {
   }
 
   // TODO: Use lazy iterator when it is available on Map.
-  bool containsValue(String value) => values.any((v) => v == value);
+  bool containsValue(Object value) => values.any((v) => v == value);
 
-  bool containsKey(String key) => _attributes.containsKey(_attr(key));
+  bool containsKey(Object key) => _attributes.containsKey(_attr(key));
 
-  String operator [](String key) => _attributes[_attr(key)];
+  String operator [](Object key) => _attributes[_attr(key)];
 
   void operator []=(String key, String value) {
     _attributes[_attr(key)] = value;
@@ -43519,7 +43465,7 @@ class _DataAttributeMap implements Map<String, String> {
   String putIfAbsent(String key, String ifAbsent()) =>
     _attributes.putIfAbsent(_attr(key), ifAbsent);
 
-  String remove(String key) => _attributes.remove(_attr(key));
+  String remove(Object key) => _attributes.remove(_attr(key));
 
   void clear() {
     // Needs to operate on a snapshot since we are mutating the collection.
@@ -43537,7 +43483,7 @@ class _DataAttributeMap implements Map<String, String> {
   }
 
   Iterable<String> get keys {
-    final keys = new List<String>();
+    final keys = <String>[];
     _attributes.forEach((String key, String value) {
       if (_matches(key)) {
         keys.add(_strip(key));
@@ -43547,7 +43493,7 @@ class _DataAttributeMap implements Map<String, String> {
   }
 
   Iterable<String> get values {
-    final values = new List<String>();
+    final values = <String>[];
     _attributes.forEach((String key, String value) {
       if (_matches(key)) {
         values.add(value);
@@ -43778,7 +43724,7 @@ abstract class WindowBase implements EventTarget {
    * * [Cross-document messaging](https://html.spec.whatwg.org/multipage/comms.html#web-messaging)
    *   from WHATWG.
    */
-  void postMessage(var message, String targetOrigin, [List messagePorts]);
+  void postMessage(var message, String targetOrigin, [List<MessagePort> messagePorts]);
 }
 
 abstract class LocationBase {
@@ -43832,7 +43778,7 @@ abstract class CssClassSet implements Set<String> {
    * [value] must be a valid 'token' representing a single class, i.e. a
    * non-empty string containing no whitespace.
    */
-  bool contains(String value);
+  bool contains(Object value);
 
   /**
    * Add the class [value] to element.
@@ -43884,7 +43830,7 @@ abstract class CssClassSet implements Set<String> {
    * Each element of [iterable] must be a valid 'token' representing a single
    * class, i.e. a non-empty string containing no whitespace.
    */
-  void removeAll(Iterable<String> iterable);
+  void removeAll(Iterable<Object> iterable);
 
   /**
    * Toggles all classes specified in [iterable] on element.
@@ -44000,7 +43946,7 @@ class _ElementCssClassSet extends CssClassSetImpl {
  */
 class _ContentCssRect extends CssRect {
 
-  _ContentCssRect(element) : super(element);
+  _ContentCssRect(Element element) : super(element);
 
   num get height => _element.offsetHeight +
       _addOrSubtractToBoxModel(_HEIGHT, _CONTENT);
@@ -44021,9 +43967,11 @@ class _ContentCssRect extends CssRect {
     if (newHeight is Dimension) {
       if (newHeight.value < 0) newHeight = new Dimension.px(0);
       _element.style.height = newHeight.toString();
-    } else {
+    } else if (newHeight is num) {
       if (newHeight < 0) newHeight = 0;
       _element.style.height = '${newHeight}px';
+    } else {
+      throw new ArgumentError("newHeight is not a Dimension or num");
     }
   }
 
@@ -44039,9 +43987,11 @@ class _ContentCssRect extends CssRect {
     if (newWidth is Dimension) {
       if (newWidth.value < 0) newWidth = new Dimension.px(0);
       _element.style.width = newWidth.toString();
-    } else {
+    } else if (newWidth is num) {
       if (newWidth < 0) newWidth = 0;
       _element.style.width = '${newWidth}px';
+    } else {
+      throw new ArgumentError("newWidth is not a Dimension or num");
     }
   }
 
@@ -44058,7 +44008,7 @@ class _ContentCssRect extends CssRect {
 class _ContentCssListRect extends _ContentCssRect {
   List<Element> _elementList;
 
-  _ContentCssListRect(elementList) : super(elementList.first) {
+  _ContentCssListRect(List<Element> elementList) : super(elementList.first) {
     _elementList = elementList;
   }
 
@@ -44147,10 +44097,10 @@ class _MarginCssRect extends CssRect {
  * animation frame is discouraged. See also:
  * [Browser Reflow](https://developers.google.com/speed/articles/reflow)
  */
-abstract class CssRect extends MutableRectangle<num> {
+abstract class CssRect implements Rectangle<num> {
   Element _element;
 
-  CssRect(this._element) : super(0, 0, 0, 0);
+  CssRect(this._element);
 
   num get left;
 
@@ -44243,6 +44193,102 @@ abstract class CssRect extends MutableRectangle<num> {
     }
     return val;
   }
+
+  // TODO(jacobr): these methods are duplicated from _RectangleBase in dart:math
+  // Ideally we would provide a RectangleMixin class that provides this implementation.
+  // In an ideal world we would exp
+  /** The x-coordinate of the right edge. */
+  num get right => left + width;
+  /** The y-coordinate of the bottom edge. */
+  num get bottom => top + height;
+
+  String toString() {
+    return 'Rectangle ($left, $top) $width x $height';
+  }
+
+  bool operator ==(other) {
+    if (other is !Rectangle) return false;
+    return left == other.left && top == other.top && right == other.right &&
+        bottom == other.bottom;
+  }
+
+  int get hashCode => _JenkinsSmiHash.hash4(left.hashCode, top.hashCode,
+      right.hashCode, bottom.hashCode);
+
+  /**
+   * Computes the intersection of `this` and [other].
+   *
+   * The intersection of two axis-aligned rectangles, if any, is always another
+   * axis-aligned rectangle.
+   *
+   * Returns the intersection of this and `other`, or `null` if they don't
+   * intersect.
+   */
+  Rectangle<num> intersection(Rectangle<num> other) {
+    var x0 = max(left, other.left);
+    var x1 = min(left + width, other.left + other.width);
+
+    if (x0 <= x1) {
+      var y0 = max(top, other.top);
+      var y1 = min(top + height, other.top + other.height);
+
+      if (y0 <= y1) {
+        return new Rectangle<num>(x0, y0, x1 - x0, y1 - y0);
+      }
+    }
+    return null;
+  }
+
+
+  /**
+   * Returns true if `this` intersects [other].
+   */
+  bool intersects(Rectangle<num> other) {
+    return (left <= other.left + other.width &&
+        other.left <= left + width &&
+        top <= other.top + other.height &&
+        other.top <= top + height);
+  }
+
+  /**
+   * Returns a new rectangle which completely contains `this` and [other].
+   */
+  Rectangle<num> boundingBox(Rectangle<num> other) {
+    var right = max(this.left + this.width, other.left + other.width);
+    var bottom = max(this.top + this.height, other.top + other.height);
+
+    var left = min(this.left, other.left);
+    var top = min(this.top, other.top);
+
+    return new Rectangle<num>(left, top, right - left, bottom - top);
+  }
+
+  /**
+   * Tests whether `this` entirely contains [another].
+   */
+  bool containsRectangle(Rectangle<num> another) {
+    return left <= another.left &&
+           left + width >= another.left + another.width &&
+           top <= another.top &&
+           top + height >= another.top + another.height;
+  }
+
+  /**
+   * Tests whether [another] is inside or along the edges of `this`.
+   */
+  bool containsPoint(Point<num> another) {
+    return another.x >= left &&
+           another.x <= left + width &&
+           another.y >= top &&
+           another.y <= top + height;
+  }
+
+  Point<num> get topLeft => new Point<num>(this.left, this.top);
+  Point<num> get topRight => new Point<num>(this.left + this.width, this.top);
+  Point<num> get bottomRight => new Point<num>(this.left + this.width,
+      this.top + this.height);
+  Point<num> get bottomLeft => new Point<num>(this.left,
+      this.top + this.height);
 }
 
 final _HEIGHT = ['top', 'bottom'];
@@ -44373,7 +44419,7 @@ class EventStreamProvider<T extends Event> {
    * [addEventListener](http://docs.webplatform.org/wiki/dom/methods/addEventListener)
    */
   Stream<T> forTarget(EventTarget e, {bool useCapture: false}) =>
-    new _EventStream(e, _eventType, useCapture);
+    new _EventStream<T>(e, _eventType, useCapture);
 
   /**
    * Gets an [ElementEventStream] for this event type, on the specified element.
@@ -44397,7 +44443,7 @@ class EventStreamProvider<T extends Event> {
    * [addEventListener](http://docs.webplatform.org/wiki/dom/methods/addEventListener)
    */
   ElementStream<T> forElement(Element e, {bool useCapture: false}) {
-    return new _ElementEventStreamImpl(e, _eventType, useCapture);
+    return new _ElementEventStreamImpl<T>(e, _eventType, useCapture);
   }
 
   /**
@@ -44468,8 +44514,8 @@ class _EventStream<T extends Event> extends Stream<T> {
   _EventStream(this._target, this._eventType, this._useCapture);
 
   // DOM events are inherently multi-subscribers.
-  Stream<T> asBroadcastStream({void onListen(StreamSubscription subscription),
-                               void onCancel(StreamSubscription subscription)})
+  Stream<T> asBroadcastStream({void onListen(StreamSubscription<T> subscription),
+                               void onCancel(StreamSubscription<T> subscription)})
       => this;
   bool get isBroadcast => true;
 
@@ -44483,6 +44529,11 @@ class _EventStream<T extends Event> extends Stream<T> {
   }
 }
 
+bool _matchesWithAncestors(Event event, String selector) {
+  var target = event.target;
+  return target is Element ? target.matchesWithAncestors(selector) : false;
+}
+
 /**
  * Adapter for exposing DOM Element events as streams, while also allowing
  * event delegation.
@@ -44493,7 +44544,7 @@ class _ElementEventStreamImpl<T extends Event> extends _EventStream<T>
       super(target, eventType, useCapture);
 
   Stream<T> matches(String selector) => this.where(
-      (event) => event.target.matchesWithAncestors(selector)).map((e) {
+      (event) => _matchesWithAncestors(event, selector)).map((e) {
         e._selector = selector;
         return e;
       });
@@ -44517,7 +44568,7 @@ class _ElementListEventStreamImpl<T extends Event> extends Stream<T>
       this._targetList, this._eventType, this._useCapture);
 
   Stream<T> matches(String selector) => this.where(
-      (event) => event.target.matchesWithAncestors(selector)).map((e) {
+      (event) => _matchesWithAncestors(event, selector)).map((e) {
         e._selector = selector;
         return e;
       });
@@ -44527,37 +44578,46 @@ class _ElementListEventStreamImpl<T extends Event> extends Stream<T>
       { Function onError,
         void onDone(),
         bool cancelOnError}) {
-    var pool = new _StreamPool.broadcast();
+    var pool = new _StreamPool<T>.broadcast();
     for (var target in _targetList) {
-      pool.add(new _EventStream(target, _eventType, _useCapture));
+      pool.add(new _EventStream<T>(target, _eventType, _useCapture));
     }
     return pool.stream.listen(onData, onError: onError, onDone: onDone,
           cancelOnError: cancelOnError);
   }
 
   StreamSubscription<T> capture(void onData(T event)) {
-    var pool = new _StreamPool.broadcast();
+    var pool = new _StreamPool<T>.broadcast();
     for (var target in _targetList) {
-      pool.add(new _EventStream(target, _eventType, true));
+      pool.add(new _EventStream<T>(target, _eventType, true));
     }
     return pool.stream.listen(onData);
   }
 
-  Stream<T> asBroadcastStream({void onListen(StreamSubscription subscription),
-                               void onCancel(StreamSubscription subscription)})
+  Stream<T> asBroadcastStream({void onListen(StreamSubscription<T> subscription),
+                               void onCancel(StreamSubscription<T> subscription)})
       => this;
   bool get isBroadcast => true;
 }
+
+// We would like this to just be EventListener<T> but that typdef cannot
+// use generics until dartbug/26276 is fixed.
+typedef _EventListener<T extends Event>(T event);
 
 class _EventStreamSubscription<T extends Event> extends StreamSubscription<T> {
   int _pauseCount = 0;
   EventTarget _target;
   final String _eventType;
-  var _onData;
+  EventListener _onData;
   final bool _useCapture;
 
-  _EventStreamSubscription(this._target, this._eventType, onData,
-      this._useCapture) : _onData = _wrapZone(onData) {
+  // TODO(jacobr): for full strong mode correctness we should write
+  // _onData = onData == null ? null : _wrapZone/*<Event, dynamic>*/((e) => onData(e as T))
+  // but that breaks 114 co19 tests as well as multiple html tests as it is reasonable
+  // to pass the wrong type of event object to an event listener as part of a
+  // test.
+  _EventStreamSubscription(this._target, this._eventType, void onData(T event),
+      this._useCapture) : _onData = _wrapZone/*<Event, dynamic>*/(onData) {
     _tryResume();
   }
 
@@ -44579,8 +44639,7 @@ class _EventStreamSubscription<T extends Event> extends StreamSubscription<T> {
     }
     // Remove current event listener.
     _unlisten();
-
-    _onData = _wrapZone(handleData);
+    _onData = _wrapZone/*<Event, dynamic>*/(handleData);
     _tryResume();
   }
 
@@ -44659,8 +44718,8 @@ class _CustomEventStreamImpl<T extends Event> extends Stream<T>
         onDone: onDone, cancelOnError: cancelOnError);
   }
 
-  Stream<T> asBroadcastStream({void onListen(StreamSubscription subscription),
-                               void onCancel(StreamSubscription subscription)})
+  Stream<T> asBroadcastStream({void onListen(StreamSubscription<T> subscription),
+                               void onCancel(StreamSubscription<T> subscription)})
       => _streamController.stream;
 
   bool get isBroadcast => true;
@@ -44751,16 +44810,16 @@ class _CustomEventStreamProvider<T extends Event>
   const _CustomEventStreamProvider(this._eventTypeGetter);
 
   Stream<T> forTarget(EventTarget e, {bool useCapture: false}) {
-    return new _EventStream(e, _eventTypeGetter(e), useCapture);
+    return new _EventStream<T>(e, _eventTypeGetter(e), useCapture);
   }
 
   ElementStream<T> forElement(Element e, {bool useCapture: false}) {
-    return new _ElementEventStreamImpl(e, _eventTypeGetter(e), useCapture);
+    return new _ElementEventStreamImpl<T>(e, _eventTypeGetter(e), useCapture);
   }
 
   ElementStream<T> _forElementList(ElementList e,
       {bool useCapture: false}) {
-    return new _ElementListEventStreamImpl(e, _eventTypeGetter(e), useCapture);
+    return new _ElementListEventStreamImpl<T>(e, _eventTypeGetter(e), useCapture);
   }
 
   String getEventType(EventTarget target) {
@@ -46139,7 +46198,7 @@ class _KeyboardEventHandler extends EventStreamProvider<KeyEvent> {
    * The set of keys that have been pressed down without seeing their
    * corresponding keyup event.
    */
-  final List<KeyboardEvent> _keyDownList = <KeyboardEvent>[];
+  final List<KeyEvent> _keyDownList = <KeyEvent>[];
 
   /** The type of KeyEvent we are tracking (keyup, keydown, keypress). */
   final String _type;
@@ -46198,8 +46257,9 @@ class _KeyboardEventHandler extends EventStreamProvider<KeyEvent> {
    * General constructor, performs basic initialization for our improved
    * KeyboardEvent controller.
    */
-  _KeyboardEventHandler(this._type): super(_EVENT_TYPE),
-      _stream = new _CustomKeyEventStreamImpl('event'), _target = null;
+  _KeyboardEventHandler(this._type):
+      _stream = new _CustomKeyEventStreamImpl('event'), _target = null,
+      super(_EVENT_TYPE);
 
   /**
    * Hook up all event listeners under the covers so we can estimate keycodes
@@ -46507,7 +46567,6 @@ class KeyboardEventStream {
 // BSD-style license that can be found in the LICENSE file.
 
 
-
 /**
  * Class which helps construct standard node validation policies.
  *
@@ -46525,11 +46584,9 @@ class KeyboardEventStream {
  * appropriate.
  */
 class NodeValidatorBuilder implements NodeValidator {
-
   final List<NodeValidator> _validators = <NodeValidator>[];
 
-  NodeValidatorBuilder() {
-  }
+  NodeValidatorBuilder() {}
 
   /**
    * Creates a new NodeValidatorBuilder which accepts common constructs.
@@ -46658,29 +46715,17 @@ class NodeValidatorBuilder implements NodeValidator {
       {UriPolicy uriPolicy,
       Iterable<String> attributes,
       Iterable<String> uriAttributes}) {
-
     var tagNameUpper = tagName.toUpperCase();
-    var attrs;
-    if (attributes != null) {
-      attrs =
-          attributes.map((name) => '$tagNameUpper::${name.toLowerCase()}');
-    }
-    var uriAttrs;
-    if (uriAttributes != null) {
-      uriAttrs =
-          uriAttributes.map((name) => '$tagNameUpper::${name.toLowerCase()}');
-    }
+    var attrs = attributes
+        ?.map /*<String>*/ ((name) => '$tagNameUpper::${name.toLowerCase()}');
+    var uriAttrs = uriAttributes
+        ?.map /*<String>*/ ((name) => '$tagNameUpper::${name.toLowerCase()}');
     if (uriPolicy == null) {
       uriPolicy = new UriPolicy();
     }
 
     add(new _CustomElementNodeValidator(
-        uriPolicy,
-        [tagNameUpper],
-        attrs,
-        uriAttrs,
-        false,
-        true));
+        uriPolicy, [tagNameUpper], attrs, uriAttrs, false, true));
   }
 
   /**
@@ -46695,37 +46740,26 @@ class NodeValidatorBuilder implements NodeValidator {
       {UriPolicy uriPolicy,
       Iterable<String> attributes,
       Iterable<String> uriAttributes}) {
-
     var baseNameUpper = baseName.toUpperCase();
     var tagNameUpper = tagName.toUpperCase();
-    var attrs;
-    if (attributes != null) {
-      attrs =
-          attributes.map((name) => '$baseNameUpper::${name.toLowerCase()}');
-    }
-    var uriAttrs;
-    if (uriAttributes != null) {
-      uriAttrs =
-          uriAttributes.map((name) => '$baseNameUpper::${name.toLowerCase()}');
-    }
+    var attrs = attributes
+        ?.map /*<String>*/ ((name) => '$baseNameUpper::${name.toLowerCase()}');
+    var uriAttrs = uriAttributes
+        ?.map /*<String>*/ ((name) => '$baseNameUpper::${name.toLowerCase()}');
     if (uriPolicy == null) {
       uriPolicy = new UriPolicy();
     }
 
-    add(new _CustomElementNodeValidator(
-        uriPolicy,
-        [tagNameUpper, baseNameUpper],
-        attrs,
-        uriAttrs,
-        true,
-        false));
+    add(new _CustomElementNodeValidator(uriPolicy,
+        [tagNameUpper, baseNameUpper], attrs, uriAttrs, true, false));
   }
 
-  void allowElement(String tagName, {UriPolicy uriPolicy,
-    Iterable<String> attributes,
-    Iterable<String> uriAttributes}) {
-
-    allowCustomElement(tagName, uriPolicy: uriPolicy,
+  void allowElement(String tagName,
+      {UriPolicy uriPolicy,
+      Iterable<String> attributes,
+      Iterable<String> uriAttributes}) {
+    allowCustomElement(tagName,
+        uriPolicy: uriPolicy,
         attributes: attributes,
         uriAttributes: uriAttributes);
   }
@@ -46756,8 +46790,8 @@ class NodeValidatorBuilder implements NodeValidator {
   }
 
   bool allowsAttribute(Element element, String attributeName, String value) {
-    return _validators.any(
-        (v) => v.allowsAttribute(element, attributeName, value));
+    return _validators
+        .any((v) => v.allowsAttribute(element, attributeName, value));
   }
 }
 
@@ -46768,76 +46802,70 @@ class _SimpleNodeValidator implements NodeValidator {
   final UriPolicy uriPolicy;
 
   factory _SimpleNodeValidator.allowNavigation(UriPolicy uriPolicy) {
-    return new _SimpleNodeValidator(uriPolicy,
-      allowedElements: const [
-        'A',
-        'FORM'],
-      allowedAttributes: const [
-        'A::accesskey',
-        'A::coords',
-        'A::hreflang',
-        'A::name',
-        'A::shape',
-        'A::tabindex',
-        'A::target',
-        'A::type',
-        'FORM::accept',
-        'FORM::autocomplete',
-        'FORM::enctype',
-        'FORM::method',
-        'FORM::name',
-        'FORM::novalidate',
-        'FORM::target',
-      ],
-      allowedUriAttributes: const [
-        'A::href',
-        'FORM::action',
-      ]);
+    return new _SimpleNodeValidator(uriPolicy, allowedElements: const [
+      'A',
+      'FORM'
+    ], allowedAttributes: const [
+      'A::accesskey',
+      'A::coords',
+      'A::hreflang',
+      'A::name',
+      'A::shape',
+      'A::tabindex',
+      'A::target',
+      'A::type',
+      'FORM::accept',
+      'FORM::autocomplete',
+      'FORM::enctype',
+      'FORM::method',
+      'FORM::name',
+      'FORM::novalidate',
+      'FORM::target',
+    ], allowedUriAttributes: const [
+      'A::href',
+      'FORM::action',
+    ]);
   }
 
   factory _SimpleNodeValidator.allowImages(UriPolicy uriPolicy) {
-    return new _SimpleNodeValidator(uriPolicy,
-      allowedElements: const [
-        'IMG'
-      ],
-      allowedAttributes: const [
-        'IMG::align',
-        'IMG::alt',
-        'IMG::border',
-        'IMG::height',
-        'IMG::hspace',
-        'IMG::ismap',
-        'IMG::name',
-        'IMG::usemap',
-        'IMG::vspace',
-        'IMG::width',
-      ],
-      allowedUriAttributes: const [
-        'IMG::src',
-      ]);
+    return new _SimpleNodeValidator(uriPolicy, allowedElements: const [
+      'IMG'
+    ], allowedAttributes: const [
+      'IMG::align',
+      'IMG::alt',
+      'IMG::border',
+      'IMG::height',
+      'IMG::hspace',
+      'IMG::ismap',
+      'IMG::name',
+      'IMG::usemap',
+      'IMG::vspace',
+      'IMG::width',
+    ], allowedUriAttributes: const [
+      'IMG::src',
+    ]);
   }
 
   factory _SimpleNodeValidator.allowTextElements() {
-    return new _SimpleNodeValidator(null,
-      allowedElements: const [
-        'B',
-        'BLOCKQUOTE',
-        'BR',
-        'EM',
-        'H1',
-        'H2',
-        'H3',
-        'H4',
-        'H5',
-        'H6',
-        'HR',
-        'I',
-        'LI',
-        'OL',
-        'P',
-        'SPAN',
-        'UL',
-      ]);
+    return new _SimpleNodeValidator(null, allowedElements: const [
+      'B',
+      'BLOCKQUOTE',
+      'BR',
+      'EM',
+      'H1',
+      'H2',
+      'H3',
+      'H4',
+      'H5',
+      'H6',
+      'HR',
+      'I',
+      'LI',
+      'OL',
+      'P',
+      'SPAN',
+      'UL',
+    ]);
   }
 
   /**
@@ -46846,15 +46874,16 @@ class _SimpleNodeValidator implements NodeValidator {
    * lowercase attribute name. For example `'IMG:src'`.
    */
   _SimpleNodeValidator(this.uriPolicy,
-      {Iterable<String> allowedElements, Iterable<String> allowedAttributes,
-        Iterable<String> allowedUriAttributes}) {
+      {Iterable<String> allowedElements,
+      Iterable<String> allowedAttributes,
+      Iterable<String> allowedUriAttributes}) {
     this.allowedElements.addAll(allowedElements ?? const []);
     allowedAttributes = allowedAttributes ?? const [];
     allowedUriAttributes = allowedUriAttributes ?? const [];
-    var legalAttributes = allowedAttributes.where(
-        (x) => !_Html5NodeValidator._uriAttributes.contains(x));
-    var extraUriAttributes = allowedAttributes.where(
-        (x) => _Html5NodeValidator._uriAttributes.contains(x));
+    var legalAttributes = allowedAttributes
+        .where((x) => !_Html5NodeValidator._uriAttributes.contains(x));
+    var extraUriAttributes = allowedAttributes
+        .where((x) => _Html5NodeValidator._uriAttributes.contains(x));
     this.allowedAttributes.addAll(legalAttributes);
     this.allowedUriAttributes.addAll(allowedUriAttributes);
     this.allowedUriAttributes.addAll(extraUriAttributes);
@@ -46887,19 +46916,19 @@ class _CustomElementNodeValidator extends _SimpleNodeValidator {
   final bool allowTypeExtension;
   final bool allowCustomTag;
 
-  _CustomElementNodeValidator(UriPolicy uriPolicy,
+  _CustomElementNodeValidator(
+      UriPolicy uriPolicy,
       Iterable<String> allowedElements,
       Iterable<String> allowedAttributes,
       Iterable<String> allowedUriAttributes,
       bool allowTypeExtension,
-      bool allowCustomTag):
-
-      super(uriPolicy,
-          allowedElements: allowedElements,
-          allowedAttributes: allowedAttributes,
-          allowedUriAttributes: allowedUriAttributes),
-      this.allowTypeExtension = allowTypeExtension == true,
-      this.allowCustomTag = allowCustomTag == true;
+      bool allowCustomTag)
+      : this.allowTypeExtension = allowTypeExtension == true,
+        this.allowCustomTag = allowCustomTag == true,
+        super(uriPolicy,
+            allowedElements: allowedElements,
+            allowedAttributes: allowedAttributes,
+            allowedUriAttributes: allowedUriAttributes);
 
   bool allowsElement(Element element) {
     if (allowTypeExtension) {
@@ -46909,12 +46938,14 @@ class _CustomElementNodeValidator extends _SimpleNodeValidator {
             allowedElements.contains(Element._safeTagName(element));
       }
     }
-    return allowCustomTag && allowedElements.contains(Element._safeTagName(element));
+    return allowCustomTag &&
+        allowedElements.contains(Element._safeTagName(element));
   }
 
   bool allowsAttribute(Element element, String attributeName, String value) {
-   if (allowsElement(element)) {
-      if (allowTypeExtension && attributeName == 'is' &&
+    if (allowsElement(element)) {
+      if (allowTypeExtension &&
+          attributeName == 'is' &&
           allowedElements.contains(value.toUpperCase())) {
         return true;
       }
@@ -46925,19 +46956,22 @@ class _CustomElementNodeValidator extends _SimpleNodeValidator {
 }
 
 class _TemplatingNodeValidator extends _SimpleNodeValidator {
-  static const _TEMPLATE_ATTRS =
-      const <String>['bind', 'if', 'ref', 'repeat', 'syntax'];
+  static const _TEMPLATE_ATTRS = const <String>[
+    'bind',
+    'if',
+    'ref',
+    'repeat',
+    'syntax'
+  ];
 
   final Set<String> _templateAttrs;
 
-  _TemplatingNodeValidator():
-      super(null,
-          allowedElements: [
-            'TEMPLATE'
-          ],
-          allowedAttributes: _TEMPLATE_ATTRS.map((attr) => 'TEMPLATE::$attr')),
-      _templateAttrs = new Set<String>.from(_TEMPLATE_ATTRS) {
-  }
+  _TemplatingNodeValidator()
+      : _templateAttrs = new Set<String>.from(_TEMPLATE_ATTRS),
+        super(null,
+            allowedElements: ['TEMPLATE'],
+            allowedAttributes:
+                _TEMPLATE_ATTRS.map((attr) => 'TEMPLATE::$attr')) {}
 
   bool allowsAttribute(Element element, String attributeName, String value) {
     if (super.allowsAttribute(element, attributeName, value)) {
@@ -46948,13 +46982,12 @@ class _TemplatingNodeValidator extends _SimpleNodeValidator {
       return true;
     }
 
-    if (element.attributes['template'] == "" ) {
+    if (element.attributes['template'] == "") {
       return _templateAttrs.contains(attributeName);
     }
     return false;
   }
 }
-
 
 class _SvgNodeValidator implements NodeValidator {
   bool allowsElement(Element element) {
@@ -46965,7 +46998,8 @@ class _SvgNodeValidator implements NodeValidator {
     // foreignobject tag as SvgElement. We don't want foreignobject contents
     // anyway, so just remove the whole tree outright. And we can't rely
     // on IE recognizing the SvgForeignObject type, so go by tagName. Bug 23144
-    if (element is svg.SvgElement && Element._safeTagName(element) == 'foreignObject') {
+    if (element is svg.SvgElement &&
+        Element._safeTagName(element) == 'foreignObject') {
       return false;
     }
     if (element is svg.SvgElement) {
@@ -47312,7 +47346,7 @@ class _ValidatingTreeSanitizer implements NodeTreeSanitizer {
  */
 class _WrappedList<E extends Node> extends ListBase<E>
     implements NodeListWrapper {
-  final List _list;
+  final List<Node> _list;
 
   _WrappedList(this._list);
 
@@ -47332,13 +47366,13 @@ class _WrappedList<E extends Node> extends ListBase<E>
 
   // List APIs
 
-  E operator [](int index) => _list[index];
+  E operator [](int index) => _downcast/*<Node, E>*/(_list[index]);
 
   void operator []=(int index, E value) { _list[index] = value; }
 
   set length(int newLength) { _list.length = newLength; }
 
-  void sort([int compare(E a, E b)]) { _list.sort(compare); }
+  void sort([int compare(E a, E b)]) { _list.sort((Node a, Node b) => compare(_downcast/*<Node, E>*/(a), _downcast/*<Node, E>*/(b))); }
 
   int indexOf(Object element, [int start = 0]) => _list.indexOf(element, start);
 
@@ -47346,7 +47380,7 @@ class _WrappedList<E extends Node> extends ListBase<E>
 
   void insert(int index, E element) => _list.insert(index, element);
 
-  E removeAt(int index) => _list.removeAt(index);
+  E removeAt(int index) => _downcast/*<Node, E>*/(_list.removeAt(index));
 
   void setRange(int start, int end, Iterable<E> iterable, [int skipCount = 0]) {
     _list.setRange(start, end, iterable, skipCount);
@@ -47368,8 +47402,8 @@ class _WrappedList<E extends Node> extends ListBase<E>
 /**
  * Iterator wrapper for _WrappedList.
  */
-class _WrappedIterator<E> implements Iterator<E> {
-  Iterator _iterator;
+class _WrappedIterator<E extends Node> implements Iterator<E> {
+  Iterator<Node> _iterator;
 
   _WrappedIterator(this._iterator);
 
@@ -47377,8 +47411,11 @@ class _WrappedIterator<E> implements Iterator<E> {
     return _iterator.moveNext();
   }
 
-  E get current => _iterator.current;
+  E get current => _downcast/*<Node, E>*/(_iterator.current);
 }
+
+// ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
+/*=To*/ _downcast/*<From, To extends From>*/(dynamic /*=From*/ x) => x;
 // Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
@@ -47819,17 +47856,25 @@ class _WrappedEvent implements Event {
 // BSD-style license that can be found in the LICENSE file.
 
 
-_wrapZone(callback(arg)) {
+// TODO(jacobr): remove these typedefs when dart:async supports generic types.
+typedef R _wrapZoneCallback<A, R>(A a);
+typedef R _wrapZoneBinaryCallback<A, B, R>(A a, B b);
+
+_wrapZoneCallback/*<A, R>*/ _wrapZone/*<A, R>*/(_wrapZoneCallback/*<A, R>*/ callback) {
   // For performance reasons avoid wrapping if we are in the root zone.
   if (Zone.current == Zone.ROOT) return callback;
   if (callback == null) return null;
-  return Zone.current.bindUnaryCallback(callback, runGuarded: true);
+  // TODO(jacobr): we cast to _wrapZoneCallback/*<A, R>*/ to hack around missing
+  // generic method support in zones.
+  return Zone.current.bindUnaryCallback(callback, runGuarded: true) as _wrapZoneCallback/*<A, R>*/;
 }
 
-_wrapBinaryZone(callback(arg1, arg2)) {
+_wrapZoneBinaryCallback/*<A, B, R>*/ _wrapBinaryZone/*<A, B, R>*/(_wrapZoneBinaryCallback/*<A, B, R>*/ callback) {
   if (Zone.current == Zone.ROOT) return callback;
   if (callback == null) return null;
-  return Zone.current.bindBinaryCallback(callback, runGuarded: true);
+  // We cast to _wrapZoneBinaryCallback/*<A, B, R>*/ to hack around missing
+  // generic method support in zones.
+  return Zone.current.bindBinaryCallback(callback, runGuarded: true) as _wrapZoneBinaryCallback/*<A, B, R>*/;
 }
 
 /**
@@ -47898,12 +47943,12 @@ abstract class ElementUpgrader {
 
 
 class _Property {
-  _Property(this.name) :
-      _hasValue = false,
-      writable = false,
-      isMethod = false,
-      isOwn = true,
-      wasThrown = false;
+  _Property(this.name)
+      : _hasValue = false,
+        writable = false,
+        isMethod = false,
+        isOwn = true,
+        wasThrown = false;
 
   bool get hasValue => _hasValue;
   get value => _value;
@@ -47921,6 +47966,203 @@ class _Property {
   bool isMethod;
   bool isOwn;
   bool wasThrown;
+}
+
+/**
+ * Manager for navigating between libraries from the devtools console.
+ */
+class _LibraryManager {
+  /**
+   * Current active library
+   */
+  static var _currentLibrary;
+  static var _validCache = false;
+
+  static List<Uri> _libraryUris;
+
+  // List of all maps to check to determine if there is an exact match.
+  static Map<String, List<Uri>> _fastPaths;
+
+  static void _addFastPath(String key, Uri uri) {
+    _fastPaths.putIfAbsent(key, () => <Uri>[]).add(uri);
+  }
+
+  static cache() {
+    if (_validCache) return;
+    _validCache = true;
+    _libraryUris = <Uri>[];
+    _fastPaths = new Map<String, List<Uri>>();
+    var system = currentMirrorSystem();
+    system.libraries.forEach((uri, library) {
+      _libraryUris.add(uri);
+      _addFastPath(uri.toString(), uri);
+      _addFastPath(MirrorSystem.getName(library.simpleName), uri);
+    });
+  }
+
+  static String get currentLibrary {
+    if (_currentLibrary == null) {
+      _currentLibrary =
+          currentMirrorSystem().isolate.rootLibrary.uri.toString();
+    }
+    return _currentLibrary;
+  }
+
+  /**
+   * Find libraries matching a given name.
+   *
+   * Uses heuristics to only return a single match when the user intent is
+   * generally unambiguous.
+   */
+  static List<Uri> findMatches(String name) {
+    cache();
+    var nameAsFile = name.endsWith('.dart') ? name : '${name}.dart';
+    // Perfect match first.
+    var fastPatchMatches = _fastPaths[name];
+    if (fastPatchMatches != null) {
+      return fastPatchMatches.toList();
+    }
+
+    // Exact match for file path.
+    var matches = new LinkedHashSet<Uri>();
+    for (var uri in _libraryUris) {
+      if (uri.path == name || uri.path == nameAsFile) matches.add(uri);
+    }
+    if (matches.isNotEmpty) return matches.toList();
+
+    // Exact match for file name.
+    if (name != nameAsFile) {
+      for (var uri in _libraryUris) {
+        if (uri.pathSegments.isNotEmpty &&
+            (uri.pathSegments.last == nameAsFile)) {
+          matches.add(uri);
+        }
+      }
+      if (matches.isNotEmpty) return matches.toList();
+    }
+
+    for (var uri in _libraryUris) {
+      if (uri.pathSegments.isNotEmpty && (uri.pathSegments.last == name)) {
+        matches.add(uri);
+      }
+    }
+    if (matches.isNotEmpty) return matches.toList();
+
+    // Partial match on path.
+    for (var uri in _libraryUris) {
+      if (uri.path.contains(name)) {
+        matches.add(uri);
+      }
+    }
+    if (matches.isNotEmpty) return matches.toList();
+
+    // Partial match on entire uri.
+    for (var uri in _libraryUris) {
+      if (uri.toString().contains(name)) {
+        matches.add(uri);
+      }
+    }
+
+    if (matches.isNotEmpty) return matches.toList();
+
+    // Partial match on entire uri ignoring case.
+    name = name.toLowerCase();
+    for (var uri in _libraryUris) {
+      if (uri.toString().toLowerCase().contains(name)) {
+        matches.add(uri);
+      }
+    }
+    return matches.toList();
+  }
+
+  static setLibrary([String name]) {
+    // Bust cache in case library list has changed. Ideally we would listen for
+    // when libraries are loaded and invalidate based on that.
+    _validCache = false;
+    cache();
+    if (name == null) {
+      window.console
+        ..group("Current library: $_currentLibrary")
+        ..groupCollapsed("All libraries:");
+      _listLibraries();
+      window.console..groupEnd()..groupEnd();
+      return;
+    }
+    var matches = findMatches(name);
+    if (matches.length != 1) {
+      if (matches.length > 1) {
+        window.console.warn("Ambiguous library name: $name");
+      }
+      showMatches(name, matches);
+      return;
+    }
+    _currentLibrary = matches.first.toString();
+    window.console.log("Set library to $_currentLibrary");
+  }
+
+  static getLibrary() {
+    return currentLibrary;
+  }
+
+  static List<Uri> _sortUris(Iterable<Uri> uris) {
+    return (uris.toList())
+      ..sort((Uri a, Uri b) {
+        if (a.scheme != b.scheme) {
+          if (a.scheme == 'dart') return -1;
+          if (b.scheme == 'dart') return 1;
+          return a.scheme.compareTo(b.scheme);
+        }
+        return a.toString().compareTo(b.toString());
+      });
+  }
+
+  static void listLibraries() {
+    _validCache = false;
+    cache();
+    _listLibraries();
+  }
+
+  static void _listLibraries() {
+    window.console.log(_sortUris(_libraryUris).join("\n"));
+  }
+
+  // Workaround to allow calling console.log with an arbitrary number of
+  // arguments.
+  static void _log(List<String> args) {
+    js.JsNative.callMethod(window.console, 'log', args);
+  }
+
+  static showMatches(String key, Iterable<Uri> uris) {
+    var boldPairs = [];
+    var sb = new StringBuffer();
+    if (uris.isEmpty) {
+      window.console.group("All libraries:");
+      _listLibraries();
+      window.console
+        ..groupEnd()
+        ..error("No library names or URIs match '$key'");
+      return;
+    }
+    sb.write("${uris.length} matches\n");
+    var lowerCaseKey = key.toLowerCase();
+    for (var uri in uris) {
+      var txt = uri.toString();
+      int index = txt.toLowerCase().indexOf(lowerCaseKey);
+      if (index != -1) {
+        // %c enables styling console log messages with css
+        // specified at the end of the console.
+        sb..write(txt.substring(0, index))..write('%c');
+        var matchEnd = index + key.length;
+        sb
+          ..write(txt.substring(index, matchEnd))
+          ..write('%c')
+          ..write(txt.substring(matchEnd))
+          ..write('\n');
+        boldPairs..add('font-weight: bold')..add('font-weight: normal');
+      }
+    }
+    _log([sb.toString()]..addAll(boldPairs));
+  }
 }
 
 class _ConsoleVariables {
@@ -47968,15 +48210,15 @@ abstract class _Trampoline implements Function {
 }
 
 class _MethodTrampoline extends _Trampoline {
-  _MethodTrampoline(ObjectMirror receiver, MethodMirror methodMirror,
-      Symbol selector) :
-      super(receiver, methodMirror, selector);
+  _MethodTrampoline(
+      ObjectMirror receiver, MethodMirror methodMirror, Symbol selector)
+      : super(receiver, methodMirror, selector);
 
   noSuchMethod(Invocation msg) {
     if (msg.memberName != #call) return super.noSuchMethod(msg);
-    return _receiver.invoke(_selector,
-                            msg.positionalArguments,
-                            msg.namedArguments).reflectee;
+    return _receiver
+        .invoke(_selector, msg.positionalArguments, msg.namedArguments)
+        .reflectee;
   }
 }
 
@@ -47984,9 +48226,9 @@ class _MethodTrampoline extends _Trampoline {
  * Invocation trampoline class used to closurize getters.
  */
 class _GetterTrampoline extends _Trampoline {
-  _GetterTrampoline(ObjectMirror receiver, MethodMirror methodMirror,
-      Symbol selector) :
-      super(receiver, methodMirror, selector);
+  _GetterTrampoline(
+      ObjectMirror receiver, MethodMirror methodMirror, Symbol selector)
+      : super(receiver, methodMirror, selector);
 
   call() => _receiver.getField(_selector).reflectee;
 }
@@ -47995,9 +48237,9 @@ class _GetterTrampoline extends _Trampoline {
  * Invocation trampoline class used to closurize setters.
  */
 class _SetterTrampoline extends _Trampoline {
-  _SetterTrampoline(ObjectMirror receiver, MethodMirror methodMirror,
-      Symbol selector) :
-      super(receiver, methodMirror, selector);
+  _SetterTrampoline(
+      ObjectMirror receiver, MethodMirror methodMirror, Symbol selector)
+      : super(receiver, methodMirror, selector);
 
   call(value) {
     _receiver.setField(_selector, value);
@@ -48010,7 +48252,7 @@ class _Utils {
   static DateTime doubleToDateTime(double dateTime) {
     try {
       return new DateTime.fromMillisecondsSinceEpoch(dateTime.toInt());
-    } catch(_) {
+    } catch (_) {
       // TODO(antonnm): treat exceptions properly in bindings and
       // find out how to treat NaNs.
       return null;
@@ -48055,7 +48297,10 @@ class _Utils {
 
   static Map createMap() => {};
 
-  static parseJson(String jsonSource) => const JsonDecoder().convert(jsonSource);
+  static parseJson(String jsonSource) =>
+      const JsonDecoder().convert(jsonSource);
+
+  static String getLibraryUrl() => _LibraryManager.currentLibrary;
 
   static makeUnimplementedError(String fileName, int lineNo) {
     return new UnsupportedError('[info: $fileName:$lineNo]');
@@ -48080,7 +48325,8 @@ class _Utils {
     return element;
   }
 
-  static forwardingPrint(String message) => _blink.Blink_Utils.forwardingPrint(message);
+  static forwardingPrint(String message) =>
+      _blink.Blink_Utils.forwardingPrint(message);
   static void spawnDomHelper(Function f, int replyTo) =>
       _blink.Blink_Utils.spawnDomHelper(f, replyTo);
 
@@ -48113,8 +48359,8 @@ class _Utils {
    */
   static Map<String, dynamic> createLocalVariablesMap(List localVariables) {
     var map = {};
-    for (int i = 0; i < localVariables.length; i+=2) {
-      map[stripMemberName(localVariables[i])] = localVariables[i+1];
+    for (int i = 0; i < localVariables.length; i += 2) {
+      map[stripMemberName(localVariables[i])] = localVariables[i + 1];
     }
     return map;
   }
@@ -48143,8 +48389,8 @@ class _Utils {
    * [_consoleTempVariables, 40, 2, someValue, someOtherValue]]
    * </code>
    */
-  static List wrapExpressionAsClosure(String expression, List locals,
-      bool includeCommandLineAPI) {
+  static List wrapExpressionAsClosure(
+      String expression, List locals, bool includeCommandLineAPI) {
     var args = {};
     var sb = new StringBuffer("(");
     addArg(arg, value) {
@@ -48179,26 +48425,24 @@ class _Utils {
       final _SET_VARIABLE = new RegExp("^(\\s*)(\\w+)(\\s*=)");
       // Match trailing semicolons.
       final _ENDING_SEMICOLONS = new RegExp("(;\\s*)*\$");
-      expression = expression.replaceAllMapped(_VARIABLE_DECLARATION,
-          (match) {
-            var variableName = match[2];
-            // Set the console variable if it isn't already set.
-            if (!_consoleTempVariables._data.containsKey(variableName)) {
-              _consoleTempVariables._data[variableName] = null;
-            }
-            return "${match[1]}\$consoleVariables.${variableName}";
-          });
+      expression = expression.replaceAllMapped(_VARIABLE_DECLARATION, (match) {
+        var variableName = match[2];
+        // Set the console variable if it isn't already set.
+        if (!_consoleTempVariables._data.containsKey(variableName)) {
+          _consoleTempVariables._data[variableName] = null;
+        }
+        return "${match[1]}\$consoleVariables.${variableName}";
+      });
 
-      expression = expression.replaceAllMapped(_SET_VARIABLE,
-          (match) {
-            var variableName = match[2];
-            // Only rewrite if the name matches an existing console variable.
-            if (_consoleTempVariables._data.containsKey(variableName)) {
-              return "${match[1]}\$consoleVariables.${variableName}${match[3]}";
-            } else {
-              return match[0];
-            }
-          });
+      expression = expression.replaceAllMapped(_SET_VARIABLE, (match) {
+        var variableName = match[2];
+        // Only rewrite if the name matches an existing console variable.
+        if (_consoleTempVariables._data.containsKey(variableName)) {
+          return "${match[1]}\$consoleVariables.${variableName}${match[3]}";
+        } else {
+          return match[0];
+        }
+      });
 
       // We only allow dart expressions not Dart statements. Silently remove
       // trailing semicolons the user might have added by accident to reduce the
@@ -48207,8 +48451,8 @@ class _Utils {
     }
 
     if (locals != null) {
-      for (int i = 0; i < locals.length; i+= 2) {
-        addArg(locals[i], locals[i+1]);
+      for (int i = 0; i < locals.length; i += 2) {
+        addArg(locals[i], locals[i + 1]);
       }
     }
     // Inject all the already defined console variables.
@@ -48223,18 +48467,50 @@ class _Utils {
     return [sb.toString(), args.values.toList(growable: false)];
   }
 
-  static String _getShortSymbolName(Symbol symbol,
-                                    DeclarationMirror declaration) {
+  static String _getShortSymbolName(
+      Symbol symbol, DeclarationMirror declaration) {
     var name = MirrorSystem.getName(symbol);
     if (declaration is MethodMirror) {
-      if (declaration.isSetter && name[name.length-1] == "=") {
-        return name.substring(0, name.length-1);
+      if (declaration.isSetter && name[name.length - 1] == "=") {
+        return name.substring(0, name.length - 1);
       }
       if (declaration.isConstructor) {
         return name.substring(name.indexOf('.') + 1);
       }
     }
     return name;
+  }
+
+  /**
+   * Handle special console commands such as $lib and $libs that should not be
+   * evaluated as Dart expressions and instead should be interpreted directly.
+   * Commands supported:
+   * library <-- shows the current library and lists all libraries.
+   * library "library_uri" <-- select a specific library
+   * library "library_uri_fragment"
+   */
+  static bool maybeHandleSpecialConsoleCommand(String expression) {
+    expression = expression.trim();
+    var setLibraryCommand = r'library ';
+    if (expression == r'library') {
+      _LibraryManager.setLibrary();
+      return true;
+    }
+    if (expression.startsWith(setLibraryCommand)) {
+      expression = expression.substring(setLibraryCommand.length);
+      if (expression.length >= 2) {
+        String start = expression[0];
+        String end = expression[expression.length - 1];
+        // TODO(jacobr): maybe we should require quotes.
+        if ((start == "'" && end == "'") || (start == '"' && end == '"')) {
+          expression = expression.substring(1, expression.length - 1);
+        }
+      }
+
+      _LibraryManager.setLibrary(expression);
+      return true;
+    }
+    return false;
   }
 
   /**
@@ -48247,19 +48523,17 @@ class _Utils {
       map.forEach((symbol, mirror) {
         if (mirror.isStatic == isStatic && !mirror.isPrivate) {
           var name = MirrorSystem.getName(symbol);
-          if (mirror is MethodMirror && mirror.isSetter)
-            name = name.substring(0, name.length - 1);
+          if (mirror is MethodMirror && mirror.isSetter) name =
+              name.substring(0, name.length - 1);
           completions.add(name);
         }
       });
     }
 
     addForClass(ClassMirror mirror, bool isStatic) {
-      if (mirror == null)
-        return;
+      if (mirror == null) return;
       addAll(mirror.declarations, isStatic);
-      if (mirror.superclass != null)
-        addForClass(mirror.superclass, isStatic);
+      if (mirror.superclass != null) addForClass(mirror.superclass, isStatic);
       for (var interface in mirror.superinterfaces) {
         addForClass(interface, isStatic);
       }
@@ -48277,8 +48551,8 @@ class _Utils {
    * Adds all candidate String completitions from [declarations] to [output]
    * filtering based on [staticContext] and [includePrivate].
    */
-  static void _getCompletionsHelper(ClassMirror classMirror,
-      bool staticContext, LibraryMirror libraryMirror, Set<String> output) {
+  static void _getCompletionsHelper(ClassMirror classMirror, bool staticContext,
+      LibraryMirror libraryMirror, Set<String> output) {
     bool includePrivate = libraryMirror == classMirror.owner;
     classMirror.declarations.forEach((symbol, declaration) {
       if (!includePrivate && declaration.isPrivate) return;
@@ -48301,12 +48575,11 @@ class _Utils {
 
     if (!staticContext) {
       for (var interface in classMirror.superinterfaces) {
-        _getCompletionsHelper(interface, staticContext,
-            libraryMirror, output);
+        _getCompletionsHelper(interface, staticContext, libraryMirror, output);
       }
       if (classMirror.superclass != null) {
-        _getCompletionsHelper(classMirror.superclass, staticContext,
-            libraryMirror, output);
+        _getCompletionsHelper(
+            classMirror.superclass, staticContext, libraryMirror, output);
       }
     }
   }
@@ -48373,13 +48646,13 @@ class _Utils {
   }
 
   static final SIDE_EFFECT_FREE_LIBRARIES = new Set<String>()
-      ..add('dart:html')
-      ..add('dart:indexed_db')
-      ..add('dart:svg')
-      ..add('dart:typed_data')
-      ..add('dart:web_audio')
-      ..add('dart:web_gl')
-      ..add('dart:web_sql');
+    ..add('dart:html')
+    ..add('dart:indexed_db')
+    ..add('dart:svg')
+    ..add('dart:typed_data')
+    ..add('dart:web_audio')
+    ..add('dart:web_gl')
+    ..add('dart:web_sql');
 
   static LibraryMirror _getLibrary(MethodMirror methodMirror) {
     var owner = methodMirror.owner;
@@ -48398,8 +48671,8 @@ class _Utils {
    * In the future we should consider adding an annotation to tag getters
    * in user libraries as side effect free.
    */
-  static bool _isSideEffectFreeGetter(MethodMirror methodMirror,
-      LibraryMirror libraryMirror) {
+  static bool _isSideEffectFreeGetter(
+      MethodMirror methodMirror, LibraryMirror libraryMirror) {
     // This matches JavaScript behavior. We should consider displaying
     // getters for all dart platform libraries rather than just the DOM
     // libraries.
@@ -48411,11 +48684,11 @@ class _Utils {
    * Whether we should treat a property as a field for the purposes of the
    * debugger.
    */
-  static bool treatPropertyAsField(MethodMirror methodMirror,
-      LibraryMirror libraryMirror) {
+  static bool treatPropertyAsField(
+      MethodMirror methodMirror, LibraryMirror libraryMirror) {
     return (methodMirror.isGetter || methodMirror.isSetter) &&
-          (methodMirror.isSynthetic ||
-              _isSideEffectFreeGetter(methodMirror,libraryMirror));
+        (methodMirror.isSynthetic ||
+            _isSideEffectFreeGetter(methodMirror, libraryMirror));
   }
 
   // TODO(jacobr): generate more concise function descriptions instead of
@@ -48432,27 +48705,36 @@ class _Utils {
 
   static List getInvocationTrampolineDetails(_Trampoline method) {
     var loc = method._methodMirror.location;
-    return [loc.line, loc.column, loc.sourceUri.toString(),
-        MirrorSystem.getName(method._selector)];
+    return [
+      loc.line,
+      loc.column,
+      loc.sourceUri.toString(),
+      MirrorSystem.getName(method._selector)
+    ];
   }
 
-  static List getLibraryProperties(String libraryUrl, bool ownProperties,
-      bool accessorPropertiesOnly) {
+  static List getLibraryProperties(
+      String libraryUrl, bool ownProperties, bool accessorPropertiesOnly) {
     var properties = new Map<String, _Property>();
     var libraryMirror = getLibraryMirror(libraryUrl);
-    _addInstanceMirrors(libraryMirror, libraryMirror,
+    _addInstanceMirrors(
+        libraryMirror,
+        libraryMirror,
         libraryMirror.declarations,
-        ownProperties, accessorPropertiesOnly, false, false,
+        ownProperties,
+        accessorPropertiesOnly,
+        false,
+        false,
         properties);
     if (!accessorPropertiesOnly) {
       // We need to add class properties for all classes in the library.
       libraryMirror.declarations.forEach((symbol, declarationMirror) {
         if (declarationMirror is ClassMirror) {
           var name = MirrorSystem.getName(symbol);
-          if (declarationMirror.hasReflectedType
-              && !properties.containsKey(name)) {
+          if (declarationMirror.hasReflectedType &&
+              !properties.containsKey(name)) {
             properties[name] = new _Property(name)
-                ..value = declarationMirror.reflectedType;
+              ..value = declarationMirror.reflectedType;
           }
         }
       });
@@ -48460,34 +48742,44 @@ class _Utils {
     return packageProperties(properties);
   }
 
-  static List getObjectProperties(o, bool ownProperties,
-      bool accessorPropertiesOnly) {
+  static List getObjectProperties(
+      o, bool ownProperties, bool accessorPropertiesOnly) {
     var properties = new Map<String, _Property>();
     var names = new Set<String>();
     var objectMirror = reflect(o);
     var classMirror = objectMirror.type;
-    _addInstanceMirrors(objectMirror, classMirror.owner,
+    _addInstanceMirrors(
+        objectMirror,
+        classMirror.owner,
         classMirror.instanceMembers,
-        ownProperties, accessorPropertiesOnly, false, true,
+        ownProperties,
+        accessorPropertiesOnly,
+        false,
+        true,
         properties);
     return packageProperties(properties);
   }
 
-  static List getObjectClassProperties(o, bool ownProperties,
-      bool accessorPropertiesOnly) {
+  static List getObjectClassProperties(
+      o, bool ownProperties, bool accessorPropertiesOnly) {
     var properties = new Map<String, _Property>();
     var objectMirror = reflect(o);
     var classMirror = objectMirror.type;
-    _addInstanceMirrors(objectMirror, classMirror.owner,
+    _addInstanceMirrors(
+        objectMirror,
+        classMirror.owner,
         classMirror.instanceMembers,
-        ownProperties, accessorPropertiesOnly, true, false,
+        ownProperties,
+        accessorPropertiesOnly,
+        true,
+        false,
         properties);
     _addStatics(classMirror, properties, accessorPropertiesOnly);
     return packageProperties(properties);
   }
 
-  static List getClassProperties(Type t, bool ownProperties,
-      bool accessorPropertiesOnly) {
+  static List getClassProperties(
+      Type t, bool ownProperties, bool accessorPropertiesOnly) {
     var properties = new Map<String, _Property>();
     var classMirror = reflectClass(t);
     _addStatics(classMirror, properties, accessorPropertiesOnly);
@@ -48495,8 +48787,7 @@ class _Utils {
   }
 
   static void _addStatics(ClassMirror classMirror,
-                          Map<String, _Property> properties,
-                          bool accessorPropertiesOnly) {
+      Map<String, _Property> properties, bool accessorPropertiesOnly) {
     var libraryMirror = classMirror.owner;
     classMirror.declarations.forEach((symbol, declaration) {
       var name = _getShortSymbolName(symbol, declaration);
@@ -48505,8 +48796,8 @@ class _Utils {
         if (accessorPropertiesOnly) return;
         if (!declaration.isStatic) return;
         properties.putIfAbsent(name, () => new _Property(name))
-            ..value = classMirror.getField(symbol).reflectee
-            ..writable = !declaration.isFinal && !declaration.isConst;
+          ..value = classMirror.getField(symbol).reflectee
+          ..writable = !declaration.isFinal && !declaration.isConst;
       } else if (declaration is MethodMirror) {
         MethodMirror methodMirror = declaration;
         // FIXMEDART: should we display constructors?
@@ -48528,31 +48819,35 @@ class _Utils {
     });
   }
 
-  static void _fillMethodMirrorProperty(LibraryMirror libraryMirror,
-        methodOwner, MethodMirror methodMirror, Symbol symbol,
-        bool accessorPropertiesOnly, _Property property) {
+  static void _fillMethodMirrorProperty(
+      LibraryMirror libraryMirror,
+      methodOwner,
+      MethodMirror methodMirror,
+      Symbol symbol,
+      bool accessorPropertiesOnly,
+      _Property property) {
     if (methodMirror.isRegularMethod) {
       property
-          ..value = new _MethodTrampoline(methodOwner, methodMirror, symbol)
-          ..isMethod = true;
+        ..value = new _MethodTrampoline(methodOwner, methodMirror, symbol)
+        ..isMethod = true;
     } else if (methodMirror.isGetter) {
       if (treatPropertyAsField(methodMirror, libraryMirror)) {
         try {
           property.value = methodOwner.getField(symbol).reflectee;
         } catch (e) {
           property
-              ..wasThrown = true
-              ..value = e;
+            ..wasThrown = true
+            ..value = e;
         }
       } else if (accessorPropertiesOnly) {
-        property.getter = new _GetterTrampoline(methodOwner,
-            methodMirror, symbol);
+        property.getter =
+            new _GetterTrampoline(methodOwner, methodMirror, symbol);
       }
     } else if (methodMirror.isSetter) {
       if (accessorPropertiesOnly &&
           !treatPropertyAsField(methodMirror, libraryMirror)) {
-        property.setter = new _SetterTrampoline(methodOwner,
-            methodMirror, MirrorSystem.getSymbol(property.name, libraryMirror));
+        property.setter = new _SetterTrampoline(methodOwner, methodMirror,
+            MirrorSystem.getSymbol(property.name, libraryMirror));
       }
       property.writable = true;
     }
@@ -48572,8 +48867,10 @@ class _Utils {
       ObjectMirror objectMirror,
       LibraryMirror libraryMirror,
       Map<Symbol, Mirror> declarations,
-      bool ownProperties, bool accessorPropertiesOnly,
-      bool hideFields, bool hideMethods,
+      bool ownProperties,
+      bool accessorPropertiesOnly,
+      bool hideFields,
+      bool hideMethods,
       Map<String, _Property> properties) {
     declarations.forEach((symbol, declaration) {
       if (declaration is TypedefMirror || declaration is ClassMirror) return;
@@ -48584,7 +48881,8 @@ class _Utils {
               treatPropertyAsField(declaration, libraryMirror));
       if ((isField && hideFields) || (hideMethods && !isField)) return;
       if (accessorPropertiesOnly) {
-        if (declaration is VariableMirror || declaration.isRegularMethod ||
+        if (declaration is VariableMirror ||
+            declaration.isRegularMethod ||
             isField) {
           return;
         }
@@ -48596,8 +48894,8 @@ class _Utils {
       var property = properties.putIfAbsent(name, () => new _Property(name));
       if (declaration is VariableMirror) {
         property
-            ..value = objectMirror.getField(symbol).reflectee
-            ..writable = !declaration.isFinal && !declaration.isConst;
+          ..value = objectMirror.getField(symbol).reflectee
+          ..writable = !declaration.isFinal && !declaration.isConst;
         return;
       }
       _fillMethodMirrorProperty(libraryMirror, objectMirror, declaration,
@@ -48612,15 +48910,17 @@ class _Utils {
   static List packageProperties(Map<String, _Property> properties) {
     var ret = [];
     for (var property in properties.values) {
-      ret.addAll([property.name,
-                  property.setter,
-                  property.getter,
-                  property.value,
-                  property.hasValue,
-                  property.writable,
-                  property.isMethod,
-                  property.isOwn,
-                  property.wasThrown]);
+      ret.addAll([
+        property.name,
+        property.setter,
+        property.getter,
+        property.value,
+        property.hasValue,
+        property.writable,
+        property.isMethod,
+        property.isOwn,
+        property.wasThrown
+      ]);
     }
     return ret;
   }
@@ -48639,9 +48939,10 @@ class _Utils {
         LibraryMirror library = classMirror.owner;
         if (!attemptedLibraries.contains(library)) {
           try {
-            return objectMirror.getField(
-                MirrorSystem.getSymbol(propertyName, library)).reflectee;
-          } catch (e) { }
+            return objectMirror
+                .getField(MirrorSystem.getSymbol(propertyName, library))
+                .reflectee;
+          } catch (e) {}
           attemptedLibraries.add(library);
         }
         classMirror = classMirror.superclass;
@@ -48649,8 +48950,9 @@ class _Utils {
       return null;
     }
     try {
-      return objectMirror.getField(
-          MirrorSystem.getSymbol(propertyName)).reflectee;
+      return objectMirror
+          .getField(MirrorSystem.getSymbol(propertyName))
+          .reflectee;
     } catch (e) {
       return null;
     }
@@ -48662,25 +48964,25 @@ class _Utils {
    */
   static List consoleApi(host) {
     return [
-        "inspect",
-        (o) {
-          js.JsNative.callMethod(host, "_inspect", [o]);
-          return o;
-        },
-        "dir",
-        window.console.dir,
-        "dirxml",
-        window.console.dirxml
-        // FIXME: add copy method.
-        ];
+      "inspect",
+      (o) {
+        js.JsNative.callMethod(host, "_inspect", [o]);
+        return o;
+      },
+      "dir",
+      window.console.dir,
+      "dirxml",
+      window.console.dirxml
+      // FIXME: add copy method.
+    ];
   }
 
   static List getMapKeyList(Map map) => map.keys.toList();
 
   static bool isNoSuchMethodError(obj) => obj is NoSuchMethodError;
 
-  static void register(Document document, String tag, Type type,
-      String extendsTagName) {
+  static void register(
+      Document document, String tag, Type type, String extendsTagName) {
     var nativeClass = _validateCustomType(type);
 
     if (extendsTagName == null) {
@@ -48694,70 +48996,90 @@ class _Utils {
   }
 
   static void _register(Document document, String tag, Type customType,
-    String extendsTagName) => _blink.Blink_Utils.register(document, tag, customType, extendsTagName);
+          String extendsTagName) =>
+      _blink.Blink_Utils.register(document, tag, customType, extendsTagName);
 
   static Element createElement(Document document, String tagName) =>
       _blink.Blink_Utils.createElement(document, tagName);
 }
 
-// TODO(jacobr): this seems busted. I believe we are actually
-// giving users real windows for opener, parent, top, etc.
-// Or worse, we are probaly returning a raw JSObject.
-class _DOMWindowCrossFrame extends DartHtmlDomObject implements
-    WindowBase {
-
+class _DOMWindowCrossFrame extends DartHtmlDomObject implements WindowBase {
   _DOMWindowCrossFrame.internal();
-  
-  static _createSafe(win) => _blink.Blink_Utils.setInstanceInterceptor(win, _DOMWindowCrossFrame);
+
+  static _createSafe(win) {
+    if (identical(win, window)) {
+      // The current Window object is the only window object that should not
+      // use _DOMWindowCrossFrame.
+      return window;
+    }
+    return win is _DOMWindowCrossFrame ? win : _blink.Blink_Utils.setInstanceInterceptor(win, _DOMWindowCrossFrame);
+  }
 
   // Fields.
-  HistoryBase get history => _blink.Blink_DOMWindowCrossFrame.get_history(this);
-  LocationBase get location => _blink.Blink_DOMWindowCrossFrame.get_location(this);
-  bool get closed => _blink.Blink_DOMWindowCrossFrame.get_closed(this);
-  WindowBase get opener => _blink.Blink_DOMWindowCrossFrame.get_opener(this);
-  WindowBase get parent => _blink.Blink_DOMWindowCrossFrame.get_parent(this);
-  WindowBase get top => _blink.Blink_DOMWindowCrossFrame.get_top(this);
+  HistoryBase get history {
+    var history =  _blink.BlinkWindow.instance.history_Getter_(this);
+    return history is _HistoryCrossFrame ? history : _blink.Blink_Utils.setInstanceInterceptor(history, _HistoryCrossFrame);
+  }
+
+  LocationBase get location {
+    var location = _blink.BlinkWindow.instance.location_Getter_(this);
+    return location is _LocationCrossFrame ? location : _blink.Blink_Utils.setInstanceInterceptor(location, _LocationCrossFrame);
+  }
+
+  bool get closed => _blink.BlinkWindow.instance.closed_Getter_(this);
+  WindowBase get opener => _convertNativeToDart_Window(_blink.BlinkWindow.instance.opener_Getter_(this));
+  WindowBase get parent => _convertNativeToDart_Window(_blink.BlinkWindow.instance.parent_Getter_(this));
+  WindowBase get top => _convertNativeToDart_Window(_blink.BlinkWindow.instance.top_Getter_(this));
 
   // Methods.
-  void close() => _blink.Blink_DOMWindowCrossFrame.close(this);
-  void postMessage(/*SerializedScriptValue*/ message, String targetOrigin, [List messagePorts]) =>
-      _blink.Blink_DOMWindowCrossFrame.postMessage(this,
-         convertDartToNative_SerializedScriptValue(message), targetOrigin, messagePorts);
+  void close() => _blink.BlinkWindow.instance.close_Callback_0_(this);
+  void postMessage(Object message, String targetOrigin, [List<MessagePort> transfer]) => _blink.BlinkWindow.instance.postMessage_Callback_3_(this, convertDartToNative_SerializedScriptValue(message), targetOrigin, transfer);
 
   // Implementation support.
   String get typeName => "Window";
 
   // TODO(efortuna): Remove this method. dartbug.com/16814
   Events get on => throw new UnsupportedError(
-    'You can only attach EventListeners to your own window.');
+      'You can only attach EventListeners to your own window.');
   // TODO(efortuna): Remove this method. dartbug.com/16814
-  void _addEventListener([String type, EventListener listener, bool useCapture])
-      => throw new UnsupportedError(
-    'You can only attach EventListeners to your own window.');
+  void _addEventListener(
+          [String type, EventListener listener, bool useCapture]) =>
+      throw new UnsupportedError(
+          'You can only attach EventListeners to your own window.');
   // TODO(efortuna): Remove this method. dartbug.com/16814
-  void addEventListener(String type, EventListener listener, [bool useCapture])
-      => throw new UnsupportedError(
-    'You can only attach EventListeners to your own window.');
+  void addEventListener(String type, EventListener listener,
+          [bool useCapture]) =>
+      throw new UnsupportedError(
+          'You can only attach EventListeners to your own window.');
   // TODO(efortuna): Remove this method. dartbug.com/16814
   bool dispatchEvent(Event event) => throw new UnsupportedError(
-    'You can only attach EventListeners to your own window.');
+      'You can only attach EventListeners to your own window.');
   // TODO(efortuna): Remove this method. dartbug.com/16814
-  void _removeEventListener([String type, EventListener listener,
-      bool useCapture]) => throw new UnsupportedError(
-    'You can only attach EventListeners to your own window.');
+  void _removeEventListener(
+          [String type, EventListener listener, bool useCapture]) =>
+      throw new UnsupportedError(
+          'You can only attach EventListeners to your own window.');
   // TODO(efortuna): Remove this method. dartbug.com/16814
   void removeEventListener(String type, EventListener listener,
-      [bool useCapture]) => throw new UnsupportedError(
-    'You can only attach EventListeners to your own window.');
+          [bool useCapture]) =>
+      throw new UnsupportedError(
+          'You can only attach EventListeners to your own window.');
 }
 
 class _HistoryCrossFrame extends DartHtmlDomObject implements HistoryBase {
   _HistoryCrossFrame.internal();
 
   // Methods.
-  void back() => _blink.Blink_HistoryCrossFrame.back(this);
-  void forward() => _blink.Blink_HistoryCrossFrame.forward(this);
-  void go(int distance) => _blink.Blink_HistoryCrossFrame.go(this, distance);
+  void back() => _blink.BlinkHistory.instance.back_Callback_0_(this);
+  void forward() => _blink.BlinkHistory.instance.forward_Callback_0_(this);
+  void go([int delta]) {
+    if (delta != null) {
+      _blink.BlinkHistory.instance.go_Callback_1_(this, delta);
+      return;
+    }
+    _blink.BlinkHistory.instance.go_Callback_0_(this);
+    return;
+  }
 
   // Implementation support.
   String get typeName => "History";
@@ -48767,7 +49089,7 @@ class _LocationCrossFrame extends DartHtmlDomObject implements LocationBase {
   _LocationCrossFrame.internal();
 
   // Fields.
-  set href(String h) => _blink.Blink_LocationCrossFrame.set_href(this, h);
+  set href(String value) => _blink.BlinkLocation.instance.href_Setter_(this, value);
 
   // Implementation support.
   String get typeName => "Location";
@@ -48790,8 +49112,9 @@ _makeSendPortFuture(spawnRequest) {
   return completer.future;
 }
 
-Future<SendPort> _spawnDomHelper(Function f) =>
-    _makeSendPortFuture((portId) { _Utils.spawnDomHelper(f, portId); });
+Future<SendPort> _spawnDomHelper(Function f) => _makeSendPortFuture((portId) {
+      _Utils.spawnDomHelper(f, portId);
+    });
 
 final Future<SendPort> __HELPER_ISOLATE_PORT =
     _spawnDomHelper(_helperIsolateMain);
@@ -48833,10 +49156,15 @@ _helperIsolateMain(originalSendPort) {
     if (cmd == _NEW_TIMER) {
       final duration = new Duration(milliseconds: msg[1]);
       bool periodic = msg[2];
-      ping() { replyTo.send(_TIMER_PING); };
-      _TIMER_REGISTRY[replyTo] = periodic ?
-          new Timer.periodic(duration, (_) { ping(); }) :
-          new Timer(duration, ping);
+      ping() {
+        replyTo.send(_TIMER_PING);
+      }
+      ;
+      _TIMER_REGISTRY[replyTo] = periodic
+          ? new Timer.periodic(duration, (_) {
+              ping();
+            })
+          : new Timer(duration, ping);
     } else if (cmd == _CANCEL_TIMER) {
       _TIMER_REGISTRY.remove(replyTo).cancel();
     } else if (cmd == _PRINT) {
@@ -48849,7 +49177,7 @@ _helperIsolateMain(originalSendPort) {
 
 final _printClosure = (s) => window.console.log(s);
 final _pureIsolatePrintClosure = (s) {
-    _sendToHelperIsolate([_PRINT, s], null);
+  _sendToHelperIsolate([_PRINT, s], null);
 };
 
 final _forwardingPrintClosure = _Utils.forwardingPrint;
@@ -48858,7 +49186,7 @@ final _uriBaseClosure = () => Uri.parse(window.location.href);
 
 final _pureIsolateUriBaseClosure = () {
   throw new UnimplementedError("Uri.base on a background isolate "
-                               "is not supported in the browser");
+      "is not supported in the browser");
 };
 
 class _Timer implements Timer {
@@ -48869,13 +49197,17 @@ class _Timer implements Timer {
   _Timer(int milliSeconds, void callback(Timer timer), bool repeating) {
     if (repeating) {
       _state = (window._setInterval(() {
-        callback(this);
-      }, milliSeconds) << 1) | _STATE_INTERVAL;
+                callback(this);
+              }, milliSeconds) <<
+              1) |
+          _STATE_INTERVAL;
     } else {
       _state = (window._setTimeout(() {
-        _state = null;
-        callback(this);
-      }, milliSeconds) << 1) | _STATE_TIMEOUT;
+                _state = null;
+                callback(this);
+              }, milliSeconds) <<
+              1) |
+          _STATE_TIMEOUT;
     }
   }
 
@@ -48895,8 +49227,8 @@ class _Timer implements Timer {
 
 get _timerFactoryClosure =>
     (int milliSeconds, void callback(Timer timer), bool repeating) {
-  return new _Timer(milliSeconds, callback, repeating);
-};
+      return new _Timer(milliSeconds, callback, repeating);
+    };
 
 class _PureIsolateTimer implements Timer {
   bool _isActive = true;
@@ -48936,7 +49268,7 @@ class _PureIsolateTimer implements Timer {
 
 get _pureIsolateTimerFactoryClosure =>
     ((int milliSeconds, void callback(Timer time), bool repeating) =>
-  new _PureIsolateTimer(milliSeconds, callback, repeating));
+        new _PureIsolateTimer(milliSeconds, callback, repeating));
 
 class _ScheduleImmediateHelper {
   MutationObserver _observer;
@@ -48975,13 +49307,12 @@ final _ScheduleImmediateHelper _scheduleImmediateHelper =
     new _ScheduleImmediateHelper();
 
 get _scheduleImmediateClosure => (void callback()) {
-  _scheduleImmediateHelper._schedule(callback);
-};
+      _scheduleImmediateHelper._schedule(callback);
+    };
 
 get _pureIsolateScheduleImmediateClosure => ((void callback()) =>
-  throw new UnimplementedError("scheduleMicrotask in background isolates "
-                               "are not supported in the browser"));
+    throw new UnimplementedError("scheduleMicrotask in background isolates "
+        "are not supported in the browser"));
 
 // Class for unsupported native browser 'DOM' objects.
-class _UnsupportedBrowserObject extends DartHtmlDomObject {
-}
+class _UnsupportedBrowserObject extends DartHtmlDomObject {}

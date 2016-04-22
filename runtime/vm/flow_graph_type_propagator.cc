@@ -270,7 +270,7 @@ void FlowGraphTypePropagator::VisitGuardFieldClass(
   const intptr_t cid = guard->field().guarded_cid();
   if ((cid == kIllegalCid) ||
       (cid == kDynamicCid) ||
-      !CheckClassInstr::IsImmutableClassId(cid)) {
+      Field::IsExternalizableCid(cid)) {
     return;
   }
 
@@ -463,6 +463,11 @@ CompileType CompileType::Bool() {
 
 CompileType CompileType::Int() {
   return FromAbstractType(Type::ZoneHandle(Type::IntType()), kNonNullable);
+}
+
+
+CompileType CompileType::Smi() {
+  return Create(kSmiCid, Type::ZoneHandle(Type::SmiType()));
 }
 
 
@@ -782,7 +787,7 @@ CompileType ConstantInstr::ComputeType() const {
   }
 
   intptr_t cid = value().GetClassId();
-  if (!CheckClassInstr::IsImmutableClassId(cid)) {
+  if (Field::IsExternalizableCid(cid)) {
     cid = kDynamicCid;
   }
 
@@ -965,7 +970,7 @@ CompileType LoadStaticFieldInstr::ComputeType() const {
       cid = obj.GetClassId();
     }
   }
-  if (!CheckClassInstr::IsImmutableClassId(cid)) {
+  if (Field::IsExternalizableCid(cid)) {
     cid = kDynamicCid;
   }
   return CompileType(is_nullable, cid, abstract_type);

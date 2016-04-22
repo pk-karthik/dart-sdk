@@ -14,8 +14,9 @@ import '../compiler.dart' show PackagesDiscoveryProvider;
 abstract class ParserOptions {
   const ParserOptions();
 
-  /// Support conditional directives, e.g., configurable imports.
-  bool get enableConditionalDirectives;
+  /// Support parsing of generic method declarations, and invocations of
+  /// methods where type arguments are passed.
+  bool get enableGenericMethodSyntax;
 }
 
 /// Options used for controlling diagnostic messages.
@@ -144,8 +145,9 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
   /// reason for why an assertion fails. (experimental)
   final bool enableAssertMessage;
 
-  /// Whether to enable the experimental conditional directives feature.
-  final bool enableConditionalDirectives;
+  /// Support parsing of generic method declarations, and invocations of
+  /// methods where type arguments are passed.
+  final bool enableGenericMethodSyntax;
 
   /// Whether the user specified a flag to allow the use of dart:mirrors. This
   /// silences a warning produced by the compiler.
@@ -277,8 +279,8 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
         emitJavaScript: !(_hasOption(options, '--output-type=dart') ||
             _hasOption(options, '--output-type=dart-multi')),
         enableAssertMessage: _hasOption(options, Flags.enableAssertMessage),
-        enableConditionalDirectives:
-            _hasOption(options, Flags.conditionalDirectives),
+        enableGenericMethodSyntax:
+            _hasOption(options, Flags.genericMethodSyntax),
         enableExperimentalMirrors:
             _hasOption(options, Flags.enableExperimentalMirrors),
         enableMinification: _hasOption(options, Flags.minify),
@@ -344,7 +346,7 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
       bool dumpInfo: false,
       bool emitJavaScript: true,
       bool enableAssertMessage: false,
-      bool enableConditionalDirectives: false,
+      bool enableGenericMethodSyntax: false,
       bool enableExperimentalMirrors: false,
       bool enableMinification: false,
       bool enableNativeLiveTypeAnalysis: true,
@@ -413,7 +415,7 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
         dumpInfo: dumpInfo,
         emitJavaScript: emitJavaScript,
         enableAssertMessage: enableAssertMessage,
-        enableConditionalDirectives: enableConditionalDirectives,
+        enableGenericMethodSyntax: enableGenericMethodSyntax,
         enableExperimentalMirrors: enableExperimentalMirrors,
         enableMinification: enableMinification,
         enableNativeLiveTypeAnalysis: enableNativeLiveTypeAnalysis,
@@ -463,7 +465,7 @@ class CompilerOptions implements DiagnosticOptions, ParserOptions {
       this.dumpInfo: false,
       this.emitJavaScript: true,
       this.enableAssertMessage: false,
-      this.enableConditionalDirectives: false,
+      this.enableGenericMethodSyntax: false,
       this.enableExperimentalMirrors: false,
       this.enableMinification: false,
       this.enableNativeLiveTypeAnalysis: false,

@@ -3,20 +3,15 @@
 // BSD-style license that can be found in the LICENSE file.
 
 import 'dart:async';
-import 'dart:io';
 import 'dart:convert';
-
+import 'dart:io';
 import 'dart:mirrors';
 
-import 'package:sdk_library_metadata/libraries.dart'
-    show libraries, LibraryInfo;
-
-import '../../lib/src/mirrors/analyze.dart'
-    show analyze;
-import '../../lib/src/mirrors/dart2js_mirrors.dart'
-    show BackDoor;
+import 'package:sdk_library_metadata/libraries.dart' show libraries;
 
 import '../../lib/src/filenames.dart';
+import '../../lib/src/mirrors/analyze.dart' show analyze;
+import '../../lib/src/mirrors/dart2js_mirrors.dart' show BackDoor;
 import '../../lib/src/source_file_provider.dart';
 import '../../lib/src/util/uri_extras.dart';
 
@@ -36,18 +31,14 @@ const bool outputJson =
     const bool.fromEnvironment('outputJson', defaultValue: false);
 
 main(List<String> arguments) {
-  handler = new FormattingDiagnosticHandler()
-      ..throwOnError = true;
+  handler = new FormattingDiagnosticHandler()..throwOnError = true;
 
-  outputUri =
-      handler.provider.cwd.resolve(nativeToUriPath(arguments.first));
+  outputUri = handler.provider.cwd.resolve(nativeToUriPath(arguments.first));
   output = new File(arguments.first).openSync(mode: FileMode.WRITE);
 
-  Uri myLocation =
-      handler.provider.cwd.resolveUri(Platform.script);
+  Uri myLocation = handler.provider.cwd.resolveUri(Platform.script);
 
-  Uri packageRoot =
-      handler.provider.cwd.resolve(Platform.packageRoot);
+  Uri packageRoot = handler.provider.cwd.resolve(Platform.packageRoot);
 
   Uri libraryRoot = myLocation.resolve(SDK_ROOT);
 
@@ -87,9 +78,11 @@ jsonify(MirrorSystem mirrors) {
     }
   });
 
-  for (String filename in ["dart_client.platform",
-                           "dart_server.platform",
-                           "dart_shared.platform"]) {
+  for (String filename in [
+    "dart_client.platform",
+    "dart_server.platform",
+    "dart_shared.platform"
+  ]) {
     futures.add(mapUri(sdkRoot.resolve('sdk/lib/$filename')));
   }
 

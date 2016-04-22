@@ -341,7 +341,12 @@ enum IndexSyntheticElementKind {
   /**
    * The synthetic `values` getter of an enum.
    */
-  enumValues
+  enumValues,
+
+  /**
+   * The containing unit itself.
+   */
+  unit
 }
 
 /**
@@ -428,6 +433,13 @@ abstract class LinkedLibrary extends base.SummaryClass {
    */
   @Id(0)
   List<LinkedDependency> get dependencies;
+
+  /**
+   * For each export in [UnlinkedUnit.exports], an index into [dependencies]
+   * of the library being exported.
+   */
+  @Id(6)
+  List<int> get exportDependencies;
 
   /**
    * Information about entities in the export namespace of the library that are
@@ -615,6 +627,7 @@ abstract class PackageBundle extends base.SummaryClass {
    * is encoded as a hexadecimal string using lower case letters.
    */
   @Id(4)
+  @informative
   List<String> get unlinkedUnitHashes;
 
   /**
@@ -1431,7 +1444,7 @@ enum UnlinkedConstOperation {
   typeCast,
 
   /**
-   * Pop the top value from the stack and check whether is is a subclass of the
+   * Pop the top value from the stack and check whether it is a subclass of the
    * type with reference from [UnlinkedConst.references], push the result into
    * the stack.
    */

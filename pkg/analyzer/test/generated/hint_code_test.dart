@@ -132,6 +132,12 @@ class _Required {
   final String reason;
   const _Required([this.reason]));
 }
+''',
+      'package:js/js.dart': r'''
+library js;
+class JS {
+  const JS([String js]) { }
+}
 '''
     });
   }
@@ -1241,6 +1247,65 @@ main() {
     verify([source]);
   }
 
+  void test_js_lib_OK() {
+    Source source = addSource(r'''
+@JS()
+library foo;
+
+import 'package:js/js.dart';
+
+@JS()
+class A { }
+''');
+    computeLibrarySourceErrors(source);
+    assertNoErrors(source);
+    verify([source]);
+  }
+
+  void test_missing_js_lib_on_class_decl() {
+    Source source = addSource(r'''
+library foo;
+
+import 'package:js/js.dart';
+
+@JS()
+class A { }
+''');
+    computeLibrarySourceErrors(source);
+    assertErrors(source, [HintCode.MISSING_JS_LIB_ANNOTATION]);
+    verify([source]);
+  }
+
+  void test_missing_js_lib_on_function() {
+    Source source = addSource(r'''
+library foo;
+
+import 'package:js/js.dart';
+
+@JS('acxZIndex')
+set _currentZIndex(int value) { }
+''');
+    computeLibrarySourceErrors(source);
+    assertErrors(source, [HintCode.MISSING_JS_LIB_ANNOTATION]);
+    verify([source]);
+  }
+
+  void test_missing_js_lib_on_member() {
+    Source source = addSource(r'''
+library foo;
+
+import 'package:js/js.dart';
+
+class A {
+  @JS()
+  void a() { }
+}
+''');
+    computeLibrarySourceErrors(source);
+    assertErrors(source, [HintCode.MISSING_JS_LIB_ANNOTATION]);
+    verify([source]);
+  }
+
   void test_missingReturn_async() {
     Source source = addSource('''
 import 'dart:async';
@@ -1540,7 +1605,7 @@ main() {
 }
 ''');
     computeLibrarySourceErrors(source);
-    assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM]);
+    assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM_WITH_DETAILS]);
     verify([source]);
   }
 
@@ -1606,7 +1671,7 @@ main() {
 }
 ''');
     computeLibrarySourceErrors(source);
-    assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM]);
+    assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM_WITH_DETAILS]);
     verify([source]);
   }
 
@@ -1621,7 +1686,7 @@ f() {
 }
 ''');
     computeLibrarySourceErrors(source);
-    assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM]);
+    assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM_WITH_DETAILS]);
     verify([source]);
   }
 
@@ -1642,6 +1707,50 @@ m(i) {
 }''');
     computeLibrarySourceErrors(source);
     assertErrors(source, [HintCode.TYPE_CHECK_IS_NOT_NULL]);
+    verify([source]);
+  }
+
+  void test_undefinedIdentifier_importHide() {
+    Source source = addSource(r'''
+library L;
+import 'lib1.dart' hide a;''');
+    addNamedSource("/lib1.dart", "library lib1;");
+    computeLibrarySourceErrors(source);
+    assertErrors(
+        source,
+        [HintCode.UNUSED_IMPORT, HintCode.UNDEFINED_HIDDEN_NAME]);
+    verify([source]);
+  }
+
+  void test_undefinedIdentifier_importShow() {
+    Source source = addSource(r'''
+library L;
+import 'lib1.dart' show a;''');
+    addNamedSource("/lib1.dart", "library lib1;");
+    computeLibrarySourceErrors(source);
+    assertErrors(
+        source,
+        [HintCode.UNUSED_IMPORT, HintCode.UNDEFINED_SHOWN_NAME]);
+    verify([source]);
+  }
+
+  void test_undefinedIdentifier_exportHide() {
+    Source source = addSource(r'''
+library L;
+export 'lib1.dart' hide a;''');
+    addNamedSource("/lib1.dart", "library lib1;");
+    computeLibrarySourceErrors(source);
+    assertErrors(source, [HintCode.UNDEFINED_HIDDEN_NAME]);
+    verify([source]);
+  }
+
+  void test_undefinedIdentifier_exportShow() {
+    Source source = addSource(r'''
+library L;
+export 'lib1.dart' show a;''');
+    addNamedSource("/lib1.dart", "library lib1;");
+    computeLibrarySourceErrors(source);
+    assertErrors(source, [HintCode.UNDEFINED_SHOWN_NAME]);
     verify([source]);
   }
 
@@ -2834,6 +2943,84 @@ class A {}
 class B {}''');
     computeLibrarySourceErrors(source);
     assertErrors(source, [HintCode.UNUSED_IMPORT]);
+    assertNoErrors(source2);
+    verify([source, source2]);
+  }
+
+  void test_unusedShownName() {
+    Source source = addSource(r'''
+library L;
+import 'lib1.dart' show A, B;
+A a;''');
+    Source source2 = addNamedSource(
+        "/lib1.dart",
+        r'''
+library lib1;
+class A {}
+class B {}''');
+    computeLibrarySourceErrors(source);
+    assertErrors(source, [HintCode.UNUSED_SHOWN_NAME]);
+    assertNoErrors(source2);
+    verify([source, source2]);
+  }
+
+  void test_unusedShownName_topLevelVariable() {
+    Source source = addSource(r'''
+library L;
+import 'lib1.dart' show var1, var2;
+import 'lib1.dart' show var3, var4;
+int a = var1;
+int b = var2;
+int c = var3;''');
+    Source source2 = addNamedSource(
+        "/lib1.dart",
+        r'''
+library lib1;
+const int var1 = 1;
+const int var2 = 2;
+const int var3 = 3;
+const int var4 = 4;''');
+    computeLibrarySourceErrors(source);
+    assertErrors(source, [HintCode.UNUSED_SHOWN_NAME]);
+    assertNoErrors(source2);
+    verify([source, source2]);
+  }
+
+  void test_unusedShownName_as() {
+    Source source = addSource(r'''
+library L;
+import 'lib1.dart' as p show A, B;
+p.A a;''');
+    Source source2 = addNamedSource(
+        "/lib1.dart",
+        r'''
+library lib1;
+class A {}
+class B {}''');
+    computeLibrarySourceErrors(source);
+    assertErrors(source, [HintCode.UNUSED_SHOWN_NAME]);
+    assertNoErrors(source2);
+    verify([source, source2]);
+  }
+
+  void test_unusedShownName_duplicates() {
+    Source source = addSource(r'''
+library L;
+import 'lib1.dart' show A, B;
+import 'lib1.dart' show C, D;
+A a;
+C c;''');
+    Source source2 = addNamedSource(
+        "/lib1.dart",
+        r'''
+library lib1;
+class A {}
+class B {}
+class C {}
+class D {}''');
+    computeLibrarySourceErrors(source);
+    assertErrors(
+        source, [HintCode.UNUSED_SHOWN_NAME, HintCode.UNUSED_SHOWN_NAME]);
     assertNoErrors(source2);
     verify([source, source2]);
   }

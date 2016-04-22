@@ -29,6 +29,10 @@
 
 namespace dart {
 
+DEFINE_FLAG(int, max_exhaustive_polymorphic_checks, 5,
+            "If a call receiver is known to be of at most this many classes, "
+            "generate exhaustive class tests instead of a megamorphic call");
+
 // Quick access to the current isolate and zone.
 #define I (isolate())
 #define Z (zone())
@@ -281,11 +285,11 @@ void AotOptimizer::SpecializePolymorphicInstanceCall(
     return;
   }
 
-  const bool with_checks = false;
   PolymorphicInstanceCallInstr* specialized =
       new(Z) PolymorphicInstanceCallInstr(call->instance_call(),
                                           ic_data,
-                                          with_checks);
+                                          /* with_checks = */ false,
+                                          /* complete = */ false);
   call->ReplaceWith(specialized, current_iterator());
 }
 
@@ -1900,71 +1904,6 @@ bool AotOptimizer::TryInlineInstanceMethod(InstanceCallInstr* call) {
     return TryInlineFloat64x2Method(call, recognized_kind);
   }
 
-  if (recognized_kind == MethodRecognizer::kIntegerLeftShiftWithMask32) {
-    ASSERT(call->ArgumentCount() == 3);
-    ASSERT(ic_data.NumArgsTested() == 2);
-    Definition* value = call->ArgumentAt(0);
-    Definition* count = call->ArgumentAt(1);
-    Definition* int32_mask = call->ArgumentAt(2);
-    if (HasOnlyTwoOf(ic_data, kSmiCid)) {
-      if (ic_data.HasDeoptReason(ICData::kDeoptBinaryMintOp)) {
-        return false;
-      }
-      // We cannot overflow. The input value must be a Smi
-      AddCheckSmi(value, call->deopt_id(), call->env(), call);
-      AddCheckSmi(count, call->deopt_id(), call->env(), call);
-      ASSERT(int32_mask->IsConstant());
-      const Integer& mask_literal = Integer::Cast(
-          int32_mask->AsConstant()->value());
-      const int64_t mask_value = mask_literal.AsInt64Value();
-      ASSERT(mask_value >= 0);
-      if (mask_value > Smi::kMaxValue) {
-        // The result will not be Smi.
-        return false;
-      }
-      BinarySmiOpInstr* left_shift =
-          new(Z) BinarySmiOpInstr(Token::kSHL,
-                                  new(Z) Value(value),
-                                  new(Z) Value(count),
-                                  call->deopt_id());
-      left_shift->mark_truncating();
-      if ((kBitsPerWord == 32) && (mask_value == 0xffffffffLL)) {
-        // No BIT_AND operation needed.
-        ReplaceCall(call, left_shift);
-      } else {
-        InsertBefore(call, left_shift, call->env(), FlowGraph::kValue);
-        BinarySmiOpInstr* bit_and =
-            new(Z) BinarySmiOpInstr(Token::kBIT_AND,
-                                    new(Z) Value(left_shift),
-                                    new(Z) Value(int32_mask),
-                                    call->deopt_id());
-        ReplaceCall(call, bit_and);
-      }
-      return true;
-    }
-
-    if (HasTwoMintOrSmi(ic_data) &&
-        HasOnlyOneSmi(ICData::Handle(Z,
-                                     ic_data.AsUnaryClassChecksForArgNr(1)))) {
-      if (!FlowGraphCompiler::SupportsUnboxedMints() ||
-          ic_data.HasDeoptReason(ICData::kDeoptBinaryMintOp)) {
-        return false;
-      }
-      ShiftMintOpInstr* left_shift =
-          new(Z) ShiftMintOpInstr(Token::kSHL,
-                                  new(Z) Value(value),
-                                  new(Z) Value(count),
-                                  call->deopt_id());
-      InsertBefore(call, left_shift, call->env(), FlowGraph::kValue);
-      BinaryMintOpInstr* bit_and =
-          new(Z) BinaryMintOpInstr(Token::kBIT_AND,
-                                   new(Z) Value(left_shift),
-                                   new(Z) Value(int32_mask),
-                                   call->deopt_id());
-      ReplaceCall(call, bit_and);
-      return true;
-    }
-  }
   return false;
 }
 
@@ -2441,7 +2380,8 @@ void AotOptimizer::VisitInstanceCall(InstanceCallInstr* instr) {
             instr, function_kind)) {
       PolymorphicInstanceCallInstr* call =
           new(Z) PolymorphicInstanceCallInstr(instr, unary_checks,
-                                              /* with_checks = */ false);
+                                              /* with_checks = */ false,
+                                              /* complete = */ true);
       instr->ReplaceWith(call, current_iterator());
       return;
     }
@@ -2514,9 +2454,67 @@ void AotOptimizer::VisitInstanceCall(InstanceCallInstr* instr) {
         ic_data.AddReceiverCheck(receiver_class.id(), function);
         PolymorphicInstanceCallInstr* call =
             new(Z) PolymorphicInstanceCallInstr(instr, ic_data,
-                                                /* with_checks = */ false);
+                                                /* with_checks = */ false,
+                                                /* complete = */ true);
         instr->ReplaceWith(call, current_iterator());
         return;
+      }
+    }
+  }
+
+  Definition* callee_receiver = instr->ArgumentAt(0);
+  const Function& function = flow_graph_->function();
+  if (function.IsDynamicFunction() &&
+      flow_graph_->IsReceiver(callee_receiver)) {
+    // Call receiver is method receiver.
+    Class& receiver_class = Class::Handle(Z, function.Owner());
+    GrowableArray<intptr_t> class_ids(6);
+    if (thread()->cha()->ConcreteSubclasses(receiver_class, &class_ids)) {
+      if (class_ids.length() <= FLAG_max_exhaustive_polymorphic_checks) {
+        if (FLAG_trace_cha) {
+          THR_Print("  **(CHA) Only %" Pd " concrete subclasses of %s for %s\n",
+                    class_ids.length(),
+                    receiver_class.ToCString(),
+                    instr->function_name().ToCString());
+        }
+
+        const Array& args_desc_array = Array::Handle(Z,
+            ArgumentsDescriptor::New(instr->ArgumentCount(),
+                                     instr->argument_names()));
+        ArgumentsDescriptor args_desc(args_desc_array);
+
+        const ICData& ic_data = ICData::Handle(
+            ICData::New(function,
+                        instr->function_name(),
+                        args_desc_array,
+                        Thread::kNoDeoptId,
+                        /* args_tested = */ 1));
+
+        Function& target = Function::Handle(Z);
+        Class& cls = Class::Handle(Z);
+        bool includes_dispatcher_case = false;
+        for (intptr_t i = 0; i < class_ids.length(); i++) {
+          intptr_t cid = class_ids[i];
+          cls = isolate()->class_table()->At(cid);
+          target = Resolver::ResolveDynamicForReceiverClass(
+              cls,
+              instr->function_name(),
+              args_desc);
+          if (target.IsNull()) {
+            // noSuchMethod, call through getter or closurization
+            includes_dispatcher_case = true;
+          } else {
+            ic_data.AddReceiverCheck(cid, target);
+          }
+        }
+        if (!includes_dispatcher_case && (ic_data.NumberOfChecks() > 0)) {
+          PolymorphicInstanceCallInstr* call =
+              new(Z) PolymorphicInstanceCallInstr(instr, ic_data,
+                                                  /* with_checks = */ true,
+                                                  /* complete = */ true);
+          instr->ReplaceWith(call, current_iterator());
+          return;
+        }
       }
     }
   }
@@ -2529,7 +2527,8 @@ void AotOptimizer::VisitInstanceCall(InstanceCallInstr* instr) {
     // deoptimization is allowed.
     PolymorphicInstanceCallInstr* call =
         new(Z) PolymorphicInstanceCallInstr(instr, unary_checks,
-                                            /* with_checks = */ true);
+                                            /* with_checks = */ true,
+                                            /* complete = */ false);
     instr->ReplaceWith(call, current_iterator());
     return;
   }

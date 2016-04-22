@@ -5,48 +5,29 @@
 library dart2js.resolution.registry;
 
 import '../common.dart';
-import '../common/backend_api.dart' show
-    Backend,
-    ForeignResolver;
-import '../common/resolution.dart' show
-    Feature,
-    ListLiteralUse,
-    MapLiteralUse,
-    ResolutionImpact;
-import '../common/registry.dart' show
-    Registry;
-import '../compiler.dart' show
-    Compiler;
+import '../common/backend_api.dart' show Backend, ForeignResolver;
+import '../common/resolution.dart'
+    show Feature, ListLiteralUse, MapLiteralUse, ResolutionImpact;
+import '../common/registry.dart' show Registry;
+import '../compiler.dart' show Compiler;
 import '../constants/expressions.dart';
 import '../dart_types.dart';
 import '../diagnostics/source_span.dart';
-import '../enqueue.dart' show
-    ResolutionEnqueuer;
+import '../enqueue.dart' show ResolutionEnqueuer;
 import '../elements/elements.dart';
 import '../tree/tree.dart';
-import '../util/util.dart' show
-    Setlet;
-import '../universe/call_structure.dart' show
-    CallStructure;
-import '../universe/selector.dart' show
-    Selector;
-import '../universe/use.dart' show
-    DynamicUse,
-    StaticUse,
-    TypeUse;
-import '../universe/world_impact.dart' show
-    WorldImpactBuilder;
-import '../util/enumset.dart' show
-    EnumSet;
-import '../world.dart' show
-    World;
+import '../util/util.dart' show Setlet;
+import '../universe/call_structure.dart' show CallStructure;
+import '../universe/selector.dart' show Selector;
+import '../universe/use.dart' show DynamicUse, StaticUse, TypeUse;
+import '../universe/world_impact.dart' show WorldImpact, WorldImpactBuilder;
+import '../util/enumset.dart' show EnumSet;
+import '../world.dart' show World;
 
 import 'send_structure.dart';
 
-import 'members.dart' show
-    ResolverVisitor;
-import 'tree_elements.dart' show
-    TreeElementMapping;
+import 'members.dart' show ResolverVisitor;
+import 'tree_elements.dart' show TreeElementMapping;
 
 class _ResolutionWorldImpact extends ResolutionImpact with WorldImpactBuilder {
   final String name;
@@ -68,8 +49,7 @@ class _ResolutionWorldImpact extends ResolutionImpact with WorldImpactBuilder {
 
   @override
   Iterable<MapLiteralUse> get mapLiterals {
-    return _mapLiterals != null
-        ? _mapLiterals : const <MapLiteralUse>[];
+    return _mapLiterals != null ? _mapLiterals : const <MapLiteralUse>[];
   }
 
   void registerListLiteral(ListLiteralUse listLiteralUse) {
@@ -82,8 +62,7 @@ class _ResolutionWorldImpact extends ResolutionImpact with WorldImpactBuilder {
 
   @override
   Iterable<ListLiteralUse> get listLiterals {
-    return _listLiterals != null
-        ? _listLiterals : const <ListLiteralUse>[];
+    return _listLiterals != null ? _listLiterals : const <ListLiteralUse>[];
   }
 
   void registerConstSymbolName(String name) {
@@ -95,8 +74,7 @@ class _ResolutionWorldImpact extends ResolutionImpact with WorldImpactBuilder {
 
   @override
   Iterable<String> get constSymbolNames {
-    return _constSymbolNames != null
-        ? _constSymbolNames : const <String>[];
+    return _constSymbolNames != null ? _constSymbolNames : const <String>[];
   }
 
   void registerFeature(Feature feature) {
@@ -109,7 +87,8 @@ class _ResolutionWorldImpact extends ResolutionImpact with WorldImpactBuilder {
   @override
   Iterable<Feature> get features {
     return _features != null
-        ? _features.iterable(Feature.values) : const <Feature>[];
+        ? _features.iterable(Feature.values)
+        : const <Feature>[];
   }
 
   void registerConstantLiteral(ConstantExpression constant) {
@@ -121,10 +100,43 @@ class _ResolutionWorldImpact extends ResolutionImpact with WorldImpactBuilder {
 
   Iterable<ConstantExpression> get constantLiterals {
     return _constantLiterals != null
-        ? _constantLiterals : const <ConstantExpression>[];
+        ? _constantLiterals
+        : const <ConstantExpression>[];
   }
 
-  String toString() => '_ResolutionWorldImpact($name)';
+  String toString() {
+    StringBuffer sb = new StringBuffer();
+    sb.write('_ResolutionWorldImpact($name)');
+    WorldImpact.printOn(sb, this);
+    if (_features != null) {
+      sb.write('\n features:');
+      for (Feature feature in _features.iterable(Feature.values)) {
+        sb.write('\n  $feature');
+      }
+    }
+    if (_mapLiterals != null) {
+      sb.write('\n map-literals:');
+      for (MapLiteralUse use in _mapLiterals) {
+        sb.write('\n  $use');
+      }
+    }
+    if (_listLiterals != null) {
+      sb.write('\n list-literals:');
+      for (ListLiteralUse use in _listLiterals) {
+        sb.write('\n  $use');
+      }
+    }
+    if (_constantLiterals != null) {
+      sb.write('\n const-literals:');
+      for (ConstantExpression constant in _constantLiterals) {
+        sb.write('\n  ${constant.getText()}');
+      }
+    }
+    if (_constSymbolNames != null) {
+      sb.write('\n const-symbol-names: $_constSymbolNames');
+    }
+    return sb.toString();
+  }
 }
 
 /// [ResolutionRegistry] collects all resolution information. It stores node
@@ -139,8 +151,8 @@ class ResolutionRegistry extends Registry {
   ResolutionRegistry(Compiler compiler, TreeElementMapping mapping)
       : this.compiler = compiler,
         this.mapping = mapping,
-        this.worldImpact = new _ResolutionWorldImpact(
-            mapping.analyzedElement.toString());
+        this.worldImpact =
+            new _ResolutionWorldImpact(mapping.analyzedElement.toString());
 
   bool get isForResolution => true;
 
@@ -187,8 +199,8 @@ class ResolutionRegistry extends Registry {
   }
 
   /// Sets the target constructor [node] to be [element].
-  void setRedirectingTargetConstructor(RedirectingFactoryBody node,
-                                       ConstructorElement element) {
+  void setRedirectingTargetConstructor(
+      RedirectingFactoryBody node, ConstructorElement element) {
     useElement(node, element);
   }
 
@@ -283,8 +295,8 @@ class ResolutionRegistry extends Registry {
   //  Potential access registration.
   //////////////////////////////////////////////////////////////////////////////
 
-  void setAccessedByClosureIn(Node contextNode, VariableElement element,
-                              Node accessNode) {
+  void setAccessedByClosureIn(
+      Node contextNode, VariableElement element, Node accessNode) {
     mapping.setAccessedByClosureIn(contextNode, element, accessNode);
   }
 
@@ -292,13 +304,13 @@ class ResolutionRegistry extends Registry {
     mapping.registerPotentialMutation(element, mutationNode);
   }
 
-  void registerPotentialMutationInClosure(VariableElement element,
-                                           Node mutationNode) {
+  void registerPotentialMutationInClosure(
+      VariableElement element, Node mutationNode) {
     mapping.registerPotentialMutationInClosure(element, mutationNode);
   }
 
-  void registerPotentialMutationIn(Node contextNode, VariableElement element,
-                                    Node mutationNode) {
+  void registerPotentialMutationIn(
+      Node contextNode, VariableElement element, Node mutationNode) {
     mapping.registerPotentialMutationIn(contextNode, element, mutationNode);
   }
 
@@ -328,31 +340,27 @@ class ResolutionRegistry extends Registry {
     worldImpact.registerTypeUse(new TypeUse.typeLiteral(type));
   }
 
-  void registerLiteralList(Node node,
-                           InterfaceType type,
-                           {bool isConstant,
-                            bool isEmpty}) {
+  void registerLiteralList(Node node, InterfaceType type,
+      {bool isConstant, bool isEmpty}) {
     setType(node, type);
     worldImpact.registerListLiteral(
         new ListLiteralUse(type, isConstant: isConstant, isEmpty: isEmpty));
   }
 
-  void registerMapLiteral(Node node,
-                          InterfaceType type,
-                          {bool isConstant,
-                           bool isEmpty}) {
+  void registerMapLiteral(Node node, InterfaceType type,
+      {bool isConstant, bool isEmpty}) {
     setType(node, type);
     worldImpact.registerMapLiteral(
         new MapLiteralUse(type, isConstant: isConstant, isEmpty: isEmpty));
   }
 
-  void registerForeignCall(Node node,
-                           Element element,
-                           CallStructure callStructure,
-                           ResolverVisitor visitor) {
-    backend.registerForeignCall(
-        node, element, callStructure,
+  void registerForeignCall(Node node, Element element,
+      CallStructure callStructure, ResolverVisitor visitor) {
+    var nativeData = backend.resolveForeignCall(node, element, callStructure,
         new ForeignResolutionResolver(visitor, this));
+    if (nativeData != null) {
+      mapping.registerNativeData(node, nativeData);
+    }
   }
 
   void registerDynamicUse(DynamicUse dynamicUse) {
@@ -375,8 +383,8 @@ class ResolutionRegistry extends Registry {
     return backend.defaultSuperclass(element);
   }
 
-  void registerMixinUse(MixinApplicationElement mixinApplication,
-                        ClassElement mixin) {
+  void registerMixinUse(
+      MixinApplicationElement mixinApplication, ClassElement mixin) {
     universe.registerMixinUse(mixinApplication, mixin);
   }
 

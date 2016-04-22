@@ -993,13 +993,16 @@ void ClassFinalizer::CheckTypeArgumentBounds(const Class& cls,
           !(type_arg.Equals(type_param) &&
             instantiated_bound.Equals(declared_bound))) {
         // If type_arg is a type parameter, its declared bound may not be
-        // resolved yet.
+        // finalized yet.
         if (type_arg.IsTypeParameter()) {
           const Class& type_arg_cls = Class::Handle(
               TypeParameter::Cast(type_arg).parameterized_class());
           AbstractType& bound = AbstractType::Handle(
               TypeParameter::Cast(type_arg).bound());
-          ResolveType(type_arg_cls, bound);
+          if (!bound.IsFinalized() && !bound.IsBeingFinalized()) {
+            bound = FinalizeType(type_arg_cls, bound, kCanonicalize);
+            TypeParameter::Cast(type_arg).set_bound(bound);
+          }
         }
         // This may be called only if type needs to be finalized, therefore
         // seems OK to allocate finalized types in old space.
@@ -1709,7 +1712,8 @@ void ClassFinalizer::CloneMixinAppTypeParameters(const Class& mixin_app_class) {
       for (intptr_t i = 0; i < num_super_type_params; i++) {
         param ^= super_type_params.TypeAt(i);
         param_name = param.name();
-        param_name = Symbols::FromConcat(param_name, Symbols::Backtick());
+        param_name = Symbols::FromConcat(thread,
+                                         param_name, Symbols::Backtick());
         cloned_param = TypeParameter::New(mixin_app_class,
                                           cloned_index,
                                           param_name,
@@ -1890,7 +1894,8 @@ void ClassFinalizer::ApplyMixinAppAlias(const Class& mixin_app_class,
   // If this mixin alias is aliasing another mixin alias, another class
   // will be inserted via recursion. No need to check here.
   // The mixin type may or may not be finalized yet.
-  Zone* zone = Thread::Current()->zone();
+  Thread* thread = Thread::Current();
+  Zone* zone = thread->zone();
   AbstractType& super_type = AbstractType::Handle(zone,
                                                   mixin_app_class.super_type());
   const Type& mixin_type = Type::Handle(zone, mixin_app_class.mixin());
@@ -1915,7 +1920,7 @@ void ClassFinalizer::ApplyMixinAppAlias(const Class& mixin_app_class,
   Class& inserted_class = Class::Handle(zone,
       library.LookupLocalClass(inserted_class_name));
   if (inserted_class.IsNull()) {
-    inserted_class_name = Symbols::New(inserted_class_name);
+    inserted_class_name = Symbols::New(thread, inserted_class_name);
     const Script& script = Script::Handle(zone, mixin_app_class.script());
     inserted_class = Class::New(
         inserted_class_name, script, mixin_app_class.token_pos());
@@ -2144,21 +2149,23 @@ void ClassFinalizer::CreateForwardingConstructors(
     const Class& mixin_app,
     const Class& mixin_cls,
     const GrowableObjectArray& cloned_funcs) {
-  const String& mixin_name = String::Handle(mixin_app.Name());
-  const Class& super_class = Class::Handle(mixin_app.SuperClass());
-  const String& super_name = String::Handle(super_class.Name());
-  const Array& functions = Array::Handle(super_class.functions());
+  Thread* T = Thread::Current();
+  Zone* Z = T->zone();
+  const String& mixin_name = String::Handle(Z, mixin_app.Name());
+  const Class& super_class = Class::Handle(Z, mixin_app.SuperClass());
+  const String& super_name = String::Handle(Z, super_class.Name());
+  const Array& functions = Array::Handle(Z, super_class.functions());
   const intptr_t num_functions = functions.Length();
-  Function& func = Function::Handle();
+  Function& func = Function::Handle(Z);
   for (intptr_t i = 0; i < num_functions; i++) {
     func ^= functions.At(i);
     if (func.IsGenerativeConstructor()) {
       // Build constructor name from mixin application class name
       // and name of cloned super class constructor.
-      const String& ctor_name = String::Handle(func.name());
-      String& clone_name = String::Handle(
+      const String& ctor_name = String::Handle(Z, func.name());
+      String& clone_name = String::Handle(Z,
           String::SubString(ctor_name, super_name.Length()));
-      clone_name = Symbols::FromConcat(mixin_name, clone_name);
+      clone_name = Symbols::FromConcat(T, mixin_name, clone_name);
 
       if (FLAG_trace_class_finalization) {
         THR_Print("Cloning constructor '%s' as '%s'\n",
@@ -2170,9 +2177,9 @@ void ClassFinalizer::CreateForwardingConstructors(
       // class. The source is the mixin class. The source may be needed
       // to parse field initializer expressions in the mixin class.
       const PatchClass& owner =
-          PatchClass::Handle(PatchClass::New(mixin_app, mixin_cls));
+          PatchClass::Handle(Z, PatchClass::New(mixin_app, mixin_cls));
 
-      const Function& clone = Function::Handle(
+      const Function& clone = Function::Handle(Z,
           Function::New(clone_name,
                         func.kind(),
                         func.is_static(),
@@ -2191,11 +2198,11 @@ void ClassFinalizer::CreateForwardingConstructors(
       const intptr_t num_parameters = func.NumParameters();
       // The cloned ctor shares the parameter names array with the
       // original.
-      const Array& parameter_names = Array::Handle(func.parameter_names());
+      const Array& parameter_names = Array::Handle(Z, func.parameter_names());
       ASSERT(parameter_names.Length() == num_parameters);
       clone.set_parameter_names(parameter_names);
       // The parameter types of the cloned constructor are 'dynamic'.
-      clone.set_parameter_types(Array::Handle(Array::New(num_parameters)));
+      clone.set_parameter_types(Array::Handle(Z, Array::New(num_parameters)));
       for (intptr_t n = 0; n < num_parameters; n++) {
         clone.SetParameterTypeAt(n, Object::dynamic_type());
       }
@@ -2512,20 +2519,22 @@ void ClassFinalizer::FinalizeClass(const Class& cls) {
 // values field. We also don't have to generate the code for these getters
 // from thin air (no source code is available).
 void ClassFinalizer::AllocateEnumValues(const Class &enum_cls) {
+  Thread* thread = Thread::Current();
+  Zone* zone = thread->zone();
   const Field& index_field =
-      Field::Handle(enum_cls.LookupInstanceField(Symbols::Index()));
+      Field::Handle(zone, enum_cls.LookupInstanceField(Symbols::Index()));
   ASSERT(!index_field.IsNull());
   const Field& values_field =
-      Field::Handle(enum_cls.LookupStaticField(Symbols::Values()));
+      Field::Handle(zone, enum_cls.LookupStaticField(Symbols::Values()));
   ASSERT(!values_field.IsNull());
-  ASSERT(Instance::Handle(values_field.StaticValue()).IsArray());
+  ASSERT(Instance::Handle(zone, values_field.StaticValue()).IsArray());
   Array& values_list = Array::Handle(
-      Array::RawCast(values_field.StaticValue()));
+      zone, Array::RawCast(values_field.StaticValue()));
 
-  const Array& fields = Array::Handle(enum_cls.fields());
-  Field& field = Field::Handle();
-  Instance& ordinal_value = Instance::Handle();
-  Instance& enum_value = Instance::Handle();
+  const Array& fields = Array::Handle(zone, enum_cls.fields());
+  Field& field = Field::Handle(zone);
+  Instance& ordinal_value = Instance::Handle(zone);
+  Instance& enum_value = Instance::Handle(zone);
 
   for (intptr_t i = 0; i < fields.Length(); i++) {
     field = Field::RawCast(fields.At(i));
@@ -2538,7 +2547,7 @@ void ClassFinalizer::AllocateEnumValues(const Class &enum_cls) {
     enum_value = Instance::New(enum_cls, Heap::kOld);
     enum_value.SetField(index_field, ordinal_value);
     const char* error_msg = "";
-    enum_value = enum_value.CheckAndCanonicalize(&error_msg);
+    enum_value = enum_value.CheckAndCanonicalize(thread, &error_msg);
     ASSERT(!enum_value.IsNull());
     ASSERT(enum_value.IsCanonical());
     field.SetStaticValue(enum_value, true);
@@ -2549,7 +2558,7 @@ void ClassFinalizer::AllocateEnumValues(const Class &enum_cls) {
   }
   values_list.MakeImmutable();
   const char* error_msg = NULL;
-  values_list ^= values_list.CheckAndCanonicalize(&error_msg);
+  values_list ^= values_list.CheckAndCanonicalize(thread, &error_msg);
   ASSERT(!values_list.IsNull());
 }
 
@@ -2726,7 +2735,8 @@ RawType* ClassFinalizer::ResolveMixinAppType(
     const MixinAppType& mixin_app_type) {
   // Lookup or create mixin application classes in the library of cls
   // and resolve super type and mixin types.
-  Zone* zone = Thread::Current()->zone();
+  Thread* thread = Thread::Current();
+  Zone* zone = thread->zone();
   const Library& library = Library::Handle(zone, cls.library());
   ASSERT(!library.IsNull());
   const Script& script = Script::Handle(zone, cls.script());
@@ -2803,7 +2813,7 @@ RawType* ClassFinalizer::ResolveMixinAppType(
                                           mixin_type_class_name);
     mixin_app_class = library.LookupLocalClass(mixin_app_class_name);
     if (mixin_app_class.IsNull()) {
-      mixin_app_class_name = Symbols::New(mixin_app_class_name);
+      mixin_app_class_name = Symbols::New(thread, mixin_app_class_name);
       mixin_app_class = Class::New(mixin_app_class_name,
                                    script,
                                    mixin_type.token_pos());

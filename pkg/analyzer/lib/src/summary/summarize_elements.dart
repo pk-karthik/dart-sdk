@@ -19,7 +19,9 @@ import 'package:analyzer/src/summary/format.dart';
 import 'package:analyzer/src/summary/idl.dart';
 import 'package:analyzer/src/summary/name_filter.dart';
 import 'package:analyzer/src/summary/summarize_const_expr.dart';
+import 'package:convert/convert.dart';
 import 'package:crypto/crypto.dart';
+import 'package:path/path.dart' as path;
 
 /**
  * Serialize all the elements in [lib] to a summary using [ctx] as the context
@@ -135,7 +137,16 @@ class PackageBundleAssembler {
   final List<LinkedLibraryBuilder> _linkedLibraries = <LinkedLibraryBuilder>[];
   final List<String> _unlinkedUnitUris = <String>[];
   final List<UnlinkedUnitBuilder> _unlinkedUnits = <UnlinkedUnitBuilder>[];
-  final List<String> _unlinkedUnitHashes = <String>[];
+  final List<String> _unlinkedUnitHashes;
+  final bool _excludeHashes;
+
+  /**
+   * Create a [PackageBundleAssembler].  If [excludeHashes] is `true`, hash
+   * computation will be skipped.
+   */
+  PackageBundleAssembler({bool excludeHashes: false})
+      : _excludeHashes = excludeHashes,
+        _unlinkedUnitHashes = excludeHashes ? null : <String>[];
 
   /**
    * Add a fallback library to the package bundle, corresponding to the library
@@ -156,8 +167,8 @@ class PackageBundleAssembler {
   void addFallbackUnit(Source source) {
     String uri = source.uri.toString();
     _unlinkedUnitUris.add(uri);
-    _unlinkedUnits
-        .add(new UnlinkedUnitBuilder(fallbackModePath: source.fullName));
+    _unlinkedUnits.add(new UnlinkedUnitBuilder(
+        fallbackModePath: path.relative(source.fullName)));
   }
 
   void addLinkedLibrary(String uri, LinkedLibraryBuilder library) {
@@ -166,9 +177,15 @@ class PackageBundleAssembler {
   }
 
   void addUnlinkedUnit(Source source, UnlinkedUnitBuilder unit) {
-    _unlinkedUnitUris.add(source.uri.toString());
+    addUnlinkedUnitWithHash(source.uri.toString(), unit,
+        _excludeHashes ? null : _hash(source.contents.data));
+  }
+
+  void addUnlinkedUnitWithHash(
+      String uri, UnlinkedUnitBuilder unit, String hash) {
+    _unlinkedUnitUris.add(uri);
     _unlinkedUnits.add(unit);
-    _unlinkedUnitHashes.add(_hash(source.contents.data));
+    _unlinkedUnitHashes?.add(hash);
   }
 
   /**
@@ -199,7 +216,7 @@ class PackageBundleAssembler {
     _unlinkedUnitUris.addAll(libraryResult.unitUris);
     _unlinkedUnits.addAll(libraryResult.unlinkedUnits);
     for (Source source in libraryResult.unitSources) {
-      _unlinkedUnitHashes.add(_hash(source.contents.data));
+      _unlinkedUnitHashes?.add(_hash(source.contents.data));
     }
   }
 
@@ -207,9 +224,7 @@ class PackageBundleAssembler {
    * Compute a hash of the given file contents.
    */
   String _hash(String contents) {
-    MD5 md5 = new MD5();
-    md5.add(UTF8.encode(contents));
-    return CryptoUtils.bytesToHex(md5.close());
+    return hex.encode(md5.convert(UTF8.encode(contents)).bytes);
   }
 }
 
@@ -453,7 +468,6 @@ class _CompilationUnitSerializer {
    * parameter [type], or return `null` if the type parameter is not in scope.
    */
   int findTypeParameterIndex(TypeParameterType type, Element context) {
-    Element originalContext = context;
     int index = 0;
     while (context != null) {
       List<TypeParameterElement> typeParameters;
@@ -1488,6 +1502,12 @@ class _LibrarySerializer {
   final List<int> linkedImports = <int>[];
 
   /**
+   * The linked portion of the "exports table".  This is the list of ints
+   * which should be written to [LinkedLibrary.exports].
+   */
+  final List<int> linkedExports = <int>[];
+
+  /**
    * Set of libraries which have been seen so far while visiting the transitive
    * closure of exports.
    */
@@ -1594,6 +1614,7 @@ class _LibrarySerializer {
     LinkedLibraryBuilder pb = new LinkedLibraryBuilder();
     for (ExportElement exportElement in libraryElement.exports) {
       addTransitiveExportClosure(exportElement.exportedLibrary);
+      linkedExports.add(serializeDependency(exportElement.exportedLibrary));
     }
     for (ImportElement importElement in libraryElement.imports) {
       addTransitiveExportClosure(importElement.importedLibrary);
@@ -1619,6 +1640,7 @@ class _LibrarySerializer {
       compilationUnitSerializer.createLinkedInfo();
     }
     pb.importDependencies = linkedImports;
+    pb.exportDependencies = linkedExports;
     List<String> exportedNames =
         libraryElement.exportNamespace.definedNames.keys.toList();
     exportedNames.sort();

@@ -347,7 +347,6 @@ dynamic resolver(String s) {
   if (s == "MimeTypeArray") return BlinkMimeTypeArray.instance;
   if (s == "MouseEvent") return BlinkMouseEvent.instance;
   if (s == "MutationCallback") return BlinkMutationCallback.instance;
-  if (s == "MutationEvent") return BlinkMutationEvent.instance;
   if (s == "MutationObserver") return BlinkMutationObserver.instance;
   if (s == "MutationRecord") return BlinkMutationRecord.instance;
   if (s == "NamedNodeMap") return BlinkNamedNodeMap.instance;
@@ -10943,27 +10942,6 @@ class BlinkMutationCallback {
   handleEvent_Callback_1_(mthis, __arg_0) => Blink_JsNative_DomException.callMethod(mthis /* MutationCallback */, "handleEvent", [__arg_0]);
 
   handleEvent_Callback_2_(mthis, __arg_0, __arg_1) => Blink_JsNative_DomException.callMethod(mthis /* MutationCallback */, "handleEvent", [__arg_0, __arg_1]);
-
-}
-
-class BlinkMutationEvent extends BlinkEvent {
-  static final instance = new BlinkMutationEvent();
-
-  attrChange_Getter_(mthis) => Blink_JsNative_DomException.getProperty(mthis /* MutationEvent */, "attrChange");
-
-  attrName_Getter_(mthis) => Blink_JsNative_DomException.getProperty(mthis /* MutationEvent */, "attrName");
-
-  newValue_Getter_(mthis) => Blink_JsNative_DomException.getProperty(mthis /* MutationEvent */, "newValue");
-
-  prevValue_Getter_(mthis) => Blink_JsNative_DomException.getProperty(mthis /* MutationEvent */, "prevValue");
-
-  relatedNode_Getter_(mthis) => Blink_JsNative_DomException.getProperty(mthis /* MutationEvent */, "relatedNode");
-
-  initMutationEvent_Callback_6_(mthis, __arg_0, __arg_1, __arg_2, __arg_3, __arg_4, __arg_5) => Blink_JsNative_DomException.callMethod(mthis /* MutationEvent */, "initMutationEvent", [__arg_0, __arg_1, __arg_2, __arg_3, __arg_4, __arg_5]);
-
-  initMutationEvent_Callback_7_(mthis, __arg_0, __arg_1, __arg_2, __arg_3, __arg_4, __arg_5, __arg_6) => Blink_JsNative_DomException.callMethod(mthis /* MutationEvent */, "initMutationEvent", [__arg_0, __arg_1, __arg_2, __arg_3, __arg_4, __arg_5, __arg_6]);
-
-  initMutationEvent_Callback_8_(mthis, __arg_0, __arg_1, __arg_2, __arg_3, __arg_4, __arg_5, __arg_6, __arg_7) => Blink_JsNative_DomException.callMethod(mthis /* MutationEvent */, "initMutationEvent", [__arg_0, __arg_1, __arg_2, __arg_3, __arg_4, __arg_5, __arg_6, __arg_7]);
 
 }
 
@@ -23303,42 +23281,10 @@ class Blink_Utils {
   static defineInterceptorCustomElement(jsObject, Type type) native "Utils_defineInterceptorCustomElement";
   static defineInterceptor(jsObject, Type type) native "Utils_defineInterceptor";
   static setInstanceInterceptor(o, Type type, {bool customElement: false}) native "Utils_setInstanceInterceptor";
+  static setInstanceInterceptorCustomUpgrade(o) native "Utils_setInstanceInterceptorCustomUpgrade";
 
   // This method will throw if the element isn't actually a real Element.
   static initializeCustomElement(element) native "Utils_initializeCustomElement";
-}
-
-class Blink_DOMWindowCrossFrame {
-  // FIXME: Return to using explicit cross frame entry points after roll to M35
-  static get_history(_DOMWindowCrossFrame) native "Window_history_cross_frame_Getter";
-
-  static get_location(_DOMWindowCrossFrame) native "Window_location_cross_frame_Getter";
-
-  static get_closed(_DOMWindowCrossFrame) native "Window_closed_Getter";
-
-  static get_opener(_DOMWindowCrossFrame) native "Window_opener_Getter";
-
-  static get_parent(_DOMWindowCrossFrame) native "Window_parent_Getter";
-
-  static get_top(_DOMWindowCrossFrame) native "Window_top_Getter";
-
-  static close(_DOMWindowCrossFrame) native "Window_close_Callback";
-
-  static postMessage(_DOMWindowCrossFrame, message, targetOrigin, [messagePorts]) native "Window_postMessage_Callback";
-}
-
-class Blink_HistoryCrossFrame {
-  // _HistoryCrossFrame native entry points
-  static back(_HistoryCrossFrame) native "History_back_Callback";
-
-  static forward(_HistoryCrossFrame) native "History_forward_Callback";
-
-  static go(_HistoryCrossFrame, distance) native "History_go_Callback";
-}
-
-class Blink_LocationCrossFrame {
-  // _LocationCrossFrame native entry points
-  static set_href(_LocationCrossFrame, h) native "Location_href_Setter";
 }
 
 class Blink_DOMStringMap {

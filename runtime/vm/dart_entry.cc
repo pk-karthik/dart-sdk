@@ -103,15 +103,22 @@ RawObject* DartEntry::InvokeFunction(const Function& function,
     }
   }
   // Now Call the invoke stub which will invoke the dart function.
+#if !defined(TARGET_ARCH_DBC)
   invokestub entrypoint = reinterpret_cast<invokestub>(
       StubCode::InvokeDartCode_entry()->EntryPoint());
+#endif
   const Code& code = Code::Handle(zone, function.CurrentCode());
   ASSERT(!code.IsNull());
   ASSERT(thread->no_callback_scope_depth() == 0);
   ScopedIsolateStackLimits stack_limit(thread);
   SuspendLongJumpScope suspend_long_jump_scope(thread);
   TransitionToGenerated transition(thread);
-#if defined(USING_SIMULATOR)
+#if defined(TARGET_ARCH_DBC)
+  return Simulator::Current()->Call(code,
+                                    arguments_descriptor,
+                                    arguments,
+                                    thread);
+#elif defined(USING_SIMULATOR)
   return bit_copy<RawObject*, int64_t>(Simulator::Current()->Call(
       reinterpret_cast<intptr_t>(entrypoint),
       reinterpret_cast<intptr_t>(&code),
@@ -136,12 +143,14 @@ RawObject* DartEntry::InvokeClosure(const Array& arguments) {
 
 RawObject* DartEntry::InvokeClosure(const Array& arguments,
                                     const Array& arguments_descriptor) {
-  Instance& instance = Instance::Handle();
+  Thread* thread = Thread::Current();
+  Zone* zone = thread->zone();
+  Instance& instance = Instance::Handle(zone);
   instance ^= arguments.At(0);
   // Get the entrypoint corresponding to the closure function or to the call
   // method of the instance. This will result in a compilation of the function
   // if it is not already compiled.
-  Function& function = Function::Handle();
+  Function& function = Function::Handle(zone);
   if (instance.IsCallable(&function)) {
     // Only invoke the function if its arguments are compatible.
     const ArgumentsDescriptor args_desc(arguments_descriptor);
@@ -160,12 +169,11 @@ RawObject* DartEntry::InvokeClosure(const Array& arguments,
     // call method. If the arguments didn't match, go to noSuchMethod instead
     // of infinitely recursing on the getter.
   } else {
-    const String& getter_name = String::Handle(Symbols::New("get:call"));
-    Class& cls = Class::Handle(instance.clazz());
+    const String& getter_name = Symbols::GetCall();
+    Class& cls = Class::Handle(zone, instance.clazz());
     while (!cls.IsNull()) {
       function ^= cls.LookupDynamicFunction(getter_name);
       if (!function.IsNull()) {
-        Thread* thread = Thread::Current();
         Isolate* isolate = thread->isolate();
         volatile uword c_stack_pos = Thread::GetCurrentStackPointer();
         volatile uword c_stack_limit = OSThread::Current()->stack_base() -
@@ -176,14 +184,14 @@ RawObject* DartEntry::InvokeClosure(const Array& arguments,
 
         if (c_stack_pos < c_stack_limit) {
           const Instance& exception =
-            Instance::Handle(isolate->object_store()->stack_overflow());
-          return UnhandledException::New(exception, Stacktrace::Handle());
+            Instance::Handle(zone, isolate->object_store()->stack_overflow());
+          return UnhandledException::New(exception, Stacktrace::Handle(zone));
         }
 
-        const Array& getter_arguments = Array::Handle(Array::New(1));
+        const Array& getter_arguments = Array::Handle(zone, Array::New(1));
         getter_arguments.SetAt(0, instance);
         const Object& getter_result =
-              Object::Handle(DartEntry::InvokeFunction(function,
+              Object::Handle(zone, DartEntry::InvokeFunction(function,
                                                        getter_arguments));
         if (getter_result.IsError()) {
           return getter_result.raw();
@@ -194,8 +202,8 @@ RawObject* DartEntry::InvokeClosure(const Array& arguments,
         // This otherwise unnecessary handle is used to prevent clang from
         // doing tail call elimination, which would make the stack overflow
         // check above ineffective.
-        Object& result = Object::Handle(InvokeClosure(arguments,
-                                                      arguments_descriptor));
+        Object& result = Object::Handle(zone,
+            InvokeClosure(arguments, arguments_descriptor));
         return result.raw();
       }
       cls = cls.SuperClass();
@@ -321,23 +329,26 @@ RawArray* ArgumentsDescriptor::New(intptr_t num_arguments,
   // argument count; the positional argument count; a sequence of (name,
   // position) pairs, sorted by name, for each named optional argument; and
   // a terminating null to simplify iterating in generated code.
+  Thread* thread = Thread::Current();
+  Zone* zone = thread->zone();
   const intptr_t descriptor_len = LengthFor(num_named_args);
-  Array& descriptor = Array::Handle(Array::New(descriptor_len, Heap::kOld));
+  Array& descriptor = Array::Handle(
+      zone, Array::New(descriptor_len, Heap::kOld));
 
   // Set total number of passed arguments.
   descriptor.SetAt(kCountIndex, Smi::Handle(Smi::New(num_arguments)));
   // Set number of positional arguments.
   descriptor.SetAt(kPositionalCountIndex, Smi::Handle(Smi::New(num_pos_args)));
   // Set alphabetically sorted entries for named arguments.
-  String& name = String::Handle();
-  Smi& pos = Smi::Handle();
+  String& name = String::Handle(zone);
+  Smi& pos = Smi::Handle(zone);
+  String& previous_name = String::Handle(zone);
+  Smi& previous_pos = Smi::Handle(zone);
   for (intptr_t i = 0; i < num_named_args; i++) {
     name ^= optional_arguments_names.At(i);
     pos = Smi::New(num_pos_args + i);
     intptr_t insert_index = kFirstNamedEntryIndex + (kNamedEntrySize * i);
     // Shift already inserted pairs with "larger" names.
-    String& previous_name = String::Handle();
-    Smi& previous_pos = Smi::Handle();
     while (insert_index > kFirstNamedEntryIndex) {
       intptr_t previous_index = insert_index - kNamedEntrySize;
       previous_name ^= descriptor.At(previous_index + kNameOffset);
@@ -358,7 +369,7 @@ RawArray* ArgumentsDescriptor::New(intptr_t num_arguments,
 
   // Share the immutable descriptor when possible by canonicalizing it.
   descriptor.MakeImmutable();
-  descriptor ^= descriptor.CheckAndCanonicalize(NULL);
+  descriptor ^= descriptor.CheckAndCanonicalize(thread, NULL);
   ASSERT(!descriptor.IsNull());
   return descriptor.raw();
 }
@@ -378,9 +389,12 @@ RawArray* ArgumentsDescriptor::NewNonCached(intptr_t num_arguments,
   // Build the arguments descriptor array, which consists of the total
   // argument count; the positional argument count; and
   // a terminating null to simplify iterating in generated code.
+  Thread* thread = Thread::Current();
+  Zone* zone = thread->zone();
   const intptr_t descriptor_len = LengthFor(0);
-  Array& descriptor = Array::Handle(Array::New(descriptor_len, Heap::kOld));
-  const Smi& arg_count = Smi::Handle(Smi::New(num_arguments));
+  Array& descriptor = Array::Handle(
+      zone, Array::New(descriptor_len, Heap::kOld));
+  const Smi& arg_count = Smi::Handle(zone, Smi::New(num_arguments));
 
   // Set total number of passed arguments.
   descriptor.SetAt(kCountIndex, arg_count);
@@ -394,7 +408,7 @@ RawArray* ArgumentsDescriptor::NewNonCached(intptr_t num_arguments,
   // Share the immutable descriptor when possible by canonicalizing it.
   descriptor.MakeImmutable();
   if (canonicalize) {
-    descriptor ^= descriptor.CheckAndCanonicalize(NULL);
+    descriptor ^= descriptor.CheckAndCanonicalize(thread, NULL);
   }
   ASSERT(!descriptor.IsNull());
   return descriptor.raw();

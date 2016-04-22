@@ -2,7 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import '../common/codegen.dart' show CodegenRegistry, CodegenWorkItem;
+import '../common/codegen.dart' show CodegenWorkItem;
 import '../compiler.dart' show Compiler;
 import '../constants/constant_system.dart';
 import '../constants/values.dart';
@@ -11,8 +11,7 @@ import '../js_backend/backend_helpers.dart' show BackendHelpers;
 import '../js_backend/js_backend.dart';
 import '../types/types.dart';
 import '../universe/selector.dart' show Selector;
-import '../world.dart' show ClassWorld, World;
-
+import '../world.dart' show ClassWorld;
 import 'nodes.dart';
 import 'optimize.dart';
 
@@ -96,9 +95,8 @@ class SsaSimplifyInterceptors extends HBaseVisitor
     return false;
   }
 
-  bool canUseSelfForInterceptor(HInstruction receiver,
-                                Set<ClassElement> interceptedClasses) {
-
+  bool canUseSelfForInterceptor(
+      HInstruction receiver, Set<ClassElement> interceptedClasses) {
     if (receiver.canBePrimitive(compiler)) {
       // Primitives always need interceptors.
       return false;
@@ -116,8 +114,7 @@ class SsaSimplifyInterceptors extends HBaseVisitor
   }
 
   HInstruction tryComputeConstantInterceptor(
-      HInstruction input,
-      Set<ClassElement> interceptedClasses) {
+      HInstruction input, Set<ClassElement> interceptedClasses) {
     if (input == graph.explicitReceiverParameter) {
       // If `explicitReceiverParameter` is set it means the current method is an
       // interceptor method, and `this` is the interceptor.  The caller just did
@@ -143,9 +140,7 @@ class SsaSimplifyInterceptors extends HBaseVisitor
   }
 
   ClassElement tryComputeConstantInterceptorFromType(
-      TypeMask type,
-      Set<ClassElement> interceptedClasses) {
-
+      TypeMask type, Set<ClassElement> interceptedClasses) {
     if (type.isNullable) {
       if (type.isNull) {
         return helpers.jsNullClass;
@@ -230,13 +225,13 @@ class SsaSimplifyInterceptors extends HBaseVisitor
         node == dominator.receiver &&
         useCount(dominator, node) == 1) {
       interceptedClasses =
-            backend.getInterceptedClassesOn(dominator.selector.name);
+          backend.getInterceptedClassesOn(dominator.selector.name);
 
       // If we found that we need number, we must still go through all
       // uses to check if they require int, or double.
       if (interceptedClasses.contains(helpers.jsNumberClass) &&
           !(interceptedClasses.contains(helpers.jsDoubleClass) ||
-            interceptedClasses.contains(helpers.jsIntClass))) {
+              interceptedClasses.contains(helpers.jsIntClass))) {
         for (HInstruction user in node.usedBy) {
           if (user is! HInvoke) continue;
           Set<ClassElement> intercepted =
@@ -256,14 +251,14 @@ class SsaSimplifyInterceptors extends HBaseVisitor
             user.isCallOnInterceptor(compiler) &&
             node == user.receiver &&
             useCount(user, node) == 1) {
-          interceptedClasses.addAll(
-              backend.getInterceptedClassesOn(user.selector.name));
+          interceptedClasses
+              .addAll(backend.getInterceptedClassesOn(user.selector.name));
         } else if (user is HInvokeSuper &&
-                   user.isCallOnInterceptor(compiler) &&
-                   node == user.receiver &&
-                   useCount(user, node) == 1) {
-          interceptedClasses.addAll(
-              backend.getInterceptedClassesOn(user.selector.name));
+            user.isCallOnInterceptor(compiler) &&
+            node == user.receiver &&
+            useCount(user, node) == 1) {
+          interceptedClasses
+              .addAll(backend.getInterceptedClassesOn(user.selector.name));
         } else {
           // Use a most general interceptor for other instructions, example,
           // is-checks and escaping interceptors.
@@ -311,10 +306,9 @@ class SsaSimplifyInterceptors extends HBaseVisitor
           ClassElement interceptorClass = tryComputeConstantInterceptorFromType(
               receiver.instructionType.nonNullable(), interceptedClasses);
           if (interceptorClass != null) {
-            HInstruction constantInstruction =
-                graph.addConstant(
-                    new InterceptorConstantValue(interceptorClass.thisType),
-                    compiler);
+            HInstruction constantInstruction = graph.addConstant(
+                new InterceptorConstantValue(interceptorClass.thisType),
+                compiler);
             node.conditionalConstantInterceptor = constantInstruction;
             constantInstruction.usedBy.add(node);
             return false;
@@ -358,8 +352,11 @@ class SsaSimplifyInterceptors extends HBaseVisitor
         List<HInstruction> inputs = new List<HInstruction>.from(user.inputs);
         inputs[0] = nullConstant;
         HOneShotInterceptor oneShotInterceptor = new HOneShotInterceptor(
-            user.selector, user.mask,
-            inputs, user.instructionType, interceptedClasses);
+            user.selector,
+            user.mask,
+            inputs,
+            user.instructionType,
+            interceptedClasses);
         oneShotInterceptor.sourceInformation = user.sourceInformation;
         oneShotInterceptor.sourceElement = user.sourceElement;
         return replaceUserWith(oneShotInterceptor);
@@ -386,8 +383,8 @@ class SsaSimplifyInterceptors extends HBaseVisitor
   }
 
   bool visitOneShotInterceptor(HOneShotInterceptor node) {
-    HInstruction constant = tryComputeConstantInterceptor(
-        node.inputs[1], node.interceptedClasses);
+    HInstruction constant =
+        tryComputeConstantInterceptor(node.inputs[1], node.interceptedClasses);
 
     if (constant == null) return false;
 
@@ -395,12 +392,8 @@ class SsaSimplifyInterceptors extends HBaseVisitor
     TypeMask mask = node.mask;
     HInstruction instruction;
     if (selector.isGetter) {
-      instruction = new HInvokeDynamicGetter(
-          selector,
-          mask,
-          node.element,
-          <HInstruction>[constant, node.inputs[1]],
-          node.instructionType);
+      instruction = new HInvokeDynamicGetter(selector, mask, node.element,
+          <HInstruction>[constant, node.inputs[1]], node.instructionType);
     } else if (selector.isSetter) {
       instruction = new HInvokeDynamicSetter(
           selector,

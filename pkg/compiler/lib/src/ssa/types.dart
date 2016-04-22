@@ -10,7 +10,7 @@ import '../native/native.dart' as native;
 import '../tree/tree.dart' as ast;
 import '../types/types.dart';
 import '../universe/selector.dart' show Selector;
-import '../world.dart' show ClassWorld, World;
+import '../world.dart' show ClassWorld;
 
 class TypeMaskFactory {
   static TypeMask fromInferredType(TypeMask mask, Compiler compiler) {
@@ -22,33 +22,29 @@ class TypeMaskFactory {
   static TypeMask inferredReturnTypeForElement(
       Element element, Compiler compiler) {
     return fromInferredType(
-        compiler.typesTask.getGuaranteedReturnTypeOfElement(element),
-        compiler);
+        compiler.typesTask.getGuaranteedReturnTypeOfElement(element), compiler);
   }
 
   static TypeMask inferredTypeForElement(Element element, Compiler compiler) {
     return fromInferredType(
-        compiler.typesTask.getGuaranteedTypeOfElement(element),
-        compiler);
+        compiler.typesTask.getGuaranteedTypeOfElement(element), compiler);
   }
 
-  static TypeMask inferredTypeForSelector(Selector selector,
-                                          TypeMask mask,
-                                          Compiler compiler) {
+  static TypeMask inferredTypeForSelector(
+      Selector selector, TypeMask mask, Compiler compiler) {
     return fromInferredType(
         compiler.typesTask.getGuaranteedTypeOfSelector(selector, mask),
         compiler);
   }
 
-  static TypeMask inferredForNode(Element owner, ast.Node node,
-                                  Compiler compiler) {
+  static TypeMask inferredForNode(
+      Element owner, ast.Node node, Compiler compiler) {
     return fromInferredType(
-        compiler.typesTask.getGuaranteedTypeOfNode(owner, node),
-        compiler);
+        compiler.typesTask.getGuaranteedTypeOfNode(owner, node), compiler);
   }
 
-  static TypeMask fromNativeBehavior(native.NativeBehavior nativeBehavior,
-                                     Compiler compiler) {
+  static TypeMask fromNativeBehavior(
+      native.NativeBehavior nativeBehavior, Compiler compiler) {
     ClassWorld classWorld = compiler.world;
     JavaScriptBackend backend = compiler.backend;
     if (nativeBehavior.typesReturned.isEmpty) return backend.dynamicType;

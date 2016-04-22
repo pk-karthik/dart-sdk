@@ -117,6 +117,14 @@ test1() {
 ''');
   }
 
+  void test_blockBodiedLambdas_basic_topLevel() {
+    checkFile(r'''
+List<int> o;
+var y = o.map(/*info:INFERRED_TYPE_CLOSURE*/(x) { return x + 1; });
+Iterable<int> z = y;
+''');
+  }
+
   void test_blockBodiedLambdas_doesNotInferBottom_async() {
     var mainUnit = checkFile(r'''
 import 'dart:async';
@@ -208,6 +216,22 @@ test2() {
   Iterable<num> w = y;
   Iterable<int> z = /*info:ASSIGNMENT_CAST*/y;
 }
+''');
+  }
+
+  void test_blockBodiedLambdas_LUB_topLevel() {
+    checkFile(r'''
+import 'dart:math' show Random;
+List<num> o;
+var y = o.map(/*info:INFERRED_TYPE_CLOSURE*/(x) {
+  if (new Random().nextBool()) {
+    return x.toInt() + 1;
+  } else {
+    return x.toDouble();
+  }
+});
+Iterable<num> w = y;
+Iterable<int> z = /*info:ASSIGNMENT_CAST*/y;
 ''');
   }
 
@@ -408,16 +432,16 @@ class A<T> {
   A(this.x);
 }
 void main() {
-    {  // Variables, nested literals
-      var x = "hello";
-      var y = 3;
-      void f(List<Map<int, String>> l) {};
-      f(/*info:INFERRED_TYPE_LITERAL*/[/*info:INFERRED_TYPE_LITERAL*/{y: x}]);
-    }
-    {
-      int f(int x) => 0;
-      A<int> a = /*info:INFERRED_TYPE_ALLOCATION*/new A(f);
-    }
+  {  // Variables, nested literals
+    var x = "hello";
+    var y = 3;
+    void f(List<Map<int, String>> l) {};
+    f(/*info:INFERRED_TYPE_LITERAL*/[/*info:INFERRED_TYPE_LITERAL*/{y: x}]);
+  }
+  {
+    int f(int x) => 0;
+    A<int> a = /*info:INFERRED_TYPE_ALLOCATION*/new A(f);
+  }
 }
 ''');
   }
@@ -1154,7 +1178,7 @@ void functionExpressionInvocation() {
 ''');
   }
 
-  void test_genericMethods_handleOverrideOfNnGenericWithGeneric() {
+  void test_genericMethods_handleOverrideOfNonGenericWithGeneric() {
     // Regression test for crash when adding genericity
     checkFile('''
 class C {
@@ -1302,6 +1326,225 @@ main() {
   Future<String> results2 = results.then((List<int> list)
     => list.fold('', /*info:INFERRED_TYPE_CLOSURE*/(x, y) => x + y.toString()));
 }
+''');
+  }
+
+  void test_infer_assignToIndex() {
+    checkFile(r'''
+List<double> a = <double>[];
+var b = (a[0] = 1.0);
+''');
+  }
+
+  void test_infer_assignToProperty() {
+    checkFile(r'''
+class A {
+  int f;
+}
+var v_assign = (new A().f = 1);
+var v_plus = (new A().f += 1);
+var v_minus = (new A().f -= 1);
+var v_multiply = (new A().f *= 1);
+var v_prefix_pp = (++new A().f);
+var v_prefix_mm = (--new A().f);
+var v_postfix_pp = (new A().f++);
+var v_postfix_mm = (new A().f--);
+''');
+  }
+
+  void test_infer_assignToProperty_custom() {
+    checkFile(r'''
+class A {
+  int operator +(other) => 1;
+  double operator -(other) => 2.0;
+}
+class B {
+  A a;
+}
+var v_prefix_pp = (++new B().a);
+var v_prefix_mm = (--new B().a);
+var v_postfix_pp = (new B().a++);
+var v_postfix_mm = (new B().a--);
+''');
+  }
+
+  void test_infer_assignToRef() {
+    checkFile(r'''
+class A {
+  int f;
+}
+A a = new A();
+var b = (a.f = 1);
+var c = 0;
+var d = (c = 1);
+''');
+  }
+
+  void test_infer_binary_custom() {
+    checkFile(r'''
+class A {
+  int operator +(other) => 1;
+  double operator -(other) => 2.0;
+}
+var v_add = new A() + 'foo';
+var v_minus = new A() - 'bar';
+''');
+  }
+
+  void test_infer_binary_doubleDouble() {
+    checkFile(r'''
+var a_equal = 1.0 == 2.0;
+var a_notEqual = 1.0 != 2.0;
+var a_add = 1.0 + 2.0;
+var a_subtract = 1.0 - 2.0;
+var a_multiply = 1.0 * 2.0;
+var a_divide = 1.0 / 2.0;
+var a_floorDivide = 1.0 ~/ 2.0;
+var a_greater = 1.0 > 2.0;
+var a_less = 1.0 < 2.0;
+var a_greaterEqual = 1.0 >= 2.0;
+var a_lessEqual = 1.0 <= 2.0;
+var a_modulo = 1.0 % 2.0;
+''');
+  }
+
+  void test_infer_binary_doubleInt() {
+    checkFile(r'''
+var a_equal = 1.0 == 2;
+var a_notEqual = 1.0 != 2;
+var a_add = 1.0 + 2;
+var a_subtract = 1.0 - 2;
+var a_multiply = 1.0 * 2;
+var a_divide = 1.0 / 2;
+var a_floorDivide = 1.0 ~/ 2;
+var a_greater = 1.0 > 2;
+var a_less = 1.0 < 2;
+var a_greaterEqual = 1.0 >= 2;
+var a_lessEqual = 1.0 <= 2;
+var a_modulo = 1.0 % 2;
+''');
+  }
+
+  void test_infer_binary_intDouble() {
+    checkFile(r'''
+var a_equal = 1 == 2.0;
+var a_notEqual = 1 != 2.0;
+var a_add = 1 + 2.0;
+var a_subtract = 1 - 2.0;
+var a_multiply = 1 * 2.0;
+var a_divide = 1 / 2.0;
+var a_floorDivide = 1 ~/ 2.0;
+var a_greater = 1 > 2.0;
+var a_less = 1 < 2.0;
+var a_greaterEqual = 1 >= 2.0;
+var a_lessEqual = 1 <= 2.0;
+var a_modulo = 1 % 2.0;
+''');
+  }
+
+  void test_infer_binary_intInt() {
+    checkFile(r'''
+var a_equal = 1 == 2;
+var a_notEqual = 1 != 2;
+var a_bitXor = 1 ^ 2;
+var a_bitAnd = 1 & 2;
+var a_bitOr = 1 | 2;
+var a_bitShiftRight = 1 >> 2;
+var a_bitShiftLeft = 1 << 2;
+var a_add = 1 + 2;
+var a_subtract = 1 - 2;
+var a_multiply = 1 * 2;
+var a_divide = 1 / 2;
+var a_floorDivide = 1 ~/ 2;
+var a_greater = 1 > 2;
+var a_less = 1 < 2;
+var a_greaterEqual = 1 >= 2;
+var a_lessEqual = 1 <= 2;
+var a_modulo = 1 % 2;
+''');
+  }
+
+  void test_infer_conditional() {
+    checkFile(r'''
+var a = 1 == 2 ? 1 : 2.0;
+var b = 1 == 2 ? 1.0 : 2;
+''');
+  }
+
+  void test_infer_prefixExpression() {
+    checkFile(r'''
+var a_not = !true;
+var a_complement = ~1;
+var a_negate = -1;
+''');
+  }
+
+  void test_infer_prefixExpression_custom() {
+    checkFile(r'''
+class A {
+  A();
+  int operator ~() => 1;
+  double operator -() => 2.0;
+}
+var a = new A();
+var v_complement = ~a;
+var v_negate = -a;
+''');
+  }
+
+  void test_infer_throw() {
+    checkFile(r'''
+var t = true;
+var a = (throw 0);
+var b = (throw 0) ? 1 : 2;
+var c = t ? (throw 1) : 2;
+var d = t ? 1 : (throw 2);
+''');
+  }
+
+  void test_infer_typeCast() {
+    checkFile(r'''
+class A<T> {}
+class B<T> extends A<T> {
+  foo() {}
+}
+A<num> a = new B<int>();
+var b = (a as B<int>);
+main() {
+  b.foo();
+}
+''');
+  }
+
+  void test_infer_typedListLiteral() {
+    checkFile(r'''
+var a = <int>[];
+var b = <double>[1.0, 2.0, 3.0];
+var c = <List<int>>[];
+var d = <dynamic>[1, 2.0, false];
+''');
+  }
+
+  void test_infer_typedMapLiteral() {
+    checkFile(r'''
+var a = <int, String>{0: 'aaa', 1: 'bbb'};
+var b = <double, int>{1.1: 1, 2.2: 2};
+var c = <List<int>, Map<String, double>>{};
+var d = <int, dynamic>{};
+var e = <dynamic, int>{};
+var f = <dynamic, dynamic>{};
+''');
+  }
+
+  void test_infer_use_of_void() {
+    checkFile('''
+class B {
+  void f() {}
+}
+class C extends B {
+  f() {}
+}
+var x = new C()./*info:USE_OF_VOID_RESULT*/f();
 ''');
   }
 
@@ -1607,6 +1850,46 @@ test1() {
   B.y = /*warning:INVALID_ASSIGNMENT*/"hi";
 }
 ''');
+  }
+
+  void test_inferGenericMethodType_named() {
+    var unit = checkFile('''
+class C {
+  /*=T*/ m/*<T>*/(int a, {String b, /*=T*/ c}) => null;
+}
+var y = new C().m(1, b: 'bbb', c: 2.0);
+  ''');
+    expect(unit.topLevelVariables[0].type.toString(), 'double');
+  }
+
+  void test_inferGenericMethodType_positional() {
+    var unit = checkFile('''
+class C {
+  /*=T*/ m/*<T>*/(int a, [/*=T*/ b]) => null;
+}
+var y = new C().m(1, 2.0);
+  ''');
+    expect(unit.topLevelVariables[0].type.toString(), 'double');
+  }
+
+  void test_inferGenericMethodType_positional2() {
+    var unit = checkFile('''
+class C {
+  /*=T*/ m/*<T>*/(int a, [String b, /*=T*/ c]) => null;
+}
+var y = new C().m(1, 'bbb', 2.0);
+  ''');
+    expect(unit.topLevelVariables[0].type.toString(), 'double');
+  }
+
+  void test_inferGenericMethodType_required() {
+    var unit = checkFile('''
+class C {
+  /*=T*/ m/*<T>*/(/*=T*/ x) => x;
+}
+var y = new C().m(42);
+  ''');
+    expect(unit.topLevelVariables[0].type.toString(), 'int');
   }
 
   void test_inferIfComplexExpressionsReadPossibleInferredField() {
@@ -2089,6 +2372,69 @@ test() {
 ''');
   }
 
+  void test_instanceField_basedOnInstanceField_betweenCycles() {
+    // Verify that all instance fields in one library cycle are inferred before
+    // an instance fields in a dependent library cycle.
+    addFile(
+        '''
+import 'b.dart';
+class A {
+  var x = new B().y;
+  var y = 0;
+}
+''',
+        name: '/a.dart');
+    addFile(
+        '''
+class B {
+  var x = new B().y;
+  var y = 0;
+}
+''',
+        name: '/b.dart');
+    checkFile('''
+import 'a.dart';
+import 'b.dart';
+main() {
+  new A().x = /*warning:INVALID_ASSIGNMENT*/'foo';
+  new B().x = 'foo';
+}
+''');
+  }
+
+  void test_instanceField_basedOnInstanceField_withinCycle() {
+    // Verify that all instance field inferences that occur within the same
+    // library cycle happen as though they occurred "all at once", so no
+    // instance field in the library cycle can inherit its type from another
+    // instance field in the same library cycle.
+    addFile(
+        '''
+import 'b.dart';
+class A {
+  var x = new B().y;
+  var y = 0;
+}
+''',
+        name: '/a.dart');
+    addFile(
+        '''
+import 'a.dart';
+class B {
+  var x = new A().y;
+  var y = 0;
+}
+''',
+        name: '/b.dart');
+    checkFile('''
+import 'a.dart';
+import 'b.dart';
+main() {
+  new A().x = 'foo';
+  new B().x = 'foo';
+}
+''');
+  }
+
   void test_listLiterals() {
     checkFile(r'''
 test1() {
@@ -2103,6 +2449,24 @@ test2() {
   x.add(/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi');
   x.add(4.0);
   List<int> y = /*info:ASSIGNMENT_CAST*/x;
+}
+  ''');
+  }
+
+  void test_listLiterals_topLevel() {
+    checkFile(r'''
+var x1 = [1, 2, 3];
+test1() {
+  x1.add(/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi');
+  x1.add(/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/4.0);
+  x1.add(4);
+  List<num> y = x1;
+}
+var x2 = [1, 2.0, 3];
+test2() {
+  x2.add(/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi');
+  x2.add(4.0);
+  List<int> y = /*info:ASSIGNMENT_CAST*/x2;
 }
   ''');
   }
@@ -2138,6 +2502,30 @@ test2() {
   Pattern p = null;
   x[2] = p;
   Map<int, String> y = /*info:ASSIGNMENT_CAST*/x;
+}
+  ''');
+  }
+
+  void test_mapLiterals_topLevel() {
+    checkFile(r'''
+var x1 = { 1: 'x', 2: 'y' };
+test1() {
+  x1[3] = 'z';
+  x1[/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi'] = 'w';
+  x1[/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/4.0] = 'u';
+  x1[3] = /*warning:INVALID_ASSIGNMENT*/42;
+  Map<num, String> y = x1;
+}
+
+var x2 = { 1: 'x', 2: 'y', 3.0: new RegExp('.') };
+test2() {
+  x2[3] = 'z';
+  x2[/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi'] = 'w';
+  x2[4.0] = 'u';
+  x2[3] = /*warning:INVALID_ASSIGNMENT*/42;
+  Pattern p = null;
+  x2[2] = p;
+  Map<int, String> y = /*info:ASSIGNMENT_CAST*/x2;
 }
   ''');
   }
@@ -2257,6 +2645,57 @@ void main() {
 
   D d2 = new D();
   print(d2.c.b.a.x);
+}
+''');
+  }
+
+  void test_staticRefersToNonstaticField_inOtherLibraryCycle() {
+    addFile(
+        '''
+import 'b.dart';
+var x = new C().f;
+''',
+        name: '/a.dart');
+    addFile(
+        '''
+class C {
+  var f = 0;
+}
+''',
+        name: '/b.dart');
+    checkFile('''
+import 'a.dart';
+test() {
+  x = /*warning:INVALID_ASSIGNMENT*/"hi";
+}
+''');
+  }
+
+  void test_staticRefersToNonstaticField_inSameLibraryCycle() {
+    addFile(
+        '''
+import 'b.dart';
+var x = new C().f;
+class D {
+  var f = 0;
+}
+''',
+        name: '/a.dart');
+    addFile(
+        '''
+import 'a.dart';
+var y = new D().f;
+class C {
+  var f = 0;
+}
+''',
+        name: '/b.dart');
+    checkFile('''
+import 'a.dart';
+import 'b.dart';
+test() {
+  x = "hi";
+  y = "hi";
 }
 ''');
   }

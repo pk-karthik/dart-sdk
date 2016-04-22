@@ -420,7 +420,7 @@ class HtmlDartGenerator(object):
           else:
             checks.append('(%s is %s)' % (
                 parameter_name, test_type))
-        elif i >= number_of_required_in_dart:
+        elif i >= number_of_required_in_dart and not argument.type.nullable:
           checks.append('%s != null' % parameter_name)
 
       # There can be multiple presence checks.  We need them all since a later
@@ -587,7 +587,7 @@ class HtmlDartGenerator(object):
         inits = self._members_emitter.Emit(
             '\n  $(METADATA)'
             'factory $CONSTRUCTOR($PARAMS) {\n'
-            '    var e = $FACTORY.$CTOR_FACTORY_NAME($FACTORY_PARAMS);\n'
+            '    $CONSTRUCTOR e = $FACTORY.$CTOR_FACTORY_NAME($FACTORY_PARAMS);\n'
             '$!INITS'
             '    return e;\n'
             '  }\n',

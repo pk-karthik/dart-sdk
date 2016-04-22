@@ -2,7 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-class _IntegerImplementation extends _Num {
+abstract class _IntegerImplementation {
   // The Dart class _Bigint extending _IntegerImplementation requires a
   // default constructor.
 
@@ -262,8 +262,6 @@ class _IntegerImplementation extends _Num {
     } while (value > 0);
     return string;
   }
-
-  _leftShiftWithMask32(count, mask)  native "Integer_leftShiftWithMask32";
 
   // Returns pow(this, e) % m.
   int modPow(int e, int m) {

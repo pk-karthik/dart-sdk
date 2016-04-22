@@ -1,6 +1,18 @@
+## 1.17.0
+
+### Core library changes
+* `dart:core`
+  * `Uri.replace` supports iterables as values for the query parameters.
+  * `Uri.parseIPv6Address` returns a `Uint8List`.
+
 ## 1.16.0
 
 ### Core library changes
+
+* `dart:convert`
+  * Added `BASE64URL` codec and corresponding `Base64Codec.urlSafe` constructor.
+
+  * Introduce `ChunkedConverter` and deprecate chunked methods on `Converter`.
 
 * `dart:io`
   * Added `SecurityContext.alpnSupported`, which is true if a platform
@@ -27,6 +39,10 @@
 
   * Both `pub get` and `pub upgrade` now have a `--no-precompile` flag that
     disables precompilation of executables and transformed dependencies.
+
+  * `pub publish` now resolves symlinks when publishing from a Git repository.
+    This matches the behavior it always had when publishing a package that
+    wasn't in a Git repository.
 
 * Dart Dev Compiler
   * The **experimental** `dartdevc` executable has been added to the SDK.

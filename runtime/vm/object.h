@@ -1197,6 +1197,9 @@ class Class : public Object {
   RawField* LookupInstanceField(const String& name) const;
   RawField* LookupStaticField(const String& name) const;
   RawField* LookupField(const String& name) const;
+  RawField* LookupFieldAllowPrivate(const String& name) const;
+  RawField* LookupInstanceFieldAllowPrivate(const String& name) const;
+  RawField* LookupStaticFieldAllowPrivate(const String& name) const;
 
   RawLibraryPrefix* LookupLibraryPrefix(const String& name) const;
 
@@ -1212,13 +1215,18 @@ class Class : public Object {
                                    const Bigint& value, intptr_t* index) const;
   // The methods above are more efficient than this generic one.
   RawInstance* LookupCanonicalInstance(Zone* zone,
-                                       const Instance& value,
-                                       intptr_t* index) const;
+                                       const Instance& value) const;
 
-  void InsertCanonicalConstant(intptr_t index, const Instance& constant) const;
+  RawInstance* InsertCanonicalConstant(Zone* zone,
+                                       const Instance& constant) const;
+  void InsertCanonicalNumber(Zone* zone,
+                             intptr_t index,
+                             const Number& constant) const;
 
   intptr_t FindCanonicalTypeIndex(const AbstractType& needle) const;
   RawAbstractType* CanonicalTypeFromIndex(intptr_t idx) const;
+
+  void RehashConstants(Zone* zone) const;
 
   static intptr_t InstanceSize() {
     return RoundedAllocationSize(sizeof(RawClass));
@@ -2782,7 +2790,6 @@ class Function : public Object {
   }
   bool was_compiled() const { return raw_ptr()->was_compiled_ == 1; }
 
-
   // static: Considered during class-side or top-level resolution rather than
   //         instance-side resolution.
   // const: Valid target of a const constructor call.
@@ -2897,6 +2904,8 @@ FOR_EACH_FUNCTION_KIND_BIT(DEFINE_BIT)
   RawString* QualifiedName(NameVisibility name_visibility) const;
 
   void BuildSignatureParameters(
+      Thread* thread,
+      Zone* zone,
       bool instantiate,
       NameVisibility name_visibility,
       const TypeArguments& instantiator,
@@ -3142,9 +3151,7 @@ class Field : public Object {
     set_kind_bits(UnboxingCandidateBit::update(b, raw_ptr()->kind_bits_));
   }
 
-  static bool IsExternalizableCid(intptr_t cid) {
-    return (cid == kOneByteStringCid) || (cid == kTwoByteStringCid);
-  }
+  static bool IsExternalizableCid(intptr_t cid);
 
   enum {
     kUnknownLengthOffset = -1,
@@ -3581,7 +3588,8 @@ class Library : public Object {
   void AddObject(const Object& obj, const String& name) const;
   void ReplaceObject(const Object& obj, const String& name) const;
   bool RemoveObject(const Object& obj, const String& name) const;
-  RawObject* LookupReExport(const String& name) const;
+  RawObject* LookupReExport(const String& name,
+                            ZoneGrowableArray<intptr_t>* visited = NULL) const;
   RawObject* LookupObjectAllowPrivate(const String& name) const;
   RawObject* LookupLocalObjectAllowPrivate(const String& name) const;
   RawObject* LookupLocalObject(const String& name) const;
@@ -3634,7 +3642,6 @@ class Library : public Object {
   // Library imports.
   RawArray* imports() const { return raw_ptr()->imports_; }
   RawArray* exports() const { return raw_ptr()->exports_; }
-  RawArray* exports2() const { return raw_ptr()->exports2_; }
   void AddImport(const Namespace& ns) const;
   intptr_t num_imports() const { return raw_ptr()->num_imports_; }
   RawNamespace* ImportAt(intptr_t index) const;
@@ -3766,11 +3773,18 @@ class Library : public Object {
   RawArray* resolved_names() const { return raw_ptr()->resolved_names_; }
   void InitResolvedNamesCache(intptr_t size,
                               SnapshotReader* reader = NULL) const;
-  void GrowResolvedNamesCache() const;
+  void AllocateExportedNamesCache() const;
+  void InitExportedNamesCache() const;
+  static void InvalidateExportedNamesCaches();
   bool LookupResolvedNamesCache(const String& name, Object* obj) const;
   void AddToResolvedNamesCache(const String& name, const Object& obj) const;
   void InvalidateResolvedName(const String& name) const;
   void InvalidateResolvedNamesCache() const;
+
+  RawArray* exported_names() const { return raw_ptr()->exported_names_; }
+  bool LookupExportedNamesCache(const String& name, Object* obj) const;
+  void AddToExportedNamesCache(const String& name, const Object& obj) const;
+
 
   void InitImportList() const;
   void GrowDictionary(const Array& dict, intptr_t dict_size) const;
@@ -3792,6 +3806,7 @@ class Library : public Object {
   friend class Bootstrap;
   friend class Class;
   friend class Debugger;
+  friend class Isolate;
   friend class DictionaryIterator;
   friend class Namespace;
   friend class Object;
@@ -3814,7 +3829,8 @@ class Namespace : public Object {
   }
 
   bool HidesName(const String& name) const;
-  RawObject* Lookup(const String& name) const;
+  RawObject* Lookup(const String& name,
+                    ZoneGrowableArray<intptr_t>* trail = NULL) const;
 
   static RawNamespace* New(const Library& library,
                            const Array& show_names,
@@ -5211,16 +5227,27 @@ class Instance : public Object {
   virtual bool OperatorEquals(const Instance& other) const;
   bool IsIdenticalTo(const Instance& other) const;
   virtual bool CanonicalizeEquals(const Instance& other) const;
+  virtual uword ComputeCanonicalTableHash() const;
+
+  intptr_t SizeFromClass() const {
+#if defined(DEBUG)
+    const Class& cls = Class::Handle(clazz());
+    ASSERT(cls.is_finalized() || cls.is_prefinalized());
+#endif
+    return (clazz()->ptr()->instance_size_in_words_ * kWordSize);
+  }
 
   // Returns Instance::null() if instance cannot be canonicalized.
   // Any non-canonical number of string will be canonicalized here.
   // An instance cannot be canonicalized if it still contains non-canonical
   // instances in its fields.
   // Returns error in error_str, pass NULL if an error cannot occur.
-  virtual RawInstance* CheckAndCanonicalize(const char** error_str) const;
+  virtual RawInstance* CheckAndCanonicalize(Thread* thread,
+                                            const char** error_str) const;
 
   // Returns true if all fields are OK for canonicalization.
-  virtual bool CheckAndCanonicalizeFields(const char** error_str) const;
+  virtual bool CheckAndCanonicalizeFields(Thread* thread,
+                                          const char** error_str) const;
 
   RawObject* GetField(const Field& field) const {
     return *FieldAddr(field);
@@ -5439,7 +5466,8 @@ class AbstractType : public Instance {
   virtual RawAbstractType* CloneUninstantiated(
       const Class& new_owner, TrailPtr trail = NULL) const;
 
-  virtual RawInstance* CheckAndCanonicalize(const char** error_str) const {
+  virtual RawInstance* CheckAndCanonicalize(Thread* thread,
+                                            const char** error_str) const {
     return Canonicalize();
   }
 
@@ -5541,6 +5569,9 @@ class AbstractType : public Instance {
 
   // Check if this type represents the Dart 'Function' type.
   bool IsDartFunctionType() const;
+
+  // Check if this type represents the Dart '_Closure' type.
+  bool IsDartClosureType() const;
 
   // Check the subtype relationship.
   bool IsSubtypeOf(const AbstractType& other,
@@ -6007,6 +6038,10 @@ class Number : public Instance {
   // TODO(iposva): Add more useful Number methods.
   RawString* ToString(Heap::Space space) const;
 
+  // Numbers are canonicalized differently from other instances/strings.
+  virtual RawInstance* CheckAndCanonicalize(Thread* thread,
+                                            const char** error_str) const;
+
  private:
   OBJECT_IMPLEMENTATION(Number, Instance);
 
@@ -6030,6 +6065,10 @@ class Integer : public Number {
   }
   virtual bool CanonicalizeEquals(const Instance& other) const {
     return Equals(other);
+  }
+  virtual uword ComputeCanonicalTableHash() const {
+    UNREACHABLE();
+    return 0;
   }
   virtual bool Equals(const Instance& other) const;
 
@@ -6080,10 +6119,6 @@ class Smi : public Integer {
   virtual bool Equals(const Instance& other) const;
   virtual bool IsZero() const { return Value() == 0; }
   virtual bool IsNegative() const { return Value() < 0; }
-  // Smi values are implicitly canonicalized.
-  virtual RawInstance* CheckAndCanonicalize(const char** error_str) const {
-    return reinterpret_cast<RawSmi*>(raw_value());
-  }
 
   virtual double AsDoubleValue() const;
   virtual int64_t AsInt64Value() const;
@@ -6203,6 +6238,7 @@ class Mint : public Integer {
 
   MINT_OBJECT_IMPLEMENTATION(Mint, Integer, Integer);
   friend class Class;
+  friend class Number;
 };
 
 
@@ -6219,7 +6255,8 @@ class Bigint : public Integer {
 
   virtual int CompareWith(const Integer& other) const;
 
-  virtual bool CheckAndCanonicalizeFields(const char** error_str) const;
+  virtual bool CheckAndCanonicalizeFields(Thread* thread,
+                                          const char** error_str) const;
 
   virtual bool FitsIntoSmi() const;
   bool FitsIntoInt64() const;
@@ -6310,6 +6347,10 @@ class Double : public Number {
   bool BitwiseEqualsToDouble(double value) const;
   virtual bool OperatorEquals(const Instance& other) const;
   virtual bool CanonicalizeEquals(const Instance& other) const;
+  virtual uword ComputeCanonicalTableHash() const {
+    UNREACHABLE();
+    return 0;
+  }
 
   static RawDouble* New(double d, Heap::Space space = Heap::kNew);
 
@@ -6334,6 +6375,7 @@ class Double : public Number {
 
   FINAL_HEAP_OBJECT_IMPLEMENTATION(Double, Number);
   friend class Class;
+  friend class Number;
 };
 
 
@@ -6459,13 +6501,19 @@ class String : public Instance {
   virtual bool CanonicalizeEquals(const Instance& other) const {
     return Equals(other);
   }
+  virtual uword ComputeCanonicalTableHash() const {
+    UNREACHABLE();
+    return 0;
+  }
   virtual bool Equals(const Instance& other) const;
 
   intptr_t CompareTo(const String& other) const;
 
   bool StartsWith(const String& other) const;
 
-  virtual RawInstance* CheckAndCanonicalize(const char** error_str) const;
+  // Strings are canonicalized using the symbol table.
+  virtual RawInstance* CheckAndCanonicalize(Thread* thread,
+                                            const char** error_str) const;
 
   bool IsSymbol() const { return raw()->IsCanonical(); }
 
@@ -7147,6 +7195,7 @@ class Array : public Instance {
   }
 
   virtual bool CanonicalizeEquals(const Instance& other) const;
+  virtual uword ComputeCanonicalTableHash() const;
 
   static const intptr_t kBytesPerElement = kWordSize;
   static const intptr_t kMaxElements = kSmiMax / kBytesPerElement;
@@ -7168,7 +7217,8 @@ class Array : public Instance {
   }
 
   // Returns true if all elements are OK for canonicalization.
-  virtual bool CheckAndCanonicalizeFields(const char** error_str) const;
+  virtual bool CheckAndCanonicalizeFields(Thread* thread,
+                                          const char** error_str) const;
 
   // Make the array immutable to Dart code by switching the class pointer
   // to ImmutableArray.
@@ -7316,9 +7366,19 @@ class GrowableObjectArray : public Instance {
     StorePointer(&raw_ptr()->type_arguments_, value.raw());
   }
 
-  virtual bool CanonicalizeEquals(const Instance& other) const;
+  // We don't expect a growable object array to be canonicalized.
+  virtual bool CanonicalizeEquals(const Instance& other) const {
+    UNREACHABLE();
+    return false;
+  }
+  virtual uword ComputeCanonicalTableHash() const {
+    UNREACHABLE();
+    return 0;
+  }
 
-  virtual RawInstance* CheckAndCanonicalize(const char** error_str) const {
+  // We don't expect a growable object array to be canonicalized.
+  virtual RawInstance* CheckAndCanonicalize(Thread* thread,
+                                            const char** error_str) const {
     UNREACHABLE();
     return Instance::null();
   }
@@ -7492,6 +7552,7 @@ class TypedData : public Instance {
   }
 
   virtual bool CanonicalizeEquals(const Instance& other) const;
+  virtual uword ComputeCanonicalTableHash() const;
 
 #define TYPED_GETTER_SETTER(name, type)                                        \
   type Get##name(intptr_t byte_offset) const {                                 \
@@ -8007,7 +8068,8 @@ class Closure : public Instance {
   }
 
   // Returns true if all elements are OK for canonicalization.
-  virtual bool CheckAndCanonicalizeFields(const char** error_str) const {
+  virtual bool CheckAndCanonicalizeFields(Thread* thread,
+                                          const char** error_str) const {
     // None of the fields of a closure are instances.
     return true;
   }

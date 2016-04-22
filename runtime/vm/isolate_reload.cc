@@ -37,6 +37,9 @@ DEFINE_FLAG(bool, reload_every_optimized, true, "Only from optimized code.");
 
 class ClassMapTraits {
  public:
+  static bool ReportStats() { return false; }
+  static const char* Name() { return "ClassMapTraits"; }
+
   static bool IsMatch(const Object& a, const Object& b) {
     if (!a.IsClass() || !b.IsClass()) {
       return false;
@@ -52,6 +55,9 @@ class ClassMapTraits {
 
 class LibraryMapTraits {
  public:
+  static bool ReportStats() { return false; }
+  static const char* Name() { return "LibraryMapTraits"; }
+
   static bool IsMatch(const Object& a, const Object& b) {
     if (!a.IsLibrary() || !b.IsLibrary()) {
       return false;
@@ -68,6 +74,9 @@ class LibraryMapTraits {
 
 class BecomeMapTraits {
  public:
+  static bool ReportStats() { return false; }
+  static const char* Name() { return "BecomeMapTraits"; }
+
   static bool IsMatch(const Object& a, const Object& b) {
     return a.raw() == b.raw();
   }

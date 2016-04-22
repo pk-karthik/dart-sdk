@@ -171,6 +171,7 @@ class DartVmRuntimeConfiguration extends RuntimeConfiguration {
       case 'simmips':
       case 'mips':
       case 'simarm64':
+      case 'simdbc':
         multiplier *= 4;
         break;
     }
@@ -235,7 +236,7 @@ class DartProductRuntimeConfiguration extends DartVmRuntimeConfiguration {
     augmentedArgs.addAll(arguments);
 
     return <Command>[
-      commandBuilder.getVmCommand(suite.dartVmProductBinaryFileName,
+      commandBuilder.getVmCommand(suite.dartVmBinaryFileName,
           augmentedArgs, environmentOverrides)
     ];
   }

@@ -222,7 +222,8 @@ void DartUtils::WriteFile(const void* buffer,
 
 
 void DartUtils::CloseFile(void* stream) {
-  delete reinterpret_cast<File*>(stream);
+  File* file = reinterpret_cast<File*>(stream);
+  file->Release();
 }
 
 
@@ -453,15 +454,20 @@ Dart_Handle DartUtils::LibraryTagHandler(Dart_LibraryTag tag,
     if (Dart_IsError(path_parts)) {
       return path_parts;
     }
+#if defined(DEBUG)
+    intptr_t path_parts_length;
+    result = Dart_ListLength(path_parts, &path_parts_length);
+    if (Dart_IsError(result)) {
+      return result;
+    }
+    ASSERT(path_parts_length == 2);
+#endif
     const char* extension_directory = NULL;
     Dart_StringToCString(Dart_ListGetAt(path_parts, 0), &extension_directory);
-    const char* extension_filename = NULL;
-    Dart_StringToCString(Dart_ListGetAt(path_parts, 1), &extension_filename);
     const char* extension_name = NULL;
-    Dart_StringToCString(Dart_ListGetAt(path_parts, 2), &extension_name);
+    Dart_StringToCString(Dart_ListGetAt(path_parts, 1), &extension_name);
 
     return Extensions::LoadExtension(extension_directory,
-                                     extension_filename,
                                      extension_name,
                                      library);
   }
@@ -634,17 +640,6 @@ void FUNCTION_NAME(Builtin_MakeLoaderPort)(Dart_NativeArguments args) {
   if (Dart_IsError(res)) {
     Dart_PropagateError(res);
   }
-}
-
-
-void FUNCTION_NAME(Builtin_NativeLibraryExtension)(Dart_NativeArguments args) {
-  const char* suffix = Platform::LibraryExtension();
-  ASSERT(suffix != NULL);
-  Dart_Handle res = Dart_NewStringFromCString(suffix);
-  if (Dart_IsError(res)) {
-    Dart_PropagateError(res);
-  }
-  Dart_SetReturnValue(args, res);
 }
 
 

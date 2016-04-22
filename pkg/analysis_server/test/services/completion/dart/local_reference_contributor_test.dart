@@ -331,7 +331,46 @@ void main() {expect(foo: ^)}''');
     assertNotSuggested('main');
   }
 
-  test_AsExpression() async {
+  test_ArgumentList_namedParam_filter() async {
+    // SimpleIdentifier  NamedExpression  ArgumentList
+    // InstanceCreationExpression
+    addTestSource('''
+        class A {}
+        class B extends A {}
+        class C implements A {}
+        class D {}
+        class E {
+          A a;
+          E({A someA});
+        }
+        A a = new A();
+        B b = new B();
+        C c = new C();
+        D d = new D();
+        E e = new E(someA: ^);
+  ''');
+    await computeSuggestions();
+
+    expect(replacementOffset, completionOffset);
+    expect(replacementLength, 0);
+    assertSuggestTopLevelVar('a', 'A',
+        relevance:
+        DART_RELEVANCE_LOCAL_TOP_LEVEL_VARIABLE + DART_RELEVANCE_INCREMENT);
+    assertSuggestTopLevelVar('b', 'B',
+        relevance:
+        DART_RELEVANCE_LOCAL_TOP_LEVEL_VARIABLE + DART_RELEVANCE_INCREMENT);
+    assertSuggestTopLevelVar('c', 'C',
+        relevance:
+        DART_RELEVANCE_LOCAL_TOP_LEVEL_VARIABLE + DART_RELEVANCE_INCREMENT);
+    assertSuggestTopLevelVar('d', 'D',
+        relevance: DART_RELEVANCE_LOCAL_TOP_LEVEL_VARIABLE);
+    assertSuggestTopLevelVar('e', 'E',
+        relevance: DART_RELEVANCE_LOCAL_TOP_LEVEL_VARIABLE);
+  }
+
+
+
+  test_AsExpression_type() async {
     // SimpleIdentifier  TypeName  AsExpression
     addTestSource('''
         class A {var b; X _c; foo() {var a; (a as ^).foo();}''');
@@ -344,6 +383,50 @@ void main() {expect(foo: ^)}''');
     assertNotSuggested('Object');
     assertSuggestClass('A');
     assertNotSuggested('==');
+  }
+
+  test_AsExpression_type_filter_extends() async {
+    // SimpleIdentifier  TypeName  AsExpression
+    addTestSource('''
+class A {} class B extends A {} class C extends A {} class D {}
+f(A a){ (a as ^) }''');
+    await computeSuggestions();
+
+    expect(replacementOffset, completionOffset);
+    expect(replacementLength, 0);
+    assertSuggestClass('B');
+    assertSuggestClass('C');
+    assertNotSuggested('A');
+    assertNotSuggested('D');
+    assertNotSuggested('Object');
+  }
+
+  test_AsExpression_type_filter_implements() async {
+    // SimpleIdentifier  TypeName  AsExpression
+    addTestSource('''
+class A {} class B implements A {} class C implements A {} class D {}
+f(A a){ (a as ^) }''');
+    await computeSuggestions();
+
+    expect(replacementOffset, completionOffset);
+    expect(replacementLength, 0);
+    assertSuggestClass('B');
+    assertSuggestClass('C');
+    assertNotSuggested('A');
+    assertNotSuggested('D');
+    assertNotSuggested('Object');
+  }
+
+  test_AsExpression_type_filter_undefined_type() async {
+    // SimpleIdentifier  TypeName  AsExpression
+    addTestSource('''
+class A {}
+f(U u){ (u as ^) }''');
+    await computeSuggestions();
+
+    expect(replacementOffset, completionOffset);
+    expect(replacementLength, 0);
+    assertSuggestClass('A');
   }
 
   test_AssignmentExpression_name() async {
@@ -2735,6 +2818,50 @@ main(){var a; if (a is ^)}''');
     assertNotSuggested('Object');
   }
 
+  test_IsExpression_type_filter_extends() async {
+    // SimpleIdentifier  TypeName  IsExpression  IfStatement
+    addTestSource('''
+class A {} class B extends A {} class C extends A {} class D {}
+f(A a){ if (a is ^) {}}''');
+    await computeSuggestions();
+
+    expect(replacementOffset, completionOffset);
+    expect(replacementLength, 0);
+    assertSuggestClass('B');
+    assertSuggestClass('C');
+    assertNotSuggested('A');
+    assertNotSuggested('D');
+    assertNotSuggested('Object');
+  }
+
+  test_IsExpression_type_filter_implements() async {
+    // SimpleIdentifier  TypeName  IsExpression  IfStatement
+    addTestSource('''
+class A {} class B implements A {} class C implements A {} class D {}
+f(A a){ if (a is ^) {}}''');
+    await computeSuggestions();
+
+    expect(replacementOffset, completionOffset);
+    expect(replacementLength, 0);
+    assertSuggestClass('B');
+    assertSuggestClass('C');
+    assertNotSuggested('A');
+    assertNotSuggested('D');
+    assertNotSuggested('Object');
+  }
+
+  test_IsExpression_type_filter_undefined_type() async {
+    // SimpleIdentifier  TypeName  AsExpression
+    addTestSource('''
+class A {}
+f(U u){ (u as ^) }''');
+    await computeSuggestions();
+
+    expect(replacementOffset, completionOffset);
+    expect(replacementLength, 0);
+    assertSuggestClass('A');
+  }
+
   test_IsExpression_type_partial() async {
     // SimpleIdentifier  TypeName  IsExpression  IfStatement
     addTestSource('''
@@ -3986,7 +4113,7 @@ class X{}''');
 
     expect(replacementOffset, completionOffset);
     expect(replacementLength, 0);
-    // Contributed by FieldFormalConstructorContributor
+    // Contributed by FieldFormalContributor
     assertNotSuggested('b');
     assertNotSuggested('_c');
     assertNotSuggested('sb');
@@ -4024,7 +4151,7 @@ class X{}''');
 
     expect(replacementOffset, completionOffset - 1);
     expect(replacementLength, 1);
-    // Contributed by FieldFormalConstructorContributor
+    // Contributed by FieldFormalContributor
     assertNotSuggested('b');
     assertNotSuggested('_c');
     assertNotSuggested('d');
@@ -4061,7 +4188,7 @@ class X{}''');
 
     expect(replacementOffset, completionOffset);
     expect(replacementLength, 1);
-    // Contributed by FieldFormalConstructorContributor
+    // Contributed by FieldFormalContributor
     assertNotSuggested('b');
     assertNotSuggested('_c');
     assertNotSuggested('d');
@@ -4099,7 +4226,7 @@ class X{}''');
     expect(replacementOffset, completionOffset);
     expect(replacementLength, 0);
     assertNotSuggested('b');
-    // Contributed by FieldFormalConstructorContributor
+    // Contributed by FieldFormalContributor
     assertNotSuggested('_c');
     assertNotSuggested('d');
     assertNotSuggested('_e');

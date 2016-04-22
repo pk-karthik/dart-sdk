@@ -137,6 +137,14 @@ class HashTable : public ValueObject {
     smi_handle_ = Smi::New(0);
     data_->SetAt(kOccupiedEntriesIndex, smi_handle_);
     data_->SetAt(kDeletedEntriesIndex, smi_handle_);
+
+NOT_IN_PRODUCT(
+    data_->SetAt(kNumGrowsIndex, smi_handle_);
+    data_->SetAt(kNumLT5LookupsIndex, smi_handle_);
+    data_->SetAt(kNumLT25LookupsIndex, smi_handle_);
+    data_->SetAt(kNumGT25LookupsIndex, smi_handle_);
+)  // !PRODUCT
+
     for (intptr_t i = kHeaderSize; i < data_->Length(); ++i) {
       data_->SetAt(i, Object::sentinel());
     }
@@ -151,21 +159,28 @@ class HashTable : public ValueObject {
   // Returns the entry that matches 'key', or -1 if none exists.
   template<typename Key>
   intptr_t FindKey(const Key& key) const {
-    ASSERT(NumOccupied() < NumEntries());
+    const intptr_t num_entries = NumEntries();
+    ASSERT(NumOccupied() < num_entries);
     // TODO(koda): Add salt.
-    intptr_t probe = static_cast<uword>(KeyTraits::Hash(key)) % NumEntries();
+    NOT_IN_PRODUCT(intptr_t collisions = 0;)
+    uword hash = KeyTraits::Hash(key);
+    intptr_t probe = hash % num_entries;
     // TODO(koda): Consider quadratic probing.
-    for (; ; probe = (probe + 1) % NumEntries()) {
+    while (true) {
       if (IsUnused(probe)) {
+        NOT_IN_PRODUCT(UpdateCollisions(collisions);)
         return -1;
-      } else if (IsDeleted(probe)) {
-        continue;
-      } else {
+      } else if (!IsDeleted(probe)) {
         key_handle_ = GetKey(probe);
         if (KeyTraits::IsMatch(key, key_handle_)) {
+          NOT_IN_PRODUCT(UpdateCollisions(collisions);)
           return probe;
         }
+        NOT_IN_PRODUCT(collisions += 1;)
       }
+      // Advance probe.
+      probe++;
+      probe = (probe == num_entries) ? 0 : probe;
     }
     UNREACHABLE();
     return -1;
@@ -177,14 +192,18 @@ class HashTable : public ValueObject {
   //   and returns false.
   template<typename Key>
   bool FindKeyOrDeletedOrUnused(const Key& key, intptr_t* entry) const {
+    const intptr_t num_entries = NumEntries();
     ASSERT(entry != NULL);
-    ASSERT(NumOccupied() < NumEntries());
-    intptr_t probe = static_cast<uword>(KeyTraits::Hash(key)) % NumEntries();
+    ASSERT(NumOccupied() < num_entries);
+    NOT_IN_PRODUCT(intptr_t collisions = 0;)
+    uword hash = KeyTraits::Hash(key);
+    intptr_t probe = hash % num_entries;
     intptr_t deleted = -1;
     // TODO(koda): Consider quadratic probing.
-    for (; ; probe = (probe + 1) % NumEntries()) {
+    while (true) {
       if (IsUnused(probe)) {
         *entry = (deleted != -1) ? deleted : probe;
+        NOT_IN_PRODUCT(UpdateCollisions(collisions);)
         return false;
       } else if (IsDeleted(probe)) {
         if (deleted == -1) {
@@ -194,9 +213,14 @@ class HashTable : public ValueObject {
         key_handle_ = GetKey(probe);
         if (KeyTraits::IsMatch(key, key_handle_)) {
           *entry = probe;
+          NOT_IN_PRODUCT(UpdateCollisions(collisions);)
           return true;
         }
+        NOT_IN_PRODUCT(collisions += 1;)
       }
+      // Advance probe.
+      probe++;
+      probe = (probe == num_entries) ? 0 : probe;
     }
     UNREACHABLE();
     return false;
@@ -271,10 +295,63 @@ class HashTable : public ValueObject {
     return smi_handle_;
   }
 
+NOT_IN_PRODUCT(
+  intptr_t NumGrows() const {
+    return GetSmiValueAt(kNumGrowsIndex);
+  }
+  intptr_t NumLT5Collisions() const {
+    return GetSmiValueAt(kNumLT5LookupsIndex);
+  }
+  intptr_t NumLT25Collisions() const {
+    return GetSmiValueAt(kNumLT25LookupsIndex);
+  }
+  intptr_t NumGT25Collisions() const {
+    return GetSmiValueAt(kNumGT25LookupsIndex);
+  }
+  void UpdateGrowth() const {
+    AdjustSmiValueAt(kNumGrowsIndex, 1);
+  }
+  void UpdateCollisions(intptr_t collisions) const {
+    if (data_->raw()->IsVMHeapObject()) {
+      return;
+    }
+    if (collisions < 5) {
+      AdjustSmiValueAt(kNumLT5LookupsIndex, 1);
+    } else if (collisions < 25) {
+      AdjustSmiValueAt(kNumLT25LookupsIndex, 1);
+    } else {
+      AdjustSmiValueAt(kNumGT25LookupsIndex, 1);
+    }
+  }
+  void PrintStats() const {
+    if (!KeyTraits::ReportStats()) {
+      return;
+    }
+    OS::Print("Stats for %s table :\n"
+              " Size of table = %" Pd ",Number of Occupied entries = %" Pd "\n"
+              " Number of Grows = %" Pd "\n"
+              " Number of look ups with < 5 collisions = %" Pd "\n"
+              " Number of look ups with < 25 collisions = %" Pd "\n"
+              " Number of look ups with > 25 collisions = %" Pd "\n",
+              KeyTraits::Name(),
+              NumEntries(), NumOccupied(),
+              NumGrows(),
+              NumLT5Collisions(), NumLT25Collisions(), NumGT25Collisions());
+  }
+)  // !PRODUCT
+
  protected:
   static const intptr_t kOccupiedEntriesIndex = 0;
   static const intptr_t kDeletedEntriesIndex = 1;
+#if defined(PRODUCT)
   static const intptr_t kHeaderSize = kDeletedEntriesIndex + 1;
+#else
+  static const intptr_t kNumGrowsIndex = 2;
+  static const intptr_t kNumLT5LookupsIndex = 3;
+  static const intptr_t kNumLT25LookupsIndex = 4;
+  static const intptr_t kNumGT25LookupsIndex = 5;
+  static const intptr_t kHeaderSize = kNumGT25LookupsIndex + 1;
+#endif
   static const intptr_t kMetaDataIndex = kHeaderSize;
   static const intptr_t kFirstKeyIndex = kHeaderSize + kMetaDataSize;
   static const intptr_t kEntrySize = 1 + kPayloadSize;
@@ -483,6 +560,7 @@ class HashTables : public AllStatic {
         table.data_->IsOld() ? Heap::kOld : Heap::kNew));
     Copy(table, new_table);
     *table.data_ = new_table.Release().raw();
+    NOT_IN_PRODUCT(table.UpdateGrowth(); table.PrintStats();)
   }
 
   // Serializes a table by concatenating its entries as an array.
@@ -636,7 +714,7 @@ class HashSet : public BaseIterTable {
       BaseIterTable::InsertKey(entry, key);
       return key.raw();
     } else {
-      return BaseIterTable::GetPayload(entry, 0);
+      return BaseIterTable::GetKey(entry);
     }
   }
 

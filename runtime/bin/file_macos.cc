@@ -40,7 +40,9 @@ class FileHandle {
 
 
 File::~File() {
-  Close();
+  if (!IsClosed()) {
+    Close();
+  }
   delete handle_;
 }
 
@@ -158,8 +160,8 @@ File* File::ScopedOpen(const char* name, FileOpenMode mode) {
   // Report errors for non-regular files.
   struct stat st;
   if (NO_RETRY_EXPECTED(stat(name, &st)) == 0) {
-    // Only accept regular files and character devices.
-    if (!S_ISREG(st.st_mode) && !S_ISCHR(st.st_mode)) {
+    // Only accept regular files, character devices, and pipes.
+    if (!S_ISREG(st.st_mode) && !S_ISCHR(st.st_mode) && !S_ISFIFO(st.st_mode)) {
       errno = (S_ISDIR(st.st_mode)) ? EISDIR : ENOENT;
       return NULL;
     }
@@ -199,10 +201,7 @@ File* File::Open(const char* path, FileOpenMode mode) {
 
 
 File* File::OpenStdio(int fd) {
-  if ((fd < 0) || (2 < fd)) {
-    return NULL;
-  }
-  return new File(new FileHandle(fd));
+  return ((fd < 0) || (2 < fd)) ? NULL : new File(new FileHandle(fd));
 }
 
 

@@ -140,6 +140,9 @@ class CompileType : public ValueObject {
   // Create non-nullable Int type.
   static CompileType Int();
 
+  // Create non-nullable Smi type.
+  static CompileType Smi();
+
   // Create non-nullable String type.
   static CompileType String();
 
@@ -2892,17 +2895,20 @@ class PolymorphicInstanceCallInstr : public TemplateDefinition<0, Throws> {
  public:
   PolymorphicInstanceCallInstr(InstanceCallInstr* instance_call,
                                const ICData& ic_data,
-                               bool with_checks)
+                               bool with_checks,
+                               bool complete)
       : TemplateDefinition(instance_call->deopt_id()),
         instance_call_(instance_call),
         ic_data_(ic_data),
-        with_checks_(with_checks) {
+        with_checks_(with_checks),
+        complete_(complete) {
     ASSERT(instance_call_ != NULL);
     ASSERT(ic_data.NumberOfChecks() > 0);
   }
 
   InstanceCallInstr* instance_call() const { return instance_call_; }
   bool with_checks() const { return with_checks_; }
+  bool complete() const { return complete_; }
   virtual TokenPosition token_pos() const {
     return instance_call_->token_pos();
   }
@@ -2934,6 +2940,7 @@ class PolymorphicInstanceCallInstr : public TemplateDefinition<0, Throws> {
   InstanceCallInstr* instance_call_;
   const ICData& ic_data_;
   const bool with_checks_;
+  const bool complete_;
 
   DISALLOW_COPY_AND_ASSIGN(PolymorphicInstanceCallInstr);
 };
@@ -3042,6 +3049,8 @@ class TestCidsInstr : public ComparisonInstr {
   virtual ComparisonInstr* CopyWithNewOperands(Value* left, Value* right);
 
   virtual CompileType ComputeType() const;
+
+  virtual Definition* Canonicalize(FlowGraph* flow_graph);
 
   virtual bool CanDeoptimize() const {
     return GetDeoptId() != Thread::kNoDeoptId;
@@ -7814,8 +7823,6 @@ class CheckClassInstr : public TemplateInstruction<1, NoThrow> {
   virtual bool AttributesEqual(Instruction* other) const;
 
   void set_licm_hoisted(bool value) { licm_hoisted_ = value; }
-
-  static bool IsImmutableClassId(intptr_t cid);
 
   PRINT_OPERANDS_TO_SUPPORT
 

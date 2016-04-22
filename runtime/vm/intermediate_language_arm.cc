@@ -1075,7 +1075,14 @@ LocationSummary* LoadClassIdInstr::MakeLocationSummary(Zone* zone,
 void LoadClassIdInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   const Register object = locs()->in(0).reg();
   const Register result = locs()->out(0).reg();
-  __ LoadTaggedClassIdMayBeSmi(result, object);
+  const AbstractType& value_type = *this->object()->Type()->ToAbstractType();
+  if (CompileType::Smi().IsAssignableTo(value_type) ||
+      value_type.IsTypeParameter()) {
+    __ LoadTaggedClassIdMayBeSmi(result, object);
+  } else {
+    __ LoadClassId(result, object);
+    __ SmiTag(result);
+  }
 }
 
 
@@ -1581,7 +1588,8 @@ void GuardFieldClassInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   if (field_cid == kDynamicCid) {
     if (Compiler::IsBackgroundCompilation()) {
       // Field state changed while compiling.
-      Compiler::AbortBackgroundCompilation(deopt_id());
+      Compiler::AbortBackgroundCompilation(deopt_id(),
+          "GuardFieldClassInstr: field state changed while compiling");
     }
     ASSERT(!compiler->is_optimizing());
     return;  // Nothing to emit.
@@ -1739,7 +1747,8 @@ void GuardFieldLengthInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   if (field().guarded_list_length() == Field::kNoFixedLength) {
     if (Compiler::IsBackgroundCompilation()) {
       // Field state changed while compiling.
-      Compiler::AbortBackgroundCompilation(deopt_id());
+      Compiler::AbortBackgroundCompilation(deopt_id(),
+          "GuardFieldLengthInstr: field state changed while compiling");
     }
     ASSERT(!compiler->is_optimizing());
     return;  // Nothing to emit.

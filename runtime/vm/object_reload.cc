@@ -182,6 +182,7 @@ void Class::ReplaceEnum(const Class& old_enum) const {
   ASSERT(is_finalized());
   ASSERT(old_enum.is_finalized());
 
+  Thread* thread = Thread::Current();
   IsolateReloadContext* reload_context = Isolate::Current()->reload_context();
   ASSERT(reload_context != NULL);
 
@@ -190,7 +191,7 @@ void Class::ReplaceEnum(const Class& old_enum) const {
 
   // Grab '_enum_names' from |old_enum|.
   const Field& old_enum_names_field = Field::Handle(
-      old_enum.LookupStaticField(Symbols::_EnumNames()));
+      old_enum.LookupStaticFieldAllowPrivate(Symbols::_EnumNames()));
   ASSERT(!old_enum_names_field.IsNull());
   const Array& old_enum_names =
       Array::Handle(Array::RawCast(old_enum_names_field.StaticValue()));
@@ -206,7 +207,7 @@ void Class::ReplaceEnum(const Class& old_enum) const {
 
   // Grab _enum_names from |this|.
   const Field& enum_names_field = Field::Handle(
-      LookupStaticField(Symbols::_EnumNames()));
+      LookupStaticFieldAllowPrivate(Symbols::_EnumNames()));
   ASSERT(!enum_names_field.IsNull());
   Array& enum_names =
       Array::Handle(Array::RawCast(enum_names_field.StaticValue()));
@@ -309,7 +310,7 @@ void Class::ReplaceEnum(const Class& old_enum) const {
     enum_field_name = String::SubString(enum_name,
                                         enum_class_name.Length() + 1);
     ASSERT(!enum_field_name.IsNull());
-    enum_field_name = Symbols::New(enum_field_name);
+    enum_field_name = Symbols::New(thread, enum_field_name);
     enum_value_field = Field::New(enum_field_name,
                                   /* is_static = */ true,
                                   /* is_final = */ true,

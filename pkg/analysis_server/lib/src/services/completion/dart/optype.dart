@@ -4,12 +4,18 @@
 
 library services.completion.dart.optype;
 
-import 'package:analysis_server/src/protocol_server.dart';
+import 'package:analysis_server/src/protocol_server.dart' hide Element;
+import 'package:analysis_server/src/provisional/completion/dart/completion_dart.dart';
 import 'package:analysis_server/src/provisional/completion/dart/completion_target.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
+import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/dart/element/type.dart';
 import 'package:analyzer/src/dart/ast/token.dart';
+import 'package:analyzer/src/generated/utilities_dart.dart';
+
+typedef int SuggestionsFilter(DartType dartType, int relevance);
 
 /**
  * An [AstVisitor] for determining whether top level suggestions or invocation
@@ -23,9 +29,27 @@ class OpType {
   bool includeConstructorSuggestions = false;
 
   /**
+   * If [includeConstructorSuggestions] is set to true, then this function may
+   * be set to a non-default function to filter out potential suggestions (null)
+   * based on their static [DartType], or change the relative relevance by
+   * returning a higher or lower relevance.
+   */
+  SuggestionsFilter constructorSuggestionsFilter =
+      (DartType _, int relevance) => relevance;
+
+  /**
    * Indicates whether type names should be suggested.
    */
   bool includeTypeNameSuggestions = false;
+
+  /**
+   * If [includeTypeNameSuggestions] is set to true, then this function may
+   * be set to a non-default function to filter out potential suggestions (null)
+   * based on their static [DartType], or change the relative relevance by
+   * returning a higher or lower relevance.
+   */
+  SuggestionsFilter typeNameSuggestionsFilter =
+      (DartType _, int relevance) => relevance;
 
   /**
    * Indicates whether setters along with methods and functions that
@@ -40,6 +64,20 @@ class OpType {
   bool includeReturnValueSuggestions = false;
 
   /**
+   * If [includeReturnValueSuggestions] is set to true, then this function may
+   * be set to a non-default function to filter out potential suggestions (null)
+   * based on their static [DartType], or change the relative relevance by
+   * returning a higher or lower relevance.
+   */
+  SuggestionsFilter returnValueSuggestionsFilter =
+      (DartType _, int relevance) => relevance;
+
+  /**
+   * Indicates whether named arguments should be suggested.
+   */
+  bool includeNamedArgumentSuggestions = false;
+
+  /**
    * Indicates whether statement labels should be suggested.
    */
   bool includeStatementLabelSuggestions = false;
@@ -48,6 +86,11 @@ class OpType {
    * Indicates whether case labels should be suggested.
    */
   bool includeCaseLabelSuggestions = false;
+
+  /**
+   * Indicates whether variable names should be suggested.
+   */
+  bool includeVarNameSuggestions = false;
 
   /**
    * Indicates whether the completion location is in the body of a static method.
@@ -84,8 +127,18 @@ class OpType {
   /**
    * Indicate whether only type names should be suggested
    */
+  bool get includeOnlyNamedArgumentSuggestions =>
+      includeNamedArgumentSuggestions &&
+      !includeTypeNameSuggestions &&
+      !includeReturnValueSuggestions &&
+      !includeVoidReturnSuggestions;
+
+  /**
+   * Indicate whether only type names should be suggested
+   */
   bool get includeOnlyTypeNameSuggestions =>
       includeTypeNameSuggestions &&
+      !includeNamedArgumentSuggestions &&
       !includeReturnValueSuggestions &&
       !includeVoidReturnSuggestions;
 }
@@ -123,6 +176,31 @@ class _OpTypeAstVisitor extends GeneralizingAstVisitor {
 
   @override
   void visitArgumentList(ArgumentList node) {
+    AstNode parent = node.parent;
+    if (parent is InvocationExpression) {
+      Expression function = parent.function;
+      if (function is SimpleIdentifier) {
+        var elem = function.bestElement;
+        if (elem is FunctionTypedElement) {
+          List<ParameterElement> parameters = elem.parameters;
+          if (parameters != null) {
+            int index =
+                node.arguments.isEmpty ? 0 : node.arguments.indexOf(entity);
+            if (0 <= index && index < parameters.length) {
+              ParameterElement param = parameters[index];
+              if (param?.parameterKind == ParameterKind.NAMED) {
+                optype.includeNamedArgumentSuggestions = true;
+                return;
+              }
+            }
+          }
+        } else if (elem == null) {
+          // If unresolved, then include named arguments
+          optype.includeNamedArgumentSuggestions = true;
+          // fall through to include others as well
+        }
+      }
+    }
     optype.includeReturnValueSuggestions = true;
     optype.includeTypeNameSuggestions = true;
   }
@@ -131,10 +209,15 @@ class _OpTypeAstVisitor extends GeneralizingAstVisitor {
   void visitAsExpression(AsExpression node) {
     if (identical(entity, node.type)) {
       optype.includeTypeNameSuggestions = true;
-      // TODO (danrubel) Possible future improvement:
-      // on the RHS of an "is" or "as" expression, don't suggest types that are
-      // guaranteed to pass or guaranteed to fail the cast.
-      // See dartbug.com/18860
+      optype.typeNameSuggestionsFilter = (DartType dartType, int relevance) {
+        DartType staticType = node.expression.staticType;
+        if (staticType.isDynamic ||
+            (dartType.isSubtypeOf(staticType) && dartType != staticType)) {
+          return relevance;
+        } else {
+          return null;
+        }
+      };
     }
   }
 
@@ -302,6 +385,10 @@ class _OpTypeAstVisitor extends GeneralizingAstVisitor {
         optype.includeReturnValueSuggestions = true;
         optype.includeTypeNameSuggestions = true;
       }
+      if ((token.isSynthetic || token.lexeme == ';') &&
+          node.expression is Identifier) {
+        optype.includeVarNameSuggestions = true;
+      }
     }
   }
 
@@ -382,7 +469,7 @@ class _OpTypeAstVisitor extends GeneralizingAstVisitor {
     optype.includeVoidReturnSuggestions = true;
     // TODO (danrubel) void return suggestions only belong after
     // the 2nd semicolon.  Return value suggestions only belong after the
-    // e1st or second semicolon.
+    // first or second semicolon.
   }
 
   @override
@@ -435,6 +522,29 @@ class _OpTypeAstVisitor extends GeneralizingAstVisitor {
   void visitInstanceCreationExpression(InstanceCreationExpression node) {
     if (identical(entity, node.constructorName)) {
       optype.includeConstructorSuggestions = true;
+      optype.constructorSuggestionsFilter = (DartType dartType, int relevance) {
+        DartType localTypeAssertion = null;
+        if (node.parent is VariableDeclaration) {
+          VariableDeclaration varDeclaration =
+              node.parent as VariableDeclaration;
+          localTypeAssertion = varDeclaration.element.type;
+        } else if (node.parent is AssignmentExpression) {
+          AssignmentExpression assignmentExpression =
+              node.parent as AssignmentExpression;
+          localTypeAssertion = assignmentExpression.leftHandSide.staticType;
+        }
+        if (localTypeAssertion == null ||
+            dartType == null ||
+            localTypeAssertion.isDynamic) {
+          return relevance;
+        } else if (localTypeAssertion == dartType) {
+          return relevance + DART_RELEVANCE_INCREMENT;
+        } else if (dartType.isSubtypeOf(localTypeAssertion)) {
+          return relevance;
+        } else {
+          return null;
+        }
+      };
     }
   }
 
@@ -452,10 +562,15 @@ class _OpTypeAstVisitor extends GeneralizingAstVisitor {
   void visitIsExpression(IsExpression node) {
     if (identical(entity, node.type)) {
       optype.includeTypeNameSuggestions = true;
-      // TODO (danrubel) Possible future improvement:
-      // on the RHS of an "is" or "as" expression, don't suggest types that are
-      // guaranteed to pass or guaranteed to fail the cast.
-      // See dartbug.com/18860
+      optype.typeNameSuggestionsFilter = (DartType dartType, int relevance) {
+        DartType staticType = node.expression.staticType;
+        if (staticType.isDynamic ||
+            (dartType.isSubtypeOf(staticType) && dartType != staticType)) {
+          return relevance;
+        } else {
+          return null;
+        }
+      };
     }
   }
 
@@ -496,6 +611,18 @@ class _OpTypeAstVisitor extends GeneralizingAstVisitor {
   void visitNamedExpression(NamedExpression node) {
     if (identical(entity, node.expression)) {
       optype.includeReturnValueSuggestions = true;
+      optype.returnValueSuggestionsFilter = (DartType dartType, int relevance) {
+        DartType type = node.element?.type;
+        if (type != null &&
+            dartType != null &&
+            !type.isDynamic &&
+            dartType.isSubtypeOf(type)) {
+          // is correct type
+          return relevance + DART_RELEVANCE_INCREMENT;
+        } else {
+          return relevance;
+        }
+      };
       optype.includeTypeNameSuggestions = true;
     }
   }
@@ -680,9 +807,12 @@ class _OpTypeAstVisitor extends GeneralizingAstVisitor {
 
   @override
   void visitVariableDeclarationList(VariableDeclarationList node) {
-    if ((node.keyword == null || node.keyword.lexeme != 'var') &&
-        (node.type == null || identical(entity, node.type))) {
-      optype.includeTypeNameSuggestions = true;
+    if (node.keyword == null || node.keyword.lexeme != 'var') {
+      if (node.type == null || identical(entity, node.type)) {
+        optype.includeTypeNameSuggestions = true;
+      } else if (node.type != null && entity is VariableDeclaration) {
+        optype.includeVarNameSuggestions = true;
+      }
     }
   }
 

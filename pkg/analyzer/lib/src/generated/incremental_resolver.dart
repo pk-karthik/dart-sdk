@@ -18,6 +18,7 @@ import 'package:analyzer/src/dart/ast/token.dart';
 import 'package:analyzer/src/dart/ast/utilities.dart';
 import 'package:analyzer/src/dart/element/builder.dart';
 import 'package:analyzer/src/dart/element/element.dart';
+import 'package:analyzer/src/dart/resolver/inheritance_manager.dart';
 import 'package:analyzer/src/dart/scanner/reader.dart';
 import 'package:analyzer/src/dart/scanner/scanner.dart';
 import 'package:analyzer/src/generated/constant.dart';
@@ -1622,7 +1623,6 @@ class PoorMansIncrementalResolver {
       RecordingErrorListener errorListener = new RecordingErrorListener();
       Parser parser = new Parser(_unitSource, errorListener);
       AnalysisOptions options = _unitElement.context.analysisOptions;
-      parser.parseConditionalDirectives = options.enableConditionalDirectives;
       parser.parseGenericMethods = options.enableGenericMethods;
       CompilationUnit unit = parser.parseCompilationUnit(token);
       _newParseErrors = errorListener.errors;
@@ -1677,6 +1677,23 @@ class PoorMansIncrementalResolver {
     _updateEntry();
     // resolve references in the comment
     incrementalResolver._resolveReferences(newComment);
+    // update 'documentationComment' of the parent element(s)
+    {
+      AstNode parent = newComment.parent;
+      if (parent is AnnotatedNode) {
+        Element parentElement = ElementLocator.locate(newComment.parent);
+        if (parentElement is ElementImpl) {
+          setElementDocumentationComment(parentElement, parent);
+        } else if (parentElement == null && parent is FieldDeclaration) {
+          for (VariableDeclaration field in parent.fields.variables) {
+            if (field.element is ElementImpl) {
+              setElementDocumentationComment(
+                  field.element as ElementImpl, parent);
+            }
+          }
+        }
+      }
+    }
     // OK
     return true;
   }

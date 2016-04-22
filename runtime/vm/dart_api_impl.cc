@@ -59,6 +59,9 @@ DEFINE_FLAG(bool, check_function_fingerprints, true,
 #endif  // defined(DART_NO_SNAPSHOT).
 DEFINE_FLAG(bool, verify_acquired_data, false,
             "Verify correct API acquire/release of typed data.");
+DEFINE_FLAG(bool, support_externalizable_strings, false,
+            "Support Dart_MakeExternalString.");
+
 
 ThreadLocalKey Api::api_native_key_ = kUnsetThreadLocalKey;
 Dart_Handle Api::true_handle_ = NULL;
@@ -2181,7 +2184,6 @@ DART_EXPORT Dart_Handle Dart_IntegerToInt64(Dart_Handle integer,
   Thread* thread = Thread::Current();
   Isolate* isolate = thread->isolate();
   CHECK_ISOLATE(isolate);
-  API_TIMELINE_DURATION;
   if (Api::IsSmi(integer)) {
     *value = Api::SmiValue(integer);
     return Api::Success();
@@ -2210,7 +2212,6 @@ DART_EXPORT Dart_Handle Dart_IntegerToInt64(Dart_Handle integer,
 
 DART_EXPORT Dart_Handle Dart_IntegerToUint64(Dart_Handle integer,
                                              uint64_t* value) {
-  API_TIMELINE_DURATION;
   // Fast path for Smis.
   Thread* thread = Thread::Current();
   Isolate* isolate = thread->isolate();
@@ -2270,7 +2271,6 @@ DART_EXPORT Dart_Handle Dart_IntegerToHexCString(Dart_Handle integer,
 
 
 DART_EXPORT Dart_Handle Dart_NewDouble(double value) {
-  API_TIMELINE_DURATION;
   DARTSCOPE(Thread::Current());
   CHECK_CALLBACK_STATE(T);
   return Api::NewHandle(T, Double::New(value));
@@ -2279,7 +2279,6 @@ DART_EXPORT Dart_Handle Dart_NewDouble(double value) {
 
 DART_EXPORT Dart_Handle Dart_DoubleValue(Dart_Handle double_obj,
                                          double* value) {
-  API_TIMELINE_DURATION;
   DARTSCOPE(Thread::Current());
   const Double& obj = Api::UnwrapDoubleHandle(Z, double_obj);
   if (obj.IsNull()) {
@@ -2551,6 +2550,10 @@ DART_EXPORT Dart_Handle Dart_MakeExternalString(Dart_Handle str,
                                                 void* peer,
                                                 Dart_PeerFinalizer cback) {
   DARTSCOPE(Thread::Current());
+  if (!FLAG_support_externalizable_strings) {
+    return Api::NewError("Dart_MakeExternalString with "
+                         "--support_externalizable_strings=false");
+  }
   const String& str_obj = Api::UnwrapStringHandle(Z, str);
   if (str_obj.IsExternal()) {
     return str;  // String is already an external string.
@@ -4294,7 +4297,7 @@ DART_EXPORT Dart_Handle Dart_GetField(Dart_Handle container, Dart_Handle name) {
     // getter Function.
     Class& cls = Class::Handle(Z, Type::Cast(obj).type_class());
 
-    field = cls.LookupStaticField(field_name);
+    field = cls.LookupStaticFieldAllowPrivate(field_name);
     if (field.IsNull() || field.IsUninitialized()) {
       const String& getter_name =
           String::Handle(Z, Field::GetterName(field_name));
@@ -4424,7 +4427,7 @@ DART_EXPORT Dart_Handle Dart_SetField(Dart_Handle container,
     // setter Function.
     Class& cls = Class::Handle(Z, Type::Cast(obj).type_class());
 
-    field = cls.LookupStaticField(field_name);
+    field = cls.LookupStaticFieldAllowPrivate(field_name);
     if (field.IsNull()) {
       String& setter_name = String::Handle(Z, Field::SetterName(field_name));
       setter = cls.LookupStaticFunctionAllowPrivate(setter_name);
@@ -4463,7 +4466,7 @@ DART_EXPORT Dart_Handle Dart_SetField(Dart_Handle container,
     Class& cls = Class::Handle(Z, instance.clazz());
     String& setter_name = String::Handle(Z, Field::SetterName(field_name));
     while (!cls.IsNull()) {
-      field = cls.LookupInstanceField(field_name);
+      field = cls.LookupInstanceFieldAllowPrivate(field_name);
       if (!field.IsNull() && field.is_final()) {
         return Api::NewError("%s: cannot set final field '%s'.",
                              CURRENT_FUNC, field_name.ToCString());
@@ -4643,7 +4646,7 @@ DART_EXPORT Dart_Handle Dart_CreateNativeWrapperClass(Dart_Handle library,
   }
   CHECK_CALLBACK_STATE(T);
 
-  String& cls_symbol = String::Handle(Z, Symbols::New(cls_name));
+  String& cls_symbol = String::Handle(Z, Symbols::New(T, cls_name));
   const Class& cls = Class::Handle(Z,
       Class::NewNativeWrapper(lib, cls_symbol, field_count));
   if (cls.IsNull()) {
@@ -4848,7 +4851,6 @@ DART_EXPORT Dart_Handle Dart_GetNativeArguments(
 
 DART_EXPORT Dart_Handle Dart_GetNativeArgument(Dart_NativeArguments args,
                                                int index) {
-  API_TIMELINE_DURATION;
   NativeArguments* arguments = reinterpret_cast<NativeArguments*>(args);
   if ((index < 0) || (index >= arguments->NativeArgCount())) {
     return Api::NewError(
@@ -4861,7 +4863,6 @@ DART_EXPORT Dart_Handle Dart_GetNativeArgument(Dart_NativeArguments args,
 
 
 DART_EXPORT int Dart_GetNativeArgumentCount(Dart_NativeArguments args) {
-  API_TIMELINE_DURATION;
   NativeArguments* arguments = reinterpret_cast<NativeArguments*>(args);
   return arguments->NativeArgCount();
 }
@@ -4920,7 +4921,6 @@ DART_EXPORT Dart_Handle Dart_GetNativeStringArgument(Dart_NativeArguments args,
 DART_EXPORT Dart_Handle Dart_GetNativeIntegerArgument(Dart_NativeArguments args,
                                                       int index,
                                                       int64_t* value) {
-  API_TIMELINE_DURATION;
   NativeArguments* arguments = reinterpret_cast<NativeArguments*>(args);
   if ((index < 0) || (index >= arguments->NativeArgCount())) {
     return Api::NewError(
@@ -4938,7 +4938,6 @@ DART_EXPORT Dart_Handle Dart_GetNativeIntegerArgument(Dart_NativeArguments args,
 DART_EXPORT Dart_Handle Dart_GetNativeBooleanArgument(Dart_NativeArguments args,
                                                       int index,
                                                       bool* value) {
-  API_TIMELINE_DURATION;
   NativeArguments* arguments = reinterpret_cast<NativeArguments*>(args);
   if ((index < 0) || (index >= arguments->NativeArgCount())) {
     return Api::NewError(
@@ -4956,7 +4955,6 @@ DART_EXPORT Dart_Handle Dart_GetNativeBooleanArgument(Dart_NativeArguments args,
 DART_EXPORT Dart_Handle Dart_GetNativeDoubleArgument(Dart_NativeArguments args,
                                                      int index,
                                                      double* value) {
-  API_TIMELINE_DURATION;
   NativeArguments* arguments = reinterpret_cast<NativeArguments*>(args);
   if ((index < 0) || (index >= arguments->NativeArgCount())) {
     return Api::NewError(
@@ -5081,7 +5079,6 @@ DART_EXPORT Dart_Handle Dart_SetEnvironmentCallback(
 // --- Scripts and Libraries ---
 DART_EXPORT void Dart_SetBooleanReturnValue(Dart_NativeArguments args,
                                             bool retval) {
-  API_TIMELINE_DURATION;
   NativeArguments* arguments = reinterpret_cast<NativeArguments*>(args);
   arguments->SetReturn(Bool::Get(retval));
 }
@@ -5229,11 +5226,20 @@ DART_EXPORT Dart_Handle Dart_LoadScriptFromSnapshot(const uint8_t* buffer,
   CHECK_COMPILATION_ALLOWED(I);
 
   ASSERT(snapshot->kind() == Snapshot::kScript);
+  NOT_IN_PRODUCT(TimelineDurationScope tds2(T,
+      Timeline::GetIsolateStream(), "ScriptSnapshotReader"));
+
   ScriptSnapshotReader reader(snapshot->content(), snapshot->length(), T);
   const Object& tmp = Object::Handle(Z, reader.ReadScriptSnapshot());
   if (tmp.IsError()) {
     return Api::NewHandle(T, tmp.raw());
   }
+  NOT_IN_PRODUCT(if (tds2.enabled()) {
+    tds2.SetNumArguments(2);
+    tds2.FormatArgument(0, "snapshotSize", "%" Pd, snapshot->length());
+    tds2.FormatArgument(1, "heapSize", "%" Pd64,
+                        I->heap()->UsedInWords(Heap::kOld) * kWordSize);
+  });
   library ^= tmp.raw();
   library.set_debuggable(true);
   I->object_store()->set_root_library(library);
@@ -5497,7 +5503,7 @@ DART_EXPORT Dart_Handle Dart_LibraryImportLibrary(Dart_Handle library,
   CHECK_CALLBACK_STATE(T);
   CHECK_COMPILATION_ALLOWED(I);
 
-  const String& prefix_symbol = String::Handle(Z, Symbols::New(prefix_vm));
+  const String& prefix_symbol = String::Handle(Z, Symbols::New(T, prefix_vm));
   const Namespace& import_ns = Namespace::Handle(Z,
       Namespace::New(import_vm, Object::null_array(), Object::null_array()));
   if (prefix_vm.Length() == 0) {
@@ -6003,6 +6009,7 @@ DART_EXPORT void Dart_TimelineEvent(const char* label,
   if (event == NULL) {
     return;
   }
+  label = strdup(label);
   switch (type) {
     case Dart_Timeline_Event_Begin:
       event->Begin(label, timestamp0);
@@ -6031,6 +6038,7 @@ DART_EXPORT void Dart_TimelineEvent(const char* label,
     default:
       FATAL("Unknown Dart_Timeline_Event_Type");
   }
+  event->set_owns_label(true);
   event->SetNumArguments(argument_count);
   for (intptr_t i = 0; i < argument_count; i++) {
     event->CopyArgument(i, argument_names[i], argument_values[i]);

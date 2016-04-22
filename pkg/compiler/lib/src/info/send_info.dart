@@ -6,45 +6,36 @@
 library compiler.src.info.send_info;
 
 import 'package:dart2js_info/src/measurements.dart';
-import 'package:dart2js_info/src/util.dart' show
-    recursiveDiagnosticString;
+import 'package:dart2js_info/src/util.dart' show recursiveDiagnosticString;
 
-import '../common.dart';
-import '../compiler.dart' show
-    Compiler;
-import '../dart_types.dart';
 import '../closure.dart';
+import '../common.dart';
+import '../compiler.dart' show Compiler;
+import '../constants/expressions.dart';
+import '../dart_types.dart';
 import '../elements/elements.dart';
-import '../elements/visitor.dart' show
-    ElementVisitor;
+import '../elements/visitor.dart' show ElementVisitor;
+import '../parser/partial_elements.dart' show PartialElement;
 import '../resolution/operators.dart';
 import '../resolution/semantic_visitor.dart';
 import '../resolution/tree_elements.dart';
-import '../constants/expressions.dart';
-import '../parser/partial_elements.dart' show
-    PartialElement;
 import '../tree/tree.dart';
-import '../universe/call_structure.dart' show
-    CallStructure;
-import '../universe/selector.dart' show
-    Selector;
-
+import '../universe/call_structure.dart' show CallStructure;
+import '../universe/selector.dart' show Selector;
 import 'analysis_result.dart';
 import 'naive_analysis_result.dart';
 import 'trusted_types_analysis_result.dart';
 
 /// Collects a set of [Measurements] about send expressions in the function [f].
 // TODO(sigmund): collect information on initializers too.
-Measurements collectSendMeasurements(FunctionElement f,
-                                     Compiler compiler) {
+Measurements collectSendMeasurements(FunctionElement f, Compiler compiler) {
   DiagnosticReporter reporter = compiler.reporter;
   return reporter.withCurrentElement(f, () {
     // TODO(sigmund): enable for platform too.
     if (f.library.isPlatformLibrary) return null;
-    var name = _qualifiedName(f);
     if (!f.hasNode) {
       if (f is PartialElement) return const Measurements.unreachableFunction();
-      assert (f is ConstructorElement && f.isSynthesized);
+      assert(f is ConstructorElement && f.isSynthesized);
       // TODO(sigmund): measure synthethic forwarding sends, measure
       // initializers
       return new Measurements.reachableFunction();
@@ -60,28 +51,21 @@ Measurements collectSendMeasurements(FunctionElement f,
     }
     var def = resolvedAst.elements.getFunctionDefinition(resolvedAst.node);
     if (def == null) {
-      assert (f is PartialElement);
+      assert(f is PartialElement);
       return const Measurements.unreachableFunction();
     }
 
-    var visitor = new _StatsTraversalVisitor(
-        compiler, resolvedAst.elements,
+    var visitor = new _StatsTraversalVisitor(compiler, resolvedAst.elements,
         reporter.spanFromSpannable(resolvedAst.node).uri);
     resolvedAst.node.accept(visitor);
     return visitor.measurements;
   });
 }
 
-_qualifiedName(FunctionElement f) {
-  var cls = f.enclosingClass;
-  return (cls != null) ? '${cls.name}.${f.name}' : f.name;
-}
-
 /// Visitor that categorizes data about an individual send.
 class _StatsVisitor<T> extends Visitor
     with SemanticSendResolvedMixin<dynamic, T>
     implements SemanticSendVisitor<dynamic, T> {
-
   // TODO(sigmund): consider passing in several AnalysisResults at once, so we
   // can compute the different metrics together.
   /// Information we know about the program from static analysis.
@@ -108,9 +92,9 @@ class _StatsVisitor<T> extends Visitor
     measurements.record(Metric.send, span.begin, span.end);
     if (node is SendSet) {
       if ((node.assignmentOperator != null &&
-                node.assignmentOperator.source != '=') ||
-            node.isPrefix ||
-            node.isPostfix) {
+              node.assignmentOperator.source != '=') ||
+          node.isPrefix ||
+          node.isPostfix) {
         assert(!node.isIfNullAssignment);
         // We count get and set separately in case one of them is defined by the
         // other could be a nSM error.
@@ -224,11 +208,13 @@ class _StatsVisitor<T> extends Visitor
     measurements.record(Metric.monomorphicSend, span.begin, span.end);
     measurements.record(Metric.superSend, span.begin, span.end);
   }
+
   handleTypeVariable(Node node) {
     var span = reporter.spanFromSpannable(node);
     measurements.record(Metric.monomorphicSend, span.begin, span.end);
     measurements.record(Metric.typeVariableSend, span.begin, span.end);
   }
+
   handleStatic(Node node) {
     var span = reporter.spanFromSpannable(node);
     measurements.record(Metric.monomorphicSend, span.begin, span.end);
@@ -288,7 +274,7 @@ class _StatsVisitor<T> extends Visitor
     Boolish usesInterceptor = selectorInfo.usesInterceptor;
     if (hasSelector == Boolish.yes) {
       if (selectorInfo.isAccurate && selectorInfo.possibleTargets == 1) {
-        assert (usesInterceptor != Boolish.maybe);
+        assert(usesInterceptor != Boolish.maybe);
         if (usesInterceptor == Boolish.yes) {
           handleSingleInterceptor(node);
         } else {
@@ -330,9 +316,13 @@ class _StatsVisitor<T> extends Visitor
 
   // Constructors
 
-  void visitAbstractClassConstructorInvoke(NewExpression node,
-      ConstructorElement element, InterfaceType type, NodeList arguments,
-      CallStructure callStructure, T arg) {
+  void visitAbstractClassConstructorInvoke(
+      NewExpression node,
+      ConstructorElement element,
+      InterfaceType type,
+      NodeList arguments,
+      CallStructure callStructure,
+      T arg) {
     handleConstructor(node);
   }
 
@@ -346,9 +336,13 @@ class _StatsVisitor<T> extends Visitor
     handleConstructor(node);
   }
 
-  void visitGenerativeConstructorInvoke(NewExpression node,
-      ConstructorElement constructor, InterfaceType type, NodeList arguments,
-      CallStructure callStructure, T arg) {
+  void visitGenerativeConstructorInvoke(
+      NewExpression node,
+      ConstructorElement constructor,
+      InterfaceType type,
+      NodeList arguments,
+      CallStructure callStructure,
+      T arg) {
     handleConstructor(node);
   }
 
@@ -357,16 +351,25 @@ class _StatsVisitor<T> extends Visitor
     handleConstructor(node);
   }
 
-  void visitRedirectingFactoryConstructorInvoke(NewExpression node,
-      ConstructorElement constructor, InterfaceType type,
-      ConstructorElement effectiveTarget, InterfaceType effectiveTargetType,
-      NodeList arguments, CallStructure callStructure, T arg) {
+  void visitRedirectingFactoryConstructorInvoke(
+      NewExpression node,
+      ConstructorElement constructor,
+      InterfaceType type,
+      ConstructorElement effectiveTarget,
+      InterfaceType effectiveTargetType,
+      NodeList arguments,
+      CallStructure callStructure,
+      T arg) {
     handleConstructor(node);
   }
 
-  void visitRedirectingGenerativeConstructorInvoke(NewExpression node,
-      ConstructorElement constructor, InterfaceType type, NodeList arguments,
-      CallStructure callStructure, T arg) {
+  void visitRedirectingGenerativeConstructorInvoke(
+      NewExpression node,
+      ConstructorElement constructor,
+      InterfaceType type,
+      NodeList arguments,
+      CallStructure callStructure,
+      T arg) {
     handleConstructor(node);
   }
 
@@ -376,7 +379,6 @@ class _StatsVisitor<T> extends Visitor
   }
 
   // Dynamic sends
-
 
   // TODO(sigmund): many many things to add:
   // -- support for operators, indexers, etc.
@@ -396,16 +398,14 @@ class _StatsVisitor<T> extends Visitor
     handleIndex(node); // receiver[index] = t2
   }
 
-  void visitDynamicPropertyCompound(Send node, Node receiver,
-      Name name, AssignmentOperator operator, Node rhs, T arg) {
+  void visitDynamicPropertyCompound(Send node, Node receiver, Name name,
+      AssignmentOperator operator, Node rhs, T arg) {
     handleDynamicProperty(node, receiver, new Selector.getter(name));
     handleOperator(node);
     handleDynamicProperty(node, receiver, new Selector.setter(name));
   }
 
-
-  void visitDynamicPropertyGet(
-      Send node, Node receiver, Name name, T arg) {
+  void visitDynamicPropertyGet(Send node, Node receiver, Name name, T arg) {
     handleDynamicProperty(node, receiver, new Selector.getter(name));
   }
 
@@ -414,15 +414,15 @@ class _StatsVisitor<T> extends Visitor
     handleDynamicProperty(node, receiver, selector);
   }
 
-  void visitDynamicPropertyPostfix(Send node, Node receiver,
-       Name name, IncDecOperator operator, T arg) {
+  void visitDynamicPropertyPostfix(
+      Send node, Node receiver, Name name, IncDecOperator operator, T arg) {
     handleDynamicProperty(node, receiver, new Selector.getter(name));
     handleOperator(node);
     handleDynamicProperty(node, receiver, new Selector.setter(name));
   }
 
-  void visitDynamicPropertyPrefix(Send node, Node receiver, Name name,
-      IncDecOperator operator, T arg) {
+  void visitDynamicPropertyPrefix(
+      Send node, Node receiver, Name name, IncDecOperator operator, T arg) {
     handleDynamicProperty(node, receiver, new Selector.getter(name));
     handleOperator(node);
     handleDynamicProperty(node, receiver, new Selector.setter(name));
@@ -466,15 +466,15 @@ class _StatsVisitor<T> extends Visitor
     handleDynamicProperty(node, receiver, selector);
   }
 
-  void visitIfNotNullDynamicPropertyPostfix(Send node, Node receiver, Name name,
-      IncDecOperator operator, T arg) {
+  void visitIfNotNullDynamicPropertyPostfix(
+      Send node, Node receiver, Name name, IncDecOperator operator, T arg) {
     handleDynamicProperty(node, receiver, new Selector.getter(name));
     handleOperator(node);
     handleDynamicProperty(node, receiver, new Selector.setter(name));
   }
 
-  void visitIfNotNullDynamicPropertyPrefix(Send node, Node receiver, Name name,
-      IncDecOperator operator, T arg) {
+  void visitIfNotNullDynamicPropertyPrefix(
+      Send node, Node receiver, Name name, IncDecOperator operator, T arg) {
     handleDynamicProperty(node, receiver, new Selector.getter(name));
     handleOperator(node);
     handleDynamicProperty(node, receiver, new Selector.setter(name));
@@ -649,9 +649,8 @@ class _StatsVisitor<T> extends Visitor
     handleSuper(node);
   }
 
-  void visitSuperFieldFieldSetIfNull(
-      Send node, FieldElement readField, FieldElement writtenField, Node rhs,
-      T arg) {
+  void visitSuperFieldFieldSetIfNull(Send node, FieldElement readField,
+      FieldElement writtenField, Node rhs, T arg) {
     handleSuper(node);
     handleNSMSuper(node, readField.enclosingClass);
   }
@@ -696,8 +695,8 @@ class _StatsVisitor<T> extends Visitor
     handleSuper(node);
   }
 
-  void visitSuperFieldSetterSetIfNull(Send node, FieldElement field,
-      FunctionElement setter, Node rhs, T arg) {
+  void visitSuperFieldSetterSetIfNull(
+      Send node, FieldElement field, FunctionElement setter, Node rhs, T arg) {
     handleSuper(node);
     handleSuper(node);
   }
@@ -723,8 +722,8 @@ class _StatsVisitor<T> extends Visitor
     handleSuper(node);
   }
 
-  void visitSuperGetterFieldSetIfNull(Send node, FunctionElement getter,
-      FieldElement field, Node rhs, T arg) {
+  void visitSuperGetterFieldSetIfNull(
+      Send node, FunctionElement getter, FieldElement field, Node rhs, T arg) {
     handleSuper(node);
     handleSuper(node);
   }
@@ -761,16 +760,24 @@ class _StatsVisitor<T> extends Visitor
     handleSuper(node);
   }
 
-  void visitSuperIndexPostfix(Send node, MethodElement indexFunction,
-      MethodElement indexSetFunction, Node index, IncDecOperator operator,
+  void visitSuperIndexPostfix(
+      Send node,
+      MethodElement indexFunction,
+      MethodElement indexSetFunction,
+      Node index,
+      IncDecOperator operator,
       T arg) {
     handleSuper(node);
     handleOperator(node);
     handleSuper(node);
   }
 
-  void visitSuperIndexPrefix(Send node, MethodElement indexFunction,
-      MethodElement indexSetFunction, Node index, IncDecOperator operator,
+  void visitSuperIndexPrefix(
+      Send node,
+      MethodElement indexFunction,
+      MethodElement indexSetFunction,
+      Node index,
+      IncDecOperator operator,
       T arg) {
     handleSuper(node);
     handleOperator(node);
@@ -804,8 +811,8 @@ class _StatsVisitor<T> extends Visitor
     handleSuper(node);
   }
 
-  void visitThisPropertyCompound(Send node, Name name,
-      AssignmentOperator operator, Node rhs, T arg) {
+  void visitThisPropertyCompound(
+      Send node, Name name, AssignmentOperator operator, Node rhs, T arg) {
     handleThisProperty(node, new Selector.getter(name));
     handleOperator(node);
     handleThisProperty(node, new Selector.setter(name));
@@ -816,15 +823,15 @@ class _StatsVisitor<T> extends Visitor
     handleThisProperty(node, selector);
   }
 
-  void visitThisPropertyPostfix(Send node, Name name, IncDecOperator operator,
-      T arg) {
+  void visitThisPropertyPostfix(
+      Send node, Name name, IncDecOperator operator, T arg) {
     handleThisProperty(node, new Selector.getter(name));
     handleOperator(node);
     handleThisProperty(node, new Selector.setter(name));
   }
 
-  void visitThisPropertyPrefix(Send node, Name name, IncDecOperator operator,
-      T arg) {
+  void visitThisPropertyPrefix(
+      Send node, Name name, IncDecOperator operator, T arg) {
     handleThisProperty(node, new Selector.getter(name));
     handleOperator(node);
     handleThisProperty(node, new Selector.setter(name));
@@ -997,9 +1004,13 @@ class _StatsVisitor<T> extends Visitor
 
   // Statically known "no such method" sends
 
-  void visitConstructorIncompatibleInvoke(NewExpression node,
-      ConstructorElement constructor, InterfaceType type, NodeList arguments,
-      CallStructure callStructure, T arg) {
+  void visitConstructorIncompatibleInvoke(
+      NewExpression node,
+      ConstructorElement constructor,
+      InterfaceType type,
+      NodeList arguments,
+      CallStructure callStructure,
+      T arg) {
     handleNSMError(node);
   }
 
@@ -1099,8 +1110,8 @@ class _StatsVisitor<T> extends Visitor
     handleNSMError(node);
   }
 
-  void visitFinalSuperFieldSetIfNull(Send node, FieldElement field,
-      Node rhs, T arg) {
+  void visitFinalSuperFieldSetIfNull(
+      Send node, FieldElement field, Node rhs, T arg) {
     handleSuper(node);
     handleNSMSuper(node, field.enclosingClass);
   }
@@ -1175,15 +1186,18 @@ class _StatsVisitor<T> extends Visitor
     handleStatic(node);
   }
 
-  void visitTopLevelMethodSetIfNull(Send node, FunctionElement method,
-      Node rhs, T arg) {
+  void visitTopLevelMethodSetIfNull(
+      Send node, FunctionElement method, Node rhs, T arg) {
     handleStatic(node);
     handleNSMError(node);
   }
 
-  void visitLocalFunctionIncompatibleInvoke(Send node,
-      LocalFunctionElement function, NodeList arguments,
-      CallStructure callStructure, T arg) {
+  void visitLocalFunctionIncompatibleInvoke(
+      Send node,
+      LocalFunctionElement function,
+      NodeList arguments,
+      CallStructure callStructure,
+      T arg) {
     handleNSMError(node);
   }
 
@@ -1327,8 +1341,11 @@ class _StatsVisitor<T> extends Visitor
     handleNSMSuper(node, setter.enclosingClass);
   }
 
-  void visitTopLevelFunctionIncompatibleInvoke(Send node,
-      MethodElement function, NodeList arguments, CallStructure callStructure,
+  void visitTopLevelFunctionIncompatibleInvoke(
+      Send node,
+      MethodElement function,
+      NodeList arguments,
+      CallStructure callStructure,
       T arg) {
     handleNSMError(node);
   }
@@ -1394,8 +1411,11 @@ class _StatsVisitor<T> extends Visitor
     handleNSMError(node);
   }
 
-  void visitTypeVariableTypeLiteralCompound(Send node,
-      TypeVariableElement element, AssignmentOperator operator, Node rhs,
+  void visitTypeVariableTypeLiteralCompound(
+      Send node,
+      TypeVariableElement element,
+      AssignmentOperator operator,
+      Node rhs,
       T arg) {
     handleTypeVariable(node);
     handleNSMError(node); // operator on a method closure yields nSM
@@ -1407,9 +1427,12 @@ class _StatsVisitor<T> extends Visitor
     handleTypeVariable(node);
   }
 
-  void visitTypeVariableTypeLiteralInvoke(Send node,
-      TypeVariableElement element, NodeList arguments,
-      CallStructure callStructure, T arg) {
+  void visitTypeVariableTypeLiteralInvoke(
+      Send node,
+      TypeVariableElement element,
+      NodeList arguments,
+      CallStructure callStructure,
+      T arg) {
     handleNSMError(node);
   }
 
@@ -1480,8 +1503,12 @@ class _StatsVisitor<T> extends Visitor
     handleNSMError(node);
   }
 
-  void visitUnresolvedClassConstructorInvoke(NewExpression node,
-      Element element, DartType type, NodeList arguments, Selector selector,
+  void visitUnresolvedClassConstructorInvoke(
+      NewExpression node,
+      Element element,
+      DartType type,
+      NodeList arguments,
+      Selector selector,
       T arg) {
     handleNSMError(node);
   }
@@ -1521,9 +1548,13 @@ class _StatsVisitor<T> extends Visitor
     handleNoSend(node);
   }
 
-  void visitUnresolvedRedirectingFactoryConstructorInvoke(NewExpression node,
-      ConstructorElement constructor, InterfaceType type, NodeList arguments,
-      CallStructure callStructure, T arg) {
+  void visitUnresolvedRedirectingFactoryConstructorInvoke(
+      NewExpression node,
+      ConstructorElement constructor,
+      InterfaceType type,
+      NodeList arguments,
+      CallStructure callStructure,
+      T arg) {
     handleNSMError(node);
   }
 
@@ -1557,8 +1588,8 @@ class _StatsVisitor<T> extends Visitor
     handleNoSend(node);
   }
 
-  void visitUnresolvedStaticGetterSetIfNull(Send node, Element element,
-      MethodElement setter, Node rhs, T arg) {
+  void visitUnresolvedStaticGetterSetIfNull(
+      Send node, Element element, MethodElement setter, Node rhs, T arg) {
     handleNSMError(node);
     handleNoSend(node);
   }
@@ -1584,8 +1615,8 @@ class _StatsVisitor<T> extends Visitor
     handleNoSend(node);
   }
 
-  void visitUnresolvedStaticSetterSetIfNull(Send node, MethodElement getter,
-      Element element, Node rhs, T arg) {
+  void visitUnresolvedStaticSetterSetIfNull(
+      Send node, MethodElement getter, Element element, Node rhs, T arg) {
     handleNSMError(node);
     handleNoSend(node);
   }
@@ -1632,8 +1663,13 @@ class _StatsVisitor<T> extends Visitor
     handleSuper(node);
   }
 
-  void visitUnresolvedSuperGetterCompoundIndexSet(Send node, Element element,
-      MethodElement setter, Node index, AssignmentOperator operator, Node rhs,
+  void visitUnresolvedSuperGetterCompoundIndexSet(
+      Send node,
+      Element element,
+      MethodElement setter,
+      Node index,
+      AssignmentOperator operator,
+      Node rhs,
       T arg) {
     handleNSMSuper(node, element.enclosingClass);
     handleOperator(node);
@@ -1668,8 +1704,8 @@ class _StatsVisitor<T> extends Visitor
     handleSuper(node);
   }
 
-  void visitUnresolvedSuperGetterSetIfNull(Send node, Element element,
-      MethodElement setter, Node rhs, T arg) {
+  void visitUnresolvedSuperGetterSetIfNull(
+      Send node, Element element, MethodElement setter, Node rhs, T arg) {
     handleNSMSuper(node, element.enclosingClass);
     handleSuper(node);
   }
@@ -1724,25 +1760,38 @@ class _StatsVisitor<T> extends Visitor
     handleNSMSuper(node, element.enclosingClass);
   }
 
-  void visitUnresolvedSuperSetterCompoundIndexSet(Send node,
-      MethodElement getter, Element element, Node index,
-      AssignmentOperator operator, Node rhs, T arg) {
+  void visitUnresolvedSuperSetterCompoundIndexSet(
+      Send node,
+      MethodElement getter,
+      Element element,
+      Node index,
+      AssignmentOperator operator,
+      Node rhs,
+      T arg) {
     handleSuper(node);
     handleOperator(node);
     handleNSMSuper(node, element.enclosingClass);
   }
 
-  void visitUnresolvedSuperSetterIndexPostfix(Send node,
-      MethodElement indexFunction, Element element, Node index,
-      IncDecOperator operator, T arg) {
+  void visitUnresolvedSuperSetterIndexPostfix(
+      Send node,
+      MethodElement indexFunction,
+      Element element,
+      Node index,
+      IncDecOperator operator,
+      T arg) {
     handleSuper(node);
     handleOperator(node);
     handleNSMSuper(node, element.enclosingClass);
   }
 
-  void visitUnresolvedSuperSetterIndexPrefix(Send node,
-      MethodElement indexFunction, Element element, Node index,
-      IncDecOperator operator, T arg) {
+  void visitUnresolvedSuperSetterIndexPrefix(
+      Send node,
+      MethodElement indexFunction,
+      Element element,
+      Node index,
+      IncDecOperator operator,
+      T arg) {
     handleSuper(node);
     handleOperator(node);
     handleNSMSuper(node, element.enclosingClass);
@@ -1762,8 +1811,8 @@ class _StatsVisitor<T> extends Visitor
     handleNSMSuper(node, element.enclosingClass);
   }
 
-  void visitUnresolvedSuperSetterSetIfNull(Send node, MethodElement getter,
-      Element element, Node rhs, T arg) {
+  void visitUnresolvedSuperSetterSetIfNull(
+      Send node, MethodElement getter, Element element, Node rhs, T arg) {
     handleSuper(node);
     handleNSMSuper(node, element.enclosingClass);
   }
@@ -1794,8 +1843,8 @@ class _StatsVisitor<T> extends Visitor
     handleNoSend(node);
   }
 
-  void visitUnresolvedTopLevelGetterSetIfNull(Send node, Element element,
-      MethodElement setter, Node rhs, T arg) {
+  void visitUnresolvedTopLevelGetterSetIfNull(
+      Send node, Element element, MethodElement setter, Node rhs, T arg) {
     handleNSMError(node);
     handleNoSend(node);
   }
@@ -1821,8 +1870,8 @@ class _StatsVisitor<T> extends Visitor
     handleNoSend(node);
   }
 
-  void visitUnresolvedTopLevelSetterSetIfNull(Send node, MethodElement getter,
-      Element element, Node rhs, T arg) {
+  void visitUnresolvedTopLevelSetterSetIfNull(
+      Send node, MethodElement getter, Element element, Node rhs, T arg) {
     handleNSMError(node);
     handleNoSend(node);
   }
@@ -1838,9 +1887,13 @@ class _StatsVisitor<T> extends Visitor
     handleStatic(node);
   }
 
-  void visitFactoryConstructorInvoke(NewExpression node,
-      ConstructorElement constructor, InterfaceType type, NodeList arguments,
-      CallStructure callStructure, T arg) {
+  void visitFactoryConstructorInvoke(
+      NewExpression node,
+      ConstructorElement constructor,
+      InterfaceType type,
+      NodeList arguments,
+      CallStructure callStructure,
+      T arg) {
     handleStatic(node);
   }
 
@@ -1881,31 +1934,20 @@ class _StatsVisitor<T> extends Visitor
     handleStatic(node);
   }
 
-  void visitStaticGetterSetterSetIfNull(
-      Send node,
-      FunctionElement getter,
-      FunctionElement setter,
-      Node rhs,
-      T arg) {
+  void visitStaticGetterSetterSetIfNull(Send node, FunctionElement getter,
+      FunctionElement setter, Node rhs, T arg) {
     handleStatic(node);
     handleStatic(node);
   }
 
   void visitStaticMethodSetterSetIfNull(
-      Send node,
-      MethodElement method,
-      MethodElement setter,
-      Node rhs,
-      T arg) {
+      Send node, MethodElement method, MethodElement setter, Node rhs, T arg) {
     handleStatic(node);
     handleStatic(node);
   }
 
   void visitStaticMethodSetIfNull(
-      Send node,
-      FunctionElement method,
-      Node rhs,
-      T arg) {
+      Send node, FunctionElement method, Node rhs, T arg) {
     handleStatic(node);
     handleNSMError(node);
   }
@@ -1945,8 +1987,13 @@ class _StatsVisitor<T> extends Visitor
 
   // Virtual
 
-  void visitSuperCompoundIndexSet(SendSet node, MethodElement getter,
-      MethodElement setter, Node index, AssignmentOperator operator, Node rhs,
+  void visitSuperCompoundIndexSet(
+      SendSet node,
+      MethodElement getter,
+      MethodElement setter,
+      Node index,
+      AssignmentOperator operator,
+      Node rhs,
       T arg) {
     handleSuper(node);
     handleOperator(node);
@@ -1993,27 +2040,16 @@ class _StatsVisitor<T> extends Visitor
     handleNoSend(node);
   }
 
-  void errorInvalidGet(
-      Send node,
-      ErroneousElement error,
-      T arg) {
+  void errorInvalidGet(Send node, ErroneousElement error, T arg) {
     handleNoSend(node);
   }
 
-  void errorInvalidInvoke(
-      Send node,
-      ErroneousElement error,
-      NodeList arguments,
-      Selector selector,
-      T arg) {
+  void errorInvalidInvoke(Send node, ErroneousElement error, NodeList arguments,
+      Selector selector, T arg) {
     handleNoSend(node);
   }
 
-  void errorInvalidSet(
-      Send node,
-      ErroneousElement error,
-      Node rhs,
-      T arg) {
+  void errorInvalidSet(Send node, ErroneousElement error, Node rhs, T arg) {
     handleNoSend(node);
   }
 
@@ -2023,120 +2059,70 @@ class _StatsVisitor<T> extends Visitor
     handleNoSend(node);
   }
 
-
   void errorInvalidPrefix(
-      Send node,
-      ErroneousElement error,
-      IncDecOperator operator,
-      T arg) {
+      Send node, ErroneousElement error, IncDecOperator operator, T arg) {
     handleNoSend(node);
   }
 
   void errorInvalidPostfix(
-      Send node,
-      ErroneousElement error,
-      IncDecOperator operator,
-      T arg) {
+      Send node, ErroneousElement error, IncDecOperator operator, T arg) {
     handleNoSend(node);
   }
 
-  void errorInvalidCompound(
-      Send node,
-      ErroneousElement error,
-      AssignmentOperator operator,
-      Node rhs,
-      T arg) {
+  void errorInvalidCompound(Send node, ErroneousElement error,
+      AssignmentOperator operator, Node rhs, T arg) {
     handleNoSend(node);
   }
 
   void errorInvalidUnary(
-      Send node,
-      UnaryOperator operator,
-      ErroneousElement error,
-      T arg) {
+      Send node, UnaryOperator operator, ErroneousElement error, T arg) {
     handleNoSend(node);
   }
 
   void errorInvalidEquals(
-      Send node,
-      ErroneousElement error,
-      Node right,
-      T arg) {
+      Send node, ErroneousElement error, Node right, T arg) {
     handleNoSend(node);
   }
 
   void errorInvalidNotEquals(
-      Send node,
-      ErroneousElement error,
-      Node right,
-      T arg) {
+      Send node, ErroneousElement error, Node right, T arg) {
     handleNoSend(node);
   }
 
-  void errorInvalidBinary(
-      Send node,
-      ErroneousElement error,
-      BinaryOperator operator,
-      Node right,
-      T arg) {
+  void errorInvalidBinary(Send node, ErroneousElement error,
+      BinaryOperator operator, Node right, T arg) {
     handleNoSend(node);
   }
 
-  void errorInvalidIndex(
-      Send node,
-      ErroneousElement error,
-      Node index,
-      T arg) {
+  void errorInvalidIndex(Send node, ErroneousElement error, Node index, T arg) {
     handleNoSend(node);
   }
 
   void errorInvalidIndexSet(
-      Send node,
-      ErroneousElement error,
-      Node index,
-      Node rhs,
-      T arg) {
+      Send node, ErroneousElement error, Node index, Node rhs, T arg) {
     handleNoSend(node);
   }
 
-  void errorInvalidCompoundIndexSet(
-      Send node,
-      ErroneousElement error,
-      Node index,
-      AssignmentOperator operator,
-      Node rhs,
-      T arg) {
+  void errorInvalidCompoundIndexSet(Send node, ErroneousElement error,
+      Node index, AssignmentOperator operator, Node rhs, T arg) {
     handleNoSend(node);
     handleNoSend(node);
     handleNoSend(node);
   }
 
-  void errorInvalidIndexPrefix(
-      Send node,
-      ErroneousElement error,
-      Node index,
-      IncDecOperator operator,
-      T arg) {
+  void errorInvalidIndexPrefix(Send node, ErroneousElement error, Node index,
+      IncDecOperator operator, T arg) {
     handleNoSend(node);
     handleNoSend(node);
   }
 
-  void errorInvalidIndexPostfix(
-      Send node,
-      ErroneousElement error,
-      Node index,
-      IncDecOperator operator,
-      T arg) {
+  void errorInvalidIndexPostfix(Send node, ErroneousElement error, Node index,
+      IncDecOperator operator, T arg) {
     handleNoSend(node);
     handleNoSend(node);
   }
 
-  void previsitDeferredAccess(
-      Send node,
-      PrefixElement prefix,
-      T arg) {
-  }
-
+  void previsitDeferredAccess(Send node, PrefixElement prefix, T arg) {}
 
   void visitAs(Send node, Node expression, DartType type, T arg) {
     handleNoSend(node);
@@ -2226,14 +2212,14 @@ class _StatsVisitor<T> extends Visitor
   }
 
   @override
-  errorInvalidIndexSetIfNull(SendSet node, ErroneousElement error, Node index,
-      Node rhs, T arg) {
+  errorInvalidIndexSetIfNull(
+      SendSet node, ErroneousElement error, Node index, Node rhs, T arg) {
     handleNoSend(node);
   }
 
   @override
-  visitIndexSetIfNull(SendSet node, Node receiver, Node index, Node rhs,
-      T arg) {
+  visitIndexSetIfNull(
+      SendSet node, Node receiver, Node index, Node rhs, T arg) {
     handleIndex(node); // t1 = receiver[index]
     handleIndex(node); // receiver[index] = t2
   }
@@ -2253,8 +2239,8 @@ class _StatsVisitor<T> extends Visitor
   }
 
   @override
-  visitUnresolvedSuperIndexSetIfNull(Send node, Element element, Node index,
-      Node rhs, T arg) {
+  visitUnresolvedSuperIndexSetIfNull(
+      Send node, Element element, Node index, Node rhs, T arg) {
     handleNSMSuper(node, element.enclosingClass);
     handleNSMSuper(node, element.enclosingClass);
   }
@@ -2296,8 +2282,8 @@ class _StatsVisitor<T> extends Visitor
     if (!measurements.checkInvariant(Metric.send) ||
         !measurements.checkInvariant(Metric.monomorphicSend) ||
         !measurements.checkInvariant(Metric.polymorphicSend)) {
-      reporter.reportErrorMessage(node,
-          MessageKind.GENERIC, {'text': 'bad\n-- $msg\nlast:\n-- $last\n'});
+      reporter.reportErrorMessage(node, MessageKind.GENERIC,
+          {'text': 'bad\n-- $msg\nlast:\n-- $last\n'});
       last = msg;
     } else {
       last = msg;
@@ -2314,12 +2300,14 @@ class _StatsTraversalVisitor<T> extends TraversalVisitor<dynamic, T>
   _StatsTraversalVisitor(
       Compiler compiler, TreeElements elements, Uri sourceUri)
       : reporter = compiler.reporter,
-        statsVisitor = new _StatsVisitor(compiler.reporter, elements,
-            // TODO(sigmund): accept a list of analyses, so we can compare them
-            // together.
-            true
-            ? new TrustTypesAnalysisResult(elements, compiler.world)
-            : new NaiveAnalysisResult(),
+        statsVisitor = new _StatsVisitor(
+            compiler.reporter,
+            elements,
+                // TODO(sigmund): accept a list of analyses, so we can compare them
+                // together.
+                true
+                ? new TrustTypesAnalysisResult(elements, compiler.world)
+                : new NaiveAnalysisResult(),
             sourceUri),
         super(elements);
 
@@ -2327,8 +2315,8 @@ class _StatsTraversalVisitor<T> extends TraversalVisitor<dynamic, T>
     try {
       node.accept(statsVisitor);
     } catch (e, t) {
-      reporter.reportErrorMessage(
-          node, MessageKind.GENERIC, {'text': '$e\n$t'});
+      reporter
+          .reportErrorMessage(node, MessageKind.GENERIC, {'text': '$e\n$t'});
     }
     super.visitSend(node);
   }
@@ -2337,8 +2325,8 @@ class _StatsTraversalVisitor<T> extends TraversalVisitor<dynamic, T>
     try {
       node.accept(statsVisitor);
     } catch (e, t) {
-      reporter.reportErrorMessage(
-          node, MessageKind.GENERIC, {'text': '$e\n$t'});
+      reporter
+          .reportErrorMessage(node, MessageKind.GENERIC, {'text': '$e\n$t'});
     }
     super.visitNewExpression(node);
   }
@@ -2347,7 +2335,6 @@ class _StatsTraversalVisitor<T> extends TraversalVisitor<dynamic, T>
 /// Helper to visit elements recursively
 // TODO(sigmund): maybe generalize and move to elements/visitor.dart?
 abstract class RecursiveElementVisitor<R, A> extends ElementVisitor<R, A> {
-
   @override
   R visitWarnOnUseElement(WarnOnUseElement e, A arg) =>
       e.wrappedElement.accept(this, arg);
@@ -2369,7 +2356,6 @@ abstract class RecursiveElementVisitor<R, A> extends ElementVisitor<R, A> {
     return null;
   }
 
-  @override
   R visitVariableElement(VariableElement e, A arg) => null;
 
   @override
@@ -2387,7 +2373,6 @@ abstract class RecursiveElementVisitor<R, A> extends ElementVisitor<R, A> {
   @override
   R visitAbstractFieldElement(AbstractFieldElement e, A arg) => null;
 
-  @override
   R visitFunctionElement(FunctionElement e, A arg) => null;
 
   @override

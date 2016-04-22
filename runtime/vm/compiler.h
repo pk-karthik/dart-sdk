@@ -81,6 +81,8 @@ class Compiler : public AllStatic {
   static const intptr_t kNoOSRDeoptId = Thread::kNoDeoptId;
 
   static bool IsBackgroundCompilation();
+  // The result for a function may change if debugging gets turned on/off.
+  static bool CanOptimizeFunction(Thread* thread, const Function& function);
 
   // Extracts top level entities from the script and populates
   // the class dictionary of the library.
@@ -146,7 +148,7 @@ class Compiler : public AllStatic {
   // because the mutator thread changed the state (e.g., deoptimization,
   // deferred loading). The background compilation may retry to compile
   // the same function later.
-  static void AbortBackgroundCompilation(intptr_t deopt_id);
+  static void AbortBackgroundCompilation(intptr_t deopt_id, const char* msg);
 };
 
 
@@ -156,9 +158,12 @@ class Compiler : public AllStatic {
 // No OSR compilation in the background compiler.
 class BackgroundCompiler : public ThreadPool::Task {
  public:
+  virtual ~BackgroundCompiler();
+
   static void EnsureInit(Thread* thread);
 
-  static void Stop(BackgroundCompiler* task);
+  // Stops background compiler of the given isolate.
+  static void Stop(Isolate* isolate);
 
   static void Disable();
 
@@ -173,6 +178,7 @@ class BackgroundCompiler : public ThreadPool::Task {
   void VisitPointers(ObjectPointerVisitor* visitor);
 
   BackgroundCompilationQueue* function_queue() const { return function_queue_; }
+  bool is_running() const { return running_; }
 
  private:
   explicit BackgroundCompiler(Isolate* isolate);

@@ -5,39 +5,109 @@
 library dart2js.serialization_helper;
 
 import 'dart:async';
-import 'package:async_helper/async_helper.dart';
-import 'package:expect/expect.dart';
+import 'dart:io';
+
 import 'package:compiler/src/commandline_options.dart';
+import 'package:compiler/src/common.dart';
 import 'package:compiler/src/common/backend_api.dart';
 import 'package:compiler/src/common/names.dart';
 import 'package:compiler/src/common/resolution.dart';
 import 'package:compiler/src/compiler.dart';
 import 'package:compiler/src/elements/elements.dart';
-import 'package:compiler/src/filenames.dart';
-import 'package:compiler/src/serialization/element_serialization.dart';
+import 'package:compiler/src/io/source_file.dart';
+import 'package:compiler/src/scanner/scanner.dart';
+import 'package:compiler/src/script.dart';
 import 'package:compiler/src/serialization/impact_serialization.dart';
 import 'package:compiler/src/serialization/json_serializer.dart';
+import 'package:compiler/src/serialization/resolved_ast_serialization.dart';
 import 'package:compiler/src/serialization/serialization.dart';
 import 'package:compiler/src/serialization/task.dart';
+import 'package:compiler/src/tokens/token.dart';
+import 'package:compiler/src/universe/call_structure.dart';
 import 'package:compiler/src/universe/world_impact.dart';
+import 'package:compiler/src/universe/use.dart';
+
 import 'memory_compiler.dart';
 
+class Arguments {
+  final String filename;
+  final bool loadSerializedData;
+  final bool saveSerializedData;
+  final String serializedDataFileName;
+  final bool verbose;
 
-Future<String> serializeDartCore() async {
-  Compiler compiler = compilerFor(
-      options: [Flags.analyzeAll]);
-  compiler.serialization.supportSerialization = true;
-  await compiler.run(Uris.dart_core);
-  return serialize(compiler, compiler.libraryLoader.libraries)
-      .toText(const JsonSerializationEncoder());
+  const Arguments({
+    this.filename,
+    this.loadSerializedData: false,
+    this.saveSerializedData: false,
+    this.serializedDataFileName: 'out.data',
+    this.verbose: false});
+
+  factory Arguments.from(List<String> arguments) {
+    String filename;
+    for (String arg in arguments) {
+      if (!arg.startsWith('-')) {
+        filename = arg;
+      }
+    }
+    bool verbose = arguments.contains('-v');
+    bool loadSerializedData = arguments.contains('-l');
+    bool saveSerializedData = arguments.contains('-s');
+    return new Arguments(
+        filename: filename,
+        verbose: verbose,
+        loadSerializedData: loadSerializedData,
+        saveSerializedData: saveSerializedData);
+  }
 }
 
-Serializer serialize(Compiler compiler, Iterable<LibraryElement> libraries) {
+
+Future<String> serializeDartCore(
+    {Arguments arguments: const Arguments(),
+     bool serializeResolvedAst: false}) async {
+  print('------------------------------------------------------------------');
+  print('serialize dart:core');
+  print('------------------------------------------------------------------');
+  String serializedData;
+  if (arguments.loadSerializedData) {
+    File file = new File(arguments.serializedDataFileName);
+    if (file.existsSync()) {
+      print('Loading data from $file');
+      serializedData = file.readAsStringSync();
+    }
+  }
+  if (serializedData == null) {
+    Compiler compiler = compilerFor(
+        options: [Flags.analyzeAll]);
+    compiler.serialization.supportSerialization = true;
+    await compiler.run(Uris.dart_core);
+    serializedData = serialize(
+        compiler,
+        compiler.libraryLoader.libraries,
+        serializeResolvedAst: serializeResolvedAst)
+          .toText(const JsonSerializationEncoder());
+    if (arguments.saveSerializedData) {
+      File file = new File(arguments.serializedDataFileName);
+      print('Saving data to $file');
+      file.writeAsStringSync(serializedData);
+    }
+  }
+  return serializedData;
+}
+
+Serializer serialize(
+    Compiler compiler,
+    Iterable<LibraryElement> libraries,
+    {bool serializeResolvedAst: false}) {
   assert(compiler.serialization.supportSerialization);
 
   Serializer serializer = new Serializer();
   serializer.plugins.add(compiler.backend.serialization.serializer);
   serializer.plugins.add(new ResolutionImpactSerializer(compiler.resolution));
+  if (serializeResolvedAst) {
+    serializer.plugins.add(
+        new ResolvedAstSerializerPlugin(compiler.resolution, compiler.backend));
+  }
 
   for (LibraryElement library in libraries) {
     serializer.serialize(library);
@@ -45,7 +115,9 @@ Serializer serialize(Compiler compiler, Iterable<LibraryElement> libraries) {
   return serializer;
 }
 
-void deserialize(Compiler compiler, String serializedData) {
+void deserialize(Compiler compiler,
+                 String serializedData,
+                 {bool deserializeResolvedAst: false}) {
   Deserializer deserializer = new Deserializer.fromText(
       new DeserializationContext(),
       serializedData,
@@ -53,8 +125,10 @@ void deserialize(Compiler compiler, String serializedData) {
   deserializer.plugins.add(compiler.backend.serialization.deserializer);
   compiler.serialization.deserializer =
       new _DeserializerSystem(
+          compiler,
           deserializer,
-          compiler.backend.impactTransformer);
+          compiler.backend.impactTransformer,
+          deserializeResolvedAst: deserializeResolvedAst);
 }
 
 
@@ -70,7 +144,7 @@ class ResolutionImpactSerializer extends SerializerPlugin {
     if (resolution.hasBeenResolved(element)) {
       ResolutionImpact impact = resolution.getResolutionImpact(element);
       ObjectEncoder encoder = createEncoder(WORLD_IMPACT_TAG);
-      new ImpactSerializer(encoder).serialize(impact);
+      new ImpactSerializer(element, encoder).serialize(impact);
     }
   }
 }
@@ -82,43 +156,110 @@ class ResolutionImpactDeserializer extends DeserializerPlugin {
   void onElement(Element element, ObjectDecoder getDecoder(String tag)) {
     ObjectDecoder decoder = getDecoder(WORLD_IMPACT_TAG);
     if (decoder != null) {
-      impactMap[element] = ImpactDeserializer.deserializeImpact(decoder);
+      impactMap[element] =
+          ImpactDeserializer.deserializeImpact(element, decoder);
     }
   }
 }
 
 class _DeserializerSystem extends DeserializerSystem {
+  final Compiler _compiler;
   final Deserializer _deserializer;
   final List<LibraryElement> deserializedLibraries = <LibraryElement>[];
   final ResolutionImpactDeserializer _resolutionImpactDeserializer =
       new ResolutionImpactDeserializer();
+  final ResolvedAstDeserializerPlugin _resolvedAstDeserializer;
   final ImpactTransformer _impactTransformer;
+  final bool _deserializeResolvedAst;
 
-  _DeserializerSystem(this._deserializer, this._impactTransformer) {
+  _DeserializerSystem(
+      Compiler compiler,
+      this._deserializer,
+      this._impactTransformer,
+      {bool deserializeResolvedAst: false})
+      : this._compiler = compiler,
+        this._deserializeResolvedAst = deserializeResolvedAst,
+        this._resolvedAstDeserializer = deserializeResolvedAst
+           ? new ResolvedAstDeserializerPlugin(
+               compiler.parsingContext, compiler.backend) : null {
     _deserializer.plugins.add(_resolutionImpactDeserializer);
+    if (_deserializeResolvedAst) {
+      _deserializer.plugins.add(_resolvedAstDeserializer);
+    }
   }
 
-  LibraryElement readLibrary(Uri resolvedUri) {
+  @override
+  Future<LibraryElement> readLibrary(Uri resolvedUri) {
     LibraryElement library = _deserializer.lookupLibrary(resolvedUri);
     if (library != null) {
       deserializedLibraries.add(library);
+      if (_deserializeResolvedAst) {
+        return Future.forEach(library.compilationUnits,
+            (CompilationUnitElement compilationUnit) {
+          Script script = compilationUnit.script;
+          return _compiler.readScript(script.readableUri)
+              .then((Script newScript) {
+            _resolvedAstDeserializer.sourceFiles[script.resourceUri] =
+                newScript.file;
+          });
+        }).then((_) => library);
+      }
     }
-    return library;
+    return new Future<LibraryElement>.value(library);
   }
 
+  @override
+  bool hasResolvedAst(Element element) {
+    if (_resolvedAstDeserializer != null) {
+      return _resolvedAstDeserializer.hasResolvedAst(element);
+    }
+    return false;
+  }
+
+  @override
+  ResolvedAst getResolvedAst(Element element) {
+    if (_resolvedAstDeserializer != null) {
+      return _resolvedAstDeserializer.getResolvedAst(element);
+    }
+    return null;
+  }
+
+  @override
+  bool hasResolutionImpact(Element element) {
+    if (element.isConstructor &&
+            element.enclosingClass.isUnnamedMixinApplication) {
+      return true;
+    }
+    return _resolutionImpactDeserializer.impactMap.containsKey(element);
+  }
+
+  @override
   ResolutionImpact getResolutionImpact(Element element) {
+    if (element.isConstructor &&
+        element.enclosingClass.isUnnamedMixinApplication) {
+      ClassElement superclass =  element.enclosingClass.superclass;
+      ConstructorElement superclassConstructor =
+          superclass.lookupConstructor(element.name);
+      assert(invariant(element, superclassConstructor != null,
+          message: "Superclass constructor '${element.name}' called from "
+                   "${element} not found in ${superclass}."));
+      // TODO(johnniwinther): Compute callStructure. Currently not used.
+      CallStructure callStructure;
+      return _resolutionImpactDeserializer.impactMap.putIfAbsent(element, () {
+        return new DeserializedResolutionImpact(
+            staticUses: <StaticUse>[new StaticUse.superConstructorInvoke(
+                superclassConstructor, callStructure)]);
+      });
+    }
     return _resolutionImpactDeserializer.impactMap[element];
   }
 
   @override
   WorldImpact computeWorldImpact(Element element) {
     ResolutionImpact resolutionImpact = getResolutionImpact(element);
-    if (resolutionImpact == null) {
-      print('No impact found for $element (${element.library})');
-      return const WorldImpact();
-    } else {
-      return _impactTransformer.transformResolutionImpact(resolutionImpact);
-    }
+    assert(invariant(element, resolutionImpact != null,
+        message: 'No impact found for $element (${element.library})'));
+    return _impactTransformer.transformResolutionImpact(resolutionImpact);
   }
 
   @override
@@ -126,3 +267,81 @@ class _DeserializerSystem extends DeserializerSystem {
     return deserializedLibraries.contains(element.library);
   }
 }
+
+const String RESOLVED_AST_TAG = 'resolvedAst';
+
+class ResolvedAstSerializerPlugin extends SerializerPlugin {
+  final Resolution resolution;
+  final Backend backend;
+
+  ResolvedAstSerializerPlugin(this.resolution, this.backend);
+
+  @override
+  void onElement(Element element, ObjectEncoder createEncoder(String tag)) {
+    assert(invariant(element, element.isDeclaration,
+        message: "Element $element must be the declaration"));
+    if (element is MemberElement) {
+      assert(invariant(element, resolution.hasResolvedAst(element),
+          message: "Element $element must have a resolved ast"));
+      ResolvedAst resolvedAst = resolution.getResolvedAst(element);
+      ObjectEncoder objectEncoder = createEncoder(RESOLVED_AST_TAG);
+      new ResolvedAstSerializer(
+          objectEncoder,
+          resolvedAst,
+          backend.serialization.serializer).serialize();
+    }
+  }
+}
+
+class ResolvedAstDeserializerPlugin extends DeserializerPlugin {
+  final ParsingContext parsingContext;
+  final Backend backend;
+  final Map<Uri, SourceFile> sourceFiles = <Uri, SourceFile>{};
+
+  Map<Element, ResolvedAst> _resolvedAstMap = <Element, ResolvedAst>{};
+  Map<Element, ObjectDecoder> _decoderMap = <Element, ObjectDecoder>{};
+  Map<Uri, Token> beginTokenMap = <Uri, Token>{};
+
+  ResolvedAstDeserializerPlugin(this.parsingContext, this.backend);
+
+  bool hasResolvedAst(Element element) {
+    return _resolvedAstMap.containsKey(element) ||
+        _decoderMap.containsKey(element);
+  }
+
+  ResolvedAst getResolvedAst(Element element) {
+    ResolvedAst resolvedAst = _resolvedAstMap[element];
+    if (resolvedAst == null) {
+      ObjectDecoder decoder = _decoderMap[element];
+      if (decoder != null) {
+        resolvedAst = _resolvedAstMap[element] =
+            ResolvedAstDeserializer.deserialize(
+                element, decoder, parsingContext, findToken,
+                backend.serialization.deserializer);
+        _decoderMap.remove(element);
+      }
+    }
+    return resolvedAst;
+  }
+
+  Token findToken(Uri uri, int offset) {
+    Token beginToken = beginTokenMap.putIfAbsent(uri, () {
+      SourceFile sourceFile = sourceFiles[uri];
+      if (sourceFile == null) {
+        throw 'No source file found for $uri in:\n '
+              '${sourceFiles.keys.join('\n ')}';
+      }
+      return new Scanner(sourceFile).tokenize();
+    });
+    return ResolvedAstDeserializer.findTokenInStream(beginToken, offset);
+  }
+
+  @override
+  void onElement(Element element, ObjectDecoder getDecoder(String tag)) {
+    ObjectDecoder decoder = getDecoder(RESOLVED_AST_TAG);
+    if (decoder != null) {
+      _decoderMap[element] = decoder;
+    }
+  }
+}
+

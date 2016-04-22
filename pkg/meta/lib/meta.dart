@@ -24,6 +24,7 @@ library meta;
 /// same annotation.
 ///
 /// Tools, such as the analyzer, can provide feedback if
+///
 /// * the annotation is associated with anything other than an instance method,
 ///   or
 /// * a method that has this annotation that can return anything other than a
@@ -35,6 +36,7 @@ const _Factory factory = const _Factory();
 /// arguments to the constructor is not a compile-time constant.
 ///
 /// Tools, such as the analyzer, can provide feedback if
+///
 /// * the annotation is associated with anything other than a const constructor,
 ///   or
 /// * an invocation of a constructor that has this annotation is not invoked
@@ -50,11 +52,18 @@ const _Literal literal = const _Literal();
 /// outside of the library that defines the annotated method.
 ///
 /// Tools, such as the analyzer, can provide feedback if
+///
 /// * the annotation is associated with anything other than an instance method,
 ///   or
 /// * a method that overrides a method that has this annotation can return
 ///   without invoking the overridden method.
 const _MustCallSuper mustCallSuper = const _MustCallSuper();
+
+/// Used to annotate a class declaration `C`. Indicates that any type arguments
+/// declared on `C` are to be treated as optional.  Tools such as the analyzer
+/// and linter can use this information to suppress warnings that would
+/// otherwise require type arguments to be provided for instances of `C`.
+const _OptionalTypeArgs optionalTypeArgs = const _OptionalTypeArgs();
 
 /// Used to annotate an instance member (method, getter, setter, operator, or
 /// field) `m` in a class `C`. If the annotation is on a field it applies to the
@@ -64,6 +73,7 @@ const _MustCallSuper mustCallSuper = const _MustCallSuper();
 /// that `m` should only be invoked on `this`, whether explicitly or implicitly.
 ///
 /// Tools, such as the analyzer, can provide feedback if
+///
 /// * the annotation is associated with anything other than an instance member,
 ///   or
 /// * an invocation of a member that has this annotation is used outside of an
@@ -78,6 +88,7 @@ const _Protected protected = const _Protected();
 /// optional parameter.
 ///
 /// Tools, such as the analyzer, can provide feedback if
+///
 /// * the annotation is associated with anything other than a named parameter,
 /// * the annotation is associated with a named parameter in a method `m1` that
 ///   overrides a method `m0` and `m0` defines a named parameter with the same
@@ -115,6 +126,10 @@ class _Literal {
 
 class _MustCallSuper {
   const _MustCallSuper();
+}
+
+class _OptionalTypeArgs {
+  const _OptionalTypeArgs();
 }
 
 class _Protected {

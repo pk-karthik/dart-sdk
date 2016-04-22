@@ -231,6 +231,8 @@ CLASS_LIST_TYPED_DATA(V)
   friend class object;                                                         \
   friend class RawObject;                                                      \
   friend class Heap;                                                           \
+  friend class Simulator;                                                      \
+  friend class SimulatorHelpers;                                               \
   DISALLOW_ALLOCATION();                                                       \
   DISALLOW_IMPLICIT_CONSTRUCTORS(Raw##object)
 
@@ -683,6 +685,8 @@ class RawObject {
   friend class StackFrame;  // GetCodeObject assertion.
   friend class CodeLookupTableBuilder;  // profiler
   friend class NativeEntry;  // GetClassId
+  friend class Simulator;
+  friend class SimulatorHelpers;
 
   DISALLOW_ALLOCATION();
   DISALLOW_IMPLICIT_CONSTRUCTORS(RawObject);
@@ -1041,18 +1045,16 @@ class RawLibrary : public RawObject {
   RawString* private_key_;
   RawArray* dictionary_;         // Top-level names in this library.
   RawGrowableObjectArray* metadata_;  // Metadata on classes, methods etc.
-  RawClass* toplevel_class_;  // Class containing top-level elements.
+  RawClass* toplevel_class_;     // Class containing top-level elements.
   RawGrowableObjectArray* patch_classes_;
   RawArray* imports_;            // List of Namespaces imported without prefix.
   RawArray* exports_;            // List of re-exported Namespaces.
-  RawArray* exports2_;           // Copy of exports_, used by background
-                                 // compiler to detect cycles without colliding
-                                 // with mutator thread lookups.
   RawInstance* load_error_;      // Error iff load_state_ == kLoadError.
   RawObject** to_snapshot() {
     return reinterpret_cast<RawObject**>(&ptr()->load_error_);
   }
   RawArray* resolved_names_;     // Cache of resolved names in library scope.
+  RawArray* exported_names_;     // Cache of exported names by library.
   RawArray* loaded_scripts_;     // Array of scripts loaded in this library.
   RawObject** to() {
     return reinterpret_cast<RawObject**>(&ptr()->loaded_scripts_);
@@ -1060,13 +1062,13 @@ class RawLibrary : public RawObject {
 
   Dart_NativeEntryResolver native_entry_resolver_;  // Resolves natives.
   Dart_NativeEntrySymbol native_entry_symbol_resolver_;
-  classid_t index_;             // Library id number.
-  uint16_t num_imports_;        // Number of entries in imports_.
-  int8_t load_state_;           // Of type LibraryState.
+  classid_t index_;              // Library id number.
+  uint16_t num_imports_;         // Number of entries in imports_.
+  int8_t load_state_;            // Of type LibraryState.
   bool corelib_imported_;
   bool is_dart_scheme_;
-  bool debuggable_;             // True if debugger can stop in library.
-  bool is_in_fullsnapshot_;     // True if library is in a full snapshot.
+  bool debuggable_;              // True if debugger can stop in library.
+  bool is_in_fullsnapshot_;      // True if library is in a full snapshot.
 
   friend class Class;
   friend class Isolate;

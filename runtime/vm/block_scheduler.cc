@@ -61,7 +61,8 @@ void BlockScheduler::AssignEdgeWeights() const {
       flow_graph()->parsed_function().function().ic_data_array());
   if (Compiler::IsBackgroundCompilation() && ic_data_array.IsNull()) {
     // Deferred loading cleared ic_data_array.
-    Compiler::AbortBackgroundCompilation(Thread::kNoDeoptId);
+    Compiler::AbortBackgroundCompilation(Thread::kNoDeoptId,
+        "BlockScheduler: ICData array cleared");
   }
   if (ic_data_array.IsNull()) {
     return;

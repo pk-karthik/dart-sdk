@@ -3228,14 +3228,10 @@ class DeclaredIdentifierImpl extends DeclarationImpl
   }
 
   @override
-  bool get isConst =>
-      (keyword is KeywordToken) &&
-      (keyword as KeywordToken).keyword == Keyword.CONST;
+  bool get isConst => keyword?.keyword == Keyword.CONST;
 
   @override
-  bool get isFinal =>
-      (keyword is KeywordToken) &&
-      (keyword as KeywordToken).keyword == Keyword.FINAL;
+  bool get isFinal => keyword?.keyword == Keyword.FINAL;
 
   @override
   TypeName get type => _type;
@@ -3391,8 +3387,7 @@ abstract class DirectiveImpl extends AnnotatedNodeImpl implements Directive {
    * The element associated with this directive, or `null` if the AST structure
    * has not been resolved or if this directive could not be resolved.
    */
-  @override
-  Element element;
+  Element _element;
 
   /**
    * Initialize a newly create directive. Either or both of the [comment] and
@@ -3401,6 +3396,16 @@ abstract class DirectiveImpl extends AnnotatedNodeImpl implements Directive {
    */
   DirectiveImpl(Comment comment, List<Annotation> metadata)
       : super(comment, metadata);
+
+  @override
+  Element get element => _element;
+
+  /**
+   * Set the element associated with this directive to be the given [element].
+   */
+  void set element(Element element) {
+    _element = element;
+  }
 }
 
 /**
@@ -4356,14 +4361,10 @@ class FieldFormalParameterImpl extends NormalFormalParameterImpl
   }
 
   @override
-  bool get isConst =>
-      (keyword is KeywordToken) &&
-      (keyword as KeywordToken).keyword == Keyword.CONST;
+  bool get isConst => keyword?.keyword == Keyword.CONST;
 
   @override
-  bool get isFinal =>
-      (keyword is KeywordToken) &&
-      (keyword as KeywordToken).keyword == Keyword.FINAL;
+  bool get isFinal => keyword?.keyword == Keyword.FINAL;
 
   @override
   FormalParameterList get parameters => _parameters;
@@ -5028,14 +5029,10 @@ class FunctionDeclarationImpl extends NamedCompilationUnitMemberImpl
   }
 
   @override
-  bool get isGetter =>
-      propertyKeyword != null &&
-      (propertyKeyword as KeywordToken).keyword == Keyword.GET;
+  bool get isGetter => propertyKeyword?.keyword == Keyword.GET;
 
   @override
-  bool get isSetter =>
-      propertyKeyword != null &&
-      (propertyKeyword as KeywordToken).keyword == Keyword.SET;
+  bool get isSetter => propertyKeyword?.keyword == Keyword.SET;
 
   @override
   TypeName get returnType => _returnType;
@@ -6117,9 +6114,7 @@ class InstanceCreationExpressionImpl extends ExpressionImpl
   Token get endToken => _argumentList.endToken;
 
   @override
-  bool get isConst =>
-      keyword is KeywordToken &&
-      (keyword as KeywordToken).keyword == Keyword.CONST;
+  bool get isConst => keyword?.keyword == Keyword.CONST;
 
   @override
   int get precedence => 16;
@@ -7116,22 +7111,16 @@ class MethodDeclarationImpl extends ClassMemberImpl
   }
 
   @override
-  bool get isGetter =>
-      propertyKeyword != null &&
-      (propertyKeyword as KeywordToken).keyword == Keyword.GET;
+  bool get isGetter => propertyKeyword?.keyword == Keyword.GET;
 
   @override
   bool get isOperator => operatorKeyword != null;
 
   @override
-  bool get isSetter =>
-      propertyKeyword != null &&
-      (propertyKeyword as KeywordToken).keyword == Keyword.SET;
+  bool get isSetter => propertyKeyword?.keyword == Keyword.SET;
 
   @override
-  bool get isStatic =>
-      modifierKeyword != null &&
-      (modifierKeyword as KeywordToken).keyword == Keyword.STATIC;
+  bool get isStatic => modifierKeyword?.keyword == Keyword.STATIC;
 
   @override
   SimpleIdentifier get name => _name;
@@ -8835,14 +8824,10 @@ class SimpleFormalParameterImpl extends NormalFormalParameterImpl
   Token get endToken => identifier.endToken;
 
   @override
-  bool get isConst =>
-      (keyword is KeywordToken) &&
-      (keyword as KeywordToken).keyword == Keyword.CONST;
+  bool get isConst => keyword?.keyword == Keyword.CONST;
 
   @override
-  bool get isFinal =>
-      (keyword is KeywordToken) &&
-      (keyword as KeywordToken).keyword == Keyword.FINAL;
+  bool get isFinal => keyword?.keyword == Keyword.FINAL;
 
   @override
   TypeName get type => _type;
@@ -10715,14 +10700,10 @@ class VariableDeclarationListImpl extends AnnotatedNodeImpl
   }
 
   @override
-  bool get isConst =>
-      keyword is KeywordToken &&
-      (keyword as KeywordToken).keyword == Keyword.CONST;
+  bool get isConst => keyword?.keyword == Keyword.CONST;
 
   @override
-  bool get isFinal =>
-      keyword is KeywordToken &&
-      (keyword as KeywordToken).keyword == Keyword.FINAL;
+  bool get isFinal => keyword?.keyword == Keyword.FINAL;
 
   @override
   TypeName get type => _type;

@@ -181,7 +181,7 @@ class ArgListContributor extends DartCompletionContributor {
     }
 
     // Resolve the target expression to determine the arguments
-    await request.resolveExpression(targetId);
+    await request.resolveContainingExpression(targetId);
     // Gracefully degrade if the element could not be resolved
     // e.g. target changed, completion aborted
     targetId = _getTargetId(request.target.containingNode);
@@ -262,14 +262,14 @@ class ArgListContributor extends DartCompletionContributor {
     Iterable<String> namedArgs = _namedArgs(request);
     for (ParameterElement param in parameters) {
       if (param.parameterKind == ParameterKind.NAMED) {
-        _addNamedParameterSuggestion(
-            request, namedArgs, param.name, appendComma);
+        _addNamedParameterSuggestion(request, namedArgs, param.name,
+            param.type?.displayName, appendComma);
       }
     }
   }
 
   void _addNamedParameterSuggestion(DartCompletionRequest request,
-      List<String> namedArgs, String name, bool appendComma) {
+      List<String> namedArgs, String name, String paramType, bool appendComma) {
     if (name != null && name.length > 0 && !namedArgs.contains(name)) {
       String completion = '$name: ';
       if (appendComma) {
@@ -282,7 +282,9 @@ class ArgListContributor extends DartCompletionContributor {
           completion.length,
           0,
           false,
-          false));
+          false,
+          parameterName: name,
+          parameterType: paramType));
     }
   }
 

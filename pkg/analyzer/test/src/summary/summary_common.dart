@@ -23,7 +23,15 @@ import 'package:analyzer/src/summary/summarize_elements.dart'
     as summarize_elements;
 import 'package:unittest/unittest.dart';
 
-import '../../generated/analysis_context_factory.dart';
+import '../context/mock_sdk.dart';
+
+/**
+ * Convert [path] to a suitably formatted absolute path URI for the current
+ * platform.
+ */
+String absUri(String path) {
+  return FileUtilities2.createFile(path).toURI().toString();
+}
 
 /**
  * Convert a summary object (or a portion of one) into a canonical form that
@@ -99,13 +107,14 @@ class SerializedMockSdk {
 
   static SerializedMockSdk _serializeMockSdk() {
     try {
-      AnalysisContext analysisContext =
-          AnalysisContextFactory.contextWithCore();
+      AnalysisContext analysisContext = new MockSdk().context;
       Map<String, UnlinkedUnit> uriToUnlinkedUnit = <String, UnlinkedUnit>{};
       Map<String, LinkedLibrary> uriToLinkedLibrary = <String, LinkedLibrary>{};
       List<LibraryElement> libraries = [
         analysisContext.typeProvider.objectType.element.library,
-        analysisContext.typeProvider.futureType.element.library
+        analysisContext.typeProvider.futureType.element.library,
+        analysisContext.computeLibraryElement(
+            analysisContext.sourceFactory.resolveUri(null, 'dart:math')),
       ];
       for (LibraryElement library in libraries) {
         summarize_elements.LibrarySerializationResult serializedLibrary =
@@ -187,14 +196,6 @@ abstract class SummaryTest {
    * serializing and deserializing the library under test.
    */
   List<UnlinkedUnit> get unlinkedUnits;
-
-  /**
-   * Convert [path] to a suitably formatted absolute path URI for the current
-   * platform.
-   */
-  String absUri(String path) {
-    return FileUtilities2.createFile(path).toURI().toString();
-  }
 
   /**
    * Add the given source file so that it may be referenced by the file under
@@ -5692,6 +5693,12 @@ f(MyFunction myFunction) {}
         ReferenceKind.classOrEnum);
   }
 
+  test_export_dependency() {
+    serializeLibraryText('export "dart:async";');
+    expect(unlinkedUnits[0].exports, hasLength(1));
+    checkDependency(linked.exportDependencies[0], 'dart:async', 'dart:async');
+  }
+
   test_export_enum() {
     addNamedSource('/a.dart', 'enum E { v }');
     serializeLibraryText('export "a.dart";');
@@ -5751,6 +5758,21 @@ f(MyFunction myFunction) {}
         unlinkedUnits[0].publicNamespace.exports[0].combinators[0].offset, 0);
     expect(unlinkedUnits[0].publicNamespace.exports[0].combinators[0].end, 0);
     expect(linked.exportNames, isNotEmpty);
+  }
+
+  test_export_missing() {
+    if (!checkAstDerivedData) {
+      // TODO(paulberry): At the moment unresolved exports are not included in
+      // the element model, so we can't pass this test.
+      return;
+    }
+    // Unresolved exports are included since this is necessary for proper
+    // dependency tracking.
+    allowMissingFiles = true;
+    serializeLibraryText('export "foo.dart";', allowErrors: true);
+    expect(unlinkedUnits[0].imports, hasLength(1));
+    checkDependency(
+        linked.exportDependencies[0], absUri('/foo.dart'), 'foo.dart');
   }
 
   test_export_names_excludes_names_from_library() {
@@ -6693,7 +6715,6 @@ final v = 42 as num;
 ''');
     _assertUnlinkedConst(variable.constExpr, isValidConst: false, operators: [
       UnlinkedConstOperation.pushInt,
-      UnlinkedConstOperation.pushReference,
       UnlinkedConstOperation.typeCast,
     ], ints: [
       42
@@ -6712,7 +6733,6 @@ final v = 42 is num;
 ''');
     _assertUnlinkedConst(variable.constExpr, isValidConst: false, operators: [
       UnlinkedConstOperation.pushInt,
-      UnlinkedConstOperation.pushReference,
       UnlinkedConstOperation.typeCheck,
     ], ints: [
       42
@@ -7219,7 +7239,7 @@ Stream s;
     checkTypeRef(findVariable('f').type, 'dart:async', 'dart:async', 'Future',
         numTypeParameters: 1);
     checkTypeRef(findVariable('s').type, 'dart:async', 'dart:async', 'Stream',
-        numTypeParameters: 1);
+        expectedTargetUnit: 1, numTypeParameters: 1);
   }
 
   test_import_reference_merged_prefixed() {
@@ -7233,7 +7253,7 @@ a.Stream s;
     checkTypeRef(findVariable('f').type, 'dart:async', 'dart:async', 'Future',
         expectedPrefix: 'a', numTypeParameters: 1);
     checkTypeRef(findVariable('s').type, 'dart:async', 'dart:async', 'Stream',
-        expectedPrefix: 'a', numTypeParameters: 1);
+        expectedTargetUnit: 1, expectedPrefix: 'a', numTypeParameters: 1);
   }
 
   test_import_reference_merged_prefixed_separate_libraries() {
@@ -7249,6 +7269,27 @@ p.B b;
     checkTypeRef(findVariable('a').type, absUri('/a.dart'), 'a.dart', 'A',
         expectedPrefix: 'p');
     checkTypeRef(findVariable('b').type, absUri('/b.dart'), 'b.dart', 'B',
+        expectedPrefix: 'p');
+  }
+
+  test_import_self() {
+    if (!checkAstDerivedData) {
+      // TODO(paulberry): this test fails when building the summary from the
+      // element model because the element model can't tell the difference
+      // between self references via a local name and self references via a
+      // self-import.
+      return;
+    }
+    serializeLibraryText('''
+import 'test.dart' as p;
+class C {}
+class D extends p.C {} // Prevent "unused import" warning
+''');
+    expect(unlinkedUnits[0].imports[0].uri, 'test.dart');
+    checkDependency(
+        linked.importDependencies[0], absUri('/test.dart'), 'test.dart');
+    checkTypeRef(unlinkedUnits[0].classes[1].supertype, absUri('/test.dart'),
+        'test.dart', 'C',
         expectedPrefix: 'p');
   }
 
@@ -7276,6 +7317,21 @@ p.B b;
     // Second import is the implicit import of dart:core
     expect(unlinkedUnits[0].imports, hasLength(2));
     expect(unlinkedUnits[0].imports[0].uri, 'dart:async');
+  }
+
+  test_inferred_type_keeps_leading_dynamic() {
+    if (!strongMode || skipFullyLinkedData) {
+      return;
+    }
+    UnlinkedClass cls =
+        serializeClassText('class C { final x = <dynamic, int>{}; }');
+    EntityRef type = getTypeRefForSlot(cls.fields[0].inferredTypeSlot);
+    // Check that x has inferred type `Map<dynamic, int>`.
+    checkLinkedTypeRef(type, 'dart:core', 'dart:core', 'Map',
+        allowTypeArguments: true, numTypeParameters: 2);
+    expect(type.typeArguments, hasLength(2));
+    checkLinkedTypeRef(type.typeArguments[0], null, null, 'dynamic');
+    checkLinkedTypeRef(type.typeArguments[1], 'dart:core', 'dart:core', 'int');
   }
 
   test_inferred_type_refers_to_bound_type_param() {
@@ -7413,6 +7469,32 @@ p.B b;
     expect(linkedReference.containingReference, isNot(0));
     expect(linkedReference.containingReference, lessThan(type.reference));
     checkReferenceIndex(linkedReference.containingReference, null, null, 'D');
+  }
+
+  test_inferred_type_skips_trailing_dynamic() {
+    if (!strongMode || skipFullyLinkedData) {
+      return;
+    }
+    UnlinkedClass cls =
+        serializeClassText('class C { final x = <int, dynamic>{}; }');
+    EntityRef type = getTypeRefForSlot(cls.fields[0].inferredTypeSlot);
+    // Check that x has inferred type `Map<int>`.  The trailing type argument
+    // `dynamic` is omitted.
+    checkLinkedTypeRef(type, 'dart:core', 'dart:core', 'Map',
+        allowTypeArguments: true, numTypeParameters: 2);
+    expect(type.typeArguments, hasLength(1));
+    checkLinkedTypeRef(type.typeArguments[0], 'dart:core', 'dart:core', 'int');
+  }
+
+  test_inferred_type_skips_unnecessary_dynamic() {
+    if (!strongMode || skipFullyLinkedData) {
+      return;
+    }
+    UnlinkedClass cls = serializeClassText('class C { final x = []; }');
+    EntityRef type = getTypeRefForSlot(cls.fields[0].inferredTypeSlot);
+    // Check that x has inferred type `List`, not `List<dynamic>`.
+    checkLinkedTypeRef(type, 'dart:core', 'dart:core', 'List',
+        numTypeParameters: 1);
   }
 
   test_initializer_executable_with_bottom_return_type() {

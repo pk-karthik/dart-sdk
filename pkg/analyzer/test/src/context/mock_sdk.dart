@@ -8,8 +8,7 @@ import 'package:analyzer/file_system/file_system.dart' as resource;
 import 'package:analyzer/file_system/memory_file_system.dart' as resource;
 import 'package:analyzer/src/context/cache.dart';
 import 'package:analyzer/src/context/context.dart';
-import 'package:analyzer/src/generated/engine.dart'
-    show AnalysisEngine, ChangeSet;
+import 'package:analyzer/src/generated/engine.dart' show AnalysisEngine;
 import 'package:analyzer/src/generated/sdk.dart';
 import 'package:analyzer/src/generated/source.dart';
 
@@ -31,6 +30,15 @@ class Future<T> {
   static Future<List/*<T>*/> wait/*<T>*/(
       Iterable<Future/*<T>*/> futures) => null;
   Future/*<R>*/ then/*<R>*/(/*=R*/ onValue(T value)) => null;
+}
+
+abstract class Completer<T> {
+  factory Completer() => new _AsyncCompleter<T>();
+  factory Completer.sync() => new _SyncCompleter<T>();
+  Future<T> get future;
+  void complete([value]);
+  void completeError(Object error, [StackTrace stackTrace]);
+  bool get isCompleted;
 }
 ''',
     const <String, String>{
@@ -118,8 +126,8 @@ abstract class num implements Comparable<num> {
   int operator |(int other);
   int operator <<(int other);
   int operator >>(int other);
-  int operator ~/(int other);
-  int operator %(int other);
+  int operator ~/(num other);
+  num operator %(num other);
   int operator ~();
   int toInt();
   double toDouble();

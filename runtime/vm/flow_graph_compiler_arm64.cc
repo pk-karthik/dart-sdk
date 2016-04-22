@@ -1345,21 +1345,9 @@ void FlowGraphCompiler::EmitSwitchableInstanceCall(
     LocationSummary* locs) {
   __ Comment("SwitchableCall");
   __ LoadFromOffset(R0, SP, (argument_count - 1) * kWordSize);
-  if (ic_data.NumArgsTested() == 1) {
-    __ LoadUniqueObject(R5, ic_data);
-    __ BranchLinkPatchable(*StubCode::ICLookupThroughFunction_entry());
-  } else {
-    const String& name = String::Handle(zone(), ic_data.target_name());
-    const Array& arguments_descriptor =
-        Array::ZoneHandle(zone(), ic_data.arguments_descriptor());
-    ASSERT(!arguments_descriptor.IsNull() &&
-           (arguments_descriptor.Length() > 0));
-    const MegamorphicCache& cache = MegamorphicCache::ZoneHandle(zone(),
-        MegamorphicCacheTable::Lookup(isolate(), name, arguments_descriptor));
-
-    __ LoadUniqueObject(R5, cache);
-    __ BranchLinkPatchable(*StubCode::MegamorphicLookup_entry());
-  }
+  ASSERT(ic_data.NumArgsTested() == 1);
+  __ LoadUniqueObject(R5, ic_data);
+  __ BranchLinkPatchable(*StubCode::ICLookupThroughFunction_entry());
   __ blr(R1);
 
   AddCurrentDescriptor(RawPcDescriptors::kOther,
@@ -1551,7 +1539,8 @@ void FlowGraphCompiler::EmitTestAndCall(const ICData& ic_data,
                                         Label* match_found,
                                         intptr_t deopt_id,
                                         TokenPosition token_index,
-                                        LocationSummary* locs) {
+                                        LocationSummary* locs,
+                                        bool complete) {
   ASSERT(is_optimizing());
 
   __ Comment("EmitTestAndCall");
@@ -1569,8 +1558,8 @@ void FlowGraphCompiler::EmitTestAndCall(const ICData& ic_data,
   ASSERT(!ic_data.IsNull() && (kNumChecks > 0));
 
   Label after_smi_test;
-  __ tsti(R0, Immediate(kSmiTagMask));
   if (kFirstCheckIsSmi) {
+    __ tsti(R0, Immediate(kSmiTagMask));
     // Jump if receiver is not Smi.
     if (kNumChecks == 1) {
       __ b(failed, NE);
@@ -1594,7 +1583,10 @@ void FlowGraphCompiler::EmitTestAndCall(const ICData& ic_data,
   } else {
     // Receiver is Smi, but Smi is not a valid class therefore fail.
     // (Smi class must be first in the list).
-    __ b(failed, EQ);
+    if (!complete) {
+      __ tsti(R0, Immediate(kSmiTagMask));
+      __ b(failed, EQ);
+    }
   }
   __ Bind(&after_smi_test);
 
@@ -1613,11 +1605,18 @@ void FlowGraphCompiler::EmitTestAndCall(const ICData& ic_data,
     const bool kIsLastCheck = (i == (kSortedLen - 1));
     ASSERT(sorted[i].cid != kSmiCid);
     Label next_test;
-    __ CompareImmediate(R2, sorted[i].cid);
-    if (kIsLastCheck) {
-      __ b(failed, NE);
+    if (!complete) {
+      __ CompareImmediate(R2, sorted[i].cid);
+      if (kIsLastCheck) {
+        __ b(failed, NE);
+      } else {
+        __ b(&next_test, NE);
+      }
     } else {
-      __ b(&next_test, NE);
+      if (!kIsLastCheck) {
+        __ CompareImmediate(R2, sorted[i].cid);
+        __ b(&next_test, NE);
+      }
     }
     // Do not use the code from the function, but let the code be patched so
     // that we can record the outgoing edges to other code.

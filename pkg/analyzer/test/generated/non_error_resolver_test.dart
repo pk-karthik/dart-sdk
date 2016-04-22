@@ -167,7 +167,7 @@ library lib2;
 class N {}
 class N2 {}''');
     computeLibrarySourceErrors(source);
-    assertNoErrors(source);
+    assertErrors(source, [HintCode.UNUSED_SHOWN_NAME]);
   }
 
   void test_annotated_partOfDeclaration() {
@@ -5576,26 +5576,6 @@ class B extends A<List> {
     element.last;
   }
 }''');
-    computeLibrarySourceErrors(source);
-    assertNoErrors(source);
-    verify([source]);
-  }
-
-  void test_undefinedIdentifier_hide() {
-    Source source = addSource(r'''
-library L;
-export 'lib1.dart' hide a;''');
-    addNamedSource("/lib1.dart", "library lib1;");
-    computeLibrarySourceErrors(source);
-    assertNoErrors(source);
-    verify([source]);
-  }
-
-  void test_undefinedIdentifier_show() {
-    Source source = addSource(r'''
-library L;
-export 'lib1.dart' show a;''');
-    addNamedSource("/lib1.dart", "library lib1;");
     computeLibrarySourceErrors(source);
     assertNoErrors(source);
     verify([source]);

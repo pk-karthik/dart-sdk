@@ -80,9 +80,6 @@ class CommandLineOptions {
   /// Whether to display version information
   final bool displayVersion;
 
-  /// Whether to enable conditional directives (DEP 40).
-  final bool enableConditionalDirectives;
-
   /// Whether to enable null-aware operators (DEP 9).
   final bool enableNullAwareOperators;
 
@@ -166,7 +163,6 @@ class CommandLineOptions {
         analysisOptionsFile = args['options'],
         disableHints = args['no-hints'],
         displayVersion = args['version'],
-        enableConditionalDirectives = args['enable-conditional-directives'],
         enableNullAwareOperators = args['enable-null-aware-operators'],
         enableStrictCallChecks = args['enable-strict-call-checks'],
         enableSuperMixins = args['supermixin'],
@@ -419,7 +415,8 @@ class CommandLineOptions {
           negatable: false,
           hide: true)
       ..addFlag('enable-conditional-directives',
-          help: 'Enable support for conditional directives (DEP 40).',
+          help:
+              'deprecated -- Enable support for conditional directives (DEP 40).',
           defaultsTo: false,
           negatable: false,
           hide: true)
@@ -434,7 +431,7 @@ class CommandLineOptions {
           negatable: false,
           hide: true)
       ..addFlag('enable-new-task-model',
-          help: 'Ennable new task model.',
+          help: 'deprecated -- Ennable new task model.',
           defaultsTo: false,
           negatable: false,
           hide: true)
@@ -465,9 +462,20 @@ class CommandLineOptions {
 
       // Persistent worker.
       if (args.contains('--persistent_worker')) {
-        if (args.length != 2 || !args.contains('--build-mode')) {
+        bool validArgs;
+        if (!args.contains('--build-mode')) {
+          validArgs = false;
+        } else if (args.length == 2) {
+          validArgs = true;
+        } else if (args.length == 4 && args.contains('--dart-sdk')) {
+          validArgs = true;
+        } else {
+          validArgs = false;
+        }
+        if (!validArgs) {
           printAndFail('The --persistent_worker flag should be used with and '
-              'only with the --build-mode flag.');
+              'only with the --build-mode flag, and possibly the --dart-sdk '
+              'option. Got: $args');
           return null; // Only reachable in testing.
         }
         return new CommandLineOptions._fromArgs(results, definedVariables);

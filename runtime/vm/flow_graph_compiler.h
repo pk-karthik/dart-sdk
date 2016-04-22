@@ -367,6 +367,15 @@ class FlowGraphCompiler : public ValueObject {
   // Returns 'true' if regular code generation should be skipped.
   bool TryIntrinsify();
 
+  void GenerateAssertAssignable(TokenPosition token_pos,
+                                intptr_t deopt_id,
+                                const AbstractType& dst_type,
+                                const String& dst_name,
+                                LocationSummary* locs);
+
+  // DBC emits calls very differently from all other architectures due to its
+  // interpreted nature.
+#if !defined(TARGET_ARCH_DBC)
   void GenerateRuntimeCall(TokenPosition token_pos,
                            intptr_t deopt_id,
                            const RuntimeEntry& entry,
@@ -389,12 +398,6 @@ class FlowGraphCompiler : public ValueObject {
                               RawPcDescriptors::Kind kind,
                               LocationSummary* locs,
                               const Function& target);
-
-  void GenerateAssertAssignable(TokenPosition token_pos,
-                                intptr_t deopt_id,
-                                const AbstractType& dst_type,
-                                const String& dst_name,
-                                LocationSummary* locs);
 
   void GenerateInstanceOf(TokenPosition token_pos,
                           intptr_t deopt_id,
@@ -426,12 +429,6 @@ class FlowGraphCompiler : public ValueObject {
   void GenerateListTypeCheck(Register kClassIdReg,
                              Label* is_instance_lbl);
 
-  void EmitComment(Instruction* instr);
-
-  bool NeedsEdgeCounter(TargetEntryInstr* block);
-
-  void EmitEdgeCounter(intptr_t edge_id);
-
   void EmitOptimizedInstanceCall(const StubEntry& stub_entry,
                                  const ICData& ic_data,
                                  intptr_t argument_count,
@@ -451,7 +448,8 @@ class FlowGraphCompiler : public ValueObject {
                                    const Array& argument_names,
                                    intptr_t deopt_id,
                                    TokenPosition token_pos,
-                                   LocationSummary* locs);
+                                   LocationSummary* locs,
+                                   bool complete);
 
   // Pass a value for try-index where block is not available (e.g. slow path).
   void EmitMegamorphicInstanceCall(
@@ -476,7 +474,8 @@ class FlowGraphCompiler : public ValueObject {
                        Label* match_found,
                        intptr_t deopt_id,
                        TokenPosition token_index,
-                       LocationSummary* locs);
+                       LocationSummary* locs,
+                       bool complete);
 
   Condition EmitEqualityRegConstCompare(Register reg,
                                         const Object& obj,
@@ -487,7 +486,14 @@ class FlowGraphCompiler : public ValueObject {
                                       bool needs_number_check,
                                       TokenPosition token_pos);
 
+  bool NeedsEdgeCounter(TargetEntryInstr* block);
+
+  void EmitEdgeCounter(intptr_t edge_id);
+#endif  // !defined(TARGET_ARCH_DBC)
+
   void EmitTrySync(Instruction* instr, intptr_t try_index);
+
+  void EmitComment(Instruction* instr);
 
   intptr_t StackSize() const;
 
@@ -635,6 +641,9 @@ class FlowGraphCompiler : public ValueObject {
                                  LocationSummary* locs,
                                  const ICData& ic_data);
 
+  // DBC handles type tests differently from all other architectures due
+  // to its interpreted nature.
+#if !defined(TARGET_ARCH_DBC)
   // Type checking helper methods.
   void CheckClassIds(Register class_id_reg,
                      const GrowableArray<intptr_t>& class_ids,
@@ -688,6 +697,7 @@ class FlowGraphCompiler : public ValueObject {
   void GenerateBoolToJump(Register bool_reg, Label* is_true, Label* is_false);
 
   void CopyParameters();
+#endif  // !defined(TARGET_ARCH_DBC)
 
   void GenerateInlinedGetter(intptr_t offset);
   void GenerateInlinedSetter(intptr_t offset);
@@ -720,7 +730,10 @@ class FlowGraphCompiler : public ValueObject {
     return stackmap_table_builder_;
   }
 
-#if defined(DEBUG)
+  // TODO(vegorov) re-enable frame state tracking on DBC. It is
+  // currently disabled because it relies on LocationSummaries and
+  // we don't use them during unoptimized compilation on DBC.
+#if defined(DEBUG) && !defined(TARGET_ARCH_DBC)
   void FrameStateUpdateWith(Instruction* instr);
   void FrameStatePush(Definition* defn);
   void FrameStatePop(intptr_t count);

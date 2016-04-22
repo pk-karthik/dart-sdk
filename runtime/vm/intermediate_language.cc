@@ -33,9 +33,10 @@ DEFINE_FLAG(bool, propagate_ic_data, true,
     "Propagate IC data from unoptimized to optimized IC calls.");
 DEFINE_FLAG(bool, two_args_smi_icd, true,
     "Generate special IC stubs for two args Smi operations");
-DEFINE_FLAG(bool, unbox_numeric_fields, true,
+DEFINE_FLAG(bool, unbox_numeric_fields, !USING_DBC,
     "Support unboxed double and float32x4 fields.");
 DECLARE_FLAG(bool, eliminate_type_checks);
+DECLARE_FLAG(bool, support_externalizable_strings);
 
 
 #if defined(DEBUG)
@@ -91,10 +92,12 @@ const ICData* Instruction::GetICData(
   if (deopt_id_ < ic_data_array.length()) {
     const ICData* result = ic_data_array[deopt_id_];
 #if defined(TAG_IC_DATA)
-    if (result->tag() == -1) {
-      result->set_tag(tag());
-    } else if (result->tag() != tag()) {
-      FATAL("ICData tag mismatch");
+    if (result != NULL) {
+      if (result->tag() == -1) {
+        result->set_tag(tag());
+      } else if (result->tag() != tag()) {
+        FATAL("ICData tag mismatch");
+      }
     }
 #endif
     return result;
@@ -177,22 +180,11 @@ bool CheckClassInstr::AttributesEqual(Instruction* other) const {
 }
 
 
-bool CheckClassInstr::IsImmutableClassId(intptr_t cid) {
-  switch (cid) {
-    case kOneByteStringCid:
-    case kTwoByteStringCid:
-      return false;
-    default:
-      return true;
-  }
-}
-
-
 static bool AreAllChecksImmutable(const ICData& checks) {
   const intptr_t len = checks.NumberOfChecks();
   for (intptr_t i = 0; i < len; i++) {
     if (checks.IsUsedAt(i)) {
-      if (!CheckClassInstr::IsImmutableClassId(
+      if (Field::IsExternalizableCid(
               checks.GetReceiverClassIdAt(i))) {
         return false;
       }
@@ -211,7 +203,7 @@ EffectSet CheckClassInstr::Dependencies() const {
 
 EffectSet CheckClassIdInstr::Dependencies() const {
   // Externalization of strings via the API can change the class-id.
-  return !CheckClassInstr::IsImmutableClassId(cid_) ?
+  return Field::IsExternalizableCid(cid_) ?
       EffectSet::Externalization() : EffectSet::None();
 }
 
@@ -1659,12 +1651,14 @@ static bool IsRepresentable(const Integer& value, Representation rep) {
 
 
 RawInteger* UnaryIntegerOpInstr::Evaluate(const Integer& value) const {
-  Integer& result = Integer::Handle();
+  Thread* thread = Thread::Current();
+  Zone* zone = thread->zone();
+  Integer& result = Integer::Handle(zone);
 
   switch (op_kind()) {
     case Token::kNEGATE:
       result = value.ArithmeticOp(Token::kMUL,
-                                  Smi::Handle(Smi::New(-1)),
+                                  Smi::Handle(zone, Smi::New(-1)),
                                   Heap::kOld);
       break;
 
@@ -1688,7 +1682,7 @@ RawInteger* UnaryIntegerOpInstr::Evaluate(const Integer& value) const {
       // specialized instructions that use this value under this assumption.
       return Integer::null();
     }
-    result ^= result.CheckAndCanonicalize(NULL);
+    result ^= result.CheckAndCanonicalize(thread, NULL);
   }
 
   return result.raw();
@@ -1697,7 +1691,9 @@ RawInteger* UnaryIntegerOpInstr::Evaluate(const Integer& value) const {
 
 RawInteger* BinaryIntegerOpInstr::Evaluate(const Integer& left,
                                            const Integer& right) const {
-  Integer& result = Integer::Handle();
+  Thread* thread = Thread::Current();
+  Zone* zone = thread->zone();
+  Integer& result = Integer::Handle(zone);
 
   switch (op_kind()) {
     case Token::kTRUNCDIV:
@@ -1746,7 +1742,7 @@ RawInteger* BinaryIntegerOpInstr::Evaluate(const Integer& left,
       // specialized instructions that use this value under this assumption.
       return Integer::null();
     }
-    result ^= result.CheckAndCanonicalize(NULL);
+    result ^= result.CheckAndCanonicalize(thread, NULL);
   }
 
   return result.raw();
@@ -2594,6 +2590,28 @@ Instruction* CheckClassIdInstr::Canonicalize(FlowGraph* flow_graph) {
 }
 
 
+Definition* TestCidsInstr::Canonicalize(FlowGraph* flow_graph) {
+  CompileType* in_type = left()->Type();
+  intptr_t cid = in_type->ToCid();
+  if (cid == kDynamicCid) return this;
+
+  const ZoneGrowableArray<intptr_t>& data = cid_results();
+  const intptr_t true_result = (kind() == Token::kIS) ? 1 : 0;
+  for (intptr_t i = 0; i < data.length(); i += 2) {
+    if (data[i] == cid) {
+      return (data[i + 1] == true_result)
+          ? flow_graph->GetConstant(Bool::True())
+          : flow_graph->GetConstant(Bool::False());
+    }
+  }
+
+  // TODO(sra): Handle misses if the instruction is not deoptimizing.
+  // TODO(sra): Handle nullable input, possibly canonicalizing to a compare
+  // against `null`.
+  return this;
+}
+
+
 Instruction* GuardFieldClassInstr::Canonicalize(FlowGraph* flow_graph) {
   if (field().guarded_cid() == kDynamicCid) {
     return NULL;  // Nothing to guard.
@@ -2774,9 +2792,14 @@ LocationSummary* TargetEntryInstr::MakeLocationSummary(Zone* zone,
 void TargetEntryInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   __ Bind(compiler->GetJumpLabel(this));
   if (!compiler->is_optimizing()) {
+#if !defined(TARGET_ARCH_DBC)
+    // TODO(vegorov) re-enable edge counters on DBC if we consider them
+    // beneficial for the quality of the optimized bytecode.
     if (compiler->NeedsEdgeCounter(this)) {
       compiler->EmitEdgeCounter(preorder_number());
     }
+#endif
+
     // The deoptimization descriptor points after the edge counter code for
     // uniformity with ARM and MIPS, where we can reuse pattern matching
     // code that matches backwards from the end of the pattern.
@@ -2976,10 +2999,23 @@ LocationSummary* DropTempsInstr::MakeLocationSummary(Zone* zone,
 
 
 void DropTempsInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
+#if defined(TARGET_ARCH_DBC)
+  // On DBC the action of poping the TOS value and then pushing it
+  // after all intermediates are poped is folded into a special
+  // bytecode (DropR). On other architectures this is handled by
+  // instruction prologue/epilogues.
+  ASSERT(!compiler->is_optimizing());
+  if ((InputCount() != 0) && HasTemp()) {
+    __ DropR(num_temps());
+  } else {
+    __ Drop(num_temps() + ((InputCount() != 0) ? 1 : 0));
+  }
+#else
   ASSERT(!compiler->is_optimizing());
   // Assert that register assignment is correct.
   ASSERT((InputCount() == 0) || (locs()->out(0).reg() == locs()->in(0).reg()));
   __ Drop(num_temps());
+#endif  // defined(TARGET_ARCH_DBC)
 }
 
 
@@ -3004,6 +3040,8 @@ LocationSummary* InstanceCallInstr::MakeLocationSummary(Zone* zone,
 }
 
 
+// DBC does not use specialized inline cache stubs for smi operations.
+#if !defined(TARGET_ARCH_DBC)
 static const StubEntry* TwoArgsSmiOpInlineCacheEntry(Token::Kind kind) {
   if (!FLAG_two_args_smi_icd) {
     return 0;
@@ -3015,6 +3053,7 @@ static const StubEntry* TwoArgsSmiOpInlineCacheEntry(Token::Kind kind) {
     default:          return NULL;
   }
 }
+#endif
 
 
 void InstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
@@ -3031,6 +3070,8 @@ void InstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   } else {
     call_ic_data = &ICData::ZoneHandle(zone, ic_data()->raw());
   }
+
+#if !defined(TARGET_ARCH_DBC)
   if (compiler->is_optimizing() && HasICData()) {
     ASSERT(HasICData());
     if (ic_data()->NumberOfUsedChecks() > 0) {
@@ -3083,6 +3124,44 @@ void InstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
                                      *call_ic_data);
     }
   }
+#else
+  // Emit smi fast path instruction. If fast-path succeeds it skips the next
+  // instruction otherwise it falls through.
+  if (function_name().raw() == Symbols::Plus().raw()) {
+    __ AddTOS();
+  } else if (function_name().raw() == Symbols::EqualOperator().raw()) {
+    __ EqualTOS();
+  } else if (function_name().raw() == Symbols::LAngleBracket().raw()) {
+    __ LessThanTOS();
+  } else if (function_name().raw() == Symbols::RAngleBracket().raw()) {
+    __ GreaterThanTOS();
+  } else if (function_name().raw() == Symbols::BitAnd().raw()) {
+    __ BitAndTOS();
+  } else if (function_name().raw() == Symbols::BitOr().raw()) {
+    __ BitOrTOS();
+  } else if (function_name().raw() == Symbols::Star().raw()) {
+    __ MulTOS();
+  }
+
+  const intptr_t call_ic_data_kidx = __ AddConstant(*call_ic_data);
+  switch (call_ic_data->NumArgsTested()) {
+    case 1:
+      __ InstanceCall(ArgumentCount(), call_ic_data_kidx);
+      break;
+    case 2:
+      __ InstanceCall2(ArgumentCount(), call_ic_data_kidx);
+      break;
+    case 3:
+      __ InstanceCall3(ArgumentCount(), call_ic_data_kidx);
+      break;
+    default:
+      UNIMPLEMENTED();
+      break;
+  }
+  compiler->AddCurrentDescriptor(RawPcDescriptors::kIcCall,
+                                 deopt_id(),
+                                 token_pos());
+#endif  // !defined(TARGET_ARCH_DBC)
 }
 
 
@@ -3105,6 +3184,10 @@ bool PolymorphicInstanceCallInstr::HasOnlyDispatcherTargets() const {
   return true;
 }
 
+
+// DBC does not support optimizing compiler and thus doesn't emit
+// PolymorphicInstanceCallInstr.
+#if !defined(TARGET_ARCH_DBC)
 void PolymorphicInstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   ASSERT(ic_data().NumArgsTested() == 1);
   if (!with_checks()) {
@@ -3125,8 +3208,10 @@ void PolymorphicInstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
                                         instance_call()->argument_names(),
                                         deopt_id(),
                                         instance_call()->token_pos(),
-                                        locs());
+                                        locs(),
+                                        complete());
 }
+#endif
 
 
 LocationSummary* StaticCallInstr::MakeLocationSummary(Zone* zone,
@@ -3136,6 +3221,7 @@ LocationSummary* StaticCallInstr::MakeLocationSummary(Zone* zone,
 
 
 void StaticCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
+#if !defined(TARGET_ARCH_DBC)
   const ICData* call_ic_data = NULL;
   if (!FLAG_propagate_ic_data || !compiler->is_optimizing() ||
       (ic_data() == NULL)) {
@@ -3168,6 +3254,20 @@ void StaticCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
                                argument_names(),
                                locs(),
                                *call_ic_data);
+#else
+  const Array& arguments_descriptor =
+      (ic_data() == NULL) ?
+        Array::Handle(ArgumentsDescriptor::New(ArgumentCount(),
+                                               argument_names())) :
+        Array::Handle(ic_data()->arguments_descriptor());
+  const intptr_t argdesc_kidx = __ AddConstant(arguments_descriptor);
+
+  __ PushConstant(function());
+  __ StaticCall(ArgumentCount(), argdesc_kidx);
+  compiler->AddCurrentDescriptor(RawPcDescriptors::kUnoptStaticCall,
+                                 deopt_id(),
+                                 token_pos());
+#endif  // !defined(TARGET_ARCH_DBC)
 }
 
 
@@ -3177,7 +3277,11 @@ void AssertAssignableInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
                                      dst_type(),
                                      dst_name(),
                                      locs());
+
+  // DBC does not use LocationSummaries in the same way as other architectures.
+#if !defined(TARGET_ARCH_DBC)
   ASSERT(locs()->in(0).reg() == locs()->out(0).reg());
+#endif
 }
 
 
@@ -3288,11 +3392,6 @@ void Environment::DeepCopyToOuter(Zone* zone, Instruction* instr) const {
 }
 
 
-static bool BindsToSmiConstant(Value* value) {
-  return value->BindsToConstant() && value->BoundConstant().IsSmi();
-}
-
-
 ComparisonInstr* EqualityCompareInstr::CopyWithNewOperands(Value* new_left,
                                                            Value* new_right) {
   return new EqualityCompareInstr(token_pos(),
@@ -3360,9 +3459,17 @@ bool TestCidsInstr::AttributesEqual(Instruction* other) const {
 }
 
 
+#if !defined(TARGET_ARCH_DBC)
+static bool BindsToSmiConstant(Value* value) {
+  return value->BindsToConstant() && value->BoundConstant().IsSmi();
+}
+#endif
+
+
 bool IfThenElseInstr::Supports(ComparisonInstr* comparison,
                                Value* v1,
                                Value* v2) {
+#if !defined(TARGET_ARCH_DBC)
   bool is_smi_result = BindsToSmiConstant(v1) && BindsToSmiConstant(v2);
   if (comparison->IsStrictCompare()) {
     // Strict comparison with number checks calls a stub and is not supported
@@ -3375,6 +3482,9 @@ bool IfThenElseInstr::Supports(ComparisonInstr* comparison,
     return false;
   }
   return is_smi_result;
+#else
+  return false;
+#endif  // !defined(TARGET_ARCH_DBC)
 }
 
 
@@ -3467,7 +3577,8 @@ Definition* StringInterpolateInstr::Canonicalize(FlowGraph* flow_graph) {
     return this;
   }
   const intptr_t length = Smi::Cast(num_elements->BoundConstant()).Value();
-  Zone* zone = Thread::Current()->zone();
+  Thread* thread = Thread::Current();
+  Zone* zone = thread->zone();
   GrowableHandlePtrArray<const String> pieces(zone, length);
   for (intptr_t i = 0; i < length; i++) {
     pieces.Add(Object::null_string());
@@ -3495,7 +3606,8 @@ Definition* StringInterpolateInstr::Canonicalize(FlowGraph* flow_graph) {
         pieces.SetAt(store_index, String::Cast(obj));
       } else if (obj.IsSmi()) {
         const char* cstr = obj.ToCString();
-        pieces.SetAt(store_index, String::Handle(zone, Symbols::New(cstr)));
+        pieces.SetAt(store_index,
+            String::Handle(zone, String::New(cstr, Heap::kOld)));
       } else if (obj.IsBool()) {
         pieces.SetAt(store_index,
             Bool::Cast(obj).value() ? Symbols::True() : Symbols::False());
@@ -3509,9 +3621,8 @@ Definition* StringInterpolateInstr::Canonicalize(FlowGraph* flow_graph) {
     }
   }
 
-  ASSERT(pieces.length() == length);
   const String& concatenated = String::ZoneHandle(zone,
-      Symbols::FromConcatAll(pieces));
+      Symbols::FromConcatAll(thread, pieces));
   return flow_graph->GetConstant(concatenated);
 }
 

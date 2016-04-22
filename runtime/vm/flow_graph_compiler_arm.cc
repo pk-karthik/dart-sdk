@@ -1365,21 +1365,9 @@ void FlowGraphCompiler::EmitSwitchableInstanceCall(
     LocationSummary* locs) {
   __ Comment("SwitchableCall");
   __ LoadFromOffset(kWord, R0, SP, (argument_count - 1) * kWordSize);
-  if (ic_data.NumArgsTested() == 1) {
-    __ LoadUniqueObject(R9, ic_data);
-    __ BranchLinkPatchable(*StubCode::ICLookupThroughFunction_entry());
-  } else {
-    const String& name = String::Handle(zone(), ic_data.target_name());
-    const Array& arguments_descriptor =
-        Array::ZoneHandle(zone(), ic_data.arguments_descriptor());
-    ASSERT(!arguments_descriptor.IsNull() &&
-           (arguments_descriptor.Length() > 0));
-    const MegamorphicCache& cache = MegamorphicCache::ZoneHandle(zone(),
-        MegamorphicCacheTable::Lookup(isolate(), name, arguments_descriptor));
-
-    __ LoadUniqueObject(R9, cache);
-    __ BranchLinkPatchable(*StubCode::MegamorphicLookup_entry());
-  }
+  ASSERT(ic_data.NumArgsTested() == 1);
+  __ LoadUniqueObject(R9, ic_data);
+  __ BranchLinkPatchable(*StubCode::ICLookupThroughFunction_entry());
   __ blx(R1);
 
   AddCurrentDescriptor(RawPcDescriptors::kOther, Thread::kNoDeoptId, token_pos);
@@ -1516,7 +1504,7 @@ void FlowGraphCompiler::SaveLiveRegisters(LocationSummary* locs) {
       if (locs->live_registers()->ContainsFpuRegister(fpu_reg)) {
         DRegister d1 = EvenDRegisterOf(fpu_reg);
         DRegister d2 = OddDRegisterOf(fpu_reg);
-        // TOOD(regis): merge stores using vstmd instruction.
+        // TODO(regis): merge stores using vstmd instruction.
         __ vstrd(d1, Address(SP, offset));
         __ vstrd(d2, Address(SP, offset + 2 * kWordSize));
         offset += kFpuRegisterSize;
@@ -1562,7 +1550,7 @@ void FlowGraphCompiler::RestoreLiveRegisters(LocationSummary* locs) {
       if (locs->live_registers()->ContainsFpuRegister(fpu_reg)) {
         DRegister d1 = EvenDRegisterOf(fpu_reg);
         DRegister d2 = OddDRegisterOf(fpu_reg);
-        // TOOD(regis): merge loads using vldmd instruction.
+        // TODO(regis): merge loads using vldmd instruction.
         __ vldrd(d1, Address(SP, offset));
         __ vldrd(d2, Address(SP, offset + 2 * kWordSize));
         offset += kFpuRegisterSize;
@@ -1596,7 +1584,8 @@ void FlowGraphCompiler::EmitTestAndCall(const ICData& ic_data,
                                         Label* match_found,
                                         intptr_t deopt_id,
                                         TokenPosition token_index,
-                                        LocationSummary* locs) {
+                                        LocationSummary* locs,
+                                        bool complete) {
   ASSERT(is_optimizing());
   __ Comment("EmitTestAndCall");
   const Array& arguments_descriptor =
@@ -1613,8 +1602,8 @@ void FlowGraphCompiler::EmitTestAndCall(const ICData& ic_data,
   ASSERT(!ic_data.IsNull() && (kNumChecks > 0));
 
   Label after_smi_test;
-  __ tst(R0, Operand(kSmiTagMask));
   if (kFirstCheckIsSmi) {
+    __ tst(R0, Operand(kSmiTagMask));
     // Jump if receiver is not Smi.
     if (kNumChecks == 1) {
       __ b(failed, NE);
@@ -1638,7 +1627,10 @@ void FlowGraphCompiler::EmitTestAndCall(const ICData& ic_data,
   } else {
     // Receiver is Smi, but Smi is not a valid class therefore fail.
     // (Smi class must be first in the list).
-    __ b(failed, EQ);
+    if (!complete) {
+      __ tst(R0, Operand(kSmiTagMask));
+      __ b(failed, EQ);
+    }
   }
   __ Bind(&after_smi_test);
 
@@ -1657,11 +1649,18 @@ void FlowGraphCompiler::EmitTestAndCall(const ICData& ic_data,
     const bool kIsLastCheck = (i == (kSortedLen - 1));
     ASSERT(sorted[i].cid != kSmiCid);
     Label next_test;
-    __ CompareImmediate(R2, sorted[i].cid);
-    if (kIsLastCheck) {
-      __ b(failed, NE);
+    if (!complete) {
+      __ CompareImmediate(R2, sorted[i].cid);
+      if (kIsLastCheck) {
+        __ b(failed, NE);
+      } else {
+        __ b(&next_test, NE);
+      }
     } else {
-      __ b(&next_test, NE);
+      if (!kIsLastCheck) {
+        __ CompareImmediate(R2, sorted[i].cid);
+        __ b(&next_test, NE);
+      }
     }
     // Do not use the code from the function, but let the code be patched so
     // that we can record the outgoing edges to other code.

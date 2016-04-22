@@ -17,8 +17,7 @@ import 'package:analyzer/src/dart/element/member.dart';
 import 'package:analyzer/src/dart/element/type.dart';
 import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/error.dart';
-import 'package:analyzer/src/generated/resolver.dart'
-    show Namespace, TypeProvider;
+import 'package:analyzer/src/generated/resolver.dart' show Namespace;
 import 'package:analyzer/src/generated/sdk.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/testing/ast_factory.dart';
@@ -61,8 +60,10 @@ abstract class AbstractResynthesizeTest extends AbstractSingleUnitTest {
     otherLibrarySources.add(context.sourceFactory.forUri(uri));
   }
 
-  void addLibrarySource(String filePath, String contents) {
-    otherLibrarySources.add(addSource(filePath, contents));
+  Source addLibrarySource(String filePath, String contents) {
+    Source source = addSource(filePath, contents);
+    otherLibrarySources.add(source);
+    return source;
   }
 
   void assertNoErrors(Source source) {
@@ -721,13 +722,7 @@ abstract class AbstractResynthesizeTest extends AbstractSingleUnitTest {
       }
     }
     if (original is! Member) {
-      List<LocalVariableElement> rVariables = resynthesized.localVariables;
-      List<LocalVariableElement> oVariables = original.localVariables;
-      expect(rVariables, hasLength(oVariables.length));
-      for (int i = 0; i < oVariables.length; i++) {
-        compareVariableElements(rVariables[i], oVariables[i],
-            '$desc local variable ${oVariables[i].name}');
-      }
+      compareLocalVariableElementLists(resynthesized, original, desc);
     }
   }
 
@@ -804,6 +799,17 @@ abstract class AbstractResynthesizeTest extends AbstractSingleUnitTest {
     expect(resynthesized.isOnSwitchStatement, original.isOnSwitchStatement,
         reason: desc);
     compareElements(resynthesized, original, desc);
+  }
+
+  void compareLocalVariableElementLists(ExecutableElement resynthesized,
+      ExecutableElement original, String desc) {
+    List<LocalVariableElement> rVariables = resynthesized.localVariables;
+    List<LocalVariableElement> oVariables = original.localVariables;
+    expect(rVariables, hasLength(oVariables.length));
+    for (int i = 0; i < oVariables.length; i++) {
+      compareVariableElements(rVariables[i], oVariables[i],
+          '$desc local variable ${oVariables[i].name}');
+    }
   }
 
   void compareMetadata(List<ElementAnnotation> resynthesized,
@@ -1205,7 +1211,7 @@ abstract class AbstractResynthesizeTest extends AbstractSingleUnitTest {
 @reflectiveTest
 class ResynthesizeElementTest extends ResynthesizeTest {
   @override
-  void checkLibrary(String text,
+  LibraryElementImpl checkLibrary(String text,
       {bool allowErrors: false, bool dumpSummaries: false}) {
     Source source = addTestSource(text);
     LibraryElementImpl original = context.computeLibraryElement(source);
@@ -1215,6 +1221,7 @@ class ResynthesizeElementTest extends ResynthesizeTest {
         source.uri.toString(),
         original);
     checkLibraryElements(original, resynthesized);
+    return resynthesized;
   }
 
   @override
@@ -1310,7 +1317,7 @@ class ResynthesizeElementTest extends ResynthesizeTest {
 
 @reflectiveTest
 abstract class ResynthesizeTest extends AbstractResynthesizeTest {
-  void checkLibrary(String text,
+  LibraryElementImpl checkLibrary(String text,
       {bool allowErrors: false, bool dumpSummaries: false});
 
   /**
@@ -3028,8 +3035,9 @@ class C<T, U> {
 
   test_getElement_constructor_named() {
     String text = 'class C { C.named(); }';
+    Source source = addLibrarySource('/test.dart', text);
     ConstructorElement original = context
-        .computeLibraryElement(addTestSource(text))
+        .computeLibraryElement(source)
         .getType('C')
         .getNamedConstructor('named');
     expect(original, isNotNull);
@@ -3039,10 +3047,9 @@ class C<T, U> {
 
   test_getElement_constructor_unnamed() {
     String text = 'class C { C(); }';
-    ConstructorElement original = context
-        .computeLibraryElement(addTestSource(text))
-        .getType('C')
-        .unnamedConstructor;
+    Source source = addLibrarySource('/test.dart', text);
+    ConstructorElement original =
+        context.computeLibraryElement(source).getType('C').unnamedConstructor;
     expect(original, isNotNull);
     ConstructorElement resynthesized = validateGetElement(text, original);
     compareConstructorElements(resynthesized, original, 'C.constructor');
@@ -3050,10 +3057,9 @@ class C<T, U> {
 
   test_getElement_field() {
     String text = 'class C { var f; }';
-    FieldElement original = context
-        .computeLibraryElement(addTestSource(text))
-        .getType('C')
-        .getField('f');
+    Source source = addLibrarySource('/test.dart', text);
+    FieldElement original =
+        context.computeLibraryElement(source).getType('C').getField('f');
     expect(original, isNotNull);
     FieldElement resynthesized = validateGetElement(text, original);
     compareFieldElements(resynthesized, original, 'C.field f');
@@ -3061,10 +3067,9 @@ class C<T, U> {
 
   test_getElement_getter() {
     String text = 'class C { get f => null; }';
-    PropertyAccessorElement original = context
-        .computeLibraryElement(addTestSource(text))
-        .getType('C')
-        .getGetter('f');
+    Source source = addLibrarySource('/test.dart', text);
+    PropertyAccessorElement original =
+        context.computeLibraryElement(source).getType('C').getGetter('f');
     expect(original, isNotNull);
     PropertyAccessorElement resynthesized = validateGetElement(text, original);
     comparePropertyAccessorElements(resynthesized, original, 'C.getter f');
@@ -3072,10 +3077,9 @@ class C<T, U> {
 
   test_getElement_method() {
     String text = 'class C { f() {} }';
-    MethodElement original = context
-        .computeLibraryElement(addTestSource(text))
-        .getType('C')
-        .getMethod('f');
+    Source source = addLibrarySource('/test.dart', text);
+    MethodElement original =
+        context.computeLibraryElement(source).getType('C').getMethod('f');
     expect(original, isNotNull);
     MethodElement resynthesized = validateGetElement(text, original);
     compareMethodElements(resynthesized, original, 'C.method f');
@@ -3083,10 +3087,9 @@ class C<T, U> {
 
   test_getElement_operator() {
     String text = 'class C { operator+(x) => null; }';
-    MethodElement original = context
-        .computeLibraryElement(addTestSource(text))
-        .getType('C')
-        .getMethod('+');
+    Source source = addLibrarySource('/test.dart', text);
+    MethodElement original =
+        context.computeLibraryElement(source).getType('C').getMethod('+');
     expect(original, isNotNull);
     MethodElement resynthesized = validateGetElement(text, original);
     compareMethodElements(resynthesized, original, 'C.operator+');
@@ -3094,10 +3097,9 @@ class C<T, U> {
 
   test_getElement_setter() {
     String text = 'class C { void set f(value) {} }';
-    PropertyAccessorElement original = context
-        .computeLibraryElement(addTestSource(text))
-        .getType('C')
-        .getSetter('f');
+    Source source = addLibrarySource('/test.dart', text);
+    PropertyAccessorElement original =
+        context.computeLibraryElement(source).getType('C').getSetter('f');
     expect(original, isNotNull);
     PropertyAccessorElement resynthesized = validateGetElement(text, original);
     comparePropertyAccessorElements(resynthesized, original, 'C.setter f');
@@ -3105,7 +3107,7 @@ class C<T, U> {
 
   test_getElement_unit() {
     String text = 'class C { f() {} }';
-    Source source = addTestSource(text);
+    Source source = addLibrarySource('/test.dart', text);
     CompilationUnitElement original =
         context.computeLibraryElement(source).definingCompilationUnit;
     expect(original, isNotNull);
@@ -3163,9 +3165,25 @@ get x => null;''');
     checkLibrary('import "a.dart" as a; a.C c;');
   }
 
+  test_import_self() {
+    LibraryElementImpl resynthesized = checkLibrary('''
+import 'test.dart' as p;
+class C {}
+class D extends p.C {} // Prevent "unused import" warning
+''');
+    expect(resynthesized.imports, hasLength(2));
+    expect(resynthesized.imports[0].importedLibrary.location,
+        resynthesized.location);
+    expect(resynthesized.imports[1].importedLibrary.isDartCore, true);
+  }
+
   test_import_show() {
     addLibrary('dart:async');
-    checkLibrary('import "dart:async" show Future, Stream; Future f;');
+    checkLibrary('''
+import "dart:async" show Future, Stream;
+Future f;
+Stream s;
+''');
   }
 
   test_imports() {
