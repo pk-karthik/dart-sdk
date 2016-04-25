@@ -63,6 +63,9 @@ class IsolateReloadContext {
 
   bool IsDirty(const Library& lib);
 
+  // Prefers old classes when we are in the middle of a reload.
+  RawClass* GetClassForHeapWalkAt(intptr_t cid);
+
  private:
   void set_saved_root_library(const Library& value);
 

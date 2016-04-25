@@ -742,6 +742,7 @@ class RawClass : public RawObject {
   uint16_t state_bits_;
 
   friend class Instance;
+  friend class Isolate;
   friend class Object;
   friend class RawInstance;
   friend class RawInstructions;

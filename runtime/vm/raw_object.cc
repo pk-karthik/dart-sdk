@@ -189,10 +189,7 @@ intptr_t RawObject::SizeFromClass() const {
                class_id, ptr()->tags_);
       }
 #endif  // DEBUG
-      RawClass* raw_class = class_table->At(class_id);
-      // When reloading a class's class id may not match its index in
-      // the class table.
-      ASSERT(isolate->IsReloading() || (raw_class->ptr()->id_ == class_id));
+      RawClass* raw_class = isolate->GetClassForHeapWalkAt(class_id);
       instance_size =
           raw_class->ptr()->instance_size_in_words_ << kWordSizeLog2;
     }
@@ -715,7 +712,7 @@ intptr_t RawInstance::VisitInstancePointers(RawInstance* raw_obj,
   intptr_t instance_size = SizeTag::decode(tags);
   if (instance_size == 0) {
     RawClass* cls =
-        visitor->isolate()->class_table()->At(raw_obj->GetClassId());
+        visitor->isolate()->GetClassForHeapWalkAt(raw_obj->GetClassId());
     instance_size = cls->ptr()->instance_size_in_words_ << kWordSizeLog2;
   }
 

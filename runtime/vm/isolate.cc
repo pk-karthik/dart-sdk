@@ -1773,6 +1773,21 @@ void Isolate::PrepareForGC() {
 }
 
 
+RawClass* Isolate::GetClassForHeapWalkAt(intptr_t cid) {
+  RawClass* raw_class = NULL;
+  if (IsReloading()) {
+    raw_class = reload_context()->GetClassForHeapWalkAt(cid);
+  } else {
+    raw_class = class_table()->At(cid);
+    // TODO(johnmccutchan): Move this assertion out of the branch once the new
+    // class table is in place before we call finalize.
+    ASSERT(raw_class->ptr()->id_ == cid);
+  }
+  ASSERT(raw_class != NULL);
+  return raw_class;
+}
+
+
 static const char* ExceptionPauseInfoToServiceEnum(Dart_ExceptionPauseInfo pi) {
   switch (pi) {
     case kPauseOnAllExceptions:

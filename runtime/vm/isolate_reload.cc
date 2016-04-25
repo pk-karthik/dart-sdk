@@ -741,6 +741,12 @@ RawClass* IsolateReloadContext::FindOriginalClass(const Class& cls) {
 }
 
 
+RawClass* IsolateReloadContext::GetClassForHeapWalkAt(intptr_t cid) {
+  // TODO(johnmccutchan): Implement.
+  return isolate_->class_table()->At(cid);
+}
+
+
 RawLibrary* IsolateReloadContext::saved_root_library() const {
   return saved_root_library_;
 }
