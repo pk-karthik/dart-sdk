@@ -116,6 +116,11 @@ bool IsolateReloadContext::IsSameField(const Field& a, const Field& b) {
 
 
 bool IsolateReloadContext::IsSameClass(const Class& a, const Class& b) {
+  if (a.is_patch() != b.is_patch()) {
+    // TODO(johnmccutchan): Should we just check the class kind bits?
+    return false;
+  }
+
   // TODO(turnidge): We need to look at generic type arguments for
   // synthetic mixin classes.  Their names are not necessarily unique
   // currently.
@@ -153,16 +158,27 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       test_mode_(test_mode),
       has_error_(false),
       saved_num_cids_(-1),
+      saved_class_table_(NULL),
       dead_classes_(NULL),
       saved_num_libs_(-1),
       num_saved_libs_(-1),
       script_uri_(String::null()),
       error_(Error::null()),
+      old_classes_set_storage_(Array::null()),
       class_map_storage_(Array::null()),
       library_map_storage_(Array::null()),
       become_map_storage_(Array::null()),
       saved_root_library_(Library::null()),
       saved_libraries_(GrowableObjectArray::null()) {
+  // Preallocate storage for maps.
+  old_classes_set_storage_ =
+      HashTables::New<UnorderedHashSet<ClassMapTraits> >(4);
+  class_map_storage_ =
+      HashTables::New<UnorderedHashMap<ClassMapTraits> >(4);
+  library_map_storage_ =
+      HashTables::New<UnorderedHashMap<LibraryMapTraits> >(4);
+  become_map_storage_ =
+      HashTables::New<UnorderedHashMap<BecomeMapTraits> >(4);
 }
 
 
@@ -229,12 +245,9 @@ void IsolateReloadContext::FinishReload() {
   // Disable the background compiler while we are performing the reload.
   BackgroundCompiler::Disable();
 
-  become_map_storage_ =
-      HashTables::New<UnorderedHashMap<BecomeMapTraits> >(4);
-
-
   BuildClassMapping();
   BuildLibraryMapping();
+  FinalizeClassTable();
   TIR_Print("---- DONE FINALIZING\n");
   if (ValidateReload()) {
     Commit();
@@ -272,7 +285,39 @@ void IsolateReloadContext::SwitchStackToUnoptimizedCode() {
 void IsolateReloadContext::CheckpointClasses() {
   TIMELINE_SCOPE(CheckpointClasses);
   TIR_Print("---- CHECKPOINTING CLASSES\n");
+  // Checkpoint classes before a reload. We need to copy the following:
+  // 1) The size of the class table.
+  // 2) The class table itself.
+  // For efficiency, we build a set of classes before the reload. This set
+  // is used to pair new classes with old classes.
+
+  ClassTable* class_table = I->class_table();
+
+  // Copy the size of the class table.
   saved_num_cids_ = I->class_table()->NumCids();
+
+  // Copy of the class table.
+  saved_class_table_ =
+      reinterpret_cast<RawClass**>(malloc(sizeof(RawClass*) * saved_num_cids_));
+
+  Class& cls = Class::Handle();
+  UnorderedHashSet<ClassMapTraits> old_classes_set(old_classes_set_storage_);
+  for (intptr_t i = 0; i < saved_num_cids_; i++) {
+    if (class_table->IsValidIndex(i) &&
+        class_table->HasValidClassAt(i)) {
+      // Copy the class into the saved class table and add it to the set.
+      saved_class_table_[i] = class_table->At(i);
+      if (i != kFreeListElement) {
+        cls = class_table->At(i);
+        bool already_present = old_classes_set.Insert(cls);
+        ASSERT(!already_present);
+      }
+    } else {
+      // No class at this index, mark it as NULL.
+      saved_class_table_[i] = NULL;
+    }
+  }
+  old_classes_set_storage_ = old_classes_set.Release().raw();
   TIR_Print("---- System had %" Pd " classes\n", saved_num_cids_);
 }
 
@@ -326,7 +371,18 @@ void IsolateReloadContext::Checkpoint() {
 void IsolateReloadContext::RollbackClasses() {
   TIR_Print("---- ROLLING BACK CLASS TABLE\n");
   ASSERT(saved_num_cids_ > 0);
-  I->class_table()->DropNewClasses(saved_num_cids_);
+  ASSERT(saved_class_table_ != NULL);
+  ClassTable* class_table = I->class_table();
+  class_table->DropNewClasses(saved_num_cids_);
+  // Overwrite classes in class table with the saved classes.
+  for (intptr_t i = 0; i < saved_num_cids_; i++) {
+    if (class_table->IsValidIndex(i)) {
+      class_table->SetAt(i, saved_class_table_[i]);
+    }
+  }
+  free(saved_class_table_);
+  saved_class_table_ = NULL;
+  saved_num_cids_ = 0;
 }
 
 
@@ -469,58 +525,10 @@ void IsolateReloadContext::RehashCanonicalTypeArguments() {
 }
 
 
-bool IsolateReloadContext::IsDeadClassAt(intptr_t index) {
-  ASSERT(dead_classes_ != NULL);
-  return dead_classes_->At(index);
-}
-
-
-void IsolateReloadContext::MarkClassDeadAt(intptr_t index) {
-  ASSERT(dead_classes_ != NULL);
-  (*dead_classes_)[index] = true;
-}
-
-
-void IsolateReloadContext::CompactClassTable() {
-  const intptr_t top = I->class_table()->NumCids();
-  intptr_t new_top = saved_num_cids_;
-  for (intptr_t free_index = saved_num_cids_; free_index < top; free_index++) {
-    // Scan forward until we find a cleared class.
-    if (!IsDeadClassAt(free_index)) {
-      new_top++;
-      continue;
-    }
-
-    for (intptr_t cls_index = free_index + 1; cls_index < top; cls_index++) {
-      // Scan forward until we find a live class.
-      if (IsDeadClassAt(cls_index)) {
-        continue;
-      }
-      // Move the class into the free slot.
-      I->class_table()->MoveClass(free_index, cls_index);
-      // Mark |cls_index| as dead.
-      MarkClassDeadAt(cls_index);
-      new_top++;
-      break;
-    }
-  }
-
-  I->class_table()->DropNewClasses(new_top);
-}
-
-
 void IsolateReloadContext::Commit() {
   TIMELINE_SCOPE(Commit);
   // I->class_table()->PrintNonDartClasses();
   TIR_Print("---- COMMITTING REVERSE MAP\n");
-
-  ASSERT(dead_classes_ == NULL);
-  // Initialize the dead classes array.
-  dead_classes_ = new MallocGrowableArray<bool>();
-  dead_classes_->SetLength(I->class_table()->NumCids());;
-  for (intptr_t i = 0; i < dead_classes_->length(); i++) {
-    (*dead_classes_)[i] = false;
-  }
 
 #ifdef DEBUG
   VerifyMaps();
@@ -550,37 +558,6 @@ void IsolateReloadContext::Commit() {
           new_cls.CopyStaticFieldValues(cls);
           new_cls.CopyCanonicalConstants(cls);
           cls.PatchFieldsAndFunctions();
-        }
-      }
-    }
-
-    class_map.Release();
-  }
-
-  {
-    TIMELINE_SCOPE(ReplaceClasses);
-    // Move classes in the class table and update their cid.
-    Class& cls = Class::Handle();
-    Class& new_cls = Class::Handle();
-
-    UnorderedHashMap<ClassMapTraits> class_map(class_map_storage_);
-
-    {
-      UnorderedHashMap<ClassMapTraits>::Iterator it(&class_map);
-      while (it.MoveNext()) {
-        const intptr_t entry = it.Current();
-        new_cls = Class::RawCast(class_map.GetKey(entry));
-        cls = Class::RawCast(class_map.GetPayload(entry, 0));
-        if (new_cls.raw() != cls.raw()) {
-          TIR_Print("Replaced '%s'@%" Pd " with '%s'@%" Pd "\n",
-                    cls.ToCString(), cls.id(),
-                    new_cls.ToCString(), new_cls.id());
-          // Replace |cls| with |new_cls| in the class table.
-          ASSERT(!IsDeadClassAt(new_cls.id()));
-          MarkClassDeadAt(new_cls.id());
-          // TODO(rmacnak): Should be handled by the become forward.
-          I->class_table()->ReplaceClass(cls, new_cls);
-          AddBecomeMapping(cls, new_cls);
         }
       }
     }
@@ -659,14 +636,6 @@ void IsolateReloadContext::Commit() {
     Become::ElementsForwardIdentity(before, after);
   }
 
-
-  {
-    TIMELINE_SCOPE(CompactClassTable);
-    TIR_Print("---- Compacting the class table\n");
-    CompactClassTable();
-    TIR_Print("---- System has %" Pd " classes\n", I->class_table()->NumCids());
-  }
-
   if (FLAG_identity_reload) {
     if (saved_num_cids_ != I->class_table()->NumCids()) {
       TIR_Print("Identity reload failed! B#C=%" Pd " A#C=%" Pd "\n",
@@ -684,9 +653,6 @@ void IsolateReloadContext::Commit() {
 
   // The canonical types were hashed based on the old class ids.  Rehash.
   RehashCanonicalTypeArguments();
-
-  delete dead_classes_;
-  dead_classes_ = NULL;
 }
 
 
@@ -770,6 +736,10 @@ void IsolateReloadContext::set_saved_libraries(
 
 void IsolateReloadContext::VisitObjectPointers(ObjectPointerVisitor* visitor) {
   visitor->VisitPointers(from(), to());
+  if (saved_class_table_ != NULL) {
+    visitor->VisitPointers(
+        reinterpret_cast<RawObject**>(&saved_class_table_[0]), saved_num_cids_);
+  }
 }
 
 
@@ -962,9 +932,6 @@ void IsolateReloadContext::InvalidateWorld() {
 
 
 RawClass* IsolateReloadContext::MappedClass(const Class& replacement_or_new) {
-  if (class_map_storage_ == Array::null()) {
-    return Class::null();
-  }
   UnorderedHashMap<ClassMapTraits> map(class_map_storage_);
   Class& cls = Class::Handle();
   cls ^= map.GetOrNull(replacement_or_new);
@@ -980,22 +947,13 @@ RawLibrary* IsolateReloadContext::MappedLibrary(
 }
 
 
-RawClass* IsolateReloadContext::LinearFindOldClass(
+RawClass* IsolateReloadContext::OldClassOrNull(
     const Class& replacement_or_new) {
-  const intptr_t lower_cid_bound = Dart::vm_isolate()->class_table()->NumCids();
-  const intptr_t upper_cid_bound = saved_num_cids_;
-  ClassTable* class_table = I->class_table();
+  UnorderedHashSet<ClassMapTraits> old_classes_set(old_classes_set_storage_);
   Class& cls = Class::Handle();
-  for (intptr_t i = lower_cid_bound; i < upper_cid_bound; i++) {
-    if (!class_table->HasValidClassAt(i)) {
-      continue;
-    }
-    cls = class_table->At(i);
-    if (IsSameClass(replacement_or_new, cls)) {
-      return cls.raw();
-    }
-  }
-  return Class::null();
+  cls ^= old_classes_set.GetOrNull(replacement_or_new);
+  old_classes_set_storage_ = old_classes_set.Release().raw();
+  return cls.raw();
 }
 
 
@@ -1010,7 +968,7 @@ void IsolateReloadContext::BuildClassMapping() {
       continue;
     }
     replacement_or_new = class_table->At(i);
-    old ^= LinearFindOldClass(replacement_or_new);
+    old ^= OldClassOrNull(replacement_or_new);
     if (old.IsNull()) {
       if (FLAG_identity_reload) {
         TIR_Print("Could not find replacement class for %s\n",
@@ -1024,6 +982,95 @@ void IsolateReloadContext::BuildClassMapping() {
       AddClassMapping(replacement_or_new, old);
     }
   }
+}
+
+
+bool IsolateReloadContext::IsDeadClassAt(intptr_t index) {
+  ASSERT(dead_classes_ != NULL);
+  return dead_classes_->At(index);
+}
+
+
+void IsolateReloadContext::MarkClassDeadAt(intptr_t index) {
+  ASSERT(dead_classes_ != NULL);
+  (*dead_classes_)[index] = true;
+}
+
+
+void IsolateReloadContext::CompactClassTable() {
+  const intptr_t top = I->class_table()->NumCids();
+  intptr_t new_top = saved_num_cids_;
+  for (intptr_t free_index = saved_num_cids_; free_index < top; free_index++) {
+    // Scan forward until we find a cleared class.
+    if (!IsDeadClassAt(free_index)) {
+      new_top++;
+      continue;
+    }
+
+    for (intptr_t cls_index = free_index + 1; cls_index < top; cls_index++) {
+      // Scan forward until we find a live class.
+      if (IsDeadClassAt(cls_index)) {
+        continue;
+      }
+      // Move the class into the free slot.
+      I->class_table()->MoveClass(free_index, cls_index);
+      // Mark |cls_index| as dead.
+      MarkClassDeadAt(cls_index);
+      new_top++;
+      break;
+    }
+  }
+
+  I->class_table()->DropNewClasses(new_top);
+}
+
+
+void IsolateReloadContext::FinalizeClassTable() {
+  // Finalize the class table so that it looks like the class table will when
+  // the reload succeeds. We may still abort the reload, but we need to finalize
+  // the class table before proceeding further.
+  TIMELINE_SCOPE(FinalizeClassTable);
+
+  ASSERT(dead_classes_ == NULL);
+  // Initialize the dead classes array.
+  dead_classes_ = new MallocGrowableArray<bool>();
+  dead_classes_->SetLength(I->class_table()->NumCids());;
+  for (intptr_t i = 0; i < dead_classes_->length(); i++) {
+    (*dead_classes_)[i] = false;
+  }
+
+  // Move classes in the class table and update their cid.
+  Class& cls = Class::Handle();
+  Class& new_cls = Class::Handle();
+
+  UnorderedHashMap<ClassMapTraits> class_map(class_map_storage_);
+
+  UnorderedHashMap<ClassMapTraits>::Iterator it(&class_map);
+  while (it.MoveNext()) {
+    const intptr_t entry = it.Current();
+    new_cls = Class::RawCast(class_map.GetKey(entry));
+    cls = Class::RawCast(class_map.GetPayload(entry, 0));
+    if (new_cls.raw() != cls.raw()) {
+      TIR_Print("Replaced '%s'@%" Pd " with '%s'@%" Pd "\n",
+                cls.ToCString(), cls.id(),
+                new_cls.ToCString(), new_cls.id());
+      // Replace |cls| with |new_cls| in the class table.
+      ASSERT(!IsDeadClassAt(new_cls.id()));
+      MarkClassDeadAt(new_cls.id());
+      // TODO(rmacnak): Should be handled by the become forward.
+      I->class_table()->ReplaceClass(cls, new_cls);
+      AddBecomeMapping(cls, new_cls);
+    }
+  }
+
+  class_map.Release();
+
+  TIR_Print("---- Compacting the class table\n");
+  CompactClassTable();
+  TIR_Print("---- System has %" Pd " classes\n", I->class_table()->NumCids());
+
+  delete dead_classes_;
+  dead_classes_ = NULL;
 }
 
 
@@ -1072,10 +1119,6 @@ void IsolateReloadContext::BuildLibraryMapping() {
 
 void IsolateReloadContext::AddClassMapping(const Class& replacement_or_new,
                                            const Class& original) {
-  if (class_map_storage_ == Array::null()) {
-    // Allocate some initial backing storage.
-    class_map_storage_ = HashTables::New<UnorderedHashMap<ClassMapTraits> >(4);
-  }
   UnorderedHashMap<ClassMapTraits> map(class_map_storage_);
   bool update = map.UpdateOrInsert(replacement_or_new, original);
   ASSERT(!update);
@@ -1087,10 +1130,6 @@ void IsolateReloadContext::AddClassMapping(const Class& replacement_or_new,
 
 void IsolateReloadContext::AddLibraryMapping(const Library& replacement_or_new,
                                              const Library& original) {
-  if (library_map_storage_ == Array::null()) {
-    // Allocate some initial backing storage.
-    library_map_storage_ = HashTables::New<UnorderedHashMap<ClassMapTraits> >(4);
-  }
   UnorderedHashMap<LibraryMapTraits> map(library_map_storage_);
   bool update = map.UpdateOrInsert(replacement_or_new, original);
   ASSERT(!update);

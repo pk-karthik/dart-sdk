@@ -160,6 +160,10 @@ class ClassTable {
     return table_[index];
   }
 
+  void SetAt(intptr_t index, RawClass* raw_cls) {
+    table_[index] = raw_cls;
+  }
+
   bool IsValidIndex(intptr_t index) const {
     return (index > 0) && (index < top_);
   }

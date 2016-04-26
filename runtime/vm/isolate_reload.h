@@ -114,6 +114,7 @@ class IsolateReloadContext {
   bool has_error_;
 
   intptr_t saved_num_cids_;
+  RawClass** saved_class_table_;
 
   bool IsDeadClassAt(intptr_t index);
   void MarkClassDeadAt(intptr_t index);
@@ -128,8 +129,9 @@ class IsolateReloadContext {
   };
   MallocGrowableArray<LibraryInfo> library_infos_;
 
-  RawClass* LinearFindOldClass(const Class& replacement_or_new);
+  RawClass* OldClassOrNull(const Class& replacement_or_new);
   void BuildClassMapping();
+  void FinalizeClassTable();
 
   RawLibrary* LinearFindOldLibrary(const Library& replacement_or_new);
   void BuildLibraryMapping();
@@ -150,6 +152,7 @@ class IsolateReloadContext {
   RawObject** from() { return reinterpret_cast<RawObject**>(&script_uri_); }
   RawString* script_uri_;
   RawError* error_;
+  RawArray* old_classes_set_storage_;
   RawArray* class_map_storage_;
   RawArray* library_map_storage_;
   RawArray* become_map_storage_;
