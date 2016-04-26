@@ -125,8 +125,6 @@ class IsolateReloadContext {
   MallocGrowableArray<bool>* dead_classes_;
   void CompactClassTable();
 
-  intptr_t saved_num_libs_;
-
   intptr_t num_saved_libs_;
   struct LibraryInfo {
     bool dirty;

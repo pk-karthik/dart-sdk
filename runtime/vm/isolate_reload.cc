@@ -161,7 +161,6 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       saved_num_cids_(-1),
       saved_class_table_(NULL),
       dead_classes_(NULL),
-      saved_num_libs_(-1),
       num_saved_libs_(-1),
       script_uri_(String::null()),
       error_(Error::null()),
@@ -351,23 +350,23 @@ void IsolateReloadContext::CheckpointLibraries() {
   // that we will use instead of reloading.
   const GrowableObjectArray& new_libs = GrowableObjectArray::Handle(
       GrowableObjectArray::New(Heap::kOld));
-  Library& tmp_lib = Library::Handle();
+  Library& lib = Library::Handle();
   UnorderedHashSet<LibraryMapTraits>
       old_libraries_set(old_libraries_set_storage_);
   num_saved_libs_ = 0;
   for (intptr_t i = 0; i < libs.Length(); i++) {
-    tmp_lib ^= libs.At(i);
-    if (IsCleanLibrary(tmp_lib)) {
+    lib ^= libs.At(i);
+    if (IsCleanLibrary(lib)) {
       // We are preserving this library across the reload, assign its new index
-      tmp_lib.set_index(new_libs.Length());
-      new_libs.Add(tmp_lib, Heap::kOld);
+      lib.set_index(new_libs.Length());
+      new_libs.Add(lib, Heap::kOld);
       num_saved_libs_++;
     } else {
       // We are going to reload this library. Clear the index.
-      tmp_lib.set_index(-1);
+      lib.set_index(-1);
     }
     // Add old library to old libraries set.
-    bool already_present = old_libraries_set.Insert(tmp_lib);
+    bool already_present = old_libraries_set.Insert(lib);
     ASSERT(!already_present);
   }
   old_libraries_set_storage_ = old_libraries_set.Release().raw();
@@ -706,11 +705,13 @@ void IsolateReloadContext::Commit() {
                 saved_num_cids_,
                 I->class_table()->NumCids());
     }
+    const GrowableObjectArray& saved_libs =
+        GrowableObjectArray::Handle(saved_libraries());
     const GrowableObjectArray& libs =
         GrowableObjectArray::Handle(I->object_store()->libraries());
-    if (saved_num_libs_ != libs.Length()) {
+    if (saved_libs.Length() != libs.Length()) {
      TIR_Print("Identity reload failed! B#L=%" Pd " A#L=%" Pd "\n",
-               saved_num_libs_,
+               saved_libs.Length(),
                libs.Length());
     }
   }
@@ -801,11 +802,6 @@ RawGrowableObjectArray* IsolateReloadContext::saved_libraries() const {
 void IsolateReloadContext::set_saved_libraries(
     const GrowableObjectArray& value) {
   saved_libraries_ = value.raw();
-  if (value.IsNull()) {
-    saved_num_libs_ = -1;
-  } else {
-    saved_num_libs_ = value.Length();
-  }
 }
 
 
