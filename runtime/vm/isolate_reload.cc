@@ -160,7 +160,6 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       has_error_(false),
       saved_num_cids_(-1),
       saved_class_table_(NULL),
-      classes_checkpointed_(false),
       dead_classes_(NULL),
       saved_num_libs_(-1),
       num_saved_libs_(-1),
@@ -299,7 +298,7 @@ void IsolateReloadContext::CheckpointClasses() {
   saved_num_cids_ = I->class_table()->NumCids();
 
   // Copy of the class table.
-  saved_class_table_ =
+  RawClass** local_saved_class_table =
       reinterpret_cast<RawClass**>(malloc(sizeof(RawClass*) * saved_num_cids_));
 
   Class& cls = Class::Handle();
@@ -308,7 +307,7 @@ void IsolateReloadContext::CheckpointClasses() {
     if (class_table->IsValidIndex(i) &&
         class_table->HasValidClassAt(i)) {
       // Copy the class into the saved class table and add it to the set.
-      saved_class_table_[i] = class_table->At(i);
+      local_saved_class_table[i] = class_table->At(i);
       if (i != kFreeListElement) {
         cls = class_table->At(i);
         bool already_present = old_classes_set.Insert(cls);
@@ -316,12 +315,13 @@ void IsolateReloadContext::CheckpointClasses() {
       }
     } else {
       // No class at this index, mark it as NULL.
-      saved_class_table_[i] = NULL;
+      local_saved_class_table[i] = NULL;
     }
   }
   old_classes_set_storage_ = old_classes_set.Release().raw();
+  // Assigning the field must be done after saving the class table.
+  saved_class_table_ = local_saved_class_table;
   TIR_Print("---- System had %" Pd " classes\n", saved_num_cids_);
-  classes_checkpointed_ = true;
 }
 
 
@@ -389,7 +389,6 @@ void IsolateReloadContext::RollbackClasses() {
   free(saved_class_table_);
   saved_class_table_ = NULL;
   saved_num_cids_ = 0;
-  classes_checkpointed_ = false;
 }
 
 
@@ -757,8 +756,7 @@ RawClass* IsolateReloadContext::FindOriginalClass(const Class& cls) {
 
 
 RawClass* IsolateReloadContext::GetClassForHeapWalkAt(intptr_t cid) {
-  if (classes_checkpointed_) {
-    ASSERT(saved_class_table_ != NULL);
+  if (saved_class_table_ != NULL) {
     ASSERT(cid > 0);
     ASSERT(cid < saved_num_cids_);
     return saved_class_table_[cid];
