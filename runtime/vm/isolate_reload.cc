@@ -167,6 +167,7 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       error_(Error::null()),
       old_classes_set_storage_(Array::null()),
       class_map_storage_(Array::null()),
+      old_libraries_set_storage_(Array::null()),
       library_map_storage_(Array::null()),
       become_map_storage_(Array::null()),
       saved_root_library_(Library::null()),
@@ -176,6 +177,8 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       HashTables::New<UnorderedHashSet<ClassMapTraits> >(4);
   class_map_storage_ =
       HashTables::New<UnorderedHashMap<ClassMapTraits> >(4);
+  old_libraries_set_storage_ =
+      HashTables::New<UnorderedHashSet<LibraryMapTraits> >(4);
   library_map_storage_ =
       HashTables::New<UnorderedHashMap<LibraryMapTraits> >(4);
   become_map_storage_ =
@@ -208,6 +211,7 @@ void IsolateReloadContext::ReportSuccess() {
   ServiceEvent service_event(Isolate::Current(), ServiceEvent::kIsolateReload);
   Service::HandleEvent(&service_event);
 }
+
 
 void IsolateReloadContext::StartReload() {
   Thread* thread = Thread::Current();
@@ -325,38 +329,51 @@ void IsolateReloadContext::CheckpointClasses() {
 }
 
 
+bool IsolateReloadContext::IsCleanLibrary(const Library& lib) {
+  return lib.is_dart_scheme();
+}
+
+
 void IsolateReloadContext::CheckpointLibraries() {
   TIMELINE_SCOPE(CheckpointLibraries);
-  // Build a new libraries array which only has the dart-scheme libs.
-  const GrowableObjectArray& libs =
-      GrowableObjectArray::Handle(object_store()->libraries());
-  const GrowableObjectArray& new_libs = GrowableObjectArray::Handle(
-      GrowableObjectArray::New(Heap::kOld));
 
-  saved_num_libs_ = libs.Length();
-
-  Library& tmp_lib = Library::Handle();
-  String& tmp_url = String::Handle();
-  for (intptr_t i = 0; i < libs.Length(); i++) {
-    tmp_lib ^= libs.At(i);
-    tmp_url ^= tmp_lib.url();
-    if (tmp_lib.is_dart_scheme()) {
-      // Set the new index.
-      tmp_lib.set_index(new_libs.Length());
-      new_libs.Add(tmp_lib, Heap::kOld);
-    } else {
-      // Clear the index.
-      tmp_lib.set_index(-1);
-    }
-  }
-  set_saved_libraries(libs);
-  object_store()->set_libraries(new_libs);
-  num_saved_libs_ = new_libs.Length();
-
-  // Reset the root library to null.
+  // Save the root library in case we abort the reload.
   const Library& root_lib =
       Library::Handle(object_store()->root_library());
   set_saved_root_library(root_lib);
+
+  // Save the old libraries array in case we abort the reload.
+  const GrowableObjectArray& libs =
+      GrowableObjectArray::Handle(object_store()->libraries());
+  set_saved_libraries(libs);
+
+  // Make a filtered copy of the old libraries array. Keep "clean" libraries
+  // that we will use instead of reloading.
+  const GrowableObjectArray& new_libs = GrowableObjectArray::Handle(
+      GrowableObjectArray::New(Heap::kOld));
+  Library& tmp_lib = Library::Handle();
+  UnorderedHashSet<LibraryMapTraits>
+      old_libraries_set(old_libraries_set_storage_);
+  num_saved_libs_ = 0;
+  for (intptr_t i = 0; i < libs.Length(); i++) {
+    tmp_lib ^= libs.At(i);
+    if (IsCleanLibrary(tmp_lib)) {
+      // We are preserving this library across the reload, assign its new index
+      tmp_lib.set_index(new_libs.Length());
+      new_libs.Add(tmp_lib, Heap::kOld);
+      num_saved_libs_++;
+    } else {
+      // We are going to reload this library. Clear the index.
+      tmp_lib.set_index(-1);
+    }
+    // Add old library to old libraries set.
+    bool already_present = old_libraries_set.Insert(tmp_lib);
+    ASSERT(!already_present);
+  }
+  old_libraries_set_storage_ = old_libraries_set.Release().raw();
+  // Reset the libraries array to the filtered array.
+  object_store()->set_libraries(new_libs);
+  // Reset the root library to null.
   object_store()->set_root_library(Library::Handle());
 }
 
@@ -784,6 +801,11 @@ RawGrowableObjectArray* IsolateReloadContext::saved_libraries() const {
 void IsolateReloadContext::set_saved_libraries(
     const GrowableObjectArray& value) {
   saved_libraries_ = value.raw();
+  if (value.IsNull()) {
+    saved_num_libs_ = -1;
+  } else {
+    saved_num_libs_ = value.Length();
+  }
 }
 
 
@@ -1127,20 +1149,14 @@ void IsolateReloadContext::FinalizeClassTable() {
 }
 
 
-RawLibrary* IsolateReloadContext::LinearFindOldLibrary(
+RawLibrary* IsolateReloadContext::OldLibraryOrNull(
     const Library& replacement_or_new) {
-  const GrowableObjectArray& saved_libs =
-      GrowableObjectArray::Handle(saved_libraries());
-
+  UnorderedHashSet<LibraryMapTraits>
+      old_libraries_set(old_libraries_set_storage_);
   Library& lib = Library::Handle();
-  for (intptr_t i = 0; i < saved_libs.Length(); i++) {
-    lib = Library::RawCast(saved_libs.At(i));
-    if (IsSameLibrary(replacement_or_new, lib)) {
-      return lib.raw();
-    }
-  }
-
-  return Library::null();
+  lib ^= old_libraries_set.GetOrNull(replacement_or_new);
+  old_libraries_set_storage_ = old_libraries_set.Release().raw();
+  return lib.raw();
 }
 
 
@@ -1152,10 +1168,10 @@ void IsolateReloadContext::BuildLibraryMapping() {
   Library& old = Library::Handle();
   for (intptr_t i = 0; i < libs.Length(); i++) {
     replacement_or_new = Library::RawCast(libs.At(i));
-    if (replacement_or_new.is_dart_scheme()) {
+    if (IsCleanLibrary(replacement_or_new)) {
       continue;
     }
-    old ^= LinearFindOldLibrary(replacement_or_new);
+    old ^= OldLibraryOrNull(replacement_or_new);
     if (old.IsNull()) {
       // New library.
       AddLibraryMapping(replacement_or_new, replacement_or_new);

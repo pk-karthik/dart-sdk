@@ -81,6 +81,9 @@ class IsolateReloadContext {
   void Checkpoint();
 
   void CheckpointClasses();
+
+  // Is |lib| a library whose sources have not changed?
+  bool IsCleanLibrary(const Library& lib);
   void CheckpointLibraries();
 
   bool ValidateReload();
@@ -134,7 +137,7 @@ class IsolateReloadContext {
   void BuildClassMapping();
   void FinalizeClassTable();
 
-  RawLibrary* LinearFindOldLibrary(const Library& replacement_or_new);
+  RawLibrary* OldLibraryOrNull(const Library& replacement_or_new);
   void BuildLibraryMapping();
 
   void AddClassMapping(const Class& replacement_or_new,
@@ -155,6 +158,7 @@ class IsolateReloadContext {
   RawError* error_;
   RawArray* old_classes_set_storage_;
   RawArray* class_map_storage_;
+  RawArray* old_libraries_set_storage_;
   RawArray* library_map_storage_;
   RawArray* become_map_storage_;
   RawLibrary* saved_root_library_;
