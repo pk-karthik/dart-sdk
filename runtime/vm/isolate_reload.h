@@ -115,6 +115,7 @@ class IsolateReloadContext {
 
   intptr_t saved_num_cids_;
   RawClass** saved_class_table_;
+  bool classes_checkpointed_;
 
   bool IsDeadClassAt(intptr_t index);
   void MarkClassDeadAt(intptr_t index);

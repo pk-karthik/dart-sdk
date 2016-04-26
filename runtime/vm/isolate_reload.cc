@@ -159,6 +159,7 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       has_error_(false),
       saved_num_cids_(-1),
       saved_class_table_(NULL),
+      classes_checkpointed_(false),
       dead_classes_(NULL),
       saved_num_libs_(-1),
       num_saved_libs_(-1),
@@ -319,6 +320,7 @@ void IsolateReloadContext::CheckpointClasses() {
   }
   old_classes_set_storage_ = old_classes_set.Release().raw();
   TIR_Print("---- System had %" Pd " classes\n", saved_num_cids_);
+  classes_checkpointed_ = true;
 }
 
 
@@ -383,6 +385,7 @@ void IsolateReloadContext::RollbackClasses() {
   free(saved_class_table_);
   saved_class_table_ = NULL;
   saved_num_cids_ = 0;
+  classes_checkpointed_ = false;
 }
 
 
@@ -708,8 +711,14 @@ RawClass* IsolateReloadContext::FindOriginalClass(const Class& cls) {
 
 
 RawClass* IsolateReloadContext::GetClassForHeapWalkAt(intptr_t cid) {
-  // TODO(johnmccutchan): Implement.
-  return isolate_->class_table()->At(cid);
+  if (classes_checkpointed_) {
+    ASSERT(saved_class_table_ != NULL);
+    ASSERT(cid > 0);
+    ASSERT(cid < saved_num_cids_);
+    return saved_class_table_[cid];
+  } else {
+    return isolate_->class_table()->At(cid);
+  }
 }
 
 

@@ -1398,7 +1398,6 @@ class Class : public Object {
   void ReplaceEnum(const Class& old_enum) const;
   void CopyStaticFieldValues(const Class& old_cls) const;
   void PatchFieldsAndFunctions() const;
-  void FixupEnumClassIDs(const Class& old_cls) const;
   void CopyCanonicalConstants(const Class& old_cls) const;
   bool CanReload(const Class& replacement) const;
 

@@ -331,33 +331,6 @@ void Class::ReplaceEnum(const Class& old_enum) const {
 }
 
 
-void Class::FixupEnumClassIDs(const Class& old_cls) const {
-  if (!is_enum_class()) {
-    return;
-  }
-  const intptr_t old_id = old_cls.id();
-
-  const Array& enum_fields = Array::Handle(fields());
-  Field& field = Field::Handle();
-  String& field_name = String::Handle();
-  Instance& ordinal_value = Instance::Handle();
-  TIR_Print("FixupEnumClassIDs for %s\n", ToCString());
-  for (intptr_t i = 0; i < enum_fields.Length(); i++) {
-    field = Field::RawCast(enum_fields.At(i));
-    if (!field.is_static()) continue;
-    ordinal_value = field.StaticValue();
-    // It's not a smi.
-    ASSERT(!ordinal_value.IsSmi());
-    if (ordinal_value.GetClassId() == id()) {
-      field_name = field.name();
-      ordinal_value.raw()->UpdateClassId(old_id);
-      TIR_Print("Fixed %s to have class id: %" Pd "\n",
-                field_name.ToCString(), old_id);
-    }
-  }
-}
-
-
 void Class::PatchFieldsAndFunctions() const {
   // Move all old functions and fields to a patch class so that they
   // still refer to their original script.
@@ -432,10 +405,6 @@ bool Class::CanReload(const Class& replacement) const {
       return false;
     }
     TIR_Print("Finalized replacement class for %s\n", ToCString());
-    // Finalizing an enum class will pollute the heap with enum instances with
-    // the new class id. We need to fix this up so that any passes over the
-    // heap (for reload, gc, etc) can still succeed.
-    replacement.FixupEnumClassIDs(*this);
   }
 
   if (is_finalized()) {
@@ -502,7 +471,7 @@ bool Class::CanReload(const Class& replacement) const {
     return false;
   }
 
-  // TODO type parameter count check.
+  // TODO(johnmccutchan) type parameter count check.
 
   TIR_Print("Class `%s` can be reloaded (%" Pd " and %" Pd ")\n",
             ToCString(),
