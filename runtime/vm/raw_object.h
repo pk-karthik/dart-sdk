@@ -687,6 +687,7 @@ class RawObject {
   friend class NativeEntry;  // GetClassId
   friend class Simulator;
   friend class SimulatorHelpers;
+  friend class VerifyInstanceClassesVisitor;  // GetClassId
 
   DISALLOW_ALLOCATION();
   DISALLOW_IMPLICIT_CONSTRUCTORS(RawObject);

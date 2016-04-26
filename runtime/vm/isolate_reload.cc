@@ -35,6 +35,7 @@ DEFINE_FLAG(bool, reload_every_optimized, true, "Only from optimized code.");
                                    Timeline::GetIsolateStream(),               \
                                    #name)
 
+
 class ClassMapTraits {
  public:
   static bool ReportStats() { return false; }
@@ -372,6 +373,9 @@ void IsolateReloadContext::Checkpoint() {
 
 void IsolateReloadContext::RollbackClasses() {
   TIR_Print("---- ROLLING BACK CLASS TABLE\n");
+#ifdef DEBUG
+  VerifyInstanceClasses();
+#endif
   ASSERT(saved_num_cids_ > 0);
   ASSERT(saved_class_table_ != NULL);
   ClassTable* class_table = I->class_table();
@@ -421,6 +425,46 @@ void IsolateReloadContext::Rollback() {
 
 
 #ifdef DEBUG
+// ObjectVisitor which verifies that heap contains no instances with
+// cid >= cid_limit.
+class VerifyInstanceClassesVisitor : public ObjectVisitor {
+ public:
+  explicit VerifyInstanceClassesVisitor(intptr_t cid_limit)
+      : ObjectVisitor(),
+        cid_limit_(cid_limit) {
+  }
+
+  virtual void VisitObject(RawObject* obj) {
+    if (obj->IsFreeListElement()) {
+      return;
+    }
+    if (!obj->IsHeapObject()) {
+      return;
+    }
+    const intptr_t cid = obj->GetClassId();
+    if (cid >= cid_limit_) {
+      OS::Print("Found instance above cid limit %" Pd " >= %" Pd "\n",
+                cid, cid_limit_);
+      UNREACHABLE();
+    }
+  }
+
+ private:
+  const intptr_t cid_limit_;
+};
+
+
+void IsolateReloadContext::VerifyInstanceClasses() {
+  TIR_Print("---- BEGIN Verifying instance classes\n");
+  Thread* thread = Thread::Current();
+  Isolate* isolate = thread->isolate();
+  Heap* heap = isolate->heap();
+  VerifyInstanceClassesVisitor visitor(saved_num_cids_);
+  heap->VisitObjects(&visitor);
+  TIR_Print("---- DONE Verifying instance classes\n");
+}
+
+
 void IsolateReloadContext::VerifyMaps() {
   Class& cls = Class::Handle();
   Class& new_cls = Class::Handle();
@@ -535,6 +579,7 @@ void IsolateReloadContext::Commit() {
 
 #ifdef DEBUG
   VerifyMaps();
+  VerifyInstanceClasses();
 #endif
 
   {
@@ -683,6 +728,7 @@ bool IsolateReloadContext::ValidateReload() {
   if (has_error_) {
     return false;
   }
+
   // Already built.
   ASSERT(class_map_storage_ != Array::null());
   UnorderedHashMap<ClassMapTraits> map(class_map_storage_);
