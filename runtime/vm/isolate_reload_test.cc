@@ -1387,9 +1387,9 @@ TEST_CASE(IsolateReload_EnumComplex) {
 TEST_CASE(IsolateReload_EnumValuesArray) {
   const char* kScript =
       "enum Fruit {\n"
+      "  Cantalope,\n"
       "  Apple,\n"
       "  Banana,\n"
-      "  Cantalope,\n"
       "}\n"
       "var x;\n"
       "main() {\n"
@@ -1406,8 +1406,8 @@ TEST_CASE(IsolateReload_EnumValuesArray) {
 
   const char* kReloadScript =
       "enum Fruit {\n"
-      "  Apple,\n"
       "  Banana,\n"
+      "  Apple\n"
       "}\n"
       "var x;\n"
       "bool identityCheck(Fruit f) {\n"
@@ -1456,8 +1456,6 @@ TEST_CASE(IsolateReload_EnumIdentityReload) {
   EXPECT_VALID(lib);
 
   EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
-
-  // Delete 'Cantalope'.
 
   const char* kReloadScript =
       "enum Fruit {\n"
@@ -1531,6 +1529,53 @@ TEST_CASE(IsolateReload_ConstantIdentical) {
   EXPECT_VALID(lib);
 
   EXPECT_STREQ("yes", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_EnumValuesToString) {
+  const char* kScript =
+      "enum Fruit {\n"
+      "  Apple,\n"
+      "  Banana,\n"
+      "}\n"
+      "var x;\n"
+      "main() {\n"
+      "  String r = '';\n"
+      "  r += Fruit.Apple.toString();\n"
+      "  r += ' ';\n"
+      "  r += Fruit.Banana.toString();\n"
+      "  return r;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("Fruit.Apple Fruit.Banana", SimpleInvokeStr(lib, "main"));
+
+  // Insert 'Cantalope'.
+
+  const char* kReloadScript =
+      "enum Fruit {\n"
+      "  Apple,\n"
+      "  Cantalope,\n"
+      "  Banana\n"
+      "}\n"
+      "var x;\n"
+      "main() {\n"
+      "  String r = '';\n"
+      "  r += Fruit.Apple.toString();\n"
+      "  r += ' ';\n"
+      "  r += Fruit.Cantalope.toString();\n"
+      "  r += ' ';\n"
+      "  r += Fruit.Banana.toString();\n"
+      "  return r;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+
+  EXPECT_STREQ("Fruit.Apple Fruit.Cantalope Fruit.Banana",
+               SimpleInvokeStr(lib, "main"));
 }
 
 }  // namespace dart

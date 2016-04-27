@@ -236,11 +236,18 @@ void Class::ReplaceEnum(const Class& old_enum) const {
   Object& enum_value = Object::Handle();
   Field& enum_field = Field::Handle();
 
+  TIR_Print("New version of enum has %" Pd " elements\n",
+            enum_values.Length());
+  TIR_Print("Old version of enum had %" Pd " elements\n",
+            old_enum_values.Length());
   for (intptr_t i = 0; i < old_enum_names.Length(); i++) {
     enum_name = String::RawCast(old_enum_names.At(i));
     const intptr_t index_in_new_cls = IndexOfEnum(enum_names, enum_name);
     if (index_in_new_cls < 0) {
       // Doesn't exist in new enum, add.
+      TIR_Print("Adding enum value `%s` to %s\n",
+                enum_name.ToCString(),
+                this->ToCString());
       enum_value = old_enum_values.At(i);
       ASSERT(!enum_value.IsNull());
       to_add.Add(enum_name);
@@ -265,7 +272,8 @@ void Class::ReplaceEnum(const Class& old_enum) const {
       ASSERT(!enum_field.IsNull());
       // Use old value with updated index.
       enum_field.SetStaticValue(Instance::Cast(enum_value), true);
-      enum_values.SetAt(i, enum_value);
+      enum_values.SetAt(index_in_new_cls, enum_value);
+      enum_names.SetAt(index_in_new_cls, enum_name);
     }
   }
 
