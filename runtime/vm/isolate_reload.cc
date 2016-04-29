@@ -245,13 +245,38 @@ void IsolateReloadContext::StartReload() {
 }
 
 
+void IsolateReloadContext::RegisterClass(const Class& new_cls) {
+  const Class& old_cls = Class::Handle(OldClassOrNull(new_cls));
+  if (old_cls.IsNull()) {
+    Isolate::Current()->RegisterClass(new_cls);
+
+    if (FLAG_identity_reload) {
+      TIR_Print("Could not find replacement class for %s\n",
+                new_cls.ToCString());
+      UNREACHABLE();
+    }
+
+    // New class maps to itself.
+    AddClassMapping(new_cls, new_cls);
+    return;
+  }
+  new_cls.set_id(old_cls.id());
+  isolate()->class_table()->SetAt(old_cls.id(), new_cls.raw());
+  new_cls.CopyCanonicalConstants(old_cls);
+  new_cls.CopyCanonicalTypes(old_cls);
+  AddBecomeMapping(old_cls, new_cls);
+  AddClassMapping(new_cls, old_cls);
+}
+
+
 void IsolateReloadContext::FinishReload() {
   // Disable the background compiler while we are performing the reload.
   BackgroundCompiler::Disable();
 
-  BuildClassMapping();
+  // BuildClassMapping();
   BuildLibraryMapping();
-  FinalizeClassTable();
+  // FinalizeClassTable();
+  // PrepareClassesForFinalization();  -- not needed.
   TIR_Print("---- DONE FINALIZING\n");
   if (ValidateReload()) {
     Commit();
@@ -619,7 +644,6 @@ void IsolateReloadContext::Commit() {
             new_cls.ReplaceEnum(cls);
           }
           new_cls.CopyStaticFieldValues(cls);
-          new_cls.CopyCanonicalConstants(cls);
           cls.PatchFieldsAndFunctions();
         }
       }
@@ -1142,6 +1166,29 @@ void IsolateReloadContext::FinalizeClassTable() {
 
   delete dead_classes_;
   dead_classes_ = NULL;
+}
+
+
+void IsolateReloadContext::PrepareClassesForFinalization() {
+  // While validating that the reload will succeed, we finalize classes. The
+  // finalization of one class may trigger the finalization of other classes.
+  // Before we finalize any classes, we copy state from the old class that
+  // should be in place before class finalization occurs.
+  ASSERT(class_map_storage_ != Array::null());
+  UnorderedHashMap<ClassMapTraits> map(class_map_storage_);
+  UnorderedHashMap<ClassMapTraits>::Iterator it(&map);
+  Class& cls = Class::Handle();
+  Class& new_cls = Class::Handle();
+  while (it.MoveNext()) {
+    const intptr_t entry = it.Current();
+    new_cls = Class::RawCast(map.GetKey(entry));
+    cls = Class::RawCast(map.GetPayload(entry, 0));
+    if (new_cls.raw() != cls.raw()) {
+      new_cls.CopyCanonicalConstants(cls);
+      new_cls.CopyCanonicalTypes(cls);
+    }
+  }
+  map.Release();
 }
 
 

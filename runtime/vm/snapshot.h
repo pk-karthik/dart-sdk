@@ -392,6 +392,7 @@ class SnapshotReader : public BaseReader {
   ClassTable* class_table() const { return isolate()->class_table(); }
   PassiveObject* PassiveObjectHandle() { return &pobj_; }
   Array* ArrayHandle() { return &array_; }
+  Class* ClassHandle() { return &cls_; }
   String* StringHandle() { return &str_; }
   AbstractType* TypeHandle() { return &type_; }
   TypeArguments* TypeArgumentsHandle() { return &type_arguments_; }

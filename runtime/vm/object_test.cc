@@ -25,7 +25,7 @@ DECLARE_FLAG(bool, write_protect_code);
 static RawClass* CreateDummyClass(const String& class_name,
                                   const Script& script) {
   const Class& cls = Class::Handle(
-      Class::New(class_name, script, TokenPosition::kNoSource));
+      Class::New(Library::Handle(), class_name, script, TokenPosition::kNoSource));
   cls.set_is_synthesized_class();  // Dummy class for testing.
   return cls.raw();
 }

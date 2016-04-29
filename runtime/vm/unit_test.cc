@@ -337,12 +337,11 @@ char* TestCase::BigintToHexValue(Dart_CObject* bigint) {
 void AssemblerTest::Assemble() {
   const String& function_name = String::ZoneHandle(
       Symbols::New(Thread::Current(), name_));
+  const Library& lib = Library::ZoneHandle(Library::New(function_name));
   const Class& cls = Class::ZoneHandle(
-      Class::New(function_name,
+      Class::New(lib, function_name,
                  Script::Handle(),
                  TokenPosition::kMinSource));
-  const Library& lib = Library::ZoneHandle(Library::New(function_name));
-  cls.set_library(lib);
   Function& function = Function::ZoneHandle(
       Function::New(function_name, RawFunction::kRegularFunction,
                     true, false, false, false, false, cls,
@@ -369,8 +368,9 @@ CodeGenTest::CodeGenTest(const char* name)
       Symbols::New(Thread::Current(), name));
   // Add function to a class and that class to the class dictionary so that
   // frame walking can be used.
+  Library& lib = Library::Handle(Library::CoreLibrary());
   const Class& cls = Class::ZoneHandle(
-       Class::New(function_name, Script::Handle(),
+      Class::New(lib, function_name, Script::Handle(),
                   TokenPosition::kMinSource));
   function_ = Function::New(
       function_name, RawFunction::kRegularFunction,
@@ -379,7 +379,6 @@ CodeGenTest::CodeGenTest(const char* name)
   const Array& functions = Array::Handle(Array::New(1));
   functions.SetAt(0, function_);
   cls.SetFunctions(functions);
-  Library& lib = Library::Handle(Library::CoreLibrary());
   lib.AddClass(cls);
 }
 

@@ -235,6 +235,10 @@ RawType* Type::ReadFrom(SnapshotReader* reader,
   // Set all the object fields.
   READ_OBJECT_FIELDS(type, type.raw()->from(), type.raw()->to(), kAsReference);
 
+  // Replace the RawClass* from the snapshot with the class id.
+  (*reader->ClassHandle()) = Class::RawCast(type.raw_ptr()->type_class_id_);
+  type.set_type_class(*reader->ClassHandle());
+
   // Set the canonical bit.
   if (!defer_canonicalization && is_canonical) {
     type.SetCanonical();
@@ -253,7 +257,7 @@ void RawType::WriteTo(SnapshotWriter* writer,
   // Only resolved and finalized types should be written to a snapshot.
   ASSERT((ptr()->type_state_ == RawType::kFinalizedInstantiated) ||
          (ptr()->type_state_ == RawType::kFinalizedUninstantiated));
-  ASSERT(ptr()->type_class_ != Object::null());
+  ASSERT(ptr()->type_class_id_ != Object::null());
 
   // Write out the serialization header value for this object.
   writer->WriteInlinedObjectHeader(object_id);
@@ -262,22 +266,34 @@ void RawType::WriteTo(SnapshotWriter* writer,
   writer->WriteIndexedObject(kTypeCid);
   writer->WriteTags(writer->GetObjectTags(this));
 
+  // Lookup the type class.
+  RawSmi* raw_type_class_id = Smi::RawCast(ptr()->type_class_id_);
+  RawClass* type_class =
+      writer->isolate()->class_table()->At(Smi::Value(raw_type_class_id));
+
   // Write out typeclass_is_in_fullsnapshot first as this will
   // help the reader decide on how to canonicalize the type object.
-  intptr_t tags = writer->GetObjectTags(ptr()->type_class_);
+  intptr_t tags = writer->GetObjectTags(type_class);
   bool typeclass_is_in_fullsnapshot =
       (ClassIdTag::decode(tags) == kClassCid) &&
-      Class::IsInFullSnapshot(reinterpret_cast<RawClass*>(ptr()->type_class_));
+      Class::IsInFullSnapshot(reinterpret_cast<RawClass*>(type_class));
   writer->Write<bool>(typeclass_is_in_fullsnapshot);
 
   // Write out all the non object pointer fields.
   writer->Write<int32_t>(ptr()->token_pos_.SnapshotEncode());
   writer->Write<int8_t>(ptr()->type_state_);
 
+  // Swap in the class instead of the class id while writing snapshot.
+  // Class ids might change when the snapshot is reloaded.
+  ptr()->type_class_id_ = type_class;
+
   // Write out all the object pointer fields.
-  ASSERT(ptr()->type_class_ != Object::null());
+  ASSERT(ptr()->type_class_id_ != Object::null());
   SnapshotWriterVisitor visitor(writer, kAsReference);
   visitor.VisitPointers(from(), to());
+
+  // Restore the type class id.
+  ptr()->type_class_id_ = raw_type_class_id;
 }
 
 
@@ -344,6 +360,11 @@ RawTypeParameter* TypeParameter::ReadFrom(SnapshotReader* reader,
                      type_parameter.raw()->from(), type_parameter.raw()->to(),
                      kAsReference);
 
+  // Replace the RawClass* from the snapshot with the class id.
+  (*reader->ClassHandle()) =
+      Class::RawCast(type_parameter.raw_ptr()->parameterized_class_id_);
+  type_parameter.set_parameterized_class(*reader->ClassHandle());
+
   return type_parameter.raw();
 }
 
@@ -369,9 +390,19 @@ void RawTypeParameter::WriteTo(SnapshotWriter* writer,
   writer->Write<int16_t>(ptr()->index_);
   writer->Write<int8_t>(ptr()->type_state_);
 
+  // Swap in the class instead of the class id while writing snapshot.
+  // Class ids might change when the snapshot is reloaded.
+  RawSmi* raw_param_class_id = Smi::RawCast(ptr()->parameterized_class_id_);
+  RawClass* param_class =
+      writer->isolate()->class_table()->At(Smi::Value(raw_param_class_id));
+  ptr()->parameterized_class_id_ = param_class;
+
   // Write out all the object pointer fields.
   SnapshotWriterVisitor visitor(writer, kAsReference);
   visitor.VisitPointers(from(), to());
+
+  // Restore the parameterized class id.
+  ptr()->parameterized_class_id_ = raw_param_class_id;
 }
 
 

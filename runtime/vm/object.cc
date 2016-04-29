@@ -3157,13 +3157,43 @@ RawClass* Class::New(intptr_t index) {
 }
 
 
-RawClass* Class::New(const String& name,
+RawClass* Class::New(const Library& lib,
+                     const String& name,
                      const Script& script,
                      TokenPosition token_pos) {
-  Class& result = Class::Handle(New<Instance>(kIllegalCid));
+  ASSERT(Object::class_class() != Class::null());
+  Class& result = Class::Handle();
+  {
+    RawObject* raw = Object::Allocate(Class::kClassId,
+                                      Class::InstanceSize(),
+                                      Heap::kOld);
+    NoSafepointScope no_safepoint;
+    result ^= raw;
+  }
+  Instance fake;
+  ASSERT(fake.IsInstance());
+  result.set_handle_vtable(fake.vtable());
+  result.set_instance_size(Instance::InstanceSize());
+  result.set_next_field_offset(Instance::NextFieldOffset());
+  result.set_id(kIllegalCid);
+  result.set_state_bits(0);
+  result.set_type_arguments_field_offset_in_words(kNoTypeArguments);
+  result.set_num_type_arguments(kUnknownNumTypeArguments);
+  result.set_num_own_type_arguments(kUnknownNumTypeArguments);
+  result.set_num_native_fields(0);
+  result.set_token_pos(TokenPosition::kNoSource);
+  result.InitEmptyFields();
+
+  result.set_library(lib);
   result.set_name(name);
   result.set_script(script);
   result.set_token_pos(token_pos);
+  Isolate* isolate = Isolate::Current();
+  if (isolate->IsReloading()) {
+    Isolate::Current()->reload_context()->RegisterClass(result);
+  } else {
+    Isolate::Current()->RegisterClass(result);
+  }
   return result.raw();
 }
 
@@ -3173,7 +3203,7 @@ RawClass* Class::NewNativeWrapper(const Library& library,
                                   int field_count) {
   Class& cls = Class::Handle(library.LookupClass(name));
   if (cls.IsNull()) {
-    cls = New(name, Script::Handle(), TokenPosition::kNoSource);
+    cls = New(library, name, Script::Handle(), TokenPosition::kNoSource);
     cls.SetFields(Object::empty_array());
     cls.SetFunctions(Object::empty_array());
     // Set super class to Object.
@@ -15788,6 +15818,13 @@ bool AbstractType::HasResolvedTypeClass() const {
 }
 
 
+classid_t AbstractType::type_class_id() const {
+  // AbstractType is an abstract class.
+  UNREACHABLE();
+  return kIllegalCid;
+}
+
+
 RawClass* AbstractType::type_class() const {
   // AbstractType is an abstract class.
   UNREACHABLE();
@@ -16639,20 +16676,19 @@ void Type::SetIsResolved() const {
 
 
 bool Type::HasResolvedTypeClass() const {
-  const Object& type_class = Object::Handle(raw_ptr()->type_class_);
-  return !type_class.IsNull() && type_class.IsClass();
+  return !raw_ptr()->type_class_id_->IsHeapObject();
+}
+
+
+classid_t Type::type_class_id() const {
+  ASSERT(HasResolvedTypeClass());
+  ASSERT(!raw_ptr()->type_class_id_->IsHeapObject());
+  return Smi::Value(reinterpret_cast<RawSmi*>(raw_ptr()->type_class_id_));
 }
 
 
 RawClass* Type::type_class() const {
-  ASSERT(HasResolvedTypeClass());
-#ifdef DEBUG
-  Class& type_class = Class::Handle();
-  type_class ^= raw_ptr()->type_class_;
-  return type_class.raw();
-#else
-  return reinterpret_cast<RawClass*>(raw_ptr()->type_class_);
-#endif
+  return Isolate::Current()->class_table()->At(type_class_id());
 }
 
 
@@ -16660,13 +16696,13 @@ RawUnresolvedClass* Type::unresolved_class() const {
   ASSERT(!HasResolvedTypeClass());
 #ifdef DEBUG
   UnresolvedClass& unresolved_class = UnresolvedClass::Handle();
-  unresolved_class ^= raw_ptr()->type_class_;
+  unresolved_class ^= raw_ptr()->type_class_id_;
   ASSERT(!unresolved_class.IsNull());
   return unresolved_class.raw();
 #else
-  ASSERT(!Object::Handle(raw_ptr()->type_class_).IsNull());
-  ASSERT(Object::Handle(raw_ptr()->type_class_).IsUnresolvedClass());
-  return reinterpret_cast<RawUnresolvedClass*>(raw_ptr()->type_class_);
+  ASSERT(!Object::Handle(raw_ptr()->type_class_id_).IsNull());
+  ASSERT(Object::Handle(raw_ptr()->type_class_id_).IsUnresolvedClass());
+  return reinterpret_cast<RawUnresolvedClass*>(raw_ptr()->type_class_id_);
 #endif
 }
 
@@ -17203,9 +17239,16 @@ intptr_t Type::Hash() const {
 }
 
 
-void Type::set_type_class(const Object& value) const {
-  ASSERT(!value.IsNull() && (value.IsClass() || value.IsUnresolvedClass()));
-  StorePointer(&raw_ptr()->type_class_, value.raw());
+void Type::set_type_class(const Class& value) const {
+  ASSERT(!value.IsNull());
+  StorePointer(&raw_ptr()->type_class_id_,
+               reinterpret_cast<RawObject*>(Smi::New(value.id())));
+}
+
+
+void Type::set_unresolved_class(const Object& value) const {
+  ASSERT(!value.IsNull() && value.IsUnresolvedClass());
+  StorePointer(&raw_ptr()->type_class_id_, value.raw());
 }
 
 
@@ -17228,7 +17271,11 @@ RawType* Type::New(const Object& clazz,
                    TokenPosition token_pos,
                    Heap::Space space) {
   const Type& result = Type::Handle(Type::New(space));
-  result.set_type_class(clazz);
+  if (clazz.IsClass()) {
+    result.set_type_class(Class::Cast(clazz));
+  } else {
+    result.set_unresolved_class(clazz);
+  }
   result.set_arguments(arguments);
   result.set_token_pos(token_pos);
   result.StoreNonPointer(&result.raw_ptr()->type_state_, RawType::kAllocated);
@@ -17476,7 +17523,26 @@ bool TypeParameter::IsEquivalent(const Instance& other, TrailPtr trail) const {
 
 void TypeParameter::set_parameterized_class(const Class& value) const {
   // Set value may be null.
-  StorePointer(&raw_ptr()->parameterized_class_, value.raw());
+  classid_t cid = kIllegalCid;
+  if (!value.IsNull()) {
+    cid = value.id();
+  }
+  StorePointer(&raw_ptr()->parameterized_class_id_,
+               reinterpret_cast<RawObject*>(Smi::New(cid)));
+}
+
+
+classid_t TypeParameter::parameterized_class_id() const {
+  return Smi::Value(Smi::RawCast(raw_ptr()->parameterized_class_id_));
+}
+
+
+RawClass* TypeParameter::parameterized_class() const {
+  classid_t cid = parameterized_class_id();
+  if (cid == kIllegalCid) {
+    return Class::null();
+  }
+  return Isolate::Current()->class_table()->At(cid);
 }
 
 

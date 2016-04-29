@@ -1647,9 +1647,10 @@ class RawType : public RawAbstractType {
   RAW_HEAP_OBJECT_IMPLEMENTATION(Type);
 
   RawObject** from() {
-    return reinterpret_cast<RawObject**>(&ptr()->type_class_);
+    return reinterpret_cast<RawObject**>(&ptr()->type_class_id_);
   }
-  RawObject* type_class_;  // Either resolved class or unresolved class.
+  // Either the id of the resolved class as a Smi or an UnresolvedClass.
+  RawObject* type_class_id_;
   RawTypeArguments* arguments_;
   // This type object represents a function type if its signature field is a
   // non-null function object.
@@ -1688,9 +1689,11 @@ class RawTypeParameter : public RawAbstractType {
   RAW_HEAP_OBJECT_IMPLEMENTATION(TypeParameter);
 
   RawObject** from() {
-    return reinterpret_cast<RawObject**>(&ptr()->parameterized_class_);
+    return reinterpret_cast<RawObject**>(&ptr()->parameterized_class_id_);
   }
-  RawClass* parameterized_class_;
+  // The parameterized class id is stored as a RawSmi*.  Just before
+  // snapshotting we temporarily store a RawClass* in this field.
+  RawObject* parameterized_class_id_;
   RawString* name_;
   RawAbstractType* bound_;  // ObjectType if no explicit bound specified.
   RawObject** to() { return reinterpret_cast<RawObject**>(&ptr()->bound_); }

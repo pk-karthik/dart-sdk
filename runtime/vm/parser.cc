@@ -4381,8 +4381,7 @@ void Parser::ParseEnumDeclaration(const GrowableObjectArray& pending_classes,
     ReportError(name_pos, "'%s' is already defined", enum_name->ToCString());
   }
   Class& cls = Class::Handle(Z);
-  cls = Class::New(*enum_name, script_, declaration_pos);
-  cls.set_library(library_);
+  cls = Class::New(library_, *enum_name, script_, declaration_pos);
   library_.AddClass(cls);
   cls.set_is_synthesized_class();
   cls.set_is_enum_class();
@@ -4425,7 +4424,7 @@ void Parser::ParseClassDeclaration(const GrowableObjectArray& pending_classes,
       ReportError(classname_pos, "missing class '%s' cannot be patched",
                   class_name.ToCString());
     }
-    cls = Class::New(class_name, script_, declaration_pos);
+    cls = Class::New(library_, class_name, script_, declaration_pos);
     library_.AddClass(cls);
   } else {
     if (!obj.IsClass()) {
@@ -4437,8 +4436,7 @@ void Parser::ParseClassDeclaration(const GrowableObjectArray& pending_classes,
       // Preserve and reuse the original type parameters and bounds since the
       // ones defined in the patch class will not be finalized.
       orig_type_parameters = cls.type_parameters();
-      cls = Class::New(class_name, script_, declaration_pos);
-      cls.set_library(library_);
+      cls = Class::New(library_, class_name, script_, declaration_pos);
     } else {
       // Not patching a class, but it has been found. This must be one of the
       // pre-registered classes from object.cc or a duplicate definition.
@@ -4908,7 +4906,8 @@ void Parser::ParseMixinAppAlias(
                 class_name.ToCString());
   }
   const Class& mixin_application =
-      Class::Handle(Z, Class::New(class_name, script_, classname_pos));
+      Class::Handle(Z, Class::New(library_, class_name,
+                                  script_, classname_pos));
   mixin_application.set_is_mixin_app_alias();
   library_.AddClass(mixin_application);
   set_current_class(mixin_application);
@@ -5036,8 +5035,9 @@ void Parser::ParseTypedef(const GrowableObjectArray& pending_classes,
   // signature function after it has been parsed. The type parameters, in order
   // to be properly finalized, need to be associated to this scope class as
   // they are parsed.
-  const Class& function_type_alias = Class::Handle(Z,
-      Class::New(*alias_name, script_, declaration_pos));
+  const Class& function_type_alias =
+      Class::Handle(Z, Class::New(
+          library_, *alias_name, script_, declaration_pos));
   function_type_alias.set_is_synthesized_class();
   function_type_alias.set_is_abstract();
   function_type_alias.set_is_prefinalized();
@@ -6087,7 +6087,7 @@ void Parser::ParseTopLevel() {
   Object& tl_owner = Object::Handle(Z);
   Class& toplevel_class = Class::Handle(Z, library_.toplevel_class());
   if (toplevel_class.IsNull()) {
-    toplevel_class = Class::New(Symbols::TopLevel(), script_, TokenPos());
+    toplevel_class = Class::New(library_, Symbols::TopLevel(), script_, TokenPos());
     toplevel_class.set_library(library_);
     library_.set_toplevel_class(toplevel_class);
     tl_owner = toplevel_class.raw();

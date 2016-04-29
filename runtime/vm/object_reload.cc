@@ -150,6 +150,15 @@ void Class::CopyCanonicalConstants(const Class& old_cls) const {
 }
 
 
+void Class::CopyCanonicalTypes(const Class& old_cls) const {
+  const Object& old_canonical_types = Object::Handle(old_cls.canonical_types());
+  if (old_canonical_types.IsNull()) {
+    return;
+  }
+  set_canonical_types(old_canonical_types);
+}
+
+
 static intptr_t IndexOfEnum(const Array& enum_names, const String& name) {
   ASSERT(!enum_names.IsNull());
   ASSERT(!name.IsNull());

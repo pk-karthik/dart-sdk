@@ -1362,7 +1362,8 @@ class Class : public Object {
   template <class FakeObject> static RawClass* New();
 
   // Allocate instance classes.
-  static RawClass* New(const String& name,
+  static RawClass* New(const Library& lib,
+                       const String& name,
                        const Script& script,
                        TokenPosition token_pos);
   static RawClass* NewNativeWrapper(const Library& library,
@@ -1399,6 +1400,7 @@ class Class : public Object {
   void CopyStaticFieldValues(const Class& old_cls) const;
   void PatchFieldsAndFunctions() const;
   void CopyCanonicalConstants(const Class& old_cls) const;
+  void CopyCanonicalTypes(const Class& old_cls) const;
   bool CanReload(const Class& replacement) const;
 
  private:
@@ -5424,6 +5426,7 @@ class AbstractType : public Instance {
   virtual bool IsResolved() const;
   virtual void SetIsResolved() const;
   virtual bool HasResolvedTypeClass() const;
+  virtual classid_t type_class_id() const;
   virtual RawClass* type_class() const;
   virtual RawUnresolvedClass* unresolved_class() const;
   virtual RawTypeArguments* arguments() const;
@@ -5618,8 +5621,8 @@ class AbstractType : public Instance {
 // relate to a 'raw type', as opposed to a 'cooked type' or 'rare type'.
 class Type : public AbstractType {
  public:
-  static intptr_t type_class_offset() {
-    return OFFSET_OF(RawType, type_class_);
+  static intptr_t type_class_id_offset() {
+    return OFFSET_OF(RawType, type_class_id_);
   }
   virtual bool IsFinalized() const {
     return
@@ -5642,8 +5645,10 @@ class Type : public AbstractType {
   }
   virtual void SetIsResolved() const;
   virtual bool HasResolvedTypeClass() const;  // Own type class resolved.
+  virtual classid_t type_class_id() const;
   virtual RawClass* type_class() const;
-  void set_type_class(const Object& value) const;
+  void set_type_class(const Class& value) const;
+  void set_unresolved_class(const Object& value) const;
   virtual RawUnresolvedClass* unresolved_class() const;
   virtual RawTypeArguments* arguments() const { return raw_ptr()->arguments_; }
   virtual void set_arguments(const TypeArguments& value) const;
@@ -5834,9 +5839,8 @@ class TypeParameter : public AbstractType {
   virtual bool IsMalformedOrMalbounded() const { return false; }
   virtual bool IsResolved() const { return true; }
   virtual bool HasResolvedTypeClass() const { return false; }
-  RawClass* parameterized_class() const {
-    return raw_ptr()->parameterized_class_;
-  }
+  classid_t parameterized_class_id() const;
+  RawClass* parameterized_class() const;
   RawString* name() const { return raw_ptr()->name_; }
   intptr_t index() const { return raw_ptr()->index_; }
   void set_index(intptr_t value) const;

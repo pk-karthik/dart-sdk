@@ -66,6 +66,8 @@ class IsolateReloadContext {
   // Prefers old classes when we are in the middle of a reload.
   RawClass* GetClassForHeapWalkAt(intptr_t cid);
 
+  void RegisterClass(const Class& new_cls);
+
  private:
   void set_saved_root_library(const Library& value);
 
@@ -134,6 +136,7 @@ class IsolateReloadContext {
   RawClass* OldClassOrNull(const Class& replacement_or_new);
   void BuildClassMapping();
   void FinalizeClassTable();
+  void PrepareClassesForFinalization();
 
   RawLibrary* OldLibraryOrNull(const Library& replacement_or_new);
   void BuildLibraryMapping();
