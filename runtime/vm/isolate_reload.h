@@ -101,8 +101,6 @@ class IsolateReloadContext {
   void VerifyInstanceClasses();
 #endif
 
-  void RehashCanonicalTypeArguments();
-
   void Commit();
 
   void PostCommit();

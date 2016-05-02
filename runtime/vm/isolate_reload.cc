@@ -567,50 +567,6 @@ void IsolateReloadContext::VerifyCanonicalTypeArguments() {
 #endif
 
 
-void IsolateReloadContext::RehashCanonicalTypeArguments() {
-  TIMELINE_SCOPE(RehashCanonicalTypeArguments);
-  Thread* thread = Thread::Current();
-  // Last element of the array is the number of used elements.
-  const Array& table =
-      Array::Handle(Z, I->object_store()->canonical_type_arguments());
-  const intptr_t table_size = table.Length() - 1;
-  ASSERT(Utils::IsPowerOfTwo(table_size));
-  Array& new_table = Array::Handle(Z, Array::New(table_size + 1, Heap::kOld));
-  // Copy all elements from the original table to the newly allocated
-  // array.
-  TypeArguments& element = TypeArguments::Handle(Z);
-  TypeArguments& new_element = TypeArguments::Handle(Z);
-  for (intptr_t i = 0; i < table_size; i++) {
-    element ^= table.At(i);
-    if (!element.IsNull()) {
-      const intptr_t hash = element.Hash();
-      intptr_t index = hash & (table_size - 1);
-      new_element ^= new_table.At(index);
-      while (!new_element.IsNull()) {
-        if (new_element.Equals(element)) {
-          // When we replace old classes with new classes, we can
-          // sometimes produce duplication type arguments.
-          //
-          // TODO(turnidge): Talk to Regis about this case.
-          break;
-        }
-        index = (index + 1) & (table_size - 1);  // Move to next element.
-        new_element ^= new_table.At(index);
-      }
-      new_table.SetAt(index, element);
-    }
-  }
-  // Copy used count.
-  const Object& used_count = Object::Handle(Z, table.At(table_size));
-  new_table.SetAt(table_size, used_count);
-  // Remember the new table now.
-  I->object_store()->set_canonical_type_arguments(new_table);
-#ifdef DEBUG
-  VerifyCanonicalTypeArguments();
-#endif
-}
-
-
 void IsolateReloadContext::Commit() {
   TIMELINE_SCOPE(Commit);
   // I->class_table()->PrintNonDartClasses();
@@ -739,8 +695,10 @@ void IsolateReloadContext::Commit() {
     }
   }
 
-  // The canonical types were hashed based on the old class ids.  Rehash.
-  RehashCanonicalTypeArguments();
+#ifdef DEBUG
+  // TODO(turnidge): Remove before committing to main branch.
+  VerifyCanonicalTypeArguments();
+#endif
 }
 
 
