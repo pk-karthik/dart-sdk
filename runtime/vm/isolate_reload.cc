@@ -22,7 +22,7 @@
 
 namespace dart {
 
-DEFINE_FLAG(bool, trace_reload, true, "Trace isolate reloading");
+DEFINE_FLAG(bool, trace_reload, false, "Trace isolate reloading");
 DEFINE_FLAG(bool, identity_reload, false, "Enable checks for identity reload.");
 DEFINE_FLAG(int, reload_every, 0, "Reload every N stack overflow checks.");
 DEFINE_FLAG(bool, reload_every_optimized, true, "Only from optimized code.");

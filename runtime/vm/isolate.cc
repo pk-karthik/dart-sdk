@@ -1032,13 +1032,6 @@ void Isolate::ReportReloadError(const Error& error) {
 
 void Isolate::OnStackReload() {
   ASSERT(reload_context_ == NULL);
-  StackFrameIterator sfi(StackFrameIterator::kDontValidateFrames);
-
-  OS::Print("Starting reloading with the following stack:\n");
-  while (sfi.HasNextFrame()) {
-    StackFrame* sf = sfi.NextFrame();
-    OS::Print("Frame: %s\n", sf->ToCString());
-  }
 
   Thread* thread = Thread::Current();
   TimelineDurationScope tds(thread,
