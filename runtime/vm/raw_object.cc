@@ -181,8 +181,8 @@ intptr_t RawObject::SizeFromClass() const {
       // Get the (constant) instance size out of the class object.
       // TODO(koda): Add Size(ClassTable*) interface to allow caching in loops.
       Isolate* isolate = Isolate::Current();
-      ClassTable* class_table = isolate->class_table();
 #if defined(DEBUG)
+      ClassTable* class_table = isolate->class_table();
       if (!class_table->IsValidIndex(class_id) ||
           !class_table->HasValidClassAt(class_id)) {
         FATAL2("Invalid class id: %" Pd " from tags %" Px "\n",

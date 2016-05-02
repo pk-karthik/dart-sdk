@@ -232,7 +232,7 @@ void Class::ReplaceEnum(const Class& old_enum) const {
 
   // Grab the |index| field.
   const Field& index_field =
-      Field::Handle(old_enum.LookupField(Symbols::Index()));
+      Field::Handle(old_enum.LookupInstanceField(Symbols::Index()));
   ASSERT(!index_field.IsNull());
 
   // Build list of enum from |old_enum| that aren't present in |this|.
@@ -249,6 +249,7 @@ void Class::ReplaceEnum(const Class& old_enum) const {
             enum_values.Length());
   TIR_Print("Old version of enum had %" Pd " elements\n",
             old_enum_values.Length());
+
   for (intptr_t i = 0; i < old_enum_names.Length(); i++) {
     enum_name = String::RawCast(old_enum_names.At(i));
     const intptr_t index_in_new_cls = IndexOfEnum(enum_names, enum_name);
