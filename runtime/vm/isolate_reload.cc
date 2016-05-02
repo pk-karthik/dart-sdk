@@ -275,10 +275,7 @@ void IsolateReloadContext::FinishReload() {
   // Disable the background compiler while we are performing the reload.
   BackgroundCompiler::Disable();
 
-  // BuildClassMapping();
   BuildLibraryMapping();
-  // FinalizeClassTable();
-  // PrepareClassesForFinalization();  -- not needed.
   TIR_Print("---- DONE FINALIZING\n");
   if (ValidateReload()) {
     Commit();
@@ -1054,34 +1051,6 @@ RawClass* IsolateReloadContext::OldClassOrNull(
 }
 
 
-void IsolateReloadContext::BuildClassMapping() {
-  const intptr_t lower_cid_bound = saved_num_cids_;
-  const intptr_t upper_cid_bound = I->class_table()->NumCids();
-  ClassTable* class_table = I->class_table();
-  Class& replacement_or_new = Class::Handle();
-  Class& old = Class::Handle();
-  for (intptr_t i = lower_cid_bound; i < upper_cid_bound; i++) {
-    if (!class_table->HasValidClassAt(i)) {
-      continue;
-    }
-    replacement_or_new = class_table->At(i);
-    old ^= OldClassOrNull(replacement_or_new);
-    if (old.IsNull()) {
-      if (FLAG_identity_reload) {
-        TIR_Print("Could not find replacement class for %s\n",
-                  replacement_or_new.ToCString());
-        UNREACHABLE();
-      }
-      // New class.
-      AddClassMapping(replacement_or_new, replacement_or_new);
-    } else {
-      // Replaced class.
-      AddClassMapping(replacement_or_new, old);
-    }
-  }
-}
-
-
 bool IsolateReloadContext::IsDeadClassAt(intptr_t index) {
   ASSERT(dead_classes_ != NULL);
   return dead_classes_->At(index);
@@ -1119,78 +1088,6 @@ void IsolateReloadContext::CompactClassTable() {
   }
 
   I->class_table()->DropNewClasses(new_top);
-}
-
-
-void IsolateReloadContext::FinalizeClassTable() {
-  // Finalize the class table so that it looks like the class table will when
-  // the reload succeeds. We may still abort the reload, but we need to finalize
-  // the class table before proceeding further.
-  TIMELINE_SCOPE(FinalizeClassTable);
-
-  ASSERT(dead_classes_ == NULL);
-  // Initialize the dead classes array.
-  dead_classes_ = new MallocGrowableArray<bool>();
-  dead_classes_->SetLength(I->class_table()->NumCids());;
-  for (intptr_t i = 0; i < dead_classes_->length(); i++) {
-    (*dead_classes_)[i] = false;
-  }
-
-  // Move classes in the class table and update their cid.
-  Class& cls = Class::Handle();
-  Class& new_cls = Class::Handle();
-
-  UnorderedHashMap<ClassMapTraits> class_map(class_map_storage_);
-
-  UnorderedHashMap<ClassMapTraits>::Iterator it(&class_map);
-  while (it.MoveNext()) {
-    const intptr_t entry = it.Current();
-    new_cls = Class::RawCast(class_map.GetKey(entry));
-    cls = Class::RawCast(class_map.GetPayload(entry, 0));
-    if (new_cls.raw() != cls.raw()) {
-      TIR_Print("Replaced '%s'@%" Pd " with '%s'@%" Pd "\n",
-                cls.ToCString(), cls.id(),
-                new_cls.ToCString(), new_cls.id());
-      // Replace |cls| with |new_cls| in the class table.
-      ASSERT(!IsDeadClassAt(new_cls.id()));
-      MarkClassDeadAt(new_cls.id());
-      // TODO(rmacnak): Should be handled by the become forward.
-      I->class_table()->ReplaceClass(cls, new_cls);
-      AddBecomeMapping(cls, new_cls);
-    }
-  }
-
-  class_map.Release();
-
-  TIR_Print("---- Compacting the class table\n");
-  CompactClassTable();
-  TIR_Print("---- System has %" Pd " classes\n", I->class_table()->NumCids());
-
-  delete dead_classes_;
-  dead_classes_ = NULL;
-}
-
-
-void IsolateReloadContext::PrepareClassesForFinalization() {
-  // While validating that the reload will succeed, we finalize classes. The
-  // finalization of one class may trigger the finalization of other classes.
-  // Before we finalize any classes, we copy state from the old class that
-  // should be in place before class finalization occurs.
-  ASSERT(class_map_storage_ != Array::null());
-  UnorderedHashMap<ClassMapTraits> map(class_map_storage_);
-  UnorderedHashMap<ClassMapTraits>::Iterator it(&map);
-  Class& cls = Class::Handle();
-  Class& new_cls = Class::Handle();
-  while (it.MoveNext()) {
-    const intptr_t entry = it.Current();
-    new_cls = Class::RawCast(map.GetKey(entry));
-    cls = Class::RawCast(map.GetPayload(entry, 0));
-    if (new_cls.raw() != cls.raw()) {
-      new_cls.CopyCanonicalConstants(cls);
-      new_cls.CopyCanonicalTypes(cls);
-    }
-  }
-  map.Release();
 }
 
 

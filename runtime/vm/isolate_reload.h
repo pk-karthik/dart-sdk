@@ -134,9 +134,6 @@ class IsolateReloadContext {
   MallocGrowableArray<LibraryInfo> library_infos_;
 
   RawClass* OldClassOrNull(const Class& replacement_or_new);
-  void BuildClassMapping();
-  void FinalizeClassTable();
-  void PrepareClassesForFinalization();
 
   RawLibrary* OldLibraryOrNull(const Library& replacement_or_new);
   void BuildLibraryMapping();
