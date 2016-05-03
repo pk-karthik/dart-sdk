@@ -16703,7 +16703,6 @@ bool Type::HasResolvedTypeClass() const {
 
 classid_t Type::type_class_id() const {
   ASSERT(HasResolvedTypeClass());
-  ASSERT(!raw_ptr()->type_class_id_->IsHeapObject());
   return Smi::Value(reinterpret_cast<RawSmi*>(raw_ptr()->type_class_id_));
 }
 

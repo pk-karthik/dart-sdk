@@ -1046,7 +1046,6 @@ class SnapshotWriter : public BaseWriter {
   friend class RawGrowableObjectArray;
   friend class RawImmutableArray;
   friend class RawInstructions;
-  friend class RawRegExp;
   friend class RawLibrary;
   friend class RawLinkedHashMap;
   friend class RawLiteralToken;
@@ -1054,11 +1053,14 @@ class SnapshotWriter : public BaseWriter {
   friend class RawMirrorReference;
   friend class RawObjectPool;
   friend class RawReceivePort;
+  friend class RawRegExp;
   friend class RawScript;
   friend class RawStacktrace;
   friend class RawSubtypeTestCache;
   friend class RawTokenStream;
+  friend class RawType;
   friend class RawTypeArguments;
+  friend class RawTypeParameter;
   friend class RawUserTag;
   friend class SnapshotWriterVisitor;
   friend class WriteInlinedObjectVisitor;
