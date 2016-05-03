@@ -1389,6 +1389,8 @@ class Class : public Object {
 
   void DisableCHAOptimizedCode(const Class& subclass);
 
+  void DisableAllCHAOptimizedCode();
+
   RawArray* cha_codes() const { return raw_ptr()->cha_codes_; }
   void set_cha_codes(const Array& value) const;
 
@@ -3230,6 +3232,14 @@ class Field : public Object {
   static bool IsSetterName(const String& function_name);
 
  private:
+  static void InitializeNew(const Field& result,
+                            const String& name,
+                            bool is_static,
+                            bool is_final,
+                            bool is_const,
+                            bool is_reflectable,
+                            const Object& owner,
+                            TokenPosition token_pos);
   friend class StoreInstanceFieldInstr;  // Generated code access to bit field.
 
   enum {

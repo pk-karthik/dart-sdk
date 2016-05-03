@@ -68,6 +68,8 @@ class IsolateReloadContext {
 
   void RegisterClass(const Class& new_cls);
 
+  int64_t start_time_micros() const { return start_time_micros_; }
+
  private:
   void set_saved_root_library(const Library& value);
 
@@ -79,6 +81,7 @@ class IsolateReloadContext {
   ObjectStore* object_store();
 
   void SwitchStackToUnoptimizedCode();
+  void DeoptimizeDependentCode();
 
   void Checkpoint();
 
@@ -113,6 +116,7 @@ class IsolateReloadContext {
   void ResetMegamorphicCaches();
   void InvalidateWorld();
 
+  int64_t start_time_micros_;
   Isolate* isolate_;
   bool test_mode_;
   bool has_error_;

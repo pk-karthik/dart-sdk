@@ -155,7 +155,8 @@ bool IsolateReloadContext::IsSameLibrary(
 
 
 IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
-    : isolate_(isolate),
+    : start_time_micros_(OS::GetCurrentMonotonicMicros()),
+      isolate_(isolate),
       test_mode_(test_mode),
       has_error_(false),
       saved_num_cids_(-1),
@@ -221,7 +222,11 @@ void IsolateReloadContext::StartReload() {
 
   // Switch all functions on the stack to compiled, unoptimized code.
   SwitchStackToUnoptimizedCode();
-
+  // Deoptimize all code that had optimizing decisions that are dependent on
+  // assumptions from field guards or CHA.
+  // TODO(johnmccutchan): Deoptimizing dependent code here (before the reload)
+  // is paranoid. This likely can be moved to the commit phase.
+  DeoptimizeDependentCode();
   Checkpoint();
 
   // Block class finalization attempts when calling into the library
@@ -309,6 +314,38 @@ void IsolateReloadContext::SwitchStackToUnoptimizedCode() {
       func = frame->LookupDartFunction();
       ASSERT(!func.IsNull());
       func.EnsureHasCompiledUnoptimizedCode();
+    }
+  }
+}
+
+
+void IsolateReloadContext::DeoptimizeDependentCode() {
+  ClassTable* class_table = I->class_table();
+
+  const intptr_t bottom = Dart::vm_isolate()->class_table()->NumCids();
+  const intptr_t top = I->class_table()->NumCids();
+  Class& cls = Class::Handle();
+  Array& fields = Array::Handle();
+  Field& field = Field::Handle();
+  for (intptr_t cls_idx = bottom; cls_idx < top; cls_idx++) {
+    if (!class_table->HasValidClassAt(cls_idx)) {
+      // Skip.
+      continue;
+    }
+
+    // Deoptimize CHA code.
+    cls = class_table->At(cls_idx);
+    ASSERT(!cls.IsNull());
+
+    cls.DisableAllCHAOptimizedCode();
+
+    // Deoptimize field guard code.
+    fields = cls.fields();
+    ASSERT(!fields.IsNull());
+    for (intptr_t field_idx = 0; field_idx < fields.Length(); field_idx++) {
+      field = Field::RawCast(fields.At(field_idx));
+      ASSERT(!field.IsNull());
+      field.DeoptimizeDependentCode();
     }
   }
 }
@@ -942,6 +979,7 @@ class MarkFunctionsForRecompilation : public ObjectVisitor {
     // Null out the ICData array and code.
     func.ClearICDataArray();
     func.ClearCode();
+    func.set_was_compiled(false);
   }
 
   void PreserveUnoptimizedCode(const Function& func) {

@@ -504,10 +504,15 @@ bool Library::CanReload(const Library& replacement) const {
 }
 
 
+static const Function* static_call_target = NULL;
+
 void ICData::Reset(bool is_static_call) const {
   if (is_static_call) {
     const Function& old_target = Function::Handle(GetTargetAt(0));
-    ASSERT(!old_target.IsNull());
+    if (old_target.IsNull()) {
+      FATAL("old_target is NULL.\n");
+    }
+    static_call_target = &old_target;
     if (!old_target.is_static()) {
       // TODO(johnmccutchan): Improve this.
       TIR_Print("Cannot rebind super-call to %s from %s\n",

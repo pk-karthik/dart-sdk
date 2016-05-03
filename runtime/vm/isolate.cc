@@ -821,6 +821,7 @@ Isolate::Isolate(const Dart_IsolateFlags& api_flags)
       disabling_field_list_(GrowableObjectArray::null()),
       spawn_count_monitor_(new Monitor()),
       spawn_count_(0),
+      has_attempted_reload_(false),
       reload_blocked_(0),
       reload_context_(NULL) {
   NOT_IN_PRODUCT(FlagsCopyFrom(api_flags));
@@ -1044,6 +1045,7 @@ void Isolate::OnStackReload() {
 
 void Isolate::ReloadSources(bool test_mode) {
   ASSERT(reload_context_ == NULL);
+  has_attempted_reload_ = true;
   reload_context_ = new IsolateReloadContext(this, test_mode);
   reload_context_->StartReload();
 }
@@ -2259,6 +2261,8 @@ void Isolate::PauseEventHandler() {
   set_message_notify_callback(Isolate::WakePauseEventHandler);
 
   const bool had_isolate_reload_context = reload_context() != NULL;
+  const int64_t start_time_micros =
+      !had_isolate_reload_context ? 0 : reload_context()->start_time_micros();
   bool resume = false;
   while (true) {
     // Handle all available vm service messages, up to a resume
@@ -2273,7 +2277,11 @@ void Isolate::PauseEventHandler() {
     }
 
     if (had_isolate_reload_context && (reload_context() == NULL)) {
-      OS::Print("Reloading has finished!\n");
+      const int64_t reload_time_micros =
+          OS::GetCurrentMonotonicMicros() - start_time_micros;
+      double reload_millis =
+          MicrosecondsToMilliseconds(reload_time_micros);
+      OS::Print("Reloading has finished! (%.2f ms)\n", reload_millis);
       break;
     }
 

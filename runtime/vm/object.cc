@@ -2785,6 +2785,13 @@ void Class::DisableCHAOptimizedCode(const Class& subclass) {
 }
 
 
+void Class::DisableAllCHAOptimizedCode() {
+  ASSERT(Thread::Current()->IsMutatorThread());
+  CHACodeArray a(*this);
+  a.DisableCode();
+}
+
+
 bool Class::TraceAllocation(Isolate* isolate) const {
   ClassTable* class_table = isolate->class_table();
   return class_table->TraceAllocationFor(id());
@@ -7658,16 +7665,14 @@ RawField* Field::New() {
 }
 
 
-RawField* Field::New(const String& name,
-                     bool is_static,
-                     bool is_final,
-                     bool is_const,
-                     bool is_reflectable,
-                     const Class& owner,
-                     const AbstractType& type,
-                     TokenPosition token_pos) {
-  ASSERT(!owner.IsNull());
-  const Field& result = Field::Handle(Field::New());
+void Field::InitializeNew(const Field& result,
+                          const String& name,
+                          bool is_static,
+                          bool is_final,
+                          bool is_const,
+                          bool is_reflectable,
+                          const Object& owner,
+                          TokenPosition token_pos) {
   result.set_name(name);
   result.set_is_static(is_static);
   if (!is_static) {
@@ -7678,19 +7683,46 @@ RawField* Field::New(const String& name,
   result.set_is_reflectable(is_reflectable);
   result.set_is_double_initialized(false);
   result.set_owner(owner);
-  result.SetFieldType(type);
   result.set_token_pos(token_pos);
   result.set_has_initializer(false);
   result.set_is_unboxing_candidate(true);
-  result.set_guarded_cid(FLAG_use_field_guards ? kIllegalCid : kDynamicCid);
-  result.set_is_nullable(FLAG_use_field_guards ? false : true);
+  Isolate* isolate = Isolate::Current();
+  // Use field guards if they are enabled and the isolate has never reloaded.
+  // TODO(johnmccutchan): The reload case assumes the worst case (everything is
+  // dynamic and possibly null). Attempt to relax this later.
+  const bool use_field_guards =
+      FLAG_use_field_guards && !isolate->HasAttemptedReload();
+  result.set_guarded_cid(use_field_guards ? kIllegalCid : kDynamicCid);
+  result.set_is_nullable(use_field_guards ? false : true);
   result.set_guarded_list_length_in_object_offset(Field::kUnknownLengthOffset);
   // Presently, we only attempt to remember the list length for final fields.
-  if (is_final && FLAG_use_field_guards) {
+  if (is_final && use_field_guards) {
     result.set_guarded_list_length(Field::kUnknownFixedLength);
   } else {
     result.set_guarded_list_length(Field::kNoFixedLength);
   }
+}
+
+
+RawField* Field::New(const String& name,
+                     bool is_static,
+                     bool is_final,
+                     bool is_const,
+                     bool is_reflectable,
+                     const Class& owner,
+                     const AbstractType& type,
+                     TokenPosition token_pos) {
+  ASSERT(!owner.IsNull());
+  const Field& result = Field::Handle(Field::New());
+  InitializeNew(result,
+                name,
+                is_static,
+                is_final,
+                is_const,
+                is_reflectable,
+                owner,
+                token_pos);
+  result.SetFieldType(type);
   return result.raw();
 }
 
@@ -7702,25 +7734,14 @@ RawField* Field::NewTopLevel(const String& name,
                              TokenPosition token_pos) {
   ASSERT(!owner.IsNull());
   const Field& result = Field::Handle(Field::New());
-  result.set_name(name);
-  result.set_is_static(true);
-  result.set_is_final(is_final);
-  result.set_is_const(is_const);
-  result.set_is_reflectable(true);
-  result.set_is_double_initialized(false);
-  result.set_owner(owner);
-  result.set_token_pos(token_pos);
-  result.set_has_initializer(false);
-  result.set_is_unboxing_candidate(true);
-  result.set_guarded_cid(FLAG_use_field_guards ? kIllegalCid : kDynamicCid);
-  result.set_is_nullable(FLAG_use_field_guards ? false : true);
-  result.set_guarded_list_length_in_object_offset(Field::kUnknownLengthOffset);
-  // Presently, we only attempt to remember the list length for final fields.
-  if (is_final && FLAG_use_field_guards) {
-    result.set_guarded_list_length(Field::kUnknownFixedLength);
-  } else {
-    result.set_guarded_list_length(Field::kNoFixedLength);
-  }
+  InitializeNew(result,
+                name,
+                true, /* is_static */
+                is_final,
+                is_const,
+                true, /* is_reflectable */
+                owner,
+                token_pos);
   return result.raw();
 }
 

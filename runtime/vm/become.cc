@@ -153,6 +153,11 @@ void Become::ElementsForwardIdentity(const Array& before, const Array& after) {
   Isolate* isolate = thread->isolate();
   Heap* heap = isolate->heap();
 
+  {
+    // TODO(rmacnak): Investigate why this is necessary.
+    heap->CollectGarbage(Heap::kNew);
+  }
+
   TIMELINE_FUNCTION_GC_DURATION(thread, "Become::ElementsForwardIdentity");
   HeapIterationScope his;
 

@@ -470,6 +470,10 @@ class Isolate : public BaseIsolate {
     return reload_blocked_ == 0;
   }
 
+  bool HasAttemptedReload() const {
+    return has_attempted_reload_;
+  }
+
   bool IsReloading() const {
     return reload_context_ != NULL;
   }
@@ -824,6 +828,8 @@ class Isolate : public BaseIsolate {
   Monitor* spawn_count_monitor_;
   intptr_t spawn_count_;
 
+  // Has a reload ever been attempted?
+  bool has_attempted_reload_;
   intptr_t reload_blocked_;  // we can only reload when this is 0.
   IsolateReloadContext* reload_context_;
 
