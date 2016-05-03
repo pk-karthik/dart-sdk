@@ -146,6 +146,8 @@ class IsolateReloadContext {
 
   void AddBecomeMapping(const Object& old, const Object& nue);
 
+  void RebuildDirectSubclasses();
+
   RawClass* MappedClass(const Class& replacement_or_new);
   RawLibrary* MappedLibrary(const Library& replacement_or_new);
 

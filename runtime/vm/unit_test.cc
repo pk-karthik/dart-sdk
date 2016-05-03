@@ -109,7 +109,7 @@ static Dart_Handle IsolateReloadTestLibSource() {
 
 
 static void ReloadTest(Dart_NativeArguments native_args) {
-  TestCase::TriggerReload();
+  DART_CHECK_VALID(TestCase::TriggerReload());
 }
 
 
@@ -268,7 +268,7 @@ void TestCase::SetReloadTestScript(const char* script) {
 }
 
 
-void TestCase::TriggerReload() {
+Dart_Handle TestCase::TriggerReload() {
   Isolate* isolate = Isolate::Current();
 
   {
@@ -276,8 +276,7 @@ void TestCase::TriggerReload() {
     isolate->ReloadSources(/* test_mode = */ true);
   }
 
-  Dart_Handle result = Dart_FinalizeLoading(false);
-  DART_CHECK_VALID(result);
+  return Dart_FinalizeLoading(false);
 }
 
 
@@ -298,7 +297,10 @@ Dart_Handle TestCase::GetReloadErrorOrRootLibrary() {
 Dart_Handle TestCase::ReloadTestScript(const char* script) {
   SetReloadTestScript(script);
 
-  TriggerReload();
+  Dart_Handle result = TriggerReload();
+  if (Dart_IsError(result)) {
+    return result;
+  }
 
   return GetReloadErrorOrRootLibrary();
 }

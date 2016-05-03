@@ -1578,4 +1578,188 @@ TEST_CASE(IsolateReload_EnumValuesToString) {
                SimpleInvokeStr(lib, "main"));
 }
 
+
+TEST_CASE(IsolateReload_DirectSubclasses_Success) {
+  Object& new_subclass = Object::Handle();
+  String& name = String::Handle();
+
+  // Lookup the Iterator class by name from the dart core library.
+  ObjectStore* object_store = Isolate::Current()->object_store();
+  const Library& core_lib = Library::Handle(object_store->core_library());
+  name = String::New("Iterator");
+  const Class& iterator_cls = Class::Handle(core_lib.LookupClass(name));
+
+  // Keep track of how many subclasses an Iterator has.
+  const GrowableObjectArray& subclasses =
+      GrowableObjectArray::Handle(iterator_cls.direct_subclasses());
+  intptr_t saved_subclass_count = subclasses.Length();
+
+  const char* kScript =
+      "class AIterator extends Iterator {\n"
+      "}\n"
+      "main() {\n"
+      "  return 1;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(1, SimpleInvoke(lib, "main"));
+
+  // Iterator has one non-core subclass.
+  EXPECT_EQ(saved_subclass_count + 1, subclasses.Length());
+
+  // The new subclass is named AIterator.
+  new_subclass = subclasses.At(subclasses.Length() - 1);
+  name = Class::Cast(new_subclass).Name();
+  EXPECT_STREQ("AIterator", name.ToCString());
+
+  const char* kReloadScript =
+      "class AIterator {\n"
+      "}\n"
+      "class BIterator extends Iterator {\n"
+      "}\n"
+      "main() {\n"
+      "  return 2;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(2, SimpleInvoke(lib, "main"));
+
+  // Iterator still has only one non-core subclass (AIterator is gone).
+  EXPECT_EQ(saved_subclass_count + 1, subclasses.Length());
+
+  // The new subclass is named BIterator.
+  new_subclass = subclasses.At(subclasses.Length() - 1);
+  name = Class::Cast(new_subclass).Name();
+  EXPECT_STREQ("BIterator", name.ToCString());
+}
+
+
+TEST_CASE(IsolateReload_DirectSubclasses_GhostSubclass) {
+  Object& new_subclass = Object::Handle();
+  String& name = String::Handle();
+
+  // Lookup the Iterator class by name from the dart core library.
+  ObjectStore* object_store = Isolate::Current()->object_store();
+  const Library& core_lib = Library::Handle(object_store->core_library());
+  name = String::New("Iterator");
+  const Class& iterator_cls = Class::Handle(core_lib.LookupClass(name));
+
+  // Keep track of how many subclasses an Iterator has.
+  const GrowableObjectArray& subclasses =
+      GrowableObjectArray::Handle(iterator_cls.direct_subclasses());
+  intptr_t saved_subclass_count = subclasses.Length();
+
+  const char* kScript =
+      "class AIterator extends Iterator {\n"
+      "}\n"
+      "main() {\n"
+      "  return 1;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(1, SimpleInvoke(lib, "main"));
+
+  // Iterator has one new subclass.
+  EXPECT_EQ(saved_subclass_count + 1, subclasses.Length());
+
+  // The new subclass is named AIterator.
+  new_subclass = subclasses.At(subclasses.Length() - 1);
+  name = Class::Cast(new_subclass).Name();
+  EXPECT_STREQ("AIterator", name.ToCString());
+
+  const char* kReloadScript =
+      "class BIterator extends Iterator {\n"
+      "}\n"
+      "main() {\n"
+      "  return 2;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(2, SimpleInvoke(lib, "main"));
+
+  // Iterator has two non-core subclasses.
+  EXPECT_EQ(saved_subclass_count + 2, subclasses.Length());
+
+  // The non-core subclasses are AIterator and BIterator.
+  new_subclass = subclasses.At(subclasses.Length() - 2);
+  name = Class::Cast(new_subclass).Name();
+  EXPECT_STREQ("AIterator", name.ToCString());
+
+  new_subclass = subclasses.At(subclasses.Length() - 1);
+  name = Class::Cast(new_subclass).Name();
+  EXPECT_STREQ("BIterator", name.ToCString());
+}
+
+
+// Make sure that we restore the direct subclass info when we revert.
+TEST_CASE(IsolateReload_DirectSubclasses_Failure) {
+  Object& new_subclass = Object::Handle();
+  String& name = String::Handle();
+
+  // Lookup the Iterator class by name from the dart core library.
+  ObjectStore* object_store = Isolate::Current()->object_store();
+  const Library& core_lib = Library::Handle(object_store->core_library());
+  name = String::New("Iterator");
+  const Class& iterator_cls = Class::Handle(core_lib.LookupClass(name));
+
+  // Keep track of how many subclasses an Iterator has.
+  const GrowableObjectArray& subclasses =
+      GrowableObjectArray::Handle(iterator_cls.direct_subclasses());
+  intptr_t saved_subclass_count = subclasses.Length();
+
+  const char* kScript =
+      "class AIterator extends Iterator {\n"
+      "}\n"
+      "class Foo {\n"
+      "  final a;\n"
+      "  Foo(this.a);\n"
+      "}\n"
+      "main() {\n"
+      "  new Foo(5);\n"  // Force Foo to be finalized.
+      "  return 1;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(1, SimpleInvoke(lib, "main"));
+
+  // Iterator has one non-core subclass...
+  EXPECT_EQ(saved_subclass_count + 1, subclasses.Length());
+
+  // ... and the non-core subclass is named AIterator.
+  new_subclass = subclasses.At(subclasses.Length() - 1);
+  name = Class::Cast(new_subclass).Name();
+  EXPECT_STREQ("AIterator", name.ToCString());
+
+  // Attempt to reload with a bogus script.
+  const char* kReloadScript =
+      "class BIterator extends Iterator {\n"
+      "}\n"
+      "class Foo {\n"
+      "  final a kjsdf ksjdf ;\n"  // When we refinalize, we get an error.
+      "  Foo(this.a);\n"
+      "}\n"
+      "main() {\n"
+      "  new Foo(5);\n"
+      "  return 2;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_ERROR(lib, "unexpected token");
+
+  // If we don't clean up the subclasses, we would find BIterator in
+  // the list of subclasses, which would be bad.  Make sure that
+  // Iterator still has only one non-core subclass...
+  EXPECT_EQ(saved_subclass_count + 1, subclasses.Length());
+
+  // ...and the non-core subclass is still named AIterator.
+  new_subclass = subclasses.At(subclasses.Length() - 1);
+  name = Class::Cast(new_subclass).Name();
+  EXPECT_STREQ("AIterator", name.ToCString());
+}
+
 }  // namespace dart

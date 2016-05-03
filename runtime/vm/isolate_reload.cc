@@ -283,6 +283,10 @@ void IsolateReloadContext::FinishReload() {
   } else {
     Rollback();
   }
+  // ValidateReload mutates the direct subclass information and does
+  // not remove dead subclasses.  Rebuild the direct subclass
+  // information from scratch.
+  RebuildDirectSubclasses();
 
   BackgroundCompiler::Enable();
 }
@@ -1124,6 +1128,40 @@ void IsolateReloadContext::AddBecomeMapping(const Object& old,
   bool update = become_map.UpdateOrInsert(old, neu);
   ASSERT(!update);
   become_map_storage_ = become_map.Release().raw();
+}
+
+
+void IsolateReloadContext::RebuildDirectSubclasses() {
+  ClassTable* class_table = I->class_table();
+  intptr_t num_cids = class_table->NumCids();
+
+  // Clear the direct subclasses for all classes.
+  Class& cls = Class::Handle();
+  GrowableObjectArray& subclasses = GrowableObjectArray::Handle();
+  for (intptr_t i = 1; i < num_cids; i++) {
+    if (class_table->HasValidClassAt(i)) {
+      cls = class_table->At(i);
+      subclasses = cls.direct_subclasses();
+      if (!subclasses.IsNull()) {
+        subclasses.SetLength(0);
+      }
+    }
+  }
+
+  // Recompute the direct subclasses.
+  AbstractType& super_type = AbstractType::Handle();
+  Class& super_cls = Class::Handle();
+  for (intptr_t i = 1; i < num_cids; i++) {
+    if (class_table->HasValidClassAt(i)) {
+      cls = class_table->At(i);
+      super_type = cls.super_type();
+      if (!super_type.IsNull() && !super_type.IsObjectType()) {
+        super_cls = cls.SuperClass();
+        ASSERT(!super_cls.IsNull());
+        super_cls.AddDirectSubclass(cls);
+      }
+    }
+  }
 }
 
 }  // namespace dart

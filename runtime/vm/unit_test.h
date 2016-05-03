@@ -307,7 +307,7 @@ class TestCase : TestCaseBase {
   // Sets |script| to be the source used at next reload.
   static void SetReloadTestScript(const char* script);
   // Initiates the reload.
-  static void TriggerReload();
+  static Dart_Handle TriggerReload();
   // Gets the result of a reload.
   static Dart_Handle GetReloadErrorOrRootLibrary();
 
