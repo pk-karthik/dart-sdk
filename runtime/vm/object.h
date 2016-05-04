@@ -1041,8 +1041,6 @@ class Class : public Object {
     return OFFSET_OF(RawClass, type_arguments_field_offset_in_words_);
   }
 
-  intptr_t NumInstanceFields() const;
-
   // Returns the cached canonical type of this class, i.e. the canonical type
   // whose type class is this class and whose type arguments are the
   // uninstantiated type parameters declared by this class if it is generic,

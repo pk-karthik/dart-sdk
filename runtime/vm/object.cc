@@ -3660,21 +3660,6 @@ void Class::set_canonical_types(const Object& value) const {
 }
 
 
-intptr_t Class::NumInstanceFields() const {
-  const Array& all_fields = Array::Handle(fields());
-  Field& field = Field::Handle();
-  intptr_t instance_fields = 0;
-  for (intptr_t i = 0; i < all_fields.Length(); i++) {
-    field = Field::RawCast(all_fields.At(i));
-    ASSERT(!field.IsNull());
-    if (!field.is_static()) {
-      instance_fields++;
-    }
-  }
-  return instance_fields;
-}
-
-
 RawType* Class::CanonicalType() const {
   if (!IsGeneric() && !IsClosureClass()) {
     return reinterpret_cast<RawType*>(raw_ptr()->canonical_types_);
@@ -7724,6 +7709,7 @@ void Field::InitializeNew(const Field& result,
   result.set_has_initializer(false);
   result.set_is_unboxing_candidate(true);
   Isolate* isolate = Isolate::Current();
+
   // Use field guards if they are enabled and the isolate has never reloaded.
   // TODO(johnmccutchan): The reload case assumes the worst case (everything is
   // dynamic and possibly null). Attempt to relax this later.
