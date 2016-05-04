@@ -127,11 +127,6 @@ class IsolateReloadContext {
   intptr_t saved_num_cids_;
   RawClass** saved_class_table_;
 
-  bool IsDeadClassAt(intptr_t index);
-  void MarkClassDeadAt(intptr_t index);
-  MallocGrowableArray<bool>* dead_classes_;
-  void CompactClassTable();
-
   intptr_t num_saved_libs_;
   struct LibraryInfo {
     bool dirty;

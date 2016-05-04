@@ -150,10 +150,6 @@ class ClassTable {
   explicit ClassTable(ClassTable* original);
   ~ClassTable();
 
-  // TODO(turnidge): Move or remove.
-  void CopyFrom(ClassTable* original);
-  void Reset();
-
   // Thread-safe.
   RawClass* At(intptr_t index) const {
     ASSERT(IsValidIndex(index));
@@ -173,10 +169,13 @@ class ClassTable {
     return table_[index] != NULL;
   }
 
-  void ClearClassAt(intptr_t index);
-  void DropNewClasses(intptr_t saved_num_cids);
-
   intptr_t NumCids() const { return top_; }
+
+  // Used to drop recently added classes.
+  void SetNumCids(intptr_t num_cids) {
+    ASSERT(num_cids <= top_);
+    top_ = num_cids;
+  }
 
   void Register(const Class& cls);
 
@@ -241,12 +240,9 @@ class ClassTable {
   bool TraceAllocationFor(intptr_t cid);
 
  private:
-  void MoveClass(intptr_t free_index, intptr_t cls_index);
-
   friend class GCMarker;
   friend class ScavengerVisitor;
   friend class ClassHeapStatsTestHelper;
-  friend class IsolateReloadContext;
   static const int initial_capacity_ = 512;
   static const int capacity_increment_ = 256;
 

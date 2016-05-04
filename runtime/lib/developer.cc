@@ -17,11 +17,6 @@
 
 namespace dart {
 
-DEFINE_NATIVE_ENTRY(Developer_reloadIsolate, 0) {
-  isolate->OnStackReload();
-  return Object::null();
-}
-
 // Native implementations for the dart:developer library.
 DEFINE_NATIVE_ENTRY(Developer_debugger, 2) {
   GET_NON_NULL_NATIVE_ARGUMENT(Bool, when, arguments->NativeArgAt(0));
