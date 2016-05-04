@@ -139,7 +139,7 @@ class ElementInfoCollector extends BaseElementVisitor<Info, dynamic> {
     _elementToInfo[element] = info;
     if (element.isConst) {
       var value = compiler.backend.constantCompilerTask
-          .getConstantValueForVariable(element);
+          .getConstantValue(element.constant);
       if (value != null) {
         info.initializer = _constantToInfo[value];
       }
@@ -579,7 +579,7 @@ class DumpInfoTask extends CompilerTask implements InfoReporter {
         dart2jsVersion:
             compiler.options.hasBuildId ? compiler.options.buildId : null,
         compilationMoment: new DateTime.now(),
-        compilationDuration: compiler.totalCompileTime.elapsed,
+        compilationDuration: compiler.measurer.wallClock.elapsed,
         toJsonDuration: stopwatch.elapsedMilliseconds,
         dumpInfoDuration: this.timing,
         noSuchMethodEnabled: compiler.backend.enabledNoSuchMethod,

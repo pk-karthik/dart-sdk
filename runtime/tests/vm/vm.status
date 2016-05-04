@@ -40,7 +40,7 @@ cc/Service_Profile: Skip
 cc/Dart2JSCompilerStats: Skip
 cc/CorelibCompilerStats: Skip
 
-[ $arch == simarm || $arch == simarmv6 || $arch == simarmv5te || $arch == simarm64 || $arch == simmips || $arch == simdbc  ]
+[ $arch == simarm || $arch == simarmv6 || $arch == simarmv5te || $arch == simarm64 || $arch == simmips || $arch == simdbc  || $arch == simdbc64 ]
 cc/Service_Profile: Skip
 
 [ $compiler == dart2js ]
@@ -105,7 +105,7 @@ cc/IsolateSetCheckedMode: Fail,OK  # Expects exact type name.
 cc/LibraryGetClassNames: Fail,OK  # Expects exact type name.
 cc/StackTraceFormat: Fail,OK  # Expects exact type name.
 
-[ $arch == simdbc ]
+[ $arch == simdbc || $arch == simdbc64 ]
 # TODO(vegorov) Profiler is completely disabled in SIMDBC builds.
 cc/Profiler_AllocationSampleTest: Skip
 cc/Profiler_ArrayAllocation: Skip
@@ -176,10 +176,6 @@ cc/Debug_StepInto: Skip
 # TODO(vegorov) These parser tests rely on debugger.
 cc/Parser_AllocateVariables_CapturedVar: Skip
 cc/Parser_AllocateVariables_MiddleChain: Skip
-
-# TODO(vegorov) Test needs to generate a large enough function to go on to the
-# large page. However large enough function overflows bytecode encoding.
-cc/FindCodeObject: Skip
 
 # This test is meaningless for DBC as allocation stubs are not used.
 cc/RegenerateAllocStubs: Skip

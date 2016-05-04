@@ -5,7 +5,7 @@
 library dart2js.serialization_test_helper;
 
 import 'dart:io';
-import 'memory_compiler.dart';
+import '../memory_compiler.dart';
 import 'package:async_helper/async_helper.dart';
 import 'package:compiler/src/common/resolution.dart';
 import 'package:compiler/src/commandline_options.dart';
@@ -105,8 +105,12 @@ bool check(var object1, var object2, String property, var value1, var value2,
            [bool equivalence(a, b) = equality]) {
   if (!equivalence(value1, value2)) {
     throw "property='$property'\n "
-          "object1=$object1 (${object1.runtimeType})\n value='${value1}' <>\n "
-          "object2=$object2 (${object2.runtimeType})\n value='${value2}'";
+          "object1=$object1 (${object1.runtimeType})\n "
+          "value=${value1 == null ? "null" : "'$value1'"} "
+          "(${value1.runtimeType}) <>\n "
+          "object2=$object2 (${object2.runtimeType})\n "
+          "value=${value2 == null ? "null" : "'$value2'"} "
+          "(${value2.runtimeType})";
   }
   return true;
 }

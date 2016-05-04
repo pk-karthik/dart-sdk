@@ -1328,9 +1328,26 @@ void FlowGraphCompiler::EmitMegamorphicInstanceCall(
   ASSERT(!arguments_descriptor.IsNull() && (arguments_descriptor.Length() > 0));
   const MegamorphicCache& cache = MegamorphicCache::ZoneHandle(zone(),
       MegamorphicCacheTable::Lookup(isolate(), name, arguments_descriptor));
-
   __ Comment("MegamorphicCall");
+  // Load receiver into RDI.
   __ movq(RDI, Address(RSP, (argument_count - 1) * kWordSize));
+  Label done;
+  if (ShouldInlineSmiStringHashCode(ic_data)) {
+    Label megamorphic_call;
+    __ Comment("Inlined get:hashCode for Smi and OneByteString");
+    __ movq(RAX, RDI);  // Move Smi hashcode to RAX.
+    __ testq(RDI, Immediate(kSmiTagMask));
+    __ j(ZERO, &done, Assembler::kNearJump);  // It is Smi, we are done.
+
+    __ CompareClassId(RDI, kOneByteStringCid);
+    __ j(NOT_EQUAL, &megamorphic_call, Assembler::kNearJump);
+    __ movq(RAX, FieldAddress(RDI, String::hash_offset()));
+    __ cmpq(RAX, Immediate(0));
+    __ j(NOT_EQUAL, &done, Assembler::kNearJump);
+
+    __ Bind(&megamorphic_call);
+    __ Comment("Slow case: megamorphic call");
+  }
   __ LoadObject(RBX, cache);
   if (FLAG_use_megamorphic_stub) {
     __ Call(*StubCode::MegamorphicLookup_entry());
@@ -1339,6 +1356,7 @@ void FlowGraphCompiler::EmitMegamorphicInstanceCall(
   }
   __ call(RCX);
 
+  __ Bind(&done);
   RecordSafepoint(locs, slow_path_argument_count);
   const intptr_t deopt_id_after = Thread::ToDeoptAfter(deopt_id);
   if (FLAG_precompiled_mode) {

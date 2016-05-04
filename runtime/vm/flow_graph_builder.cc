@@ -2247,9 +2247,6 @@ intptr_t EffectGraphVisitor::GetCurrentTempLocalIndex() const {
 
 LocalVariable* EffectGraphVisitor::EnterTempLocalScope(
     Value* value, TokenPosition token_pos) {
-  Do(new(Z) PushTempInstr(value));
-  owner()->AllocateTemp();
-
   ASSERT(value->definition()->temp_index() == (owner()->temp_count() - 1));
   intptr_t index = GetCurrentTempLocalIndex();
   char name[64];
@@ -2278,12 +2275,9 @@ void EffectGraphVisitor::BuildLetTempExpressions(LetNode* node) {
     ValueGraphVisitor for_value(owner());
     node->InitializerAt(i)->Visit(&for_value);
     Append(for_value);
-    Value* temp_val = for_value.value();
     ASSERT(!node->TempAt(i)->HasIndex() ||
            (node->TempAt(i)->index() == GetCurrentTempLocalIndex()));
     node->TempAt(i)->set_index(GetCurrentTempLocalIndex());
-    Do(new(Z) PushTempInstr(temp_val));
-    owner()->AllocateTemp();
   }
 }
 
@@ -3451,8 +3445,6 @@ void EffectGraphVisitor::VisitNativeBodyNode(NativeBodyNode* node) {
         load->set_is_immutable(kind != MethodRecognizer::kGrowableArrayLength);
         return ReturnDefinition(load);
       }
-#if !defined(TARGET_ARCH_DBC)
-      // TODO(vegorov) add bytecode to support this method.
       case MethodRecognizer::kClassIDgetID: {
         LocalVariable* value_var =
             node->scope()->LookupVariable(Symbols::Value(), true);
@@ -3460,7 +3452,6 @@ void EffectGraphVisitor::VisitNativeBodyNode(NativeBodyNode* node) {
         LoadClassIdInstr* load = new(Z) LoadClassIdInstr(value);
         return ReturnDefinition(load);
       }
-#endif
       case MethodRecognizer::kGrowableArrayCapacity: {
         Value* receiver = Bind(BuildLoadThisVar(node->scope(), token_pos));
         LoadFieldInstr* data_load = new(Z) LoadFieldInstr(

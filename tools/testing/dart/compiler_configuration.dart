@@ -52,6 +52,7 @@ abstract class CompilerConfiguration {
     bool useSdk = configuration['use_sdk'];
     bool isCsp = configuration['csp'];
     bool useCps = configuration['cps_ir'];
+    bool useBlobs = configuration['use_blobs'];
 
     switch (compiler) {
       case 'dart2analyzer':
@@ -77,7 +78,9 @@ abstract class CompilerConfiguration {
         return new PrecompilerCompilerConfiguration(
             isDebug: isDebug,
             isChecked: isChecked,
-            arch: configuration['arch']);
+            arch: configuration['arch'],
+            useBlobs: useBlobs,
+            isAndroid: configuration['system'] == 'android');
       case 'none':
         return new NoneCompilerConfiguration(
             isDebug: isDebug,
@@ -299,10 +302,12 @@ class Dart2jsCompilerConfiguration extends Dart2xCompilerConfiguration {
 
 class PrecompilerCompilerConfiguration extends CompilerConfiguration {
   final String arch;
+  final bool useBlobs;
+  final bool isAndroid;
 
-  PrecompilerCompilerConfiguration({bool isDebug, bool isChecked, String arch})
-      : super._subclass(isDebug: isDebug, isChecked: isChecked),
-        arch = arch;
+  PrecompilerCompilerConfiguration({bool isDebug, bool isChecked,
+    this.arch, this.useBlobs, this.isAndroid})
+      : super._subclass(isDebug: isDebug, isChecked: isChecked);
 
   int computeTimeoutMultiplier() {
     int multiplier = 2;
@@ -317,14 +322,16 @@ class PrecompilerCompilerConfiguration extends CompilerConfiguration {
       CommandBuilder commandBuilder,
       List arguments,
       Map<String, String> environmentOverrides) {
-    return new CommandArtifact(<Command>[
-      this.computeCompilationCommand(tempDir, buildDir, CommandBuilder.instance,
-          arguments, environmentOverrides),
-      this.computeAssembleCommand(tempDir, buildDir, CommandBuilder.instance,
-          arguments, environmentOverrides),
-      this.computeRemoveAssemblyCommand(tempDir, buildDir,
-          CommandBuilder.instance, arguments, environmentOverrides)
-    ], '$tempDir', 'application/dart-precompiled');
+    var commands = new List<Command>();
+    commands.add(this.computeCompilationCommand(tempDir, buildDir, CommandBuilder.instance,
+          arguments, environmentOverrides));
+    if (!useBlobs) {
+      commands.add(this.computeAssembleCommand(tempDir, buildDir, CommandBuilder.instance,
+          arguments, environmentOverrides));
+      commands.add(this.computeRemoveAssemblyCommand(tempDir, buildDir,
+          CommandBuilder.instance, arguments, environmentOverrides));
+    }
+    return new CommandArtifact(commands, '$tempDir', 'application/dart-precompiled');
   }
 
   CompilationCommand computeCompilationCommand(
@@ -336,6 +343,12 @@ class PrecompilerCompilerConfiguration extends CompilerConfiguration {
     var exec = "$buildDir/dart_bootstrap";
     var args = new List();
     args.add("--gen-precompiled-snapshot=$tempDir");
+    if (useBlobs) {
+      args.add("--use_blobs");
+    }
+    if (isAndroid && arch == 'arm') {
+      args.add('--no-sim-use-hardfp');
+    }
     args.addAll(arguments);
 
     return commandBuilder.getCompilationCommand('precompiler', tempDir, !useSdk,
@@ -348,7 +361,8 @@ class PrecompilerCompilerConfiguration extends CompilerConfiguration {
       CommandBuilder commandBuilder,
       List arguments,
       Map<String, String> environmentOverrides) {
-    var cc, cc_flags, shared, libname;
+
+    var cc, shared, libname;
     if (Platform.isLinux) {
       cc = 'gcc';
       shared = '-shared';
@@ -360,17 +374,24 @@ class PrecompilerCompilerConfiguration extends CompilerConfiguration {
     } else {
       throw "Platform not supported: ${Platform.operatingSystem}";
     }
+    if (isAndroid) {
+      // TODO: If we're not using "--use_blobs" we need to use the arm cross
+      // compiler instead of just 'gcc' for .
+    }
 
+    var cc_flags;
     if (arch == 'x64') {
       cc_flags = "-m64";
     } else if (arch == 'simarm64') {
       cc_flags = "-m64";
+    } else if (arch == 'ia32') {
+      cc_flags = "-m32";
     } else if (arch == 'simarm') {
       cc_flags = "-m32";
     } else if (arch == 'simmips') {
       cc_flags = "-m32";
     } else if (arch == 'arm') {
-      cc_flags = "";
+      cc_flags = null;
     } else if (arch == 'mips') {
       cc_flags = "-EL";
     } else {
@@ -378,13 +399,12 @@ class PrecompilerCompilerConfiguration extends CompilerConfiguration {
     }
 
     var exec = cc;
-    var args = [
-      shared,
-      cc_flags,
+    var args = (cc_flags != null) ? [ shared, cc_flags ] : [ shared ];
+    args.addAll([
       '-o',
       '$tempDir/$libname',
       '$tempDir/precompiled.S'
-    ];
+    ]);
 
     return commandBuilder.getCompilationCommand('assemble', tempDir, !useSdk,
         bootstrapDependencies(buildDir), exec, args, environmentOverrides);

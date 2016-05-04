@@ -2749,8 +2749,8 @@ AstNode* Parser::CheckDuplicateFieldInit(
       // no existing names.
       nsm_args->Add(new(Z) LiteralNode(init_pos, Object::null_array()));
 
-      AstNode* nsm_call =
-          MakeStaticCall(Symbols::NoSuchMethodError(),
+      AstNode* nsm_call = MakeStaticCall(
+          Symbols::NoSuchMethodError(),
           Library::PrivateCoreLibName(Symbols::ThrowNew()),
           nsm_args);
 
@@ -3297,7 +3297,9 @@ SequenceNode* Parser::ParseFunc(const Function& func, bool check_semicolon) {
 
     // The number of parameters and their type are not yet set in local
     // functions, since they are not 'top-level' parsed.
-    if (func.IsLocalFunction()) {
+    // However, they are already set when the local function is compiled, since
+    // the local function was parsed when its parent was compiled.
+    if (func.parameter_types() == Object::empty_array().raw()) {
       AddFormalParamsToFunction(&params, func);
     }
     SetupDefaultsForOptionalParams(params);
@@ -7288,6 +7290,8 @@ void Parser::AddFormalParamsToFunction(const ParamList* params,
                                 params->has_optional_positional_parameters);
   const int num_parameters = params->parameters->length();
   ASSERT(num_parameters == func.NumParameters());
+  ASSERT(func.parameter_types() == Object::empty_array().raw());
+  ASSERT(func.parameter_names() == Object::empty_array().raw());
   func.set_parameter_types(Array::Handle(Array::New(num_parameters,
                                                     Heap::kOld)));
   func.set_parameter_names(Array::Handle(Array::New(num_parameters,
@@ -11833,7 +11837,7 @@ void Parser::ResolveTypeFromClass(const Class& scope_class,
           }
           // A type parameter cannot be parameterized, so make the type
           // malformed if type arguments have previously been parsed.
-          if (!TypeArguments::Handle(Z, type->arguments()).IsNull()) {
+          if (type->arguments() != TypeArguments::null()) {
             *type = ClassFinalizer::NewFinalizedMalformedType(
                 Error::Handle(Z),  // No previous error.
                 script_,
@@ -11874,12 +11878,13 @@ void Parser::ResolveTypeFromClass(const Class& scope_class,
     }
   }
   // Resolve type arguments, if any.
-  const TypeArguments& arguments = TypeArguments::Handle(Z, type->arguments());
-  if (!arguments.IsNull()) {
+  if (type->arguments() != TypeArguments::null()) {
+    const TypeArguments& arguments =
+        TypeArguments::Handle(Z, type->arguments());
     const intptr_t num_arguments = arguments.Length();
+    AbstractType& type_argument = AbstractType::Handle(Z);
     for (intptr_t i = 0; i < num_arguments; i++) {
-      AbstractType& type_argument = AbstractType::Handle(Z,
-                                                         arguments.TypeAt(i));
+      type_argument ^= arguments.TypeAt(i);
       ResolveTypeFromClass(scope_class, finalization, &type_argument);
       arguments.SetTypeAt(i, type_argument);
     }
@@ -11970,6 +11975,11 @@ void Parser::InsertCachedConstantValue(const String& url,
 
 void Parser::CacheConstantValue(TokenPosition token_pos,
                                 const Instance& value) {
+  if (current_function().kind() == RawFunction::kImplicitStaticFinalGetter) {
+    // Don't cache constants in initializer expressions. They get
+    // evaluated only once.
+    return;
+  }
   const String& url = String::Handle(Z, script_.url());
   InsertCachedConstantValue(url, token_pos, value);
   if (FLAG_compiler_stats) {

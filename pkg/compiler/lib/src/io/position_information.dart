@@ -8,7 +8,8 @@
 library dart2js.source_information.position;
 
 import '../common.dart';
-import '../elements/elements.dart' show AstElement, FieldElement;
+import '../elements/elements.dart'
+    show AstElement, FieldElement, ResolvedAst, ResolvedAstKind;
 import '../js/js.dart' as js;
 import '../js/js_debug.dart';
 import '../js/js_source_mapping.dart';
@@ -100,8 +101,8 @@ class PositionSourceInformationStrategy
   const PositionSourceInformationStrategy();
 
   @override
-  SourceInformationBuilder createBuilderForContext(AstElement element) {
-    return new PositionSourceInformationBuilder(element);
+  SourceInformationBuilder createBuilderForContext(ResolvedAst resolvedAst) {
+    return new PositionSourceInformationBuilder(resolvedAst);
   }
 
   @override
@@ -140,23 +141,24 @@ class SourceMappedMarker extends SourceInformation {
 class PositionSourceInformationBuilder implements SourceInformationBuilder {
   final SourceFile sourceFile;
   final String name;
-  final AstElement element;
+  final ResolvedAst resolvedAst;
 
-  PositionSourceInformationBuilder(AstElement element)
-      : this.element = element,
-        sourceFile = element.implementation.compilationUnit.script.file,
-        name = computeElementNameForSourceMaps(element);
+  PositionSourceInformationBuilder(ResolvedAst resolvedAst)
+      : this.resolvedAst = resolvedAst,
+        sourceFile = computeSourceFile(resolvedAst),
+        name = computeElementNameForSourceMaps(resolvedAst.element);
 
-  SourceInformation buildDeclaration(AstElement element) {
-    if (element.isSynthesized) {
-      return new PositionSourceInformation(new OffsetSourceLocation(
-          sourceFile, element.position.charOffset, name));
+  SourceInformation buildDeclaration(ResolvedAst resolvedAst) {
+    if (resolvedAst.kind != ResolvedAstKind.PARSED) {
+      SourceSpan span = resolvedAst.element.sourcePosition;
+      return new PositionSourceInformation(
+          new OffsetSourceLocation(sourceFile, span.begin, name));
     } else {
       return new PositionSourceInformation(
-          new OffsetSourceLocation(sourceFile,
-              element.resolvedAst.node.getBeginToken().charOffset, name),
-          new OffsetSourceLocation(sourceFile,
-              element.resolvedAst.node.getEndToken().charOffset, name));
+          new OffsetSourceLocation(
+              sourceFile, resolvedAst.node.getBeginToken().charOffset, name),
+          new OffsetSourceLocation(
+              sourceFile, resolvedAst.node.getEndToken().charOffset, name));
     }
   }
 
@@ -236,15 +238,10 @@ class PositionSourceInformationBuilder implements SourceInformationBuilder {
 
   @override
   SourceInformation buildVariableDeclaration() {
-    if (element.hasNode) {
-      Node node = element.node;
-      if (node is FunctionExpression) {
-        return buildBegin(node.body);
-      } else if (element.isField) {
-        FieldElement field = element;
-        if (field.initializer != null) {
-          return buildBegin(field.initializer);
-        }
+    if (resolvedAst.kind == ResolvedAstKind.PARSED) {
+      Node body = resolvedAst.body;
+      if (body != null) {
+        return buildBegin(body);
       }
       // TODO(johnniwinther): Are there other cases?
     }
@@ -252,8 +249,8 @@ class PositionSourceInformationBuilder implements SourceInformationBuilder {
   }
 
   @override
-  SourceInformationBuilder forContext(AstElement element) {
-    return new PositionSourceInformationBuilder(element);
+  SourceInformationBuilder forContext(ResolvedAst resolvedAst) {
+    return new PositionSourceInformationBuilder(resolvedAst);
   }
 
   @override

@@ -309,7 +309,8 @@ abstract class Enqueuer {
         recentClasses.add(superclass);
         superclass.ensureResolved(resolution);
         superclass.implementation.forEachMember(processInstantiatedClassMember);
-        if (isResolutionQueue && !superclass.isSynthesized) {
+        if (isResolutionQueue &&
+            !compiler.serialization.isDeserialized(superclass)) {
           compiler.resolver.checkClass(superclass);
         }
         // We only tell the backend once that [superclass] was instantiated, so
@@ -701,6 +702,8 @@ abstract class Enqueuer {
   void forgetElement(Element element) {
     universe.forgetElement(element, compiler);
     _processedClasses.remove(element);
+    instanceMembersByName[element.name]?.remove(element);
+    instanceFunctionsByName[element.name]?.remove(element);
   }
 }
 

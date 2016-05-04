@@ -1670,6 +1670,13 @@ abstract class UnlinkedExecutable extends base.SummaryClass {
   bool get isAbstract;
 
   /**
+   * Indicates whether the executable has body marked as being asynchronous.
+   */
+  @informative
+  @Id(27)
+  bool get isAsynchronous;
+
+  /**
    * Indicates whether the executable is declared using the `const` keyword.
    */
   @Id(12)
@@ -1686,6 +1693,13 @@ abstract class UnlinkedExecutable extends base.SummaryClass {
    */
   @Id(8)
   bool get isFactory;
+
+  /**
+   * Indicates whether the executable has body marked as being a generator.
+   */
+  @informative
+  @Id(28)
+  bool get isGenerator;
 
   /**
    * Indicates whether the executable is a redirected constructor.
@@ -1713,7 +1727,6 @@ abstract class UnlinkedExecutable extends base.SummaryClass {
   /**
    * The list of local functions.
    */
-  @informative
   @Id(18)
   List<UnlinkedExecutable> get localFunctions;
 
@@ -2274,8 +2287,8 @@ abstract class UnlinkedPublicName extends base.SummaryClass {
 
   /**
    * If this [UnlinkedPublicName] is a class, the list of members which can be
-   * referenced from constants or factory redirects - static constant fields,
-   * static methods, and constructors.  Otherwise empty.
+   * referenced statically - static fields, static methods, and constructors.
+   * Otherwise empty.
    *
    * Unnamed constructors are not included since they do not constitute a
    * separate name added to any namespace.
@@ -2624,7 +2637,6 @@ abstract class UnlinkedVariable extends base.SummaryClass {
    * The synthetic initializer function of the variable.  Absent if the variable
    * does not have an initializer.
    */
-  @informative
   @Id(13)
   UnlinkedExecutable get initializer;
 

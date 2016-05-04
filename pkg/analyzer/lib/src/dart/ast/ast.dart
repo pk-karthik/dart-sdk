@@ -43,7 +43,7 @@ class AdjacentStringsImpl extends StringLiteralImpl implements AdjacentStrings {
    * valid, the list of [strings] must contain at least two elements.
    */
   AdjacentStringsImpl(List<StringLiteral> strings) {
-    _strings = new NodeList<StringLiteral>(this, strings);
+    _strings = new NodeListImpl<StringLiteral>(this, strings);
   }
 
   @override
@@ -96,9 +96,9 @@ abstract class AnnotatedNodeImpl extends AstNodeImpl implements AnnotatedNode {
    * and [metadata] can be `null` if the node does not have the corresponding
    * attribute.
    */
-  AnnotatedNodeImpl(Comment comment, List<Annotation> metadata) {
+  AnnotatedNodeImpl(CommentImpl comment, List<Annotation> metadata) {
     _comment = _becomeParentOf(comment);
-    _metadata = new NodeList<Annotation>(this, metadata);
+    _metadata = new NodeListImpl<Annotation>(this, metadata);
   }
 
   @override
@@ -124,7 +124,7 @@ abstract class AnnotatedNodeImpl extends AstNodeImpl implements AnnotatedNode {
 
   @override
   void set documentationComment(Comment comment) {
-    _comment = _becomeParentOf(comment);
+    _comment = _becomeParentOf(comment as AstNodeImpl);
   }
 
   @override
@@ -238,8 +238,8 @@ class AnnotationImpl extends AstNodeImpl implements Annotation {
    * named constructor. The [arguments] can be `null` if the annotation is not
    * referencing a constructor.
    */
-  AnnotationImpl(this.atSign, Identifier name, this.period,
-      SimpleIdentifier constructorName, ArgumentList arguments) {
+  AnnotationImpl(this.atSign, IdentifierImpl name, this.period,
+      SimpleIdentifierImpl constructorName, ArgumentListImpl arguments) {
     _name = _becomeParentOf(name);
     _constructorName = _becomeParentOf(constructorName);
     _arguments = _becomeParentOf(arguments);
@@ -250,7 +250,7 @@ class AnnotationImpl extends AstNodeImpl implements Annotation {
 
   @override
   void set arguments(ArgumentList arguments) {
-    _arguments = _becomeParentOf(arguments);
+    _arguments = _becomeParentOf(arguments as AstNodeImpl);
   }
 
   @override
@@ -269,7 +269,7 @@ class AnnotationImpl extends AstNodeImpl implements Annotation {
 
   @override
   void set constructorName(SimpleIdentifier name) {
-    _constructorName = _becomeParentOf(name);
+    _constructorName = _becomeParentOf(name as AstNodeImpl);
   }
 
   @override
@@ -302,7 +302,7 @@ class AnnotationImpl extends AstNodeImpl implements Annotation {
 
   @override
   void set name(Identifier name) {
-    _name = _becomeParentOf(name);
+    _name = _becomeParentOf(name as AstNodeImpl);
   }
 
   @override
@@ -372,7 +372,7 @@ class ArgumentListImpl extends AstNodeImpl implements ArgumentList {
    */
   ArgumentListImpl(
       this.leftParenthesis, List<Expression> arguments, this.rightParenthesis) {
-    _arguments = new NodeList<Expression>(this, arguments);
+    _arguments = new NodeListImpl<Expression>(this, arguments);
   }
 
   @override
@@ -499,7 +499,8 @@ class AsExpressionImpl extends ExpressionImpl implements AsExpression {
   /**
    * Initialize a newly created as expression.
    */
-  AsExpressionImpl(Expression expression, this.asOperator, TypeName type) {
+  AsExpressionImpl(
+      ExpressionImpl expression, this.asOperator, TypeNameImpl type) {
     _expression = _becomeParentOf(expression);
     _type = _becomeParentOf(type);
   }
@@ -519,7 +520,7 @@ class AsExpressionImpl extends ExpressionImpl implements AsExpression {
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -530,7 +531,7 @@ class AsExpressionImpl extends ExpressionImpl implements AsExpression {
 
   @override
   void set type(TypeName name) {
-    _type = _becomeParentOf(name);
+    _type = _becomeParentOf(name as AstNodeImpl);
   }
 
   @override
@@ -598,9 +599,9 @@ class AssertStatementImpl extends StatementImpl implements AssertStatement {
   AssertStatementImpl(
       this.assertKeyword,
       this.leftParenthesis,
-      Expression condition,
+      ExpressionImpl condition,
       this.comma,
-      Expression message,
+      ExpressionImpl message,
       this.rightParenthesis,
       this.semicolon) {
     _condition = _becomeParentOf(condition);
@@ -625,7 +626,7 @@ class AssertStatementImpl extends StatementImpl implements AssertStatement {
 
   @override
   void set condition(Expression condition) {
-    _condition = _becomeParentOf(condition);
+    _condition = _becomeParentOf(condition as AstNodeImpl);
   }
 
   @override
@@ -636,7 +637,7 @@ class AssertStatementImpl extends StatementImpl implements AssertStatement {
 
   @override
   void set message(Expression expression) {
-    _message = _becomeParentOf(expression);
+    _message = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -695,8 +696,8 @@ class AssignmentExpressionImpl extends ExpressionImpl
   /**
    * Initialize a newly created assignment expression.
    */
-  AssignmentExpressionImpl(
-      Expression leftHandSide, this.operator, Expression rightHandSide) {
+  AssignmentExpressionImpl(ExpressionImpl leftHandSide, this.operator,
+      ExpressionImpl rightHandSide) {
     if (leftHandSide == null || rightHandSide == null) {
       String message;
       if (leftHandSide == null) {
@@ -741,7 +742,7 @@ class AssignmentExpressionImpl extends ExpressionImpl
 
   @override
   void set leftHandSide(Expression expression) {
-    _leftHandSide = _becomeParentOf(expression);
+    _leftHandSide = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -752,7 +753,7 @@ class AssignmentExpressionImpl extends ExpressionImpl
 
   @override
   void set rightHandSide(Expression expression) {
-    _rightHandSide = _becomeParentOf(expression);
+    _rightHandSide = _becomeParentOf(expression as AstNodeImpl);
   }
 
   /**
@@ -766,17 +767,14 @@ class AssignmentExpressionImpl extends ExpressionImpl
     if (propagatedElement != null) {
       executableElement = propagatedElement;
     } else {
-      if (_leftHandSide is Identifier) {
-        Identifier identifier = _leftHandSide as Identifier;
-        Element leftElement = identifier.propagatedElement;
+      Expression left = _leftHandSide;
+      if (left is Identifier) {
+        Element leftElement = left.propagatedElement;
         if (leftElement is ExecutableElement) {
           executableElement = leftElement;
         }
-      }
-      if (_leftHandSide is PropertyAccess) {
-        SimpleIdentifier identifier =
-            (_leftHandSide as PropertyAccess).propertyName;
-        Element leftElement = identifier.propagatedElement;
+      } else if (left is PropertyAccess) {
+        Element leftElement = left.propertyName.propagatedElement;
         if (leftElement is ExecutableElement) {
           executableElement = leftElement;
         }
@@ -803,15 +801,14 @@ class AssignmentExpressionImpl extends ExpressionImpl
     if (staticElement != null) {
       executableElement = staticElement;
     } else {
-      if (_leftHandSide is Identifier) {
-        Element leftElement = (_leftHandSide as Identifier).staticElement;
+      Expression left = _leftHandSide;
+      if (left is Identifier) {
+        Element leftElement = left.staticElement;
         if (leftElement is ExecutableElement) {
           executableElement = leftElement;
         }
-      }
-      if (_leftHandSide is PropertyAccess) {
-        Element leftElement =
-            (_leftHandSide as PropertyAccess).propertyName.staticElement;
+      } else if (left is PropertyAccess) {
+        Element leftElement = left.propertyName.staticElement;
         if (leftElement is ExecutableElement) {
           executableElement = leftElement;
         }
@@ -941,9 +938,9 @@ abstract class AstNodeImpl implements AstNode {
   /**
    * Make this node the parent of the given [child] node. Return the child node.
    */
-  AstNode _becomeParentOf(AstNode child) {
+  AstNode _becomeParentOf(AstNodeImpl child) {
     if (child != null) {
-      (child as AstNodeImpl)._parent = this;
+      child._parent = this;
     }
     return child;
   }
@@ -970,7 +967,7 @@ class AwaitExpressionImpl extends ExpressionImpl implements AwaitExpression {
   /**
    * Initialize a newly created await expression.
    */
-  AwaitExpressionImpl(this.awaitKeyword, Expression expression) {
+  AwaitExpressionImpl(this.awaitKeyword, ExpressionImpl expression) {
     _expression = _becomeParentOf(expression);
   }
 
@@ -994,7 +991,7 @@ class AwaitExpressionImpl extends ExpressionImpl implements AwaitExpression {
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -1054,7 +1051,7 @@ class BinaryExpressionImpl extends ExpressionImpl implements BinaryExpression {
    * Initialize a newly created binary expression.
    */
   BinaryExpressionImpl(
-      Expression leftOperand, this.operator, Expression rightOperand) {
+      ExpressionImpl leftOperand, this.operator, ExpressionImpl rightOperand) {
     _leftOperand = _becomeParentOf(leftOperand);
     _rightOperand = _becomeParentOf(rightOperand);
   }
@@ -1083,7 +1080,7 @@ class BinaryExpressionImpl extends ExpressionImpl implements BinaryExpression {
 
   @override
   void set leftOperand(Expression expression) {
-    _leftOperand = _becomeParentOf(expression);
+    _leftOperand = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -1094,7 +1091,7 @@ class BinaryExpressionImpl extends ExpressionImpl implements BinaryExpression {
 
   @override
   void set rightOperand(Expression expression) {
-    _rightOperand = _becomeParentOf(expression);
+    _rightOperand = _becomeParentOf(expression as AstNodeImpl);
   }
 
   /**
@@ -1175,7 +1172,7 @@ class BlockFunctionBodyImpl extends FunctionBodyImpl
    * for the block. The [star] can be `null` if there is no star following the
    * keyword (and must be `null` if there is no keyword).
    */
-  BlockFunctionBodyImpl(this.keyword, this.star, Block block) {
+  BlockFunctionBodyImpl(this.keyword, this.star, BlockImpl block) {
     _block = _becomeParentOf(block);
   }
 
@@ -1192,7 +1189,7 @@ class BlockFunctionBodyImpl extends FunctionBodyImpl
 
   @override
   void set block(Block block) {
-    _block = _becomeParentOf(block);
+    _block = _becomeParentOf(block as AstNodeImpl);
   }
 
   @override
@@ -1249,7 +1246,7 @@ class BlockImpl extends StatementImpl implements Block {
    * Initialize a newly created block of code.
    */
   BlockImpl(this.leftBracket, List<Statement> statements, this.rightBracket) {
-    _statements = new NodeList<Statement>(this, statements);
+    _statements = new NodeListImpl<Statement>(this, statements);
   }
 
   @override
@@ -1364,7 +1361,7 @@ class BreakStatementImpl extends StatementImpl implements BreakStatement {
    * there is no label associated with the statement.
    */
   BreakStatementImpl(
-      this.breakKeyword, SimpleIdentifier label, this.semicolon) {
+      this.breakKeyword, SimpleIdentifierImpl label, this.semicolon) {
     _label = _becomeParentOf(label);
   }
 
@@ -1383,7 +1380,7 @@ class BreakStatementImpl extends StatementImpl implements BreakStatement {
 
   @override
   void set label(SimpleIdentifier identifier) {
-    _label = _becomeParentOf(identifier);
+    _label = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -1428,9 +1425,10 @@ class CascadeExpressionImpl extends ExpressionImpl
    * Initialize a newly created cascade expression. The list of
    * [cascadeSections] must contain at least one element.
    */
-  CascadeExpressionImpl(Expression target, List<Expression> cascadeSections) {
+  CascadeExpressionImpl(
+      ExpressionImpl target, List<Expression> cascadeSections) {
     _target = _becomeParentOf(target);
-    _cascadeSections = new NodeList<Expression>(this, cascadeSections);
+    _cascadeSections = new NodeListImpl<Expression>(this, cascadeSections);
   }
 
   @override
@@ -1455,7 +1453,7 @@ class CascadeExpressionImpl extends ExpressionImpl
 
   @override
   void set target(Expression target) {
-    _target = _becomeParentOf(target);
+    _target = _becomeParentOf(target as AstNodeImpl);
   }
 
   @override
@@ -1544,14 +1542,14 @@ class CatchClauseImpl extends AstNodeImpl implements CatchClause {
    */
   CatchClauseImpl(
       this.onKeyword,
-      TypeName exceptionType,
+      TypeNameImpl exceptionType,
       this.catchKeyword,
       this.leftParenthesis,
-      SimpleIdentifier exceptionParameter,
+      SimpleIdentifierImpl exceptionParameter,
       this.comma,
-      SimpleIdentifier stackTraceParameter,
+      SimpleIdentifierImpl stackTraceParameter,
       this.rightParenthesis,
-      Block body) {
+      BlockImpl body) {
     _exceptionType = _becomeParentOf(exceptionType);
     _exceptionParameter = _becomeParentOf(exceptionParameter);
     _stackTraceParameter = _becomeParentOf(stackTraceParameter);
@@ -1571,7 +1569,7 @@ class CatchClauseImpl extends AstNodeImpl implements CatchClause {
 
   @override
   void set body(Block block) {
-    _body = _becomeParentOf(block);
+    _body = _becomeParentOf(block as AstNodeImpl);
   }
 
   @override
@@ -1594,7 +1592,7 @@ class CatchClauseImpl extends AstNodeImpl implements CatchClause {
 
   @override
   void set exceptionParameter(SimpleIdentifier parameter) {
-    _exceptionParameter = _becomeParentOf(parameter);
+    _exceptionParameter = _becomeParentOf(parameter as AstNodeImpl);
   }
 
   @override
@@ -1602,7 +1600,7 @@ class CatchClauseImpl extends AstNodeImpl implements CatchClause {
 
   @override
   void set exceptionType(TypeName exceptionType) {
-    _exceptionType = _becomeParentOf(exceptionType);
+    _exceptionType = _becomeParentOf(exceptionType as AstNodeImpl);
   }
 
   @override
@@ -1610,7 +1608,7 @@ class CatchClauseImpl extends AstNodeImpl implements CatchClause {
 
   @override
   void set stackTraceParameter(SimpleIdentifier parameter) {
-    _stackTraceParameter = _becomeParentOf(parameter);
+    _stackTraceParameter = _becomeParentOf(parameter as AstNodeImpl);
   }
 
   @override
@@ -1743,11 +1741,11 @@ class ClassDeclarationImpl extends NamedCompilationUnitMemberImpl
       List<Annotation> metadata,
       this.abstractKeyword,
       this.classKeyword,
-      SimpleIdentifier name,
-      TypeParameterList typeParameters,
-      ExtendsClause extendsClause,
-      WithClause withClause,
-      ImplementsClause implementsClause,
+      SimpleIdentifierImpl name,
+      TypeParameterListImpl typeParameters,
+      ExtendsClauseImpl extendsClause,
+      WithClauseImpl withClause,
+      ImplementsClauseImpl implementsClause,
       this.leftBracket,
       List<ClassMember> members,
       this.rightBracket)
@@ -1756,7 +1754,7 @@ class ClassDeclarationImpl extends NamedCompilationUnitMemberImpl
     _extendsClause = _becomeParentOf(extendsClause);
     _withClause = _becomeParentOf(withClause);
     _implementsClause = _becomeParentOf(implementsClause);
-    _members = new NodeList<ClassMember>(this, members);
+    _members = new NodeListImpl<ClassMember>(this, members);
   }
 
   @override
@@ -1774,8 +1772,7 @@ class ClassDeclarationImpl extends NamedCompilationUnitMemberImpl
     ..add(rightBracket);
 
   @override
-  ClassElement get element =>
-      _name != null ? (_name.staticElement as ClassElement) : null;
+  ClassElement get element => _name?.staticElement as ClassElement;
 
   @override
   Token get endToken => rightBracket;
@@ -1785,7 +1782,7 @@ class ClassDeclarationImpl extends NamedCompilationUnitMemberImpl
 
   @override
   void set extendsClause(ExtendsClause extendsClause) {
-    _extendsClause = _becomeParentOf(extendsClause);
+    _extendsClause = _becomeParentOf(extendsClause as AstNodeImpl);
   }
 
   @override
@@ -1801,7 +1798,7 @@ class ClassDeclarationImpl extends NamedCompilationUnitMemberImpl
 
   @override
   void set implementsClause(ImplementsClause implementsClause) {
-    _implementsClause = _becomeParentOf(implementsClause);
+    _implementsClause = _becomeParentOf(implementsClause as AstNodeImpl);
   }
 
   @override
@@ -1815,7 +1812,7 @@ class ClassDeclarationImpl extends NamedCompilationUnitMemberImpl
 
   @override
   void set nativeClause(NativeClause nativeClause) {
-    _nativeClause = _becomeParentOf(nativeClause);
+    _nativeClause = _becomeParentOf(nativeClause as AstNodeImpl);
   }
 
   @override
@@ -1823,7 +1820,7 @@ class ClassDeclarationImpl extends NamedCompilationUnitMemberImpl
 
   @override
   void set typeParameters(TypeParameterList typeParameters) {
-    _typeParameters = _becomeParentOf(typeParameters);
+    _typeParameters = _becomeParentOf(typeParameters as AstNodeImpl);
   }
 
   @override
@@ -1831,7 +1828,7 @@ class ClassDeclarationImpl extends NamedCompilationUnitMemberImpl
 
   @override
   void set withClause(WithClause withClause) {
-    _withClause = _becomeParentOf(withClause);
+    _withClause = _becomeParentOf(withClause as AstNodeImpl);
   }
 
   @override
@@ -1967,16 +1964,16 @@ class ClassTypeAliasImpl extends TypeAliasImpl implements ClassTypeAlias {
    * if the class does not implement any interfaces.
    */
   ClassTypeAliasImpl(
-      Comment comment,
+      CommentImpl comment,
       List<Annotation> metadata,
       Token keyword,
-      SimpleIdentifier name,
-      TypeParameterList typeParameters,
+      SimpleIdentifierImpl name,
+      TypeParameterListImpl typeParameters,
       this.equals,
       this.abstractKeyword,
-      TypeName superclass,
-      WithClause withClause,
-      ImplementsClause implementsClause,
+      TypeNameImpl superclass,
+      WithClauseImpl withClause,
+      ImplementsClauseImpl implementsClause,
       Token semicolon)
       : super(comment, metadata, keyword, name, semicolon) {
     _typeParameters = _becomeParentOf(typeParameters);
@@ -1998,8 +1995,7 @@ class ClassTypeAliasImpl extends TypeAliasImpl implements ClassTypeAlias {
     ..add(semicolon);
 
   @override
-  ClassElement get element =>
-      _name != null ? (_name.staticElement as ClassElement) : null;
+  ClassElement get element => _name?.staticElement as ClassElement;
 
   @override
   Token get firstTokenAfterCommentAndMetadata {
@@ -2014,7 +2010,7 @@ class ClassTypeAliasImpl extends TypeAliasImpl implements ClassTypeAlias {
 
   @override
   void set implementsClause(ImplementsClause implementsClause) {
-    _implementsClause = _becomeParentOf(implementsClause);
+    _implementsClause = _becomeParentOf(implementsClause as AstNodeImpl);
   }
 
   @override
@@ -2025,7 +2021,7 @@ class ClassTypeAliasImpl extends TypeAliasImpl implements ClassTypeAlias {
 
   @override
   void set superclass(TypeName superclass) {
-    _superclass = _becomeParentOf(superclass);
+    _superclass = _becomeParentOf(superclass as AstNodeImpl);
   }
 
   @override
@@ -2033,7 +2029,7 @@ class ClassTypeAliasImpl extends TypeAliasImpl implements ClassTypeAlias {
 
   @override
   void set typeParameters(TypeParameterList typeParameters) {
-    _typeParameters = _becomeParentOf(typeParameters);
+    _typeParameters = _becomeParentOf(typeParameters as AstNodeImpl);
   }
 
   @override
@@ -2041,7 +2037,7 @@ class ClassTypeAliasImpl extends TypeAliasImpl implements ClassTypeAlias {
 
   @override
   void set withClause(WithClause withClause) {
-    _withClause = _becomeParentOf(withClause);
+    _withClause = _becomeParentOf(withClause as AstNodeImpl);
   }
 
   @override
@@ -2127,7 +2123,7 @@ class CommentImpl extends AstNodeImpl implements Comment {
    * references.
    */
   CommentImpl(this.tokens, this._type, List<CommentReference> references) {
-    _references = new NodeList<CommentReference>(this, references);
+    _references = new NodeListImpl<CommentReference>(this, references);
   }
 
   @override
@@ -2211,7 +2207,7 @@ class CommentReferenceImpl extends AstNodeImpl implements CommentReference {
    * Initialize a newly created reference to a Dart element. The [newKeyword]
    * can be `null` if the reference is not to a constructor.
    */
-  CommentReferenceImpl(this.newKeyword, Identifier identifier) {
+  CommentReferenceImpl(this.newKeyword, IdentifierImpl identifier) {
     _identifier = _becomeParentOf(identifier);
   }
 
@@ -2230,7 +2226,7 @@ class CommentReferenceImpl extends AstNodeImpl implements CommentReference {
 
   @override
   void set identifier(Identifier identifier) {
-    _identifier = _becomeParentOf(identifier);
+    _identifier = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -2352,13 +2348,13 @@ class CompilationUnitImpl extends AstNodeImpl implements CompilationUnit {
    */
   CompilationUnitImpl(
       this.beginToken,
-      ScriptTag scriptTag,
+      ScriptTagImpl scriptTag,
       List<Directive> directives,
       List<CompilationUnitMember> declarations,
       this.endToken) {
     _scriptTag = _becomeParentOf(scriptTag);
-    _directives = new NodeList<Directive>(this, directives);
-    _declarations = new NodeList<CompilationUnitMember>(this, declarations);
+    _directives = new NodeListImpl<Directive>(this, directives);
+    _declarations = new NodeListImpl<CompilationUnitMember>(this, declarations);
   }
 
   @override
@@ -2395,7 +2391,7 @@ class CompilationUnitImpl extends AstNodeImpl implements CompilationUnit {
 
   @override
   void set scriptTag(ScriptTag scriptTag) {
-    _scriptTag = _becomeParentOf(scriptTag);
+    _scriptTag = _becomeParentOf(scriptTag as AstNodeImpl);
   }
 
   @override
@@ -2498,8 +2494,12 @@ class ConditionalExpressionImpl extends ExpressionImpl
   /**
    * Initialize a newly created conditional expression.
    */
-  ConditionalExpressionImpl(Expression condition, this.question,
-      Expression thenExpression, this.colon, Expression elseExpression) {
+  ConditionalExpressionImpl(
+      ExpressionImpl condition,
+      this.question,
+      ExpressionImpl thenExpression,
+      this.colon,
+      ExpressionImpl elseExpression) {
     _condition = _becomeParentOf(condition);
     _thenExpression = _becomeParentOf(thenExpression);
     _elseExpression = _becomeParentOf(elseExpression);
@@ -2521,7 +2521,7 @@ class ConditionalExpressionImpl extends ExpressionImpl
 
   @override
   void set condition(Expression expression) {
-    _condition = _becomeParentOf(expression);
+    _condition = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -2529,7 +2529,7 @@ class ConditionalExpressionImpl extends ExpressionImpl
 
   @override
   void set elseExpression(Expression expression) {
-    _elseExpression = _becomeParentOf(expression);
+    _elseExpression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -2543,7 +2543,7 @@ class ConditionalExpressionImpl extends ExpressionImpl
 
   @override
   void set thenExpression(Expression expression) {
-    _thenExpression = _becomeParentOf(expression);
+    _thenExpression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -2586,11 +2586,11 @@ class ConfigurationImpl extends AstNodeImpl implements Configuration {
   ConfigurationImpl(
       this.ifKeyword,
       this.leftParenthesis,
-      DottedName name,
+      DottedNameImpl name,
       this.equalToken,
-      StringLiteral value,
+      StringLiteralImpl value,
       this.rightParenthesis,
-      StringLiteral libraryUri) {
+      StringLiteralImpl libraryUri) {
     _name = _becomeParentOf(name);
     _value = _becomeParentOf(value);
     _libraryUri = _becomeParentOf(libraryUri);
@@ -2617,7 +2617,7 @@ class ConfigurationImpl extends AstNodeImpl implements Configuration {
 
   @override
   void set libraryUri(StringLiteral libraryUri) {
-    _libraryUri = _becomeParentOf(libraryUri);
+    _libraryUri = _becomeParentOf(libraryUri as AstNodeImpl);
   }
 
   @override
@@ -2625,7 +2625,7 @@ class ConfigurationImpl extends AstNodeImpl implements Configuration {
 
   @override
   void set name(DottedName name) {
-    _name = _becomeParentOf(name);
+    _name = _becomeParentOf(name as AstNodeImpl);
   }
 
   @override
@@ -2633,7 +2633,7 @@ class ConfigurationImpl extends AstNodeImpl implements Configuration {
 
   @override
   void set value(StringLiteral value) {
-    _value = _becomeParentOf(value);
+    _value = _becomeParentOf(value as AstNodeImpl);
   }
 
   @override
@@ -2765,24 +2765,25 @@ class ConstructorDeclarationImpl extends ClassMemberImpl
    * the constructor does not have a body.
    */
   ConstructorDeclarationImpl(
-      Comment comment,
+      CommentImpl comment,
       List<Annotation> metadata,
       this.externalKeyword,
       this.constKeyword,
       this.factoryKeyword,
-      Identifier returnType,
+      IdentifierImpl returnType,
       this.period,
-      SimpleIdentifier name,
-      FormalParameterList parameters,
+      SimpleIdentifierImpl name,
+      FormalParameterListImpl parameters,
       this.separator,
       List<ConstructorInitializer> initializers,
-      ConstructorName redirectedConstructor,
-      FunctionBody body)
+      ConstructorNameImpl redirectedConstructor,
+      FunctionBodyImpl body)
       : super(comment, metadata) {
     _returnType = _becomeParentOf(returnType);
     _name = _becomeParentOf(name);
     _parameters = _becomeParentOf(parameters);
-    _initializers = new NodeList<ConstructorInitializer>(this, initializers);
+    _initializers =
+        new NodeListImpl<ConstructorInitializer>(this, initializers);
     _redirectedConstructor = _becomeParentOf(redirectedConstructor);
     _body = _becomeParentOf(body);
   }
@@ -2792,7 +2793,7 @@ class ConstructorDeclarationImpl extends ClassMemberImpl
 
   @override
   void set body(FunctionBody functionBody) {
-    _body = _becomeParentOf(functionBody);
+    _body = _becomeParentOf(functionBody as AstNodeImpl);
   }
 
   @override
@@ -2837,7 +2838,7 @@ class ConstructorDeclarationImpl extends ClassMemberImpl
 
   @override
   void set name(SimpleIdentifier identifier) {
-    _name = _becomeParentOf(identifier);
+    _name = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -2845,7 +2846,7 @@ class ConstructorDeclarationImpl extends ClassMemberImpl
 
   @override
   void set parameters(FormalParameterList parameters) {
-    _parameters = _becomeParentOf(parameters);
+    _parameters = _becomeParentOf(parameters as AstNodeImpl);
   }
 
   @override
@@ -2853,7 +2854,8 @@ class ConstructorDeclarationImpl extends ClassMemberImpl
 
   @override
   void set redirectedConstructor(ConstructorName redirectedConstructor) {
-    _redirectedConstructor = _becomeParentOf(redirectedConstructor);
+    _redirectedConstructor =
+        _becomeParentOf(redirectedConstructor as AstNodeImpl);
   }
 
   @override
@@ -2861,7 +2863,7 @@ class ConstructorDeclarationImpl extends ClassMemberImpl
 
   @override
   void set returnType(Identifier typeName) {
-    _returnType = _becomeParentOf(typeName);
+    _returnType = _becomeParentOf(typeName as AstNodeImpl);
   }
 
   @override
@@ -2923,7 +2925,7 @@ class ConstructorFieldInitializerImpl extends ConstructorInitializerImpl
    * [period] can be `null` if the 'this' keyword was not specified.
    */
   ConstructorFieldInitializerImpl(this.thisKeyword, this.period,
-      SimpleIdentifier fieldName, this.equals, Expression expression) {
+      SimpleIdentifierImpl fieldName, this.equals, ExpressionImpl expression) {
     _fieldName = _becomeParentOf(fieldName);
     _expression = _becomeParentOf(expression);
   }
@@ -2952,7 +2954,7 @@ class ConstructorFieldInitializerImpl extends ConstructorInitializerImpl
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -2960,7 +2962,7 @@ class ConstructorFieldInitializerImpl extends ConstructorInitializerImpl
 
   @override
   void set fieldName(SimpleIdentifier identifier) {
-    _fieldName = _becomeParentOf(identifier);
+    _fieldName = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -3022,7 +3024,8 @@ class ConstructorNameImpl extends AstNodeImpl implements ConstructorName {
    * Initialize a newly created constructor name. The [period] and [name] can be
    * `null` if the constructor being named is the unnamed constructor.
    */
-  ConstructorNameImpl(TypeName type, this.period, SimpleIdentifier name) {
+  ConstructorNameImpl(
+      TypeNameImpl type, this.period, SimpleIdentifierImpl name) {
     _type = _becomeParentOf(type);
     _name = _becomeParentOf(name);
   }
@@ -3047,7 +3050,7 @@ class ConstructorNameImpl extends AstNodeImpl implements ConstructorName {
 
   @override
   void set name(SimpleIdentifier name) {
-    _name = _becomeParentOf(name);
+    _name = _becomeParentOf(name as AstNodeImpl);
   }
 
   @override
@@ -3055,7 +3058,7 @@ class ConstructorNameImpl extends AstNodeImpl implements ConstructorName {
 
   @override
   void set type(TypeName type) {
-    _type = _becomeParentOf(type);
+    _type = _becomeParentOf(type as AstNodeImpl);
   }
 
   @override
@@ -3108,7 +3111,7 @@ class ContinueStatementImpl extends StatementImpl implements ContinueStatement {
    * there is no label associated with the statement.
    */
   ContinueStatementImpl(
-      this.continueKeyword, SimpleIdentifier label, this.semicolon) {
+      this.continueKeyword, SimpleIdentifierImpl label, this.semicolon) {
     _label = _becomeParentOf(label);
   }
 
@@ -3127,7 +3130,7 @@ class ContinueStatementImpl extends StatementImpl implements ContinueStatement {
 
   @override
   void set label(SimpleIdentifier identifier) {
-    _label = _becomeParentOf(identifier);
+    _label = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -3187,8 +3190,8 @@ class DeclaredIdentifierImpl extends DeclarationImpl
    * corresponding attribute. The [keyword] can be `null` if a type name is
    * given. The [type] must be `null` if the keyword is 'var'.
    */
-  DeclaredIdentifierImpl(Comment comment, List<Annotation> metadata,
-      this.keyword, TypeName type, SimpleIdentifier identifier)
+  DeclaredIdentifierImpl(CommentImpl comment, List<Annotation> metadata,
+      this.keyword, TypeNameImpl type, SimpleIdentifierImpl identifier)
       : super(comment, metadata) {
     _type = _becomeParentOf(type);
     _identifier = _becomeParentOf(identifier);
@@ -3224,7 +3227,7 @@ class DeclaredIdentifierImpl extends DeclarationImpl
 
   @override
   void set identifier(SimpleIdentifier identifier) {
-    _identifier = _becomeParentOf(identifier);
+    _identifier = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -3238,7 +3241,7 @@ class DeclaredIdentifierImpl extends DeclarationImpl
 
   @override
   void set type(TypeName typeName) {
-    _type = _becomeParentOf(typeName);
+    _type = _becomeParentOf(typeName as AstNodeImpl);
   }
 
   @override
@@ -3312,8 +3315,8 @@ class DefaultFormalParameterImpl extends FormalParameterImpl
    * Initialize a newly created default formal parameter. The [separator] and
    * [defaultValue] can be `null` if there is no default value.
    */
-  DefaultFormalParameterImpl(NormalFormalParameter parameter, this.kind,
-      this.separator, Expression defaultValue) {
+  DefaultFormalParameterImpl(NormalFormalParameterImpl parameter, this.kind,
+      this.separator, ExpressionImpl defaultValue) {
     _parameter = _becomeParentOf(parameter);
     _defaultValue = _becomeParentOf(defaultValue);
   }
@@ -3330,7 +3333,7 @@ class DefaultFormalParameterImpl extends FormalParameterImpl
 
   @override
   void set defaultValue(Expression expression) {
-    _defaultValue = _becomeParentOf(expression);
+    _defaultValue = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -3358,7 +3361,7 @@ class DefaultFormalParameterImpl extends FormalParameterImpl
 
   @override
   void set parameter(NormalFormalParameter formalParameter) {
-    _parameter = _becomeParentOf(formalParameter);
+    _parameter = _becomeParentOf(formalParameter as AstNodeImpl);
   }
 
   @override
@@ -3459,10 +3462,10 @@ class DoStatementImpl extends StatementImpl implements DoStatement {
    */
   DoStatementImpl(
       this.doKeyword,
-      Statement body,
+      StatementImpl body,
       this.whileKeyword,
       this.leftParenthesis,
-      Expression condition,
+      ExpressionImpl condition,
       this.rightParenthesis,
       this.semicolon) {
     _body = _becomeParentOf(body);
@@ -3477,7 +3480,7 @@ class DoStatementImpl extends StatementImpl implements DoStatement {
 
   @override
   void set body(Statement statement) {
-    _body = _becomeParentOf(statement);
+    _body = _becomeParentOf(statement as AstNodeImpl);
   }
 
   @override
@@ -3495,7 +3498,7 @@ class DoStatementImpl extends StatementImpl implements DoStatement {
 
   @override
   void set condition(Expression expression) {
-    _condition = _becomeParentOf(expression);
+    _condition = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -3528,7 +3531,7 @@ class DottedNameImpl extends AstNodeImpl implements DottedName {
    * Initialize a newly created dotted name.
    */
   DottedNameImpl(List<SimpleIdentifier> components) {
-    _components = new NodeList<SimpleIdentifier>(this, components);
+    _components = new NodeListImpl<SimpleIdentifier>(this, components);
   }
 
   @override
@@ -3694,7 +3697,7 @@ class EnumConstantDeclarationImpl extends DeclarationImpl
    * but we allow it for consistency.)
    */
   EnumConstantDeclarationImpl(
-      Comment comment, List<Annotation> metadata, SimpleIdentifier name)
+      CommentImpl comment, List<Annotation> metadata, SimpleIdentifierImpl name)
       : super(comment, metadata) {
     _name = _becomeParentOf(name);
   }
@@ -3703,8 +3706,7 @@ class EnumConstantDeclarationImpl extends DeclarationImpl
   Iterable get childEntities => super._childEntities..add(_name);
 
   @override
-  FieldElement get element =>
-      _name == null ? null : (_name.staticElement as FieldElement);
+  FieldElement get element => _name?.staticElement as FieldElement;
 
   @override
   Token get endToken => _name.endToken;
@@ -3717,7 +3719,7 @@ class EnumConstantDeclarationImpl extends DeclarationImpl
 
   @override
   void set name(SimpleIdentifier name) {
-    _name = _becomeParentOf(name);
+    _name = _becomeParentOf(name as AstNodeImpl);
   }
 
   @override
@@ -3777,7 +3779,7 @@ class EnumDeclarationImpl extends NamedCompilationUnitMemberImpl
       List<EnumConstantDeclaration> constants,
       this.rightBracket)
       : super(comment, metadata, name) {
-    _constants = new NodeList<EnumConstantDeclaration>(this, constants);
+    _constants = new NodeListImpl<EnumConstantDeclaration>(this, constants);
   }
 
   @override
@@ -3793,8 +3795,7 @@ class EnumDeclarationImpl extends NamedCompilationUnitMemberImpl
   NodeList<EnumConstantDeclaration> get constants => _constants;
 
   @override
-  ClassElement get element =>
-      _name != null ? (_name.staticElement as ClassElement) : null;
+  ClassElement get element => _name?.staticElement as ClassElement;
 
   @override
   Token get endToken => rightBracket;
@@ -3917,7 +3918,7 @@ class ExpressionFunctionBodyImpl extends FunctionBodyImpl
    * async function body.
    */
   ExpressionFunctionBodyImpl(this.keyword, this.functionDefinition,
-      Expression expression, this.semicolon) {
+      ExpressionImpl expression, this.semicolon) {
     _expression = _becomeParentOf(expression);
   }
 
@@ -3949,7 +3950,7 @@ class ExpressionFunctionBodyImpl extends FunctionBodyImpl
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -4067,6 +4068,9 @@ abstract class ExpressionImpl extends AstNodeImpl implements Expression {
     }
     return null;
   }
+
+  @override
+  Expression get unParenthesized => this;
 }
 
 /**
@@ -4092,7 +4096,7 @@ class ExpressionStatementImpl extends StatementImpl
   /**
    * Initialize a newly created expression statement.
    */
-  ExpressionStatementImpl(Expression expression, this.semicolon) {
+  ExpressionStatementImpl(ExpressionImpl expression, this.semicolon) {
     _expression = _becomeParentOf(expression);
   }
 
@@ -4116,7 +4120,7 @@ class ExpressionStatementImpl extends StatementImpl
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -4153,7 +4157,7 @@ class ExtendsClauseImpl extends AstNodeImpl implements ExtendsClause {
   /**
    * Initialize a newly created extends clause.
    */
-  ExtendsClauseImpl(this.extendsKeyword, TypeName superclass) {
+  ExtendsClauseImpl(this.extendsKeyword, TypeNameImpl superclass) {
     _superclass = _becomeParentOf(superclass);
   }
 
@@ -4172,7 +4176,7 @@ class ExtendsClauseImpl extends AstNodeImpl implements ExtendsClause {
 
   @override
   void set superclass(TypeName name) {
-    _superclass = _becomeParentOf(name);
+    _superclass = _becomeParentOf(name as AstNodeImpl);
   }
 
   @override
@@ -4216,8 +4220,8 @@ class FieldDeclarationImpl extends ClassMemberImpl implements FieldDeclaration {
    * corresponding attribute. The [staticKeyword] can be `null` if the field is
    * not a static field.
    */
-  FieldDeclarationImpl(Comment comment, List<Annotation> metadata,
-      this.staticKeyword, VariableDeclarationList fieldList, this.semicolon)
+  FieldDeclarationImpl(CommentImpl comment, List<Annotation> metadata,
+      this.staticKeyword, VariableDeclarationListImpl fieldList, this.semicolon)
       : super(comment, metadata) {
     _fieldList = _becomeParentOf(fieldList);
   }
@@ -4237,7 +4241,7 @@ class FieldDeclarationImpl extends ClassMemberImpl implements FieldDeclaration {
 
   @override
   void set fields(VariableDeclarationList fields) {
-    _fieldList = _becomeParentOf(fields);
+    _fieldList = _becomeParentOf(fields as AstNodeImpl);
   }
 
   @override
@@ -4318,15 +4322,15 @@ class FieldFormalParameterImpl extends NormalFormalParameterImpl
    * parameter.
    */
   FieldFormalParameterImpl(
-      Comment comment,
+      CommentImpl comment,
       List<Annotation> metadata,
       this.keyword,
-      TypeName type,
+      TypeNameImpl type,
       this.thisKeyword,
       this.period,
-      SimpleIdentifier identifier,
-      TypeParameterList typeParameters,
-      FormalParameterList parameters)
+      SimpleIdentifierImpl identifier,
+      TypeParameterListImpl typeParameters,
+      FormalParameterListImpl parameters)
       : super(comment, metadata, identifier) {
     _type = _becomeParentOf(type);
     _typeParameters = _becomeParentOf(typeParameters);
@@ -4371,7 +4375,7 @@ class FieldFormalParameterImpl extends NormalFormalParameterImpl
 
   @override
   void set parameters(FormalParameterList parameters) {
-    _parameters = _becomeParentOf(parameters);
+    _parameters = _becomeParentOf(parameters as AstNodeImpl);
   }
 
   @override
@@ -4379,7 +4383,7 @@ class FieldFormalParameterImpl extends NormalFormalParameterImpl
 
   @override
   void set type(TypeName typeName) {
-    _type = _becomeParentOf(typeName);
+    _type = _becomeParentOf(typeName as AstNodeImpl);
   }
 
   @override
@@ -4387,7 +4391,7 @@ class FieldFormalParameterImpl extends NormalFormalParameterImpl
 
   @override
   void set typeParameters(TypeParameterList typeParameters) {
-    _typeParameters = _becomeParentOf(typeParameters);
+    _typeParameters = _becomeParentOf(typeParameters as AstNodeImpl);
   }
 
   @override
@@ -4473,11 +4477,11 @@ class ForEachStatementImpl extends StatementImpl implements ForEachStatement {
       this.awaitKeyword,
       this.forKeyword,
       this.leftParenthesis,
-      DeclaredIdentifier loopVariable,
+      DeclaredIdentifierImpl loopVariable,
       this.inKeyword,
-      Expression iterator,
+      ExpressionImpl iterator,
       this.rightParenthesis,
-      Statement body) {
+      StatementImpl body) {
     _loopVariable = _becomeParentOf(loopVariable);
     _iterable = _becomeParentOf(iterator);
     _body = _becomeParentOf(body);
@@ -4492,11 +4496,11 @@ class ForEachStatementImpl extends StatementImpl implements ForEachStatement {
       this.awaitKeyword,
       this.forKeyword,
       this.leftParenthesis,
-      SimpleIdentifier identifier,
+      SimpleIdentifierImpl identifier,
       this.inKeyword,
-      Expression iterator,
+      ExpressionImpl iterator,
       this.rightParenthesis,
-      Statement body) {
+      StatementImpl body) {
     _identifier = _becomeParentOf(identifier);
     _iterable = _becomeParentOf(iterator);
     _body = _becomeParentOf(body);
@@ -4510,7 +4514,7 @@ class ForEachStatementImpl extends StatementImpl implements ForEachStatement {
 
   @override
   void set body(Statement statement) {
-    _body = _becomeParentOf(statement);
+    _body = _becomeParentOf(statement as AstNodeImpl);
   }
 
   @override
@@ -4533,7 +4537,7 @@ class ForEachStatementImpl extends StatementImpl implements ForEachStatement {
 
   @override
   void set identifier(SimpleIdentifier identifier) {
-    _identifier = _becomeParentOf(identifier);
+    _identifier = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -4541,7 +4545,7 @@ class ForEachStatementImpl extends StatementImpl implements ForEachStatement {
 
   @override
   void set iterable(Expression expression) {
-    _iterable = _becomeParentOf(expression);
+    _iterable = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -4549,7 +4553,7 @@ class ForEachStatementImpl extends StatementImpl implements ForEachStatement {
 
   @override
   void set loopVariable(DeclaredIdentifier variable) {
-    _loopVariable = _becomeParentOf(variable);
+    _loopVariable = _becomeParentOf(variable as AstNodeImpl);
   }
 
   @override
@@ -4656,7 +4660,7 @@ class FormalParameterListImpl extends AstNodeImpl
       this.leftDelimiter,
       this.rightDelimiter,
       this.rightParenthesis) {
-    _parameters = new NodeList<FormalParameter>(this, parameters);
+    _parameters = new NodeListImpl<FormalParameter>(this, parameters);
   }
 
   @override
@@ -4786,18 +4790,18 @@ class ForStatementImpl extends StatementImpl implements ForStatement {
   ForStatementImpl(
       this.forKeyword,
       this.leftParenthesis,
-      VariableDeclarationList variableList,
-      Expression initialization,
+      VariableDeclarationListImpl variableList,
+      ExpressionImpl initialization,
       this.leftSeparator,
-      Expression condition,
+      ExpressionImpl condition,
       this.rightSeparator,
       List<Expression> updaters,
       this.rightParenthesis,
-      Statement body) {
+      StatementImpl body) {
     _variableList = _becomeParentOf(variableList);
     _initialization = _becomeParentOf(initialization);
     _condition = _becomeParentOf(condition);
-    _updaters = new NodeList<Expression>(this, updaters);
+    _updaters = new NodeListImpl<Expression>(this, updaters);
     _body = _becomeParentOf(body);
   }
 
@@ -4809,7 +4813,7 @@ class ForStatementImpl extends StatementImpl implements ForStatement {
 
   @override
   void set body(Statement statement) {
-    _body = _becomeParentOf(statement);
+    _body = _becomeParentOf(statement as AstNodeImpl);
   }
 
   @override
@@ -4830,7 +4834,7 @@ class ForStatementImpl extends StatementImpl implements ForStatement {
 
   @override
   void set condition(Expression expression) {
-    _condition = _becomeParentOf(expression);
+    _condition = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -4841,7 +4845,7 @@ class ForStatementImpl extends StatementImpl implements ForStatement {
 
   @override
   void set initialization(Expression initialization) {
-    _initialization = _becomeParentOf(initialization);
+    _initialization = _becomeParentOf(initialization as AstNodeImpl);
   }
 
   @override
@@ -4852,7 +4856,7 @@ class ForStatementImpl extends StatementImpl implements ForStatement {
 
   @override
   void set variables(VariableDeclarationList variableList) {
-    _variableList = _becomeParentOf(variableList);
+    _variableList = _becomeParentOf(variableList as AstNodeImpl);
   }
 
   @override
@@ -4979,13 +4983,13 @@ class FunctionDeclarationImpl extends NamedCompilationUnitMemberImpl
    * function is neither a getter or a setter.
    */
   FunctionDeclarationImpl(
-      Comment comment,
+      CommentImpl comment,
       List<Annotation> metadata,
       this.externalKeyword,
-      TypeName returnType,
+      TypeNameImpl returnType,
       this.propertyKeyword,
-      SimpleIdentifier name,
-      FunctionExpression functionExpression)
+      SimpleIdentifierImpl name,
+      FunctionExpressionImpl functionExpression)
       : super(comment, metadata, name) {
     _returnType = _becomeParentOf(returnType);
     _functionExpression = _becomeParentOf(functionExpression);
@@ -5000,8 +5004,7 @@ class FunctionDeclarationImpl extends NamedCompilationUnitMemberImpl
     ..add(_functionExpression);
 
   @override
-  ExecutableElement get element =>
-      _name != null ? (_name.staticElement as ExecutableElement) : null;
+  ExecutableElement get element => _name?.staticElement as ExecutableElement;
 
   @override
   Token get endToken => _functionExpression.endToken;
@@ -5025,7 +5028,7 @@ class FunctionDeclarationImpl extends NamedCompilationUnitMemberImpl
 
   @override
   void set functionExpression(FunctionExpression functionExpression) {
-    _functionExpression = _becomeParentOf(functionExpression);
+    _functionExpression = _becomeParentOf(functionExpression as AstNodeImpl);
   }
 
   @override
@@ -5039,7 +5042,7 @@ class FunctionDeclarationImpl extends NamedCompilationUnitMemberImpl
 
   @override
   void set returnType(TypeName returnType) {
-    _returnType = _becomeParentOf(returnType);
+    _returnType = _becomeParentOf(returnType as AstNodeImpl);
   }
 
   @override
@@ -5069,7 +5072,7 @@ class FunctionDeclarationStatementImpl extends StatementImpl
    * Initialize a newly created function declaration statement.
    */
   FunctionDeclarationStatementImpl(FunctionDeclaration functionDeclaration) {
-    _functionDeclaration = _becomeParentOf(functionDeclaration);
+    _functionDeclaration = _becomeParentOf(functionDeclaration as AstNodeImpl);
   }
 
   @override
@@ -5086,7 +5089,7 @@ class FunctionDeclarationStatementImpl extends StatementImpl
 
   @override
   void set functionDeclaration(FunctionDeclaration functionDeclaration) {
-    _functionDeclaration = _becomeParentOf(functionDeclaration);
+    _functionDeclaration = _becomeParentOf(functionDeclaration as AstNodeImpl);
   }
 
   @override
@@ -5133,8 +5136,8 @@ class FunctionExpressionImpl extends ExpressionImpl
   /**
    * Initialize a newly created function declaration.
    */
-  FunctionExpressionImpl(TypeParameterList typeParameters,
-      FormalParameterList parameters, FunctionBody body) {
+  FunctionExpressionImpl(TypeParameterListImpl typeParameters,
+      FormalParameterListImpl parameters, FunctionBodyImpl body) {
     _typeParameters = _becomeParentOf(typeParameters);
     _parameters = _becomeParentOf(parameters);
     _body = _becomeParentOf(body);
@@ -5159,7 +5162,7 @@ class FunctionExpressionImpl extends ExpressionImpl
 
   @override
   void set body(FunctionBody functionBody) {
-    _body = _becomeParentOf(functionBody);
+    _body = _becomeParentOf(functionBody as AstNodeImpl);
   }
 
   @override
@@ -5183,7 +5186,7 @@ class FunctionExpressionImpl extends ExpressionImpl
 
   @override
   void set parameters(FormalParameterList parameters) {
-    _parameters = _becomeParentOf(parameters);
+    _parameters = _becomeParentOf(parameters as AstNodeImpl);
   }
 
   @override
@@ -5194,7 +5197,7 @@ class FunctionExpressionImpl extends ExpressionImpl
 
   @override
   void set typeParameters(TypeParameterList typeParameters) {
-    _typeParameters = _becomeParentOf(typeParameters);
+    _typeParameters = _becomeParentOf(typeParameters as AstNodeImpl);
   }
 
   @override
@@ -5244,8 +5247,8 @@ class FunctionExpressionInvocationImpl extends InvocationExpressionImpl
   /**
    * Initialize a newly created function expression invocation.
    */
-  FunctionExpressionInvocationImpl(Expression function,
-      TypeArgumentList typeArguments, ArgumentList argumentList)
+  FunctionExpressionInvocationImpl(ExpressionImpl function,
+      TypeArgumentListImpl typeArguments, ArgumentListImpl argumentList)
       : super(typeArguments, argumentList) {
     _function = _becomeParentOf(function);
   }
@@ -5274,7 +5277,7 @@ class FunctionExpressionInvocationImpl extends InvocationExpressionImpl
 
   @override
   void set function(Expression expression) {
-    _function = _becomeParentOf(expression);
+    _function = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -5327,13 +5330,13 @@ class FunctionTypeAliasImpl extends TypeAliasImpl implements FunctionTypeAlias {
    * type parameters.
    */
   FunctionTypeAliasImpl(
-      Comment comment,
+      CommentImpl comment,
       List<Annotation> metadata,
       Token keyword,
-      TypeName returnType,
-      SimpleIdentifier name,
-      TypeParameterList typeParameters,
-      FormalParameterList parameters,
+      TypeNameImpl returnType,
+      SimpleIdentifierImpl name,
+      TypeParameterListImpl typeParameters,
+      FormalParameterListImpl parameters,
       Token semicolon)
       : super(comment, metadata, keyword, name, semicolon) {
     _returnType = _becomeParentOf(returnType);
@@ -5352,14 +5355,14 @@ class FunctionTypeAliasImpl extends TypeAliasImpl implements FunctionTypeAlias {
 
   @override
   FunctionTypeAliasElement get element =>
-      _name != null ? (_name.staticElement as FunctionTypeAliasElement) : null;
+      _name?.staticElement as FunctionTypeAliasElement;
 
   @override
   FormalParameterList get parameters => _parameters;
 
   @override
   void set parameters(FormalParameterList parameters) {
-    _parameters = _becomeParentOf(parameters);
+    _parameters = _becomeParentOf(parameters as AstNodeImpl);
   }
 
   @override
@@ -5367,7 +5370,7 @@ class FunctionTypeAliasImpl extends TypeAliasImpl implements FunctionTypeAlias {
 
   @override
   void set returnType(TypeName typeName) {
-    _returnType = _becomeParentOf(typeName);
+    _returnType = _becomeParentOf(typeName as AstNodeImpl);
   }
 
   @override
@@ -5375,7 +5378,7 @@ class FunctionTypeAliasImpl extends TypeAliasImpl implements FunctionTypeAlias {
 
   @override
   void set typeParameters(TypeParameterList typeParameters) {
-    _typeParameters = _becomeParentOf(typeParameters);
+    _typeParameters = _becomeParentOf(typeParameters as AstNodeImpl);
   }
 
   @override
@@ -5424,12 +5427,12 @@ class FunctionTypedFormalParameterImpl extends NormalFormalParameterImpl
    * was specified.
    */
   FunctionTypedFormalParameterImpl(
-      Comment comment,
+      CommentImpl comment,
       List<Annotation> metadata,
-      TypeName returnType,
-      SimpleIdentifier identifier,
-      TypeParameterList typeParameters,
-      FormalParameterList parameters)
+      TypeNameImpl returnType,
+      SimpleIdentifierImpl identifier,
+      TypeParameterListImpl typeParameters,
+      FormalParameterListImpl parameters)
       : super(comment, metadata, identifier) {
     _returnType = _becomeParentOf(returnType);
     _typeParameters = _becomeParentOf(typeParameters);
@@ -5462,7 +5465,7 @@ class FunctionTypedFormalParameterImpl extends NormalFormalParameterImpl
 
   @override
   void set parameters(FormalParameterList parameters) {
-    _parameters = _becomeParentOf(parameters);
+    _parameters = _becomeParentOf(parameters as AstNodeImpl);
   }
 
   @override
@@ -5470,7 +5473,7 @@ class FunctionTypedFormalParameterImpl extends NormalFormalParameterImpl
 
   @override
   void set returnType(TypeName type) {
-    _returnType = _becomeParentOf(type);
+    _returnType = _becomeParentOf(type as AstNodeImpl);
   }
 
   @override
@@ -5478,7 +5481,7 @@ class FunctionTypedFormalParameterImpl extends NormalFormalParameterImpl
 
   @override
   void set typeParameters(TypeParameterList typeParameters) {
-    _typeParameters = _becomeParentOf(typeParameters);
+    _typeParameters = _becomeParentOf(typeParameters as AstNodeImpl);
   }
 
   @override
@@ -5513,7 +5516,7 @@ class HideCombinatorImpl extends CombinatorImpl implements HideCombinator {
    */
   HideCombinatorImpl(Token keyword, List<SimpleIdentifier> hiddenNames)
       : super(keyword) {
-    _hiddenNames = new NodeList<SimpleIdentifier>(this, hiddenNames);
+    _hiddenNames = new NodeListImpl<SimpleIdentifier>(this, hiddenNames);
   }
 
   @override
@@ -5613,11 +5616,11 @@ class IfStatementImpl extends StatementImpl implements IfStatement {
   IfStatementImpl(
       this.ifKeyword,
       this.leftParenthesis,
-      Expression condition,
+      ExpressionImpl condition,
       this.rightParenthesis,
-      Statement thenStatement,
+      StatementImpl thenStatement,
       this.elseKeyword,
-      Statement elseStatement) {
+      StatementImpl elseStatement) {
     _condition = _becomeParentOf(condition);
     _thenStatement = _becomeParentOf(thenStatement);
     _elseStatement = _becomeParentOf(elseStatement);
@@ -5641,7 +5644,7 @@ class IfStatementImpl extends StatementImpl implements IfStatement {
 
   @override
   void set condition(Expression expression) {
-    _condition = _becomeParentOf(expression);
+    _condition = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -5649,7 +5652,7 @@ class IfStatementImpl extends StatementImpl implements IfStatement {
 
   @override
   void set elseStatement(Statement statement) {
-    _elseStatement = _becomeParentOf(statement);
+    _elseStatement = _becomeParentOf(statement as AstNodeImpl);
   }
 
   @override
@@ -5665,7 +5668,7 @@ class IfStatementImpl extends StatementImpl implements IfStatement {
 
   @override
   void set thenStatement(Statement statement) {
-    _thenStatement = _becomeParentOf(statement);
+    _thenStatement = _becomeParentOf(statement as AstNodeImpl);
   }
 
   @override
@@ -5702,7 +5705,7 @@ class ImplementsClauseImpl extends AstNodeImpl implements ImplementsClause {
    * Initialize a newly created implements clause.
    */
   ImplementsClauseImpl(this.implementsKeyword, List<TypeName> interfaces) {
-    _interfaces = new NodeList<TypeName>(this, interfaces);
+    _interfaces = new NodeListImpl<TypeName>(this, interfaces);
   }
 
   @override
@@ -5767,14 +5770,14 @@ class ImportDirectiveImpl extends NamespaceDirectiveImpl
    * are no combinators.
    */
   ImportDirectiveImpl(
-      Comment comment,
+      CommentImpl comment,
       List<Annotation> metadata,
       Token keyword,
-      StringLiteral libraryUri,
+      StringLiteralImpl libraryUri,
       List<Configuration> configurations,
       this.deferredKeyword,
       this.asKeyword,
-      SimpleIdentifier prefix,
+      SimpleIdentifierImpl prefix,
       List<Combinator> combinators,
       Token semicolon)
       : super(comment, metadata, keyword, libraryUri, configurations,
@@ -5799,7 +5802,7 @@ class ImportDirectiveImpl extends NamespaceDirectiveImpl
 
   @override
   void set prefix(SimpleIdentifier identifier) {
-    _prefix = _becomeParentOf(identifier);
+    _prefix = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -5889,15 +5892,15 @@ class IndexExpressionImpl extends ExpressionImpl implements IndexExpression {
    * Initialize a newly created index expression.
    */
   IndexExpressionImpl.forCascade(
-      this.period, this.leftBracket, Expression index, this.rightBracket) {
+      this.period, this.leftBracket, ExpressionImpl index, this.rightBracket) {
     _index = _becomeParentOf(index);
   }
 
   /**
    * Initialize a newly created index expression.
    */
-  IndexExpressionImpl.forTarget(Expression target, this.leftBracket,
-      Expression index, this.rightBracket) {
+  IndexExpressionImpl.forTarget(ExpressionImpl target, this.leftBracket,
+      ExpressionImpl index, this.rightBracket) {
     _target = _becomeParentOf(target);
     _index = _becomeParentOf(index);
   }
@@ -5935,7 +5938,7 @@ class IndexExpressionImpl extends ExpressionImpl implements IndexExpression {
 
   @override
   void set index(Expression expression) {
-    _index = _becomeParentOf(expression);
+    _index = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -5967,7 +5970,7 @@ class IndexExpressionImpl extends ExpressionImpl implements IndexExpression {
 
   @override
   void set target(Expression expression) {
-    _target = _becomeParentOf(expression);
+    _target = _becomeParentOf(expression as AstNodeImpl);
   }
 
   /**
@@ -6079,8 +6082,8 @@ class InstanceCreationExpressionImpl extends ExpressionImpl
   /**
    * Initialize a newly created instance creation expression.
    */
-  InstanceCreationExpressionImpl(this.keyword, ConstructorName constructorName,
-      ArgumentList argumentList) {
+  InstanceCreationExpressionImpl(this.keyword,
+      ConstructorNameImpl constructorName, ArgumentListImpl argumentList) {
     _constructorName = _becomeParentOf(constructorName);
     _argumentList = _becomeParentOf(argumentList);
   }
@@ -6090,7 +6093,7 @@ class InstanceCreationExpressionImpl extends ExpressionImpl
 
   @override
   void set argumentList(ArgumentList argumentList) {
-    _argumentList = _becomeParentOf(argumentList);
+    _argumentList = _becomeParentOf(argumentList as AstNodeImpl);
   }
 
   @override
@@ -6107,7 +6110,7 @@ class InstanceCreationExpressionImpl extends ExpressionImpl
 
   @override
   void set constructorName(ConstructorName name) {
-    _constructorName = _becomeParentOf(name);
+    _constructorName = _becomeParentOf(name as AstNodeImpl);
   }
 
   @override
@@ -6224,7 +6227,7 @@ class InterpolationExpressionImpl extends InterpolationElementImpl
    * Initialize a newly created interpolation expression.
    */
   InterpolationExpressionImpl(
-      this.leftBracket, Expression expression, this.rightBracket) {
+      this.leftBracket, ExpressionImpl expression, this.rightBracket) {
     _expression = _becomeParentOf(expression);
   }
 
@@ -6250,7 +6253,7 @@ class InterpolationExpressionImpl extends InterpolationElementImpl
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -6346,7 +6349,7 @@ abstract class InvocationExpressionImpl extends ExpressionImpl
    * Initialize a newly created invocation.
    */
   InvocationExpressionImpl(
-      TypeArgumentList typeArguments, ArgumentList argumentList) {
+      TypeArgumentListImpl typeArguments, ArgumentListImpl argumentList) {
     _typeArguments = _becomeParentOf(typeArguments);
     _argumentList = _becomeParentOf(argumentList);
   }
@@ -6355,14 +6358,14 @@ abstract class InvocationExpressionImpl extends ExpressionImpl
   ArgumentList get argumentList => _argumentList;
 
   void set argumentList(ArgumentList argumentList) {
-    _argumentList = _becomeParentOf(argumentList);
+    _argumentList = _becomeParentOf(argumentList as AstNodeImpl);
   }
 
   @override
   TypeArgumentList get typeArguments => _typeArguments;
 
   void set typeArguments(TypeArgumentList typeArguments) {
-    _typeArguments = _becomeParentOf(typeArguments);
+    _typeArguments = _becomeParentOf(typeArguments as AstNodeImpl);
   }
 }
 
@@ -6399,8 +6402,8 @@ class IsExpressionImpl extends ExpressionImpl implements IsExpression {
    * Initialize a newly created is expression. The [notOperator] can be `null`
    * if the sense of the test is not negated.
    */
-  IsExpressionImpl(
-      Expression expression, this.isOperator, this.notOperator, TypeName type) {
+  IsExpressionImpl(ExpressionImpl expression, this.isOperator, this.notOperator,
+      TypeNameImpl type) {
     _expression = _becomeParentOf(expression);
     _type = _becomeParentOf(type);
   }
@@ -6423,7 +6426,7 @@ class IsExpressionImpl extends ExpressionImpl implements IsExpression {
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -6434,7 +6437,7 @@ class IsExpressionImpl extends ExpressionImpl implements IsExpression {
 
   @override
   void set type(TypeName name) {
-    _type = _becomeParentOf(name);
+    _type = _becomeParentOf(name as AstNodeImpl);
   }
 
   @override
@@ -6468,8 +6471,8 @@ class LabeledStatementImpl extends StatementImpl implements LabeledStatement {
   /**
    * Initialize a newly created labeled statement.
    */
-  LabeledStatementImpl(List<Label> labels, Statement statement) {
-    _labels = new NodeList<Label>(this, labels);
+  LabeledStatementImpl(List<Label> labels, StatementImpl statement) {
+    _labels = new NodeListImpl<Label>(this, labels);
     _statement = _becomeParentOf(statement);
   }
 
@@ -6497,7 +6500,7 @@ class LabeledStatementImpl extends StatementImpl implements LabeledStatement {
 
   @override
   void set statement(Statement statement) {
-    _statement = _becomeParentOf(statement);
+    _statement = _becomeParentOf(statement as AstNodeImpl);
   }
 
   @override
@@ -6535,7 +6538,7 @@ class LabelImpl extends AstNodeImpl implements Label {
   /**
    * Initialize a newly created label.
    */
-  LabelImpl(SimpleIdentifier label, this.colon) {
+  LabelImpl(SimpleIdentifierImpl label, this.colon) {
     _label = _becomeParentOf(label);
   }
 
@@ -6553,7 +6556,7 @@ class LabelImpl extends AstNodeImpl implements Label {
 
   @override
   void set label(SimpleIdentifier label) {
-    _label = _becomeParentOf(label);
+    _label = _becomeParentOf(label as AstNodeImpl);
   }
 
   @override
@@ -6595,8 +6598,8 @@ class LibraryDirectiveImpl extends DirectiveImpl implements LibraryDirective {
    * [comment] and [metadata] can be `null` if the directive does not have the
    * corresponding attribute.
    */
-  LibraryDirectiveImpl(Comment comment, List<Annotation> metadata,
-      this.libraryKeyword, LibraryIdentifier name, this.semicolon)
+  LibraryDirectiveImpl(CommentImpl comment, List<Annotation> metadata,
+      this.libraryKeyword, LibraryIdentifierImpl name, this.semicolon)
       : super(comment, metadata) {
     _name = _becomeParentOf(name);
   }
@@ -6619,7 +6622,7 @@ class LibraryDirectiveImpl extends DirectiveImpl implements LibraryDirective {
 
   @override
   void set name(LibraryIdentifier name) {
-    _name = _becomeParentOf(name);
+    _name = _becomeParentOf(name as AstNodeImpl);
   }
 
   @override
@@ -6650,7 +6653,7 @@ class LibraryIdentifierImpl extends IdentifierImpl
    * Initialize a newly created prefixed identifier.
    */
   LibraryIdentifierImpl(List<SimpleIdentifier> components) {
-    _components = new NodeList<SimpleIdentifier>(this, components);
+    _components = new NodeListImpl<SimpleIdentifier>(this, components);
   }
 
   @override
@@ -6736,7 +6739,7 @@ class ListLiteralImpl extends TypedLiteralImpl implements ListLiteral {
   ListLiteralImpl(Token constKeyword, TypeArgumentList typeArguments,
       this.leftBracket, List<Expression> elements, this.rightBracket)
       : super(constKeyword, typeArguments) {
-    _elements = new NodeList<Expression>(this, elements);
+    _elements = new NodeListImpl<Expression>(this, elements);
   }
 
   @override
@@ -6838,7 +6841,8 @@ class MapLiteralEntryImpl extends AstNodeImpl implements MapLiteralEntry {
   /**
    * Initialize a newly created map literal entry.
    */
-  MapLiteralEntryImpl(Expression key, this.separator, Expression value) {
+  MapLiteralEntryImpl(
+      ExpressionImpl key, this.separator, ExpressionImpl value) {
     _key = _becomeParentOf(key);
     _value = _becomeParentOf(value);
   }
@@ -6858,7 +6862,7 @@ class MapLiteralEntryImpl extends AstNodeImpl implements MapLiteralEntry {
 
   @override
   void set key(Expression string) {
-    _key = _becomeParentOf(string);
+    _key = _becomeParentOf(string as AstNodeImpl);
   }
 
   @override
@@ -6866,7 +6870,7 @@ class MapLiteralEntryImpl extends AstNodeImpl implements MapLiteralEntry {
 
   @override
   void set value(Expression expression) {
-    _value = _becomeParentOf(expression);
+    _value = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -6913,7 +6917,7 @@ class MapLiteralImpl extends TypedLiteralImpl implements MapLiteral {
   MapLiteralImpl(Token constKeyword, TypeArgumentList typeArguments,
       this.leftBracket, List<MapLiteralEntry> entries, this.rightBracket)
       : super(constKeyword, typeArguments) {
-    _entries = new NodeList<MapLiteralEntry>(this, entries);
+    _entries = new NodeListImpl<MapLiteralEntry>(this, entries);
   }
 
   @override
@@ -7035,17 +7039,17 @@ class MethodDeclarationImpl extends ClassMemberImpl
    * this method declares a getter.
    */
   MethodDeclarationImpl(
-      Comment comment,
+      CommentImpl comment,
       List<Annotation> metadata,
       this.externalKeyword,
       this.modifierKeyword,
-      TypeName returnType,
+      TypeNameImpl returnType,
       this.propertyKeyword,
       this.operatorKeyword,
-      SimpleIdentifier name,
-      TypeParameterList typeParameters,
-      FormalParameterList parameters,
-      FunctionBody body)
+      SimpleIdentifierImpl name,
+      TypeParameterListImpl typeParameters,
+      FormalParameterListImpl parameters,
+      FunctionBodyImpl body)
       : super(comment, metadata) {
     _returnType = _becomeParentOf(returnType);
     _name = _becomeParentOf(name);
@@ -7059,7 +7063,7 @@ class MethodDeclarationImpl extends ClassMemberImpl
 
   @override
   void set body(FunctionBody functionBody) {
-    _body = _becomeParentOf(functionBody);
+    _body = _becomeParentOf(functionBody as AstNodeImpl);
   }
 
   @override
@@ -7081,8 +7085,7 @@ class MethodDeclarationImpl extends ClassMemberImpl
    * getter or a setter.
    */
   @override
-  ExecutableElement get element =>
-      _name != null ? (_name.staticElement as ExecutableElement) : null;
+  ExecutableElement get element => _name?.staticElement as ExecutableElement;
 
   @override
   Token get endToken => _body.endToken;
@@ -7127,7 +7130,7 @@ class MethodDeclarationImpl extends ClassMemberImpl
 
   @override
   void set name(SimpleIdentifier identifier) {
-    _name = _becomeParentOf(identifier);
+    _name = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -7135,7 +7138,7 @@ class MethodDeclarationImpl extends ClassMemberImpl
 
   @override
   void set parameters(FormalParameterList parameters) {
-    _parameters = _becomeParentOf(parameters);
+    _parameters = _becomeParentOf(parameters as AstNodeImpl);
   }
 
   @override
@@ -7143,7 +7146,7 @@ class MethodDeclarationImpl extends ClassMemberImpl
 
   @override
   void set returnType(TypeName typeName) {
-    _returnType = _becomeParentOf(typeName);
+    _returnType = _becomeParentOf(typeName as AstNodeImpl);
   }
 
   @override
@@ -7151,7 +7154,7 @@ class MethodDeclarationImpl extends ClassMemberImpl
 
   @override
   void set typeParameters(TypeParameterList typeParameters) {
-    _typeParameters = _becomeParentOf(typeParameters);
+    _typeParameters = _becomeParentOf(typeParameters as AstNodeImpl);
   }
 
   @override
@@ -7205,11 +7208,11 @@ class MethodInvocationImpl extends InvocationExpressionImpl
    * can be `null` if there is no target.
    */
   MethodInvocationImpl(
-      Expression target,
+      ExpressionImpl target,
       this.operator,
-      SimpleIdentifier methodName,
-      TypeArgumentList typeArguments,
-      ArgumentList argumentList)
+      SimpleIdentifierImpl methodName,
+      TypeArgumentListImpl typeArguments,
+      ArgumentListImpl argumentList)
       : super(typeArguments, argumentList) {
     _target = _becomeParentOf(target);
     _methodName = _becomeParentOf(methodName);
@@ -7247,7 +7250,7 @@ class MethodInvocationImpl extends InvocationExpressionImpl
 
   @override
   void set methodName(SimpleIdentifier identifier) {
-    _methodName = _becomeParentOf(identifier);
+    _methodName = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -7273,7 +7276,7 @@ class MethodInvocationImpl extends InvocationExpressionImpl
 
   @override
   void set target(Expression expression) {
-    _target = _becomeParentOf(expression);
+    _target = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -7305,7 +7308,7 @@ abstract class NamedCompilationUnitMemberImpl extends CompilationUnitMemberImpl
    * does not have the corresponding attribute.
    */
   NamedCompilationUnitMemberImpl(
-      Comment comment, List<Annotation> metadata, SimpleIdentifier name)
+      CommentImpl comment, List<Annotation> metadata, SimpleIdentifierImpl name)
       : super(comment, metadata) {
     _name = _becomeParentOf(name);
   }
@@ -7315,7 +7318,7 @@ abstract class NamedCompilationUnitMemberImpl extends CompilationUnitMemberImpl
 
   @override
   void set name(SimpleIdentifier identifier) {
-    _name = _becomeParentOf(identifier);
+    _name = _becomeParentOf(identifier as AstNodeImpl);
   }
 }
 
@@ -7340,7 +7343,7 @@ class NamedExpressionImpl extends ExpressionImpl implements NamedExpression {
   /**
    * Initialize a newly created named expression..
    */
-  NamedExpressionImpl(Label name, Expression expression) {
+  NamedExpressionImpl(LabelImpl name, ExpressionImpl expression) {
     _name = _becomeParentOf(name);
     _expression = _becomeParentOf(expression);
   }
@@ -7369,7 +7372,7 @@ class NamedExpressionImpl extends ExpressionImpl implements NamedExpression {
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -7377,7 +7380,7 @@ class NamedExpressionImpl extends ExpressionImpl implements NamedExpression {
 
   @override
   void set name(Label identifier) {
-    _name = _becomeParentOf(identifier);
+    _name = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -7441,8 +7444,8 @@ abstract class NamespaceDirectiveImpl extends UriBasedDirectiveImpl
       List<Combinator> combinators,
       this.semicolon)
       : super(comment, metadata, libraryUri) {
-    _configurations = new NodeList<Configuration>(this, configurations);
-    _combinators = new NodeList<Combinator>(this, combinators);
+    _configurations = new NodeListImpl<Configuration>(this, configurations);
+    _combinators = new NodeListImpl<Combinator>(this, combinators);
   }
 
   @override
@@ -7482,7 +7485,7 @@ class NativeClauseImpl extends AstNodeImpl implements NativeClause {
   /**
    * Initialize a newly created native clause.
    */
-  NativeClauseImpl(this.nativeKeyword, StringLiteral name) {
+  NativeClauseImpl(this.nativeKeyword, StringLiteralImpl name) {
     _name = _becomeParentOf(name);
   }
 
@@ -7501,7 +7504,7 @@ class NativeClauseImpl extends AstNodeImpl implements NativeClause {
 
   @override
   void set name(StringLiteral name) {
-    _name = _becomeParentOf(name);
+    _name = _becomeParentOf(name as AstNodeImpl);
   }
 
   @override
@@ -7546,7 +7549,7 @@ class NativeFunctionBodyImpl extends FunctionBodyImpl
    * a string literal, and a semicolon.
    */
   NativeFunctionBodyImpl(
-      this.nativeKeyword, StringLiteral stringLiteral, this.semicolon) {
+      this.nativeKeyword, StringLiteralImpl stringLiteral, this.semicolon) {
     _stringLiteral = _becomeParentOf(stringLiteral);
   }
 
@@ -7567,7 +7570,7 @@ class NativeFunctionBodyImpl extends FunctionBodyImpl
 
   @override
   void set stringLiteral(StringLiteral stringLiteral) {
-    _stringLiteral = _becomeParentOf(stringLiteral);
+    _stringLiteral = _becomeParentOf(stringLiteral as AstNodeImpl);
   }
 
   @override
@@ -7649,7 +7652,7 @@ class NodeListImpl<E extends AstNode> extends Object
     if (index < 0 || index >= _elements.length) {
       throw new RangeError("Index: $index, Size: ${_elements.length}");
     }
-    _owner._becomeParentOf(node);
+    _owner._becomeParentOf(node as AstNodeImpl);
     _elements[index] = node;
   }
 
@@ -7671,7 +7674,7 @@ class NodeListImpl<E extends AstNode> extends Object
     if (nodes != null && !nodes.isEmpty) {
       _elements.addAll(nodes);
       for (E node in nodes) {
-        _owner._becomeParentOf(node);
+        _owner._becomeParentOf(node as AstNodeImpl);
       }
       return true;
     }
@@ -7689,7 +7692,7 @@ class NodeListImpl<E extends AstNode> extends Object
     if (index < 0 || index > length) {
       throw new RangeError("Index: $index, Size: ${_elements.length}");
     }
-    _owner._becomeParentOf(node);
+    _owner._becomeParentOf(node as AstNodeImpl);
     if (length == 0) {
       _elements.add(node);
     } else {
@@ -7739,10 +7742,10 @@ abstract class NormalFormalParameterImpl extends FormalParameterImpl
    * [comment] and [metadata] can be `null` if the parameter does not have the
    * corresponding attribute.
    */
-  NormalFormalParameterImpl(
-      Comment comment, List<Annotation> metadata, SimpleIdentifier identifier) {
+  NormalFormalParameterImpl(CommentImpl comment, List<Annotation> metadata,
+      SimpleIdentifierImpl identifier) {
     _comment = _becomeParentOf(comment);
-    _metadata = new NodeList<Annotation>(this, metadata);
+    _metadata = new NodeListImpl<Annotation>(this, metadata);
     _identifier = _becomeParentOf(identifier);
   }
 
@@ -7751,7 +7754,7 @@ abstract class NormalFormalParameterImpl extends FormalParameterImpl
 
   @override
   void set documentationComment(Comment comment) {
-    _comment = _becomeParentOf(comment);
+    _comment = _becomeParentOf(comment as AstNodeImpl);
   }
 
   @override
@@ -7759,7 +7762,7 @@ abstract class NormalFormalParameterImpl extends FormalParameterImpl
 
   @override
   void set identifier(SimpleIdentifier identifier) {
-    _identifier = _becomeParentOf(identifier);
+    _identifier = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -7891,7 +7894,7 @@ class ParenthesizedExpressionImpl extends ExpressionImpl
    * Initialize a newly created parenthesized expression.
    */
   ParenthesizedExpressionImpl(
-      this.leftParenthesis, Expression expression, this.rightParenthesis) {
+      this.leftParenthesis, ExpressionImpl expression, this.rightParenthesis) {
     _expression = _becomeParentOf(expression);
   }
 
@@ -7912,11 +7915,22 @@ class ParenthesizedExpressionImpl extends ExpressionImpl
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
   int get precedence => 15;
+
+  @override
+  Expression get unParenthesized {
+    // This is somewhat inefficient, but it avoids a stack overflow in the
+    // degenerate case.
+    Expression expression = _expression;
+    while (expression is ParenthesizedExpressionImpl) {
+      expression = (expression as ParenthesizedExpressionImpl)._expression;
+    }
+    return expression;
+  }
 
   @override
   dynamic/*=E*/ accept/*<E>*/(AstVisitor/*<E>*/ visitor) =>
@@ -8013,11 +8027,11 @@ class PartOfDirectiveImpl extends DirectiveImpl implements PartOfDirective {
    * corresponding attribute.
    */
   PartOfDirectiveImpl(
-      Comment comment,
+      CommentImpl comment,
       List<Annotation> metadata,
       this.partKeyword,
       this.ofKeyword,
-      LibraryIdentifier libraryName,
+      LibraryIdentifierImpl libraryName,
       this.semicolon)
       : super(comment, metadata) {
     _libraryName = _becomeParentOf(libraryName);
@@ -8044,7 +8058,7 @@ class PartOfDirectiveImpl extends DirectiveImpl implements PartOfDirective {
 
   @override
   void set libraryName(LibraryIdentifier libraryName) {
-    _libraryName = _becomeParentOf(libraryName);
+    _libraryName = _becomeParentOf(libraryName as AstNodeImpl);
   }
 
   @override
@@ -8097,7 +8111,7 @@ class PostfixExpressionImpl extends ExpressionImpl
   /**
    * Initialize a newly created postfix expression.
    */
-  PostfixExpressionImpl(Expression operand, this.operator) {
+  PostfixExpressionImpl(ExpressionImpl operand, this.operator) {
     _operand = _becomeParentOf(operand);
   }
 
@@ -8125,7 +8139,7 @@ class PostfixExpressionImpl extends ExpressionImpl
 
   @override
   void set operand(Expression expression) {
-    _operand = _becomeParentOf(expression);
+    _operand = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -8202,11 +8216,18 @@ class PrefixedIdentifierImpl extends IdentifierImpl
   /**
    * Initialize a newly created prefixed identifier.
    */
-  PrefixedIdentifierImpl(
-      SimpleIdentifier prefix, this.period, SimpleIdentifier identifier) {
+  PrefixedIdentifierImpl(SimpleIdentifierImpl prefix, this.period,
+      SimpleIdentifierImpl identifier) {
     _prefix = _becomeParentOf(prefix);
     _identifier = _becomeParentOf(identifier);
   }
+
+  /**
+   * Initialize a newly created prefixed identifier that does not take ownership
+   * of the components. The resulting node is only for temporary use, such as by
+   * resolution.
+   */
+  PrefixedIdentifierImpl.temp(this._prefix, this._identifier) : period = null;
 
   @override
   Token get beginToken => _prefix.beginToken;
@@ -8231,22 +8252,21 @@ class PrefixedIdentifierImpl extends IdentifierImpl
 
   @override
   void set identifier(SimpleIdentifier identifier) {
-    _identifier = _becomeParentOf(identifier);
+    _identifier = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
   bool get isDeferred {
     Element element = _prefix.staticElement;
-    if (element is! PrefixElement) {
-      return false;
+    if (element is PrefixElement) {
+      List<ImportElement> imports =
+          element.enclosingElement.getImportsWithPrefix(element);
+      if (imports.length != 1) {
+        return false;
+      }
+      return imports[0].isDeferred;
     }
-    PrefixElement prefixElement = element as PrefixElement;
-    List<ImportElement> imports =
-        prefixElement.enclosingElement.getImportsWithPrefix(prefixElement);
-    if (imports.length != 1) {
-      return false;
-    }
-    return imports[0].isDeferred;
+    return false;
   }
 
   @override
@@ -8260,7 +8280,7 @@ class PrefixedIdentifierImpl extends IdentifierImpl
 
   @override
   void set prefix(SimpleIdentifier identifier) {
-    _prefix = _becomeParentOf(identifier);
+    _prefix = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -8324,7 +8344,7 @@ class PrefixExpressionImpl extends ExpressionImpl implements PrefixExpression {
   /**
    * Initialize a newly created prefix expression.
    */
-  PrefixExpressionImpl(this.operator, Expression operand) {
+  PrefixExpressionImpl(this.operator, ExpressionImpl operand) {
     _operand = _becomeParentOf(operand);
   }
 
@@ -8352,7 +8372,7 @@ class PrefixExpressionImpl extends ExpressionImpl implements PrefixExpression {
 
   @override
   void set operand(Expression expression) {
-    _operand = _becomeParentOf(expression);
+    _operand = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -8432,7 +8452,7 @@ class PropertyAccessImpl extends ExpressionImpl implements PropertyAccess {
    * Initialize a newly created property access expression.
    */
   PropertyAccessImpl(
-      Expression target, this.operator, SimpleIdentifier propertyName) {
+      ExpressionImpl target, this.operator, SimpleIdentifierImpl propertyName) {
     _target = _becomeParentOf(target);
     _propertyName = _becomeParentOf(propertyName);
   }
@@ -8467,7 +8487,7 @@ class PropertyAccessImpl extends ExpressionImpl implements PropertyAccess {
 
   @override
   void set propertyName(SimpleIdentifier identifier) {
-    _propertyName = _becomeParentOf(identifier);
+    _propertyName = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -8490,7 +8510,7 @@ class PropertyAccessImpl extends ExpressionImpl implements PropertyAccess {
 
   @override
   void set target(Expression expression) {
-    _target = _becomeParentOf(expression);
+    _target = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -8548,7 +8568,7 @@ class RedirectingConstructorInvocationImpl extends ConstructorInitializerImpl
    * `null` if the constructor being invoked is the unnamed constructor.
    */
   RedirectingConstructorInvocationImpl(this.thisKeyword, this.period,
-      SimpleIdentifier constructorName, ArgumentList argumentList) {
+      SimpleIdentifierImpl constructorName, ArgumentListImpl argumentList) {
     _constructorName = _becomeParentOf(constructorName);
     _argumentList = _becomeParentOf(argumentList);
   }
@@ -8558,7 +8578,7 @@ class RedirectingConstructorInvocationImpl extends ConstructorInitializerImpl
 
   @override
   void set argumentList(ArgumentList argumentList) {
-    _argumentList = _becomeParentOf(argumentList);
+    _argumentList = _becomeParentOf(argumentList as AstNodeImpl);
   }
 
   @override
@@ -8576,7 +8596,7 @@ class RedirectingConstructorInvocationImpl extends ConstructorInitializerImpl
 
   @override
   void set constructorName(SimpleIdentifier identifier) {
-    _constructorName = _becomeParentOf(identifier);
+    _constructorName = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -8661,7 +8681,7 @@ class ReturnStatementImpl extends StatementImpl implements ReturnStatement {
    * if no explicit value was provided.
    */
   ReturnStatementImpl(
-      this.returnKeyword, Expression expression, this.semicolon) {
+      this.returnKeyword, ExpressionImpl expression, this.semicolon) {
     _expression = _becomeParentOf(expression);
   }
 
@@ -8680,7 +8700,7 @@ class ReturnStatementImpl extends StatementImpl implements ReturnStatement {
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -8746,7 +8766,7 @@ class ShowCombinatorImpl extends CombinatorImpl implements ShowCombinator {
    */
   ShowCombinatorImpl(Token keyword, List<SimpleIdentifier> shownNames)
       : super(keyword) {
-    _shownNames = new NodeList<SimpleIdentifier>(this, shownNames);
+    _shownNames = new NodeListImpl<SimpleIdentifier>(this, shownNames);
   }
 
   @override
@@ -8797,8 +8817,8 @@ class SimpleFormalParameterImpl extends NormalFormalParameterImpl
    * corresponding attribute. The [keyword] can be `null` if a type was
    * specified. The [type] must be `null` if the keyword is 'var'.
    */
-  SimpleFormalParameterImpl(Comment comment, List<Annotation> metadata,
-      this.keyword, TypeName type, SimpleIdentifier identifier)
+  SimpleFormalParameterImpl(CommentImpl comment, List<Annotation> metadata,
+      this.keyword, TypeNameImpl type, SimpleIdentifierImpl identifier)
       : super(comment, metadata, identifier) {
     _type = _becomeParentOf(type);
   }
@@ -8834,7 +8854,7 @@ class SimpleFormalParameterImpl extends NormalFormalParameterImpl
 
   @override
   void set type(TypeName typeName) {
-    _type = _becomeParentOf(typeName);
+    _type = _becomeParentOf(typeName as AstNodeImpl);
   }
 
   @override
@@ -8914,11 +8934,9 @@ class SimpleIdentifierImpl extends IdentifierImpl implements SimpleIdentifier {
     AstNode parent = this.parent;
     if (parent is PrefixedIdentifier) {
       return identical(parent.identifier, this);
-    }
-    if (parent is PropertyAccess) {
+    } else if (parent is PropertyAccess) {
       return identical(parent.propertyName, this);
-    }
-    if (parent is MethodInvocation) {
+    } else if (parent is MethodInvocation) {
       MethodInvocation invocation = parent;
       return identical(invocation.methodName, this) &&
           invocation.realTarget != null;
@@ -8961,23 +8979,22 @@ class SimpleIdentifierImpl extends IdentifierImpl implements SimpleIdentifier {
   @override
   bool inGetterContext() {
     // TODO(brianwilkerson) Convert this to a getter.
-    AstNode parent = this.parent;
+    AstNode initialParent = this.parent;
+    AstNode parent = initialParent;
     AstNode target = this;
     // skip prefix
-    if (parent is PrefixedIdentifier) {
-      PrefixedIdentifier prefixed = parent as PrefixedIdentifier;
-      if (identical(prefixed.prefix, this)) {
+    if (initialParent is PrefixedIdentifier) {
+      if (identical(initialParent.prefix, this)) {
         return true;
       }
-      parent = prefixed.parent;
-      target = prefixed;
-    } else if (parent is PropertyAccess) {
-      PropertyAccess access = parent as PropertyAccess;
-      if (identical(access.target, this)) {
+      parent = initialParent.parent;
+      target = initialParent;
+    } else if (initialParent is PropertyAccess) {
+      if (identical(initialParent.target, this)) {
         return true;
       }
-      parent = access.parent;
-      target = access;
+      parent = initialParent.parent;
+      target = initialParent;
     }
     // skip label
     if (parent is Label) {
@@ -9001,24 +9018,23 @@ class SimpleIdentifierImpl extends IdentifierImpl implements SimpleIdentifier {
   @override
   bool inSetterContext() {
     // TODO(brianwilkerson) Convert this to a getter.
-    AstNode parent = this.parent;
+    AstNode initialParent = this.parent;
+    AstNode parent = initialParent;
     AstNode target = this;
     // skip prefix
-    if (parent is PrefixedIdentifier) {
-      PrefixedIdentifier prefixed = parent as PrefixedIdentifier;
+    if (initialParent is PrefixedIdentifier) {
       // if this is the prefix, then return false
-      if (identical(prefixed.prefix, this)) {
+      if (identical(initialParent.prefix, this)) {
         return false;
       }
-      parent = prefixed.parent;
-      target = prefixed;
-    } else if (parent is PropertyAccess) {
-      PropertyAccess access = parent as PropertyAccess;
-      if (identical(access.target, this)) {
+      parent = initialParent.parent;
+      target = initialParent;
+    } else if (initialParent is PropertyAccess) {
+      if (identical(initialParent.target, this)) {
         return false;
       }
-      parent = access.parent;
-      target = access;
+      parent = initialParent.parent;
+      target = initialParent;
     }
     // analyze usage
     if (parent is PrefixExpression) {
@@ -9186,7 +9202,7 @@ class StringInterpolationImpl extends SingleStringLiteralImpl
    * Initialize a newly created string interpolation expression.
    */
   StringInterpolationImpl(List<InterpolationElement> elements) {
-    _elements = new NodeList<InterpolationElement>(this, elements);
+    _elements = new NodeListImpl<InterpolationElement>(this, elements);
   }
 
   @override
@@ -9413,7 +9429,7 @@ class SuperConstructorInvocationImpl extends ConstructorInitializerImpl
    * unnamed constructor.
    */
   SuperConstructorInvocationImpl(this.superKeyword, this.period,
-      SimpleIdentifier constructorName, ArgumentList argumentList) {
+      SimpleIdentifierImpl constructorName, ArgumentListImpl argumentList) {
     _constructorName = _becomeParentOf(constructorName);
     _argumentList = _becomeParentOf(argumentList);
   }
@@ -9423,7 +9439,7 @@ class SuperConstructorInvocationImpl extends ConstructorInitializerImpl
 
   @override
   void set argumentList(ArgumentList argumentList) {
-    _argumentList = _becomeParentOf(argumentList);
+    _argumentList = _becomeParentOf(argumentList as AstNodeImpl);
   }
 
   @override
@@ -9441,7 +9457,7 @@ class SuperConstructorInvocationImpl extends ConstructorInitializerImpl
 
   @override
   void set constructorName(SimpleIdentifier identifier) {
-    _constructorName = _becomeParentOf(identifier);
+    _constructorName = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -9513,7 +9529,7 @@ class SwitchCaseImpl extends SwitchMemberImpl implements SwitchCase {
    * Initialize a newly created switch case. The list of [labels] can be `null`
    * if there are no labels.
    */
-  SwitchCaseImpl(List<Label> labels, Token keyword, Expression expression,
+  SwitchCaseImpl(List<Label> labels, Token keyword, ExpressionImpl expression,
       Token colon, List<Statement> statements)
       : super(labels, keyword, colon, statements) {
     _expression = _becomeParentOf(expression);
@@ -9532,7 +9548,7 @@ class SwitchCaseImpl extends SwitchMemberImpl implements SwitchCase {
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -9614,8 +9630,8 @@ abstract class SwitchMemberImpl extends AstNodeImpl implements SwitchMember {
    */
   SwitchMemberImpl(List<Label> labels, this.keyword, this.colon,
       List<Statement> statements) {
-    _labels = new NodeList<Label>(this, labels);
-    _statements = new NodeList<Statement>(this, statements);
+    _labels = new NodeListImpl<Label>(this, labels);
+    _statements = new NodeListImpl<Statement>(this, statements);
   }
 
   @override
@@ -9691,13 +9707,13 @@ class SwitchStatementImpl extends StatementImpl implements SwitchStatement {
   SwitchStatementImpl(
       this.switchKeyword,
       this.leftParenthesis,
-      Expression expression,
+      ExpressionImpl expression,
       this.rightParenthesis,
       this.leftBracket,
       List<SwitchMember> members,
       this.rightBracket) {
     _expression = _becomeParentOf(expression);
-    _members = new NodeList<SwitchMember>(this, members);
+    _members = new NodeListImpl<SwitchMember>(this, members);
   }
 
   @override
@@ -9721,7 +9737,7 @@ class SwitchStatementImpl extends StatementImpl implements SwitchStatement {
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -9841,7 +9857,7 @@ class ThrowExpressionImpl extends ExpressionImpl implements ThrowExpression {
   /**
    * Initialize a newly created throw expression.
    */
-  ThrowExpressionImpl(this.throwKeyword, Expression expression) {
+  ThrowExpressionImpl(this.throwKeyword, ExpressionImpl expression) {
     _expression = _becomeParentOf(expression);
   }
 
@@ -9865,7 +9881,7 @@ class ThrowExpressionImpl extends ExpressionImpl implements ThrowExpression {
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -9905,8 +9921,11 @@ class TopLevelVariableDeclarationImpl extends CompilationUnitMemberImpl
    * of the [comment] and [metadata] can be `null` if the variable does not have
    * the corresponding attribute.
    */
-  TopLevelVariableDeclarationImpl(Comment comment, List<Annotation> metadata,
-      VariableDeclarationList variableList, this.semicolon)
+  TopLevelVariableDeclarationImpl(
+      CommentImpl comment,
+      List<Annotation> metadata,
+      VariableDeclarationListImpl variableList,
+      this.semicolon)
       : super(comment, metadata) {
     _variableList = _becomeParentOf(variableList);
   }
@@ -9929,7 +9948,7 @@ class TopLevelVariableDeclarationImpl extends CompilationUnitMemberImpl
 
   @override
   void set variables(VariableDeclarationList variables) {
-    _variableList = _becomeParentOf(variables);
+    _variableList = _becomeParentOf(variables as AstNodeImpl);
   }
 
   @override
@@ -9985,10 +10004,14 @@ class TryStatementImpl extends StatementImpl implements TryStatement {
    * `null` if there are no catch clauses. The [finallyKeyword] and
    * [finallyBlock] can be `null` if there is no finally clause.
    */
-  TryStatementImpl(this.tryKeyword, Block body, List<CatchClause> catchClauses,
-      this.finallyKeyword, Block finallyBlock) {
+  TryStatementImpl(
+      this.tryKeyword,
+      BlockImpl body,
+      List<CatchClause> catchClauses,
+      this.finallyKeyword,
+      BlockImpl finallyBlock) {
     _body = _becomeParentOf(body);
-    _catchClauses = new NodeList<CatchClause>(this, catchClauses);
+    _catchClauses = new NodeListImpl<CatchClause>(this, catchClauses);
     _finallyBlock = _becomeParentOf(finallyBlock);
   }
 
@@ -10000,7 +10023,7 @@ class TryStatementImpl extends StatementImpl implements TryStatement {
 
   @override
   void set body(Block block) {
-    _body = _becomeParentOf(block);
+    _body = _becomeParentOf(block as AstNodeImpl);
   }
 
   @override
@@ -10031,7 +10054,7 @@ class TryStatementImpl extends StatementImpl implements TryStatement {
 
   @override
   void set finallyBlock(Block block) {
-    _finallyBlock = _becomeParentOf(block);
+    _finallyBlock = _becomeParentOf(block as AstNodeImpl);
   }
 
   @override
@@ -10111,7 +10134,7 @@ class TypeArgumentListImpl extends AstNodeImpl implements TypeArgumentList {
    */
   TypeArgumentListImpl(
       this.leftBracket, List<TypeName> arguments, this.rightBracket) {
-    _arguments = new NodeList<TypeName>(this, arguments);
+    _arguments = new NodeListImpl<TypeName>(this, arguments);
   }
 
   @override
@@ -10165,7 +10188,7 @@ abstract class TypedLiteralImpl extends LiteralImpl implements TypedLiteral {
    * if the literal is not a constant. The [typeArguments] can be `null` if no
    * type arguments were declared.
    */
-  TypedLiteralImpl(this.constKeyword, TypeArgumentList typeArguments) {
+  TypedLiteralImpl(this.constKeyword, TypeArgumentListImpl typeArguments) {
     _typeArguments = _becomeParentOf(typeArguments);
   }
 
@@ -10174,7 +10197,7 @@ abstract class TypedLiteralImpl extends LiteralImpl implements TypedLiteral {
 
   @override
   void set typeArguments(TypeArgumentList typeArguments) {
-    _typeArguments = _becomeParentOf(typeArguments);
+    _typeArguments = _becomeParentOf(typeArguments as AstNodeImpl);
   }
 
   ChildEntities get _childEntities =>
@@ -10213,7 +10236,7 @@ class TypeNameImpl extends AstNodeImpl implements TypeName {
    * Initialize a newly created type name. The [typeArguments] can be `null` if
    * there are no type arguments.
    */
-  TypeNameImpl(Identifier name, TypeArgumentList typeArguments) {
+  TypeNameImpl(IdentifierImpl name, TypeArgumentListImpl typeArguments) {
     _name = _becomeParentOf(name);
     _typeArguments = _becomeParentOf(typeArguments);
   }
@@ -10250,7 +10273,7 @@ class TypeNameImpl extends AstNodeImpl implements TypeName {
 
   @override
   void set name(Identifier identifier) {
-    _name = _becomeParentOf(identifier);
+    _name = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -10258,7 +10281,7 @@ class TypeNameImpl extends AstNodeImpl implements TypeName {
 
   @override
   void set typeArguments(TypeArgumentList typeArguments) {
-    _typeArguments = _becomeParentOf(typeArguments);
+    _typeArguments = _becomeParentOf(typeArguments as AstNodeImpl);
   }
 
   @override
@@ -10302,8 +10325,8 @@ class TypeParameterImpl extends DeclarationImpl implements TypeParameter {
    * corresponding attribute. The [extendsKeyword] and [bound] can be `null` if
    * the parameter does not have an upper bound.
    */
-  TypeParameterImpl(Comment comment, List<Annotation> metadata,
-      SimpleIdentifier name, this.extendsKeyword, TypeName bound)
+  TypeParameterImpl(CommentImpl comment, List<Annotation> metadata,
+      SimpleIdentifierImpl name, this.extendsKeyword, TypeNameImpl bound)
       : super(comment, metadata) {
     _name = _becomeParentOf(name);
     _bound = _becomeParentOf(bound);
@@ -10314,7 +10337,7 @@ class TypeParameterImpl extends DeclarationImpl implements TypeParameter {
 
   @override
   void set bound(TypeName typeName) {
-    _bound = _becomeParentOf(typeName);
+    _bound = _becomeParentOf(typeName as AstNodeImpl);
   }
 
   @override
@@ -10323,7 +10346,7 @@ class TypeParameterImpl extends DeclarationImpl implements TypeParameter {
 
   @override
   TypeParameterElement get element =>
-      _name != null ? (_name.staticElement as TypeParameterElement) : null;
+      _name?.staticElement as TypeParameterElement;
 
   @override
   Token get endToken {
@@ -10341,7 +10364,7 @@ class TypeParameterImpl extends DeclarationImpl implements TypeParameter {
 
   @override
   void set name(SimpleIdentifier identifier) {
-    _name = _becomeParentOf(identifier);
+    _name = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -10383,7 +10406,7 @@ class TypeParameterListImpl extends AstNodeImpl implements TypeParameterList {
    */
   TypeParameterListImpl(
       this.leftBracket, List<TypeParameter> typeParameters, this.rightBracket) {
-    _typeParameters = new NodeList<TypeParameter>(this, typeParameters);
+    _typeParameters = new NodeListImpl<TypeParameter>(this, typeParameters);
   }
 
   @override
@@ -10448,7 +10471,7 @@ abstract class UriBasedDirectiveImpl extends DirectiveImpl
    * corresponding attribute.
    */
   UriBasedDirectiveImpl(
-      Comment comment, List<Annotation> metadata, StringLiteral uri)
+      CommentImpl comment, List<Annotation> metadata, StringLiteralImpl uri)
       : super(comment, metadata) {
     _uri = _becomeParentOf(uri);
   }
@@ -10458,7 +10481,7 @@ abstract class UriBasedDirectiveImpl extends DirectiveImpl
 
   @override
   void set uri(StringLiteral uri) {
-    _uri = _becomeParentOf(uri);
+    _uri = _becomeParentOf(uri as AstNodeImpl);
   }
 
   @override
@@ -10552,7 +10575,7 @@ class VariableDeclarationImpl extends DeclarationImpl
    * [initializer] can be `null` if there is no initializer.
    */
   VariableDeclarationImpl(
-      SimpleIdentifier name, this.equals, Expression initializer)
+      SimpleIdentifierImpl name, this.equals, ExpressionImpl initializer)
       : super(null, null) {
     _name = _becomeParentOf(name);
     _initializer = _becomeParentOf(initializer);
@@ -10563,7 +10586,7 @@ class VariableDeclarationImpl extends DeclarationImpl
       super._childEntities..add(_name)..add(equals)..add(_initializer);
 
   /**
-   * This overridden implementation of getDocumentationComment() looks in the
+   * This overridden implementation of [documentationComment] looks in the
    * grandparent node for Dartdoc comments if no documentation is specifically
    * available on the node.
    */
@@ -10571,19 +10594,16 @@ class VariableDeclarationImpl extends DeclarationImpl
   Comment get documentationComment {
     Comment comment = super.documentationComment;
     if (comment == null) {
-      if (parent != null && parent.parent != null) {
-        AstNode node = parent.parent;
-        if (node is AnnotatedNode) {
-          return node.documentationComment;
-        }
+      AstNode node = parent?.parent;
+      if (node is AnnotatedNode) {
+        return node.documentationComment;
       }
     }
     return comment;
   }
 
   @override
-  VariableElement get element =>
-      _name != null ? (_name.staticElement as VariableElement) : null;
+  VariableElement get element => _name?.staticElement as VariableElement;
 
   @override
   Token get endToken {
@@ -10601,7 +10621,7 @@ class VariableDeclarationImpl extends DeclarationImpl
 
   @override
   void set initializer(Expression expression) {
-    _initializer = _becomeParentOf(expression);
+    _initializer = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -10621,7 +10641,7 @@ class VariableDeclarationImpl extends DeclarationImpl
 
   @override
   void set name(SimpleIdentifier identifier) {
-    _name = _becomeParentOf(identifier);
+    _name = _becomeParentOf(identifier as AstNodeImpl);
   }
 
   @override
@@ -10672,11 +10692,11 @@ class VariableDeclarationListImpl extends AnnotatedNodeImpl
    * the corresponding attribute. The [keyword] can be `null` if a type was
    * specified. The [type] must be `null` if the keyword is 'var'.
    */
-  VariableDeclarationListImpl(Comment comment, List<Annotation> metadata,
-      this.keyword, TypeName type, List<VariableDeclaration> variables)
+  VariableDeclarationListImpl(CommentImpl comment, List<Annotation> metadata,
+      this.keyword, TypeNameImpl type, List<VariableDeclaration> variables)
       : super(comment, metadata) {
     _type = _becomeParentOf(type);
-    _variables = new NodeList<VariableDeclaration>(this, variables);
+    _variables = new NodeListImpl<VariableDeclaration>(this, variables);
   }
 
   @override
@@ -10710,7 +10730,7 @@ class VariableDeclarationListImpl extends AnnotatedNodeImpl
 
   @override
   void set type(TypeName typeName) {
-    _type = _becomeParentOf(typeName);
+    _type = _becomeParentOf(typeName as AstNodeImpl);
   }
 
   @override
@@ -10751,7 +10771,7 @@ class VariableDeclarationStatementImpl extends StatementImpl
    * Initialize a newly created variable declaration statement.
    */
   VariableDeclarationStatementImpl(
-      VariableDeclarationList variableList, this.semicolon) {
+      VariableDeclarationListImpl variableList, this.semicolon) {
     _variableList = _becomeParentOf(variableList);
   }
 
@@ -10770,7 +10790,7 @@ class VariableDeclarationStatementImpl extends StatementImpl
 
   @override
   void set variables(VariableDeclarationList variables) {
-    _variableList = _becomeParentOf(variables);
+    _variableList = _becomeParentOf(variables as AstNodeImpl);
   }
 
   @override
@@ -10819,7 +10839,7 @@ class WhileStatementImpl extends StatementImpl implements WhileStatement {
    * Initialize a newly created while statement.
    */
   WhileStatementImpl(this.whileKeyword, this.leftParenthesis,
-      Expression condition, this.rightParenthesis, Statement body) {
+      ExpressionImpl condition, this.rightParenthesis, StatementImpl body) {
     _condition = _becomeParentOf(condition);
     _body = _becomeParentOf(body);
   }
@@ -10832,7 +10852,7 @@ class WhileStatementImpl extends StatementImpl implements WhileStatement {
 
   @override
   void set body(Statement statement) {
-    _body = _becomeParentOf(statement);
+    _body = _becomeParentOf(statement as AstNodeImpl);
   }
 
   @override
@@ -10848,7 +10868,7 @@ class WhileStatementImpl extends StatementImpl implements WhileStatement {
 
   @override
   void set condition(Expression expression) {
-    _condition = _becomeParentOf(expression);
+    _condition = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override
@@ -10886,7 +10906,7 @@ class WithClauseImpl extends AstNodeImpl implements WithClause {
    * Initialize a newly created with clause.
    */
   WithClauseImpl(this.withKeyword, List<TypeName> mixinTypes) {
-    _mixinTypes = new NodeList<TypeName>(this, mixinTypes);
+    _mixinTypes = new NodeListImpl<TypeName>(this, mixinTypes);
   }
 
   @override
@@ -10946,7 +10966,7 @@ class YieldStatementImpl extends StatementImpl implements YieldStatement {
    * star was provided.
    */
   YieldStatementImpl(
-      this.yieldKeyword, this.star, Expression expression, this.semicolon) {
+      this.yieldKeyword, this.star, ExpressionImpl expression, this.semicolon) {
     _expression = _becomeParentOf(expression);
   }
 
@@ -10978,7 +10998,7 @@ class YieldStatementImpl extends StatementImpl implements YieldStatement {
 
   @override
   void set expression(Expression expression) {
-    _expression = _becomeParentOf(expression);
+    _expression = _becomeParentOf(expression as AstNodeImpl);
   }
 
   @override

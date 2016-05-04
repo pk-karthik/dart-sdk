@@ -338,7 +338,7 @@ class _CompilationUnitSerializer {
       new UnlinkedReferenceBuilder()
     ];
     linkedReferences = <LinkedReferenceBuilder>[
-      new LinkedReferenceBuilder(kind: ReferenceKind.classOrEnum)
+      new LinkedReferenceBuilder(kind: ReferenceKind.unresolved)
     ];
     List<UnlinkedPublicNameBuilder> names = <UnlinkedPublicNameBuilder>[];
     for (PropertyAccessorElement accessor in compilationUnit.accessors) {
@@ -355,7 +355,7 @@ class _CompilationUnitSerializer {
             kind: ReferenceKind.classOrEnum,
             name: cls.name,
             numTypeParameters: cls.typeParameters.length,
-            members: serializeClassConstMembers(cls)));
+            members: serializeClassStaticMembers(cls)));
       }
     }
     for (ClassElement enm in compilationUnit.enums) {
@@ -363,7 +363,7 @@ class _CompilationUnitSerializer {
         names.add(new UnlinkedPublicNameBuilder(
             kind: ReferenceKind.classOrEnum,
             name: enm.name,
-            members: serializeClassConstMembers(enm)));
+            members: serializeClassStaticMembers(enm)));
       }
     }
     for (FunctionElement function in compilationUnit.functions) {
@@ -594,11 +594,11 @@ class _CompilationUnitSerializer {
   }
 
   /**
-   * If [cls] is a class, return the list of its members available for
-   * constants - static constant fields, static methods and constructors.
-   * Otherwise return `null`.
+   * If [cls] is a class, return the list of its static members - static
+   * constant fields, static methods and constructors.  Otherwise return `null`.
    */
-  List<UnlinkedPublicNameBuilder> serializeClassConstMembers(ClassElement cls) {
+  List<UnlinkedPublicNameBuilder> serializeClassStaticMembers(
+      ClassElement cls) {
     if (cls.isMixinApplication) {
       // Mixin application members can't be determined directly from the AST so
       // we can't store them in UnlinkedPublicName.
@@ -607,15 +607,6 @@ class _CompilationUnitSerializer {
     }
     if (cls.kind == ElementKind.CLASS) {
       List<UnlinkedPublicNameBuilder> bs = <UnlinkedPublicNameBuilder>[];
-      for (FieldElement field in cls.fields) {
-        if (field.isStatic && field.isConst && field.isPublic) {
-          // TODO(paulberry): should numTypeParameters include class params?
-          bs.add(new UnlinkedPublicNameBuilder(
-              name: field.name,
-              kind: ReferenceKind.propertyAccessor,
-              numTypeParameters: 0));
-        }
-      }
       for (MethodElement method in cls.methods) {
         if (method.isStatic && method.isPublic) {
           // TODO(paulberry): should numTypeParameters include class params?
@@ -623,6 +614,15 @@ class _CompilationUnitSerializer {
               name: method.name,
               kind: ReferenceKind.method,
               numTypeParameters: method.typeParameters.length));
+        }
+      }
+      for (PropertyAccessorElement accessor in cls.accessors) {
+        if (accessor.isStatic &&
+            accessor.isGetter &&
+            accessor.isPublic) {
+          // TODO(paulberry): should numTypeParameters include class params?
+          bs.add(new UnlinkedPublicNameBuilder(
+              name: accessor.name, kind: ReferenceKind.propertyAccessor));
         }
       }
       for (ConstructorElement constructor in cls.constructors) {
@@ -794,6 +794,8 @@ class _CompilationUnitSerializer {
       b.kind = UnlinkedExecutableKind.functionOrMethod;
     }
     b.isAbstract = executableElement.isAbstract;
+    b.isAsynchronous = executableElement.isAsynchronous;
+    b.isGenerator = executableElement.isGenerator;
     b.isStatic = executableElement.isStatic &&
         executableElement.enclosingElement is ClassElement;
     b.isExternal = executableElement.isExternal;
@@ -1331,13 +1333,20 @@ class _ConstExprSerializer extends AbstractConstExprSerializer {
       EntityRefBuilder constructor;
       if (nameElement is ConstructorElement && name is PrefixedIdentifier) {
         assert(annotation.constructorName == null);
-        constructor = serializeConstructorName(
-            new TypeName(name.prefix, null)..type = nameElement.returnType,
-            name.identifier);
+        constructor = serializeConstructorRef(
+            nameElement.returnType, name.prefix, null, name.identifier);
       } else if (nameElement is TypeDefiningElement) {
-        constructor = serializeConstructorName(
-            new TypeName(annotation.name, null)..type = nameElement.type,
-            annotation.constructorName);
+        constructor = serializeConstructorRef(nameElement.type, annotation.name,
+            null, annotation.constructorName);
+      } else if (nameElement == null) {
+        // Unresolved annotation.
+        if (name is PrefixedIdentifier && annotation.constructorName == null) {
+          constructor =
+              serializeConstructorRef(null, name.prefix, null, name.identifier);
+        } else {
+          constructor = serializeConstructorRef(
+              null, annotation.name, null, annotation.constructorName);
+        }
       } else {
         throw new StateError('Unexpected annotation nameElement type:'
             ' ${nameElement.runtimeType}');
@@ -1347,9 +1356,9 @@ class _ConstExprSerializer extends AbstractConstExprSerializer {
   }
 
   @override
-  EntityRefBuilder serializeConstructorName(
-      TypeName type, SimpleIdentifier name) {
-    EntityRefBuilder typeRef = serializeType(type);
+  EntityRefBuilder serializeConstructorRef(DartType type, Identifier typeName,
+      TypeArgumentList typeArguments, SimpleIdentifier name) {
+    EntityRefBuilder typeRef = serializeType(type, typeName, typeArguments);
     if (name == null) {
       return typeRef;
     } else {
@@ -1424,15 +1433,15 @@ class _ConstExprSerializer extends AbstractConstExprSerializer {
   }
 
   @override
-  EntityRefBuilder serializeType(TypeName typeName) {
-    if (typeName != null) {
-      DartType type = typeName.type;
+  EntityRefBuilder serializeType(
+      DartType type, Identifier name, TypeArgumentList arguments) {
+    if (name != null) {
       if (type == null || type.isUndefined) {
-        return serializeIdentifier(typeName.name);
+        return serializeIdentifier(name);
       }
     }
-    DartType type = typeName != null ? typeName.type : DynamicTypeImpl.instance;
-    return serializer.serializeTypeRef(type, context);
+    DartType typeOrDynamic = type ?? DynamicTypeImpl.instance;
+    return serializer.serializeTypeRef(typeOrDynamic, context);
   }
 
   /**

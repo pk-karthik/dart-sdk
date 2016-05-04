@@ -271,6 +271,9 @@ abstract class ClassElementForLink
         hasBeenInferred = !enclosingElement.isInBuildUnit;
 
   @override
+  List<PropertyAccessorElementForLink> get accessors;
+
+  @override
   ConstructorElementForLink get asConstructor => unnamedConstructor;
 
   @override
@@ -316,11 +319,9 @@ abstract class ClassElementForLink
       for (ConstructorElementForLink constructor in constructors) {
         _containedNames[constructor.name] = constructor;
       }
-      for (FieldElementForLink field in fields) {
-        // TODO(paulberry): do we need to handle nonstatic fields for
-        // consistent behavior with erroneous code?
-        if (field.isStatic) {
-          _containedNames[field.name] = field;
+      for (PropertyAccessorElementForLink accessor in accessors) {
+        if (accessor.isStatic) {
+          _containedNames[accessor.name] = accessor;
         }
       }
       // TODO(paulberry): add methods.
@@ -359,7 +360,7 @@ class ClassElementForLink_Class extends ClassElementForLink
   List<MethodElementForLink> _methods;
   List<InterfaceType> _mixins;
   List<InterfaceType> _interfaces;
-  List<PropertyAccessorElement> _accessors;
+  List<PropertyAccessorElementForLink> _accessors;
 
   ClassElementForLink_Class(
       CompilationUnitElementForLink enclosingElement, this._unlinkedClass)
@@ -368,7 +369,7 @@ class ClassElementForLink_Class extends ClassElementForLink
   @override
   List<PropertyAccessorElement> get accessors {
     if (_accessors == null) {
-      _accessors = <PropertyAccessorElement>[];
+      _accessors = <PropertyAccessorElementForLink>[];
       Map<String, SyntheticVariableElementForLink> syntheticVariables =
           <String, SyntheticVariableElementForLink>{};
       for (UnlinkedExecutable unlinkedExecutable
@@ -383,7 +384,7 @@ class ClassElementForLink_Class extends ClassElementForLink
           SyntheticVariableElementForLink syntheticVariable = syntheticVariables
               .putIfAbsent(name, () => new SyntheticVariableElementForLink());
           PropertyAccessorElementForLink_Executable accessor =
-              new PropertyAccessorElementForLink_Executable(
+              new PropertyAccessorElementForLink_Executable(enclosingElement,
                   this, unlinkedExecutable, syntheticVariable);
           _accessors.add(accessor);
           if (unlinkedExecutable.kind == UnlinkedExecutableKind.getter) {
@@ -394,11 +395,9 @@ class ClassElementForLink_Class extends ClassElementForLink
         }
       }
       for (FieldElementForLink_ClassField field in fields) {
-        _accessors
-            .add(new PropertyAccessorElementForLink_Variable(field, false));
+        _accessors.add(field.getter);
         if (!field.isConst && !field.isFinal) {
-          _accessors
-              .add(new PropertyAccessorElementForLink_Variable(field, true));
+          _accessors.add(field.setter);
         }
       }
     }
@@ -690,6 +689,7 @@ abstract class CompilationUnitElementForLink
   List<TopLevelVariableElementForLink> _topLevelVariables;
   List<ClassElementForLink_Enum> _enums;
   List<TopLevelFunctionElementForLink> _functions;
+  List<PropertyAccessorElementForLink> _accessors;
 
   /**
    * Index of this unit in the list of units in the enclosing library.
@@ -700,6 +700,38 @@ abstract class CompilationUnitElementForLink
       int numReferences, this._absoluteUri)
       : _references = new List<ReferenceableElementForLink>(numReferences),
         _unlinkedUnit = unlinkedUnit;
+
+  @override
+  List<PropertyAccessorElementForLink> get accessors {
+    if (_accessors == null) {
+      _accessors = <PropertyAccessorElementForLink>[];
+      Map<String, SyntheticVariableElementForLink> syntheticVariables =
+          <String, SyntheticVariableElementForLink>{};
+      for (UnlinkedExecutable unlinkedExecutable in _unlinkedUnit.executables) {
+        if (unlinkedExecutable.kind == UnlinkedExecutableKind.getter ||
+            unlinkedExecutable.kind == UnlinkedExecutableKind.setter) {
+          String name = unlinkedExecutable.name;
+          if (unlinkedExecutable.kind == UnlinkedExecutableKind.setter) {
+            assert(name.endsWith('='));
+            name = name.substring(0, name.length - 1);
+          }
+          SyntheticVariableElementForLink syntheticVariable = syntheticVariables
+              .putIfAbsent(name, () => new SyntheticVariableElementForLink());
+          PropertyAccessorElementForLink_Executable accessor =
+              new PropertyAccessorElementForLink_Executable(
+                  this, null, unlinkedExecutable, syntheticVariable);
+          _accessors.add(accessor);
+          if (unlinkedExecutable.kind == UnlinkedExecutableKind.getter) {
+            syntheticVariable._getter = accessor;
+          } else {
+            syntheticVariable._setter = accessor;
+          }
+        }
+      }
+      // TODO(paulberry): also add synthetic accessors.
+    }
+    return _accessors;
+  }
 
   @override
   LibraryElementForLink get enclosingElement;
@@ -800,6 +832,13 @@ abstract class CompilationUnitElementForLink
       }
       for (TopLevelFunctionElementForLink function in functions) {
         _containedNames[function.name] = function;
+      }
+      for (PropertyAccessorElementForLink accessor in accessors) {
+        // TODO(paulberry): consider handling synthetic accessors and getting
+        // rid of the loop above for topLevelVariables.
+        if (!accessor.isSynthetic) {
+          _containedNames[accessor.name] = accessor;
+        }
       }
       // TODO(paulberry): fill in other top level entities (typedefs
       // and executables).
@@ -1214,7 +1253,7 @@ class ConstConstructorNode extends ConstNode {
         // Note: non-static const isn't allowed but we handle it anyway so
         // that we won't be confused by incorrect code.
         if ((field.isFinal || field.isConst) && !field.isStatic) {
-          safeAddDependency(field.asConstVariable);
+          safeAddDependency(field.getter.asConstVariable);
         }
       }
       for (ParameterElementForLink parameterElement
@@ -1290,6 +1329,7 @@ abstract class ConstNode extends Node<ConstNode> {
     for (UnlinkedConstOperation operation in unlinkedConst.operations) {
       switch (operation) {
         case UnlinkedConstOperation.pushReference:
+        case UnlinkedConstOperation.invokeMethodRef:
           EntityRef ref = unlinkedConst.references[refPtr++];
           ConstVariableNode variable =
               compilationUnit._resolveRef(ref.reference).asConstVariable;
@@ -2408,8 +2448,13 @@ class ExprTypeComputer {
  * Element representing a field resynthesized from a summary during
  * linking.
  */
-abstract class FieldElementForLink
-    implements FieldElement, ReferenceableElementForLink {}
+abstract class FieldElementForLink implements FieldElement {
+  @override
+  PropertyAccessorElementForLink get getter;
+
+  @override
+  PropertyAccessorElementForLink get setter;
+}
 
 /**
  * Specialization of [FieldElementForLink] for class fields.
@@ -2418,6 +2463,9 @@ class FieldElementForLink_ClassField extends VariableElementForLink
     implements FieldElementForLink {
   @override
   final ClassElementForLink_Class enclosingElement;
+
+  PropertyAccessorElementForLink_Variable _getter;
+  PropertyAccessorElementForLink_Variable _setter;
 
   /**
    * If this is an instance field, the type that was computed by
@@ -2431,7 +2479,21 @@ class FieldElementForLink_ClassField extends VariableElementForLink
         super(unlinkedVariable, enclosingElement.enclosingElement);
 
   @override
+  PropertyAccessorElementForLink_Variable get getter =>
+      _getter ??= new PropertyAccessorElementForLink_Variable(this, false);
+
+  @override
   bool get isStatic => unlinkedVariable.isStatic;
+
+  @override
+  PropertyAccessorElementForLink_Variable get setter {
+    if (!isConst && !isFinal) {
+      return _setter ??=
+          new PropertyAccessorElementForLink_Variable(this, true);
+    } else {
+      return null;
+    }
+  }
 
   @override
   void set type(DartType inferredType) {
@@ -2477,23 +2539,6 @@ class FieldElementForLink_EnumField extends FieldElementForLink
   FieldElementForLink_EnumField(this.unlinkedEnumValue, this.enclosingElement);
 
   @override
-  ConstructorElementForLink get asConstructor => null;
-
-  @override
-  ConstVariableNode get asConstVariable {
-    // Even though enum fields are constants, there is no need to include them
-    // in the const dependency graph because they can't participate in a
-    // circularity.
-    return null;
-  }
-
-  @override
-  DartType get asStaticType => enclosingElement.type;
-
-  @override
-  TypeInferenceNode get asTypeInferenceNode => null;
-
-  @override
   bool get isStatic => true;
 
   @override
@@ -2502,15 +2547,6 @@ class FieldElementForLink_EnumField extends FieldElementForLink
   @override
   String get name =>
       unlinkedEnumValue == null ? 'values' : unlinkedEnumValue.name;
-
-  @override
-  DartType buildType(DartType getTypeArgument(int i),
-          List<int> implicitFunctionTypeIndices) =>
-      DynamicTypeImpl.instance;
-
-  @override
-  ReferenceableElementForLink getContainedName(String name) =>
-      UndefinedElementForLink.instance;
 
   @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -2781,6 +2817,9 @@ abstract class LibraryElementForLink<
 
   @override
   bool get isDartAsync => _absoluteUri == 'dart:async';
+
+  @override
+  bool get isDartCore => _absoluteUri == 'dart:core';
 
   /**
    * If this library is part of the build unit being linked, return the library
@@ -3213,47 +3252,61 @@ abstract class Node<NodeType> {
  * Element used for references that result from trying to access a non-static
  * member of an element that is not a container (e.g. accessing the "length"
  * property of a constant).
+ *
+ * Accesses to a chain of non-static members separated by '.' are andled by
+ * creating a [NonstaticMemberElementForLink] that points to another
+ * [NonstaticMemberElementForLink], to whatever nesting level is necessary.
  */
 class NonstaticMemberElementForLink implements ReferenceableElementForLink {
   /**
-   * The non-static element of this link element.
+   * The [ReferenceableElementForLink] which is the target of the non-static
+   * reference.
    */
-  final Element element;
+  final ReferenceableElementForLink _target;
 
   /**
-   * If the thing from which a member was accessed is a constant, the
-   * associated [ConstNode].  Otherwise `null`.
+   * The name of the non-static members that is being accessed.
    */
-  final ConstVariableNode _constNode;
+  final String _name;
 
-  NonstaticMemberElementForLink(this.element, this._constNode);
+  /**
+   * The library in which the access occurs.  This determines whether private
+   * names are accessible.
+   */
+  final LibraryElementForLink _library;
+
+  NonstaticMemberElementForLink(this._library, this._target, this._name);
 
   @override
   ConstructorElementForLink get asConstructor => null;
 
   @override
-  ConstVariableNode get asConstVariable => _constNode;
+  ConstVariableNode get asConstVariable => _target.asConstVariable;
 
   @override
   DartType get asStaticType {
-    Element element = this.element;
-    if (element is PropertyAccessorElement) {
-      if (element.isGetter) {
-        return element.returnType;
+    if (_library._linker.strongMode) {
+      DartType targetType = _target.asStaticType;
+      if (targetType is InterfaceType) {
+        PropertyAccessorElement getter =
+            targetType.lookUpGetter(_name, _library);
+        if (getter != null) {
+          return getter.returnType;
+        }
+        MethodElement method = targetType.lookUpMethod(_name, _library);
+        if (method != null) {
+          return method.type;
+        }
       }
-      return DynamicTypeImpl.instance;
+      // TODO(paulberry): handle .call on function types and .toString or
+      // .hashCode on all types.
     }
-    if (element is MethodElement) {
-      return element.type;
-    }
+    // TODO(paulberry, scheglov): implement for propagated types
     return DynamicTypeImpl.instance;
   }
 
   @override
-  TypeInferenceNode get asTypeInferenceNode {
-    // TODO(paulberry): implement.
-    return null;
-  }
+  TypeInferenceNode get asTypeInferenceNode => _target.asTypeInferenceNode;
 
   @override
   DartType buildType(DartType getTypeArgument(int i),
@@ -3262,15 +3315,7 @@ class NonstaticMemberElementForLink implements ReferenceableElementForLink {
 
   @override
   ReferenceableElementForLink getContainedName(String name) {
-    if (element != null) {
-      DartType type = asStaticType;
-      if (type is InterfaceType) {
-        Element nameElement = type.lookUpGetter(name, element.library);
-        nameElement ??= type.lookUpMethod(name, element.library);
-        return new NonstaticMemberElementForLink(nameElement, _constNode);
-      }
-    }
-    return this;
+    return new NonstaticMemberElementForLink(_library, this, name);
   }
 }
 
@@ -3457,7 +3502,7 @@ abstract class ParameterParentElementForLink implements Element {
  * linking.
  */
 abstract class PropertyAccessorElementForLink
-    implements PropertyAccessorElementImpl {
+    implements PropertyAccessorElementImpl, ReferenceableElementForLink {
   void link(CompilationUnitElementInBuildUnit compilationUnit);
 }
 
@@ -3471,11 +3516,23 @@ class PropertyAccessorElementForLink_Executable extends ExecutableElementForLink
   SyntheticVariableElementForLink variable;
 
   PropertyAccessorElementForLink_Executable(
+      CompilationUnitElementForLink enclosingUnit,
       ClassElementForLink_Class enclosingClass,
       UnlinkedExecutable unlinkedExecutable,
       this.variable)
-      : super(enclosingClass.enclosingElement, enclosingClass,
-            unlinkedExecutable);
+      : super(enclosingUnit, enclosingClass, unlinkedExecutable);
+
+  @override
+  ConstructorElementForLink get asConstructor => null;
+
+  @override
+  ConstVariableNode get asConstVariable => null;
+
+  @override
+  DartType get asStaticType => returnType;
+
+  @override
+  TypeInferenceNode get asTypeInferenceNode => null;
 
   @override
   PropertyAccessorElementForLink_Executable get correspondingGetter =>
@@ -3492,6 +3549,16 @@ class PropertyAccessorElementForLink_Executable extends ExecutableElementForLink
   @override
   ElementKind get kind => _unlinkedExecutable.kind ==
       UnlinkedExecutableKind.getter ? ElementKind.GETTER : ElementKind.SETTER;
+
+  @override
+  DartType buildType(DartType getTypeArgument(int i),
+          List<int> implicitFunctionTypeIndices) =>
+      DynamicTypeImpl.instance;
+
+  @override
+  ReferenceableElementForLink getContainedName(String name) {
+    return new NonstaticMemberElementForLink(library, this, name);
+  }
 
   @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
@@ -3514,6 +3581,18 @@ class PropertyAccessorElementForLink_Variable
   List<ParameterElement> _parameters;
 
   PropertyAccessorElementForLink_Variable(this.variable, this.isSetter);
+
+  @override
+  ConstructorElementForLink get asConstructor => null;
+
+  @override
+  ConstVariableNode get asConstVariable => variable._constNode;
+
+  @override
+  DartType get asStaticType => returnType;
+
+  @override
+  TypeInferenceNode get asTypeInferenceNode => variable._typeInferenceNode;
 
   @override
   Element get enclosingElement => variable.enclosingElement;
@@ -3566,6 +3645,11 @@ class PropertyAccessorElementForLink_Variable
     return const [];
   }
 
+  @override
+  DartType buildType(DartType getTypeArgument(int i),
+          List<int> implicitFunctionTypeIndices) =>
+      DynamicTypeImpl.instance;
+
   /**
    * Compute the type of the corresponding variable, which may depend on the
    * progress of type inference.
@@ -3582,6 +3666,11 @@ class PropertyAccessorElementForLink_Variable
     } else {
       return variable.type;
     }
+  }
+
+  @override
+  ReferenceableElementForLink getContainedName(String name) {
+    return new NonstaticMemberElementForLink(library, this, name);
   }
 
   @override
@@ -3752,12 +3841,15 @@ class TopLevelFunctionElementForLink extends ExecutableElementForLink
  */
 class TopLevelVariableElementForLink extends VariableElementForLink
     implements TopLevelVariableElement {
-  TopLevelVariableElementForLink(CompilationUnitElement enclosingElement,
+  TopLevelVariableElementForLink(CompilationUnitElementForLink enclosingElement,
       UnlinkedVariable unlinkedVariable)
       : super(unlinkedVariable, enclosingElement);
 
   @override
   bool get isStatic => true;
+
+  @override
+  LibraryElementForLink get library => compilationUnit.library;
 
   @override
   TypeParameterizedElementForLink get _typeParameterContext => null;
@@ -4341,29 +4433,9 @@ class VariableElementForLink
       DynamicTypeImpl.instance;
 
   ReferenceableElementForLink getContainedName(String name) {
-    Element element = _getContainedElement(name);
-    return new NonstaticMemberElementForLink(element, _constNode);
+    return new NonstaticMemberElementForLink(library, this, name);
   }
 
   @override
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
-
-  /**
-   * Return the contained element with the given [name], or `null` if the lookup
-   * fails.  Currently only static types are supported in the linker, so lookup
-   * is performed only in the strong mode.
-   */
-  Element _getContainedElement(String name) {
-    Linker linker = compilationUnit.library._linker;
-    if (linker.strongMode) {
-      DartType type = asStaticType;
-      if (type is InterfaceType) {
-        Element result = type.lookUpGetter(name, compilationUnit.library);
-        result ??= type.lookUpMethod(name, compilationUnit.library);
-        return result;
-      }
-    }
-    // TODO(scheglov): implement for propagated types
-    return null;
-  }
 }

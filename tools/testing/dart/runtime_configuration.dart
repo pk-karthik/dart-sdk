@@ -19,6 +19,8 @@ class RuntimeConfiguration {
   // [RuntimeConfiguration] in [configuration] there.
   factory RuntimeConfiguration(Map configuration) {
     String runtime = configuration['runtime'];
+    bool useBlobs = configuration['use_blobs'];
+
     switch (runtime) {
       case 'ContentShellOnAndroid':
       case 'DartiumOnAndroid':
@@ -52,7 +54,10 @@ class RuntimeConfiguration {
         return new DartProductRuntimeConfiguration();
 
       case 'dart_precompiled':
-        return new DartPrecompiledRuntimeConfiguration();
+        if (configuration['system'] == 'android') {
+          return new DartPrecompiledAdbRuntimeConfiguration(useBlobs: useBlobs);
+        }
+        return new DartPrecompiledRuntimeConfiguration(useBlobs: useBlobs);
 
       case 'drt':
         return new DrtRuntimeConfiguration();
@@ -172,6 +177,7 @@ class DartVmRuntimeConfiguration extends RuntimeConfiguration {
       case 'mips':
       case 'simarm64':
       case 'simdbc':
+      case 'simdbc64':
         multiplier *= 4;
         break;
     }
@@ -243,6 +249,9 @@ class DartProductRuntimeConfiguration extends DartVmRuntimeConfiguration {
 }
 
 class DartPrecompiledRuntimeConfiguration extends DartVmRuntimeConfiguration {
+  final bool useBlobs;
+  DartPrecompiledRuntimeConfiguration({bool useBlobs}) : useBlobs = useBlobs;
+
   List<Command> computeRuntimeCommands(
       TestSuite suite,
       CommandBuilder commandBuilder,
@@ -257,11 +266,40 @@ class DartPrecompiledRuntimeConfiguration extends DartVmRuntimeConfiguration {
 
     var augmentedArgs = new List();
     augmentedArgs.add("--run-precompiled-snapshot=${artifact.filename}");
+    if (useBlobs) {
+      augmentedArgs.add("--use_blobs");
+    }
     augmentedArgs.addAll(arguments);
 
     return <Command>[
       commandBuilder.getVmCommand(suite.dartPrecompiledBinaryFileName,
           augmentedArgs, environmentOverrides)
+    ];
+  }
+}
+
+class DartPrecompiledAdbRuntimeConfiguration
+      extends DartVmRuntimeConfiguration {
+  final bool useBlobs;
+  DartPrecompiledAdbRuntimeConfiguration({bool useBlobs}) : useBlobs = useBlobs;
+
+  List<Command> computeRuntimeCommands(
+      TestSuite suite,
+      CommandBuilder commandBuilder,
+      CommandArtifact artifact,
+      List<String> arguments,
+      Map<String, String> environmentOverrides) {
+    String script = artifact.filename;
+    String type = artifact.mimeType;
+    if (script != null && type != 'application/dart-precompiled') {
+      throw "dart_precompiled cannot run files of type '$type'.";
+    }
+
+    String precompiledRunner = suite.dartPrecompiledBinaryFileName;
+    return <Command>[
+      commandBuilder.getAdbPrecompiledCommand(precompiledRunner,
+                                              script,
+                                              useBlobs)
     ];
   }
 }

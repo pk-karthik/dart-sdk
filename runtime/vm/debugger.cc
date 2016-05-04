@@ -766,8 +766,8 @@ ActivationFrame* DebuggerStackTrace::GetHandlerFrame(
         ASSERT(!type.IsNull());
         // Uninstantiated types are not added to ExceptionHandlers data.
         ASSERT(type.IsInstantiated());
-        if (type.IsDynamicType()) return frame;
         if (type.IsMalformed()) continue;
+        if (type.IsDynamicType()) return frame;
         if (exc_obj.IsInstanceOf(type, no_instantiator, NULL)) {
           return frame;
         }
@@ -1402,6 +1402,7 @@ RawFunction* Debugger::ResolveFunction(const Library& library,
 // that inline the function that contains the newly created breakpoint.
 // We currently don't have this info so we deoptimize all functions.
 void Debugger::DeoptimizeWorld() {
+  BackgroundCompiler::Stop(isolate_);
   DeoptimizeFunctionsOnStack();
   // Iterate over all classes, deoptimize functions.
   // TODO(hausner): Could possibly be combined with RemoveOptimizedCode()

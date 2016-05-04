@@ -1624,6 +1624,11 @@ table UnlinkedExecutable {
   isAbstract:bool (id: 10);
 
   /**
+   * Indicates whether the executable has body marked as being asynchronous.
+   */
+  isAsynchronous:bool (id: 27);
+
+  /**
    * Indicates whether the executable is declared using the `const` keyword.
    */
   isConst:bool (id: 12);
@@ -1637,6 +1642,11 @@ table UnlinkedExecutable {
    * Indicates whether the executable is declared using the `factory` keyword.
    */
   isFactory:bool (id: 8);
+
+  /**
+   * Indicates whether the executable has body marked as being a generator.
+   */
+  isGenerator:bool (id: 28);
 
   /**
    * Indicates whether the executable is a redirected constructor.
@@ -2011,8 +2021,8 @@ table UnlinkedPublicName {
 
   /**
    * If this [UnlinkedPublicName] is a class, the list of members which can be
-   * referenced from constants or factory redirects - static constant fields,
-   * static methods, and constructors.  Otherwise empty.
+   * referenced statically - static fields, static methods, and constructors.
+   * Otherwise empty.
    *
    * Unnamed constructors are not included since they do not constitute a
    * separate name added to any namespace.

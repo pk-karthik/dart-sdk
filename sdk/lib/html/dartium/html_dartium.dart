@@ -26801,20 +26801,6 @@ class MouseEvent extends UIEvent {
   @deprecated
   Node get toElement => _blink.BlinkMouseEvent.instance.toElement_Getter_(this);
   
-  @DomName('MouseEvent.webkitMovementX')
-  @DocsEditable()
-  @SupportedBrowser(SupportedBrowser.CHROME)
-  @SupportedBrowser(SupportedBrowser.SAFARI)
-  @Experimental()
-  int get _webkitMovementX => _blink.BlinkMouseEvent.instance.webkitMovementX_Getter_(this);
-  
-  @DomName('MouseEvent.webkitMovementY')
-  @DocsEditable()
-  @SupportedBrowser(SupportedBrowser.CHROME)
-  @SupportedBrowser(SupportedBrowser.SAFARI)
-  @Experimental()
-  int get _webkitMovementY => _blink.BlinkMouseEvent.instance.webkitMovementY_Getter_(this);
-  
   @DomName('MouseEvent.which')
   @DocsEditable()
   @Experimental() // untriaged
@@ -26849,9 +26835,9 @@ class MouseEvent extends UIEvent {
   @DomName('MouseEvent.movementX')
   @DomName('MouseEvent.movementY')
   @SupportedBrowser(SupportedBrowser.CHROME)
-  @SupportedBrowser(SupportedBrowser.SAFARI)
+  @SupportedBrowser(SupportedBrowser.FIREFOX)
   @Experimental()
-  Point get movement => new Point(_webkitMovementX, _webkitMovementY);
+  Point get movement => new Point(_movementX, _movementY);
 
   /**
    * The coordinates of the mouse pointer in target node coordinates.
@@ -37697,10 +37683,10 @@ class Url extends DartHtmlDomObject implements UrlUtils {
     if ((blob_OR_source_OR_stream is Blob || blob_OR_source_OR_stream == null)) {
       return _blink.BlinkURL.instance.createObjectURL_Callback_1_(blob_OR_source_OR_stream);
     }
-    if ((blob_OR_source_OR_stream is MediaStream)) {
+    if ((blob_OR_source_OR_stream is MediaSource)) {
       return _blink.BlinkURL.instance.createObjectURL_Callback_1_(blob_OR_source_OR_stream);
     }
-    if ((blob_OR_source_OR_stream is MediaSource)) {
+    if ((blob_OR_source_OR_stream is MediaStream)) {
       return _blink.BlinkURL.instance.createObjectURL_Callback_1_(blob_OR_source_OR_stream);
     }
     throw new ArgumentError("Incorrect number or type of arguments");
@@ -47208,10 +47194,21 @@ class _ValidatingTreeSanitizer implements NodeTreeSanitizer {
       sanitizeNode(node, parent);
 
       var child = node.lastChild;
-      while (child != null) {
-        // Child may be removed during the walk.
-        var nextChild = child.previousNode;
-        walk(child, node);
+      while (null != child) {
+        var nextChild;
+        try {
+          // Child may be removed during the walk, and we may not
+          // even be able to get its previousNode.
+          nextChild = child.previousNode;
+        } catch (e) {
+          // Child appears bad, remove it. We want to check the rest of the
+          // children of node and, but we have no way of getting to the next
+          // child, so start again from the last child.
+          _removeNode(child, node);
+          child = null;
+          nextChild = node.lastChild;
+        }
+        if (child != null) walk(child, node);
         child = nextChild;
       }
     }
@@ -47866,7 +47863,10 @@ _wrapZoneCallback/*<A, R>*/ _wrapZone/*<A, R>*/(_wrapZoneCallback/*<A, R>*/ call
   if (callback == null) return null;
   // TODO(jacobr): we cast to _wrapZoneCallback/*<A, R>*/ to hack around missing
   // generic method support in zones.
-  return Zone.current.bindUnaryCallback(callback, runGuarded: true) as _wrapZoneCallback/*<A, R>*/;
+  // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
+  _wrapZoneCallback/*<A, R>*/ wrapped =
+      Zone.current.bindUnaryCallback(callback, runGuarded: true);
+  return wrapped;
 }
 
 _wrapZoneBinaryCallback/*<A, B, R>*/ _wrapBinaryZone/*<A, B, R>*/(_wrapZoneBinaryCallback/*<A, B, R>*/ callback) {
@@ -47874,7 +47874,10 @@ _wrapZoneBinaryCallback/*<A, B, R>*/ _wrapBinaryZone/*<A, B, R>*/(_wrapZoneBinar
   if (callback == null) return null;
   // We cast to _wrapZoneBinaryCallback/*<A, B, R>*/ to hack around missing
   // generic method support in zones.
-  return Zone.current.bindBinaryCallback(callback, runGuarded: true) as _wrapZoneBinaryCallback/*<A, B, R>*/;
+  // ignore: STRONG_MODE_DOWN_CAST_COMPOSITE
+  _wrapZoneBinaryCallback/*<A, B, R>*/ wrapped =
+      Zone.current.bindBinaryCallback(callback, runGuarded: true);
+  return wrapped;
 }
 
 /**

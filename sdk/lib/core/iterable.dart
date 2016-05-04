@@ -106,9 +106,6 @@ abstract class Iterable<E> {
    *
    * The empty iterable has no elements, and iterating it always stops
    * immediately.
-   *
-   * An empty iterable can be used in places where you always that
-   * the iterable you would otherwise create is empty.
    */
   const factory Iterable.empty() = EmptyIterable<E>;
 
@@ -447,8 +444,8 @@ abstract class Iterable<E> {
    * Returns the first element.
    *
    * Throws a [StateError] if `this` is empty.
-   * Otherwise returs the first element in the iteration order,
-   * equivalent to `(iterator..moveNext())..current`.
+   * Otherwise returns the first element in the iteration order,
+   * equivalent to `this.elementAt(0)`.
    */
   E get first {
     Iterator<E> it = iterator;

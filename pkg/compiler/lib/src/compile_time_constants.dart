@@ -16,7 +16,7 @@ import 'constants/values.dart';
 import 'core_types.dart' show CoreTypes;
 import 'dart_types.dart';
 import 'elements/elements.dart';
-import 'elements/modelx.dart' show FunctionElementX;
+import 'elements/modelx.dart' show FieldElementX, FunctionElementX;
 import 'resolution/tree_elements.dart' show TreeElements;
 import 'resolution/operators.dart';
 import 'tree/tree.dart';
@@ -34,10 +34,8 @@ abstract class ConstantEnvironment {
   ConstantValue getConstantValue(ConstantExpression expression);
 
   /// Returns the constant value for the initializer of [element].
+  @deprecated
   ConstantValue getConstantValueForVariable(VariableElement element);
-
-  /// Returns the constant for the initializer of [element].
-  ConstantExpression getConstantForVariable(VariableElement element);
 }
 
 /// A class that can compile and provide constants for variables, nodes and
@@ -54,7 +52,7 @@ abstract class ConstantCompiler extends ConstantEnvironment {
 
   /// Computes the compile-time constant for the variable initializer,
   /// if possible.
-  void compileVariable(VariableElement element);
+  ConstantExpression compileVariable(VariableElement element);
 
   /// Compiles the constant for [node].
   ///
@@ -156,13 +154,9 @@ abstract class ConstantCompilerBase implements ConstantCompiler {
   CoreTypes get coreTypes => compiler.coreTypes;
 
   @override
+  @deprecated
   ConstantValue getConstantValueForVariable(VariableElement element) {
     return getConstantValue(initialVariableValues[element.declaration]);
-  }
-
-  @override
-  ConstantExpression getConstantForVariable(VariableElement element) {
-    return initialVariableValues[element.declaration];
   }
 
   ConstantExpression compileConstant(VariableElement element) {
@@ -193,7 +187,7 @@ abstract class ConstantCompilerBase implements ConstantCompiler {
     AstElement currentElement = element.analyzableElement;
     return reporter.withCurrentElement(currentElement, () {
       // TODO(johnniwinther): Avoid this eager analysis.
-      _analyzeElementEagerly(compiler, currentElement);
+      compiler.resolution.ensureResolved(currentElement.declaration);
 
       ConstantExpression constant = compileVariableWithDefinitions(
           element, currentElement.resolvedAst.elements,
@@ -847,7 +841,7 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
     // TODO(ahe): This is nasty: we must eagerly analyze the
     // constructor to ensure the redirectionTarget has been computed
     // correctly.  Find a way to avoid this.
-    _analyzeElementEagerly(compiler, constructor);
+    resolution.ensureResolved(constructor.declaration);
 
     // The redirection chain of this element may not have been resolved through
     // a post-process action, so we have to make sure it is done here.
@@ -1104,7 +1098,8 @@ class ConstructorEvaluator extends CompileTimeConstantEvaluator {
       : this.constructor = constructor,
         this.definitions = new Map<Element, AstConstant>(),
         this.fieldValues = new Map<Element, AstConstant>(),
-        this.resolvedAst = _analyzeElementEagerly(compiler, constructor),
+        this.resolvedAst =
+            compiler.resolution.computeResolvedAst(constructor.declaration),
         super(handler, null, compiler, isConst: true) {
     assert(invariant(constructor, constructor.isImplementation));
   }
@@ -1277,12 +1272,13 @@ class ConstructorEvaluator extends CompileTimeConstantEvaluator {
     Map<FieldElement, AstConstant> fieldConstants =
         <FieldElement, AstConstant>{};
     classElement.implementation.forEachInstanceField(
-        (ClassElement enclosing, FieldElement field) {
+        (ClassElement enclosing, FieldElementX field) {
       AstConstant fieldValue = fieldValues[field];
       if (fieldValue == null) {
         // Use the default value.
         ConstantExpression fieldExpression =
             handler.internalCompileVariable(field, true, false);
+        field.constant = fieldExpression;
         fieldValue = new AstConstant.fromDefaultValue(
             field, fieldExpression, handler.getConstantValue(fieldExpression));
         // TODO(het): If the field value doesn't typecheck due to the type
@@ -1334,12 +1330,6 @@ class ErroneousAstConstant extends AstConstant {
             // TODO(johnniwinther): Return a [NonConstantValue] instead.
             new ErroneousConstantExpression(),
             new NullConstantValue());
-}
-
-// TODO(johnniwinther): Clean this up.
-ResolvedAst _analyzeElementEagerly(Compiler compiler, AstElement element) {
-  compiler.resolution.computeWorldImpact(element.declaration);
-  return element.resolvedAst;
 }
 
 class _CompilerEnvironment implements Environment {

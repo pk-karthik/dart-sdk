@@ -17,6 +17,9 @@ Builtin::builtin_lib_props Builtin::builtin_libraries_[] = {
   /* { url_, source_, patch_url_, patch_source_, has_natives_ } */
   { DartUtils::kBuiltinLibURL, NULL, NULL, NULL, true },
   { DartUtils::kIOLibURL, NULL, NULL, NULL, true  },
+
+  // End marker.
+  { NULL, NULL, NULL, NULL, false }
 };
 
 Dart_Port Builtin::load_port_ = ILLEGAL_PORT;
@@ -40,7 +43,7 @@ Dart_Handle Builtin::GetSource(const char** source_paths, const char* uri) {
 
 void Builtin::SetNativeResolver(BuiltinLibraryId id) {
   ASSERT((sizeof(builtin_libraries_) / sizeof(builtin_lib_props)) ==
-         kInvalidLibrary);
+         kInvalidLibrary + 1);
   ASSERT(id >= kBuiltinLibrary && id < kInvalidLibrary);
   if (builtin_libraries_[id].has_natives_) {
     Dart_Handle url = DartUtils::NewString(builtin_libraries_[id].url_);
@@ -59,9 +62,14 @@ Dart_Handle Builtin::LoadLibrary(Dart_Handle url, BuiltinLibraryId id) {
 }
 
 
+Builtin::BuiltinLibraryId Builtin::FindId(const char* url_string) {
+  return kInvalidLibrary;
+}
+
+
 Dart_Handle Builtin::LoadAndCheckLibrary(BuiltinLibraryId id) {
   ASSERT((sizeof(builtin_libraries_) / sizeof(builtin_lib_props)) ==
-         kInvalidLibrary);
+         kInvalidLibrary + 1);
   ASSERT(id >= kBuiltinLibrary && id < kInvalidLibrary);
   Dart_Handle url = DartUtils::NewString(builtin_libraries_[id].url_);
   Dart_Handle library = Dart_LookupLibrary(url);

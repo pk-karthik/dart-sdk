@@ -14,8 +14,9 @@ import 'package:package_config/src/packages_impl.dart'
 import 'package:package_config/src/util.dart' show checkValidPackageUri;
 
 import '../compiler_new.dart' as api;
-import 'common/tasks.dart' show GenericTask;
+import 'common/tasks.dart' show GenericTask, Measurer;
 import 'common.dart';
+import 'common/backend_api.dart' show Backend;
 import 'compiler.dart';
 import 'diagnostics/messages.dart' show Message;
 import 'elements/elements.dart' as elements;
@@ -46,12 +47,15 @@ class CompilerImpl extends Compiler {
   Uri get libraryRoot => options.platformConfigUri.resolve(".");
 
   CompilerImpl(this.provider, api.CompilerOutput outputProvider, this.handler,
-      CompilerOptions options)
+      CompilerOptions options,
+      {MakeBackendFuncion makeBackend, MakeReporterFunction makeReporter})
       : resolvedUriTranslator = new ForwardingResolvedUriTranslator(),
         super(
             options: options,
             outputProvider: outputProvider,
-            environment: new _Environment(options.environment)) {
+            environment: new _Environment(options.environment),
+            makeBackend: makeBackend,
+            makeReporter: makeReporter) {
     _Environment env = environment;
     env.compiler = this;
     tasks.addAll([
@@ -159,14 +163,14 @@ class CompilerImpl extends Compiler {
 
   Future<elements.LibraryElement> analyzeUri(Uri uri,
       {bool skipLibraryWithPartOfTag: true}) {
-    List<Future> setupFutures = new List<Future>();
+    Future setupFuture = new Future.value();
     if (resolvedUriTranslator.isNotSet) {
-      setupFutures.add(setupSdk());
+      setupFuture = setupFuture.then((_) => setupSdk());
     }
     if (packages == null) {
-      setupFutures.add(setupPackages(uri));
+      setupFuture = setupFuture.then((_) => setupPackages(uri));
     }
-    return Future.wait(setupFutures).then((_) {
+    return setupFuture.then((_) {
       return super
           .analyzeUri(uri, skipLibraryWithPartOfTag: skipLibraryWithPartOfTag);
     });
@@ -224,31 +228,55 @@ class CompilerImpl extends Compiler {
   }
 
   Future<bool> run(Uri uri) {
-    log('Using platform configuration at ${options.platformConfigUri}');
+    Duration setupDuration = measurer.wallClock.elapsed;
+    return selfTask.measureSubtask("CompilerImpl.run", () {
+      log('Using platform configuration at ${options.platformConfigUri}');
 
-    return Future.wait([setupSdk(), setupPackages(uri)]).then((_) {
-      assert(resolvedUriTranslator.isSet);
-      assert(packages != null);
+      return setupSdk().then((_) => setupPackages(uri)).then((_) {
+        assert(resolvedUriTranslator.isSet);
+        assert(packages != null);
 
-      return super.run(uri).then((bool success) {
-        int cumulated = 0;
-        for (final task in tasks) {
-          int elapsed = task.timing;
-          if (elapsed != 0) {
-            cumulated += elapsed;
-            log('${task.name} took ${elapsed}msec');
-            for (String subtask in task.subtasks) {
-              int subtime = task.getSubtaskTime(subtask);
-              log('${task.name} > $subtask took ${subtime}msec');
-            }
-          }
+        return super.run(uri);
+      }).then((bool success) {
+        if (options.verbose) {
+          StringBuffer timings = new StringBuffer();
+          computeTimings(setupDuration, timings);
+          log("$timings");
         }
-        int total = totalCompileTime.elapsedMilliseconds;
-        log('Total compile-time ${total}msec;'
-            ' unaccounted ${total - cumulated}msec');
         return success;
       });
     });
+  }
+
+  void computeTimings(Duration setupDuration, StringBuffer timings) {
+    timings.writeln("Timings:");
+    Duration totalDuration = measurer.wallClock.elapsed;
+    Duration asyncDuration = measurer.asyncWallClock.elapsed;
+    Duration cumulatedDuration = Duration.ZERO;
+    for (final task in tasks) {
+      String running = task.isRunning ? "*" : "";
+      Duration duration = task.duration;
+      if (duration != Duration.ZERO) {
+        cumulatedDuration += duration;
+        timings.writeln('    $running${task.name} took'
+            ' ${duration.inMilliseconds}msec');
+        for (String subtask in task.subtasks) {
+          int subtime = task.getSubtaskTime(subtask);
+          String running = task.getSubtaskIsRunning(subtask) ? "*" : "";
+          timings.writeln(
+              '    $running${task.name} > $subtask took ${subtime}msec');
+        }
+      }
+    }
+    Duration unaccountedDuration =
+        totalDuration - cumulatedDuration - setupDuration - asyncDuration;
+    double percent =
+        unaccountedDuration.inMilliseconds * 100 / totalDuration.inMilliseconds;
+    timings.write('    Total compile-time ${totalDuration.inMilliseconds}msec;'
+        ' setup ${setupDuration.inMilliseconds}msec;'
+        ' async ${asyncDuration.inMilliseconds}msec;'
+        ' unaccounted ${unaccountedDuration.inMilliseconds}msec'
+        ' (${percent.toStringAsFixed(2)}%)');
   }
 
   void reportDiagnostic(DiagnosticMessage message,
@@ -278,18 +306,33 @@ class CompilerImpl extends Compiler {
 
   void callUserHandler(Message message, Uri uri, int begin, int end,
       String text, api.Diagnostic kind) {
-    userHandlerTask.measure(() {
-      handler.report(message, uri, begin, end, text, kind);
-    });
+    try {
+      userHandlerTask.measure(() {
+        handler.report(message, uri, begin, end, text, kind);
+      });
+    } catch (ex, s) {
+      reportCrashInUserCode('Uncaught exception in diagnostic handler', ex, s);
+      rethrow;
+    }
   }
 
   Future callUserProvider(Uri uri) {
-    return userProviderTask.measure(() => provider.readFromUri(uri));
+    try {
+      return userProviderTask.measureIo(() => provider.readFromUri(uri));
+    } catch (ex, s) {
+      reportCrashInUserCode('Uncaught exception in input provider', ex, s);
+      rethrow;
+    }
   }
 
   Future<Packages> callUserPackagesDiscovery(Uri uri) {
-    return userPackagesDiscoveryTask
-        .measure(() => options.packagesDiscoveryProvider(uri));
+    try {
+      return userPackagesDiscoveryTask
+          .measureIo(() => options.packagesDiscoveryProvider(uri));
+    } catch (ex, s) {
+      reportCrashInUserCode('Uncaught exception in package discovery', ex, s);
+      rethrow;
+    }
   }
 
   Uri resolvePatchUri(String libraryName) {

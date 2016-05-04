@@ -13,6 +13,7 @@ import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/member.dart';
 import 'package:analyzer/src/dart/element/type.dart';
 import 'package:analyzer/src/generated/error.dart';
+import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/type_system.dart';
 import 'package:analyzer/src/generated/utilities_dart.dart';
 
@@ -53,7 +54,8 @@ class InheritanceManager {
   InheritanceManager(LibraryElement library) {
     this._library = library;
     _classLookup = new HashMap<ClassElement, Map<String, ExecutableElement>>();
-    _interfaceLookup = new HashMap<ClassElement, Map<String, ExecutableElement>>();
+    _interfaceLookup =
+        new HashMap<ClassElement, Map<String, ExecutableElement>>();
   }
 
   /**
@@ -86,7 +88,8 @@ class InheritanceManager {
    */
   @deprecated
   MemberMap getMapOfMembersInheritedFromClasses(ClassElement classElt) =>
-      new MemberMap.fromMap(_computeClassChainLookupMap(classElt, new HashSet<ClassElement>()));
+      new MemberMap.fromMap(
+          _computeClassChainLookupMap(classElt, new HashSet<ClassElement>()));
 
   /**
    * Get and return a mapping between the set of all string names of the members inherited from the
@@ -98,14 +101,16 @@ class InheritanceManager {
    */
   @deprecated
   MemberMap getMapOfMembersInheritedFromInterfaces(ClassElement classElt) =>
-      new MemberMap.fromMap(_computeInterfaceLookupMap(classElt, new HashSet<ClassElement>()));
+      new MemberMap.fromMap(
+          _computeInterfaceLookupMap(classElt, new HashSet<ClassElement>()));
 
   /**
    * Return a table mapping the string names of the members inherited from the
    * passed [ClassElement]'s superclass hierarchy, and the associated executable
    * element.
    */
-  Map<String, ExecutableElement> getMembersInheritedFromClasses(ClassElement classElt) =>
+  Map<String, ExecutableElement> getMembersInheritedFromClasses(
+          ClassElement classElt) =>
       _computeClassChainLookupMap(classElt, new HashSet<ClassElement>());
 
   /**
@@ -113,7 +118,8 @@ class InheritanceManager {
    * passed [ClassElement]'s interface hierarchy, and the associated executable
    * element.
    */
-  Map<String, ExecutableElement> getMembersInheritedFromInterfaces(ClassElement classElt) =>
+  Map<String, ExecutableElement> getMembersInheritedFromInterfaces(
+          ClassElement classElt) =>
       _computeInterfaceLookupMap(classElt, new HashSet<ClassElement>());
 
   /**
@@ -132,12 +138,11 @@ class InheritanceManager {
     if (memberName == null || memberName.isEmpty) {
       return null;
     }
-    ExecutableElement executable =
-        _computeClassChainLookupMap(classElt, new HashSet<ClassElement>())
-            [memberName];
+    ExecutableElement executable = _computeClassChainLookupMap(
+        classElt, new HashSet<ClassElement>())[memberName];
     if (executable == null) {
-      return _computeInterfaceLookupMap(classElt, new HashSet<ClassElement>())
-          [memberName];
+      return _computeInterfaceLookupMap(classElt, new HashSet<ClassElement>())[
+          memberName];
     }
     return executable;
   }
@@ -183,10 +188,8 @@ class InheritanceManager {
         ExecutableElement overriddenElement = interfaceMap[memberName];
         if (overriddenElement != null) {
           if (overriddenElement is MultiplyInheritedExecutableElement) {
-            MultiplyInheritedExecutableElement multiplyInheritedElement =
-                overriddenElement;
             for (ExecutableElement element
-                in multiplyInheritedElement.inheritedElements) {
+                in overriddenElement.inheritedElements) {
               result.add(element);
             }
           } else {
@@ -305,8 +308,9 @@ class InheritanceManager {
         if (!visitedClasses.contains(mixinElement)) {
           visitedClasses.add(mixinElement);
           try {
-            Map<String, ExecutableElement> map = new Map<String, ExecutableElement>.from(
-                _computeClassChainLookupMap(mixinElement, visitedClasses));
+            Map<String, ExecutableElement> map =
+                new Map<String, ExecutableElement>.from(
+                    _computeClassChainLookupMap(mixinElement, visitedClasses));
             //
             // Substitute the super types down the hierarchy.
             //
@@ -457,12 +461,12 @@ class InheritanceManager {
   List<Map<String, ExecutableElement>> _gatherInterfaceLookupMaps(
       ClassElement classElt, HashSet<ClassElement> visitedInterfaces) {
     InterfaceType supertype = classElt.supertype;
-    ClassElement superclassElement =
-        supertype != null ? supertype.element : null;
+    ClassElement superclassElement = supertype?.element;
     List<InterfaceType> mixins = classElt.mixins;
     List<InterfaceType> interfaces = classElt.interfaces;
     // Recursively collect the list of mappings from all of the interface types
-    List<Map<String, ExecutableElement>> lookupMaps = new List<Map<String, ExecutableElement>>();
+    List<Map<String, ExecutableElement>> lookupMaps =
+        new List<Map<String, ExecutableElement>>();
     //
     // Superclass element
     //
@@ -602,8 +606,8 @@ class InheritanceManager {
    * @param type the type that will be recorded into the passed map
    * @param doIncludeAbstract `true` if abstract members will be put into the map
    */
-  void _recordMapWithClassMembers(
-      Map<String, ExecutableElement> map, InterfaceType type, bool doIncludeAbstract) {
+  void _recordMapWithClassMembers(Map<String, ExecutableElement> map,
+      InterfaceType type, bool doIncludeAbstract) {
     List<MethodElement> methods = type.methods;
     for (MethodElement method in methods) {
       if (method.isAccessibleIn(_library) &&
@@ -656,9 +660,10 @@ class InheritanceManager {
    *          defined in superclasses of [classElt].
    * @return the inheritance lookup map for [classElt].
    */
-  Map<String, ExecutableElement> _resolveInheritanceLookup(ClassElement classElt,
-      Map<String, List<ExecutableElement>> unionMap) {
-    Map<String, ExecutableElement> resultMap = new Map<String, ExecutableElement>();
+  Map<String, ExecutableElement> _resolveInheritanceLookup(
+      ClassElement classElt, Map<String, List<ExecutableElement>> unionMap) {
+    Map<String, ExecutableElement> resultMap =
+        new Map<String, ExecutableElement>();
     unionMap.forEach((String key, List<ExecutableElement> list) {
       int numOfEltsWithMatchingNames = list.length;
       if (numOfEltsWithMatchingNames == 1) {
@@ -821,13 +826,10 @@ class InheritanceManager {
     for (String memberName in map.keys) {
       ExecutableElement executableElement = map[memberName];
       if (executableElement is MethodMember) {
-        executableElement =
-            MethodMember.from(executableElement as MethodMember, superType);
-        map[memberName] = executableElement;
+        map[memberName] = MethodMember.from(executableElement, superType);
       } else if (executableElement is PropertyAccessorMember) {
-        executableElement = PropertyAccessorMember.from(
-            executableElement as PropertyAccessorMember, superType);
-        map[memberName] = executableElement;
+        map[memberName] =
+            PropertyAccessorMember.from(executableElement, superType);
       }
     }
   }
@@ -945,20 +947,22 @@ class InheritanceManager {
     SimpleIdentifier nameIdentifier =
         new SimpleIdentifier(new StringToken(TokenType.IDENTIFIER, name, 0));
     ExecutableElementImpl executable;
-    if (elementArrayToMerge[0] is MethodElement) {
+    ExecutableElement elementToMerge = elementArrayToMerge[0];
+    if (elementToMerge is MethodElement) {
       MultiplyInheritedMethodElementImpl unionedMethod =
           new MultiplyInheritedMethodElementImpl(nameIdentifier);
       unionedMethod.inheritedElements = elementArrayToMerge;
       executable = unionedMethod;
-    } else {
+    } else if (elementToMerge is PropertyAccessorElement) {
       MultiplyInheritedPropertyAccessorElementImpl unionedPropertyAccessor =
           new MultiplyInheritedPropertyAccessorElementImpl(nameIdentifier);
-      unionedPropertyAccessor.getter =
-          (elementArrayToMerge[0] as PropertyAccessorElement).isGetter;
-      unionedPropertyAccessor.setter =
-          (elementArrayToMerge[0] as PropertyAccessorElement).isSetter;
+      unionedPropertyAccessor.getter = elementToMerge.isGetter;
+      unionedPropertyAccessor.setter = elementToMerge.isSetter;
       unionedPropertyAccessor.inheritedElements = elementArrayToMerge;
       executable = unionedPropertyAccessor;
+    } else {
+      throw new AnalysisException(
+          'Invalid class of element in merge: ${elementToMerge.runtimeType}');
     }
     int numOfParameters = numOfRequiredParameters +
         numOfPositionalParameters +

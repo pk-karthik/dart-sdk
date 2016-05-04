@@ -302,6 +302,12 @@ namespace dart {
 //    match patched call's argument count so that Return instructions continue
 //    to work.
 //
+//  - LoadClassIdTOS, LoadClassId rA, D
+//
+//    LoadClassIdTOS loads the class id from the object at SP[0] and stores it
+//    to SP[0]. LoadClassId loads the class id from FP[rA] and stores it to
+//    FP[D].
+//
 // TODO(vegorov) the way we replace calls with DebugBreak does not work
 //               with our smi fast paths because DebugBreak is simply skipped.
 //
@@ -340,6 +346,8 @@ namespace dart {
   V(Move,                          A_X, reg, xeg, ___) \
   V(Push,                            X, xeg, ___, ___) \
   V(LoadConstant,                  A_D, reg, lit, ___) \
+  V(LoadClassId,                   A_D, reg, reg, ___) \
+  V(LoadClassIdTOS,                  0, ___, ___, ___) \
   V(PushConstant,                    D, lit, ___, ___) \
   V(StoreLocal,                      X, xeg, ___, ___) \
   V(PopLocal,                        X, xeg, ___, ___) \

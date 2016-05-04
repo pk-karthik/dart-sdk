@@ -143,34 +143,33 @@ class AnalysisError {
   String get message => _message;
 
   @override
-  bool operator ==(Object obj) {
-    if (identical(obj, this)) {
+  bool operator ==(Object other) {
+    if (identical(other, this)) {
       return true;
     }
     // prepare other AnalysisError
-    if (obj is! AnalysisError) {
-      return false;
+    if (other is AnalysisError) {
+      // Quick checks.
+      if (!identical(errorCode, other.errorCode)) {
+        return false;
+      }
+      if (offset != other.offset || length != other.length) {
+        return false;
+      }
+      if (isStaticOnly != other.isStaticOnly) {
+        return false;
+      }
+      // Deep checks.
+      if (_message != other._message) {
+        return false;
+      }
+      if (source != other.source) {
+        return false;
+      }
+      // OK
+      return true;
     }
-    AnalysisError other = obj as AnalysisError;
-    // Quick checks.
-    if (!identical(errorCode, other.errorCode)) {
-      return false;
-    }
-    if (offset != other.offset || length != other.length) {
-      return false;
-    }
-    if (isStaticOnly != other.isStaticOnly) {
-      return false;
-    }
-    // Deep checks.
-    if (_message != other._message) {
-      return false;
-    }
-    if (source != other.source) {
-      return false;
-    }
-    // OK
-    return true;
+    return false;
   }
 
   /**
@@ -3148,7 +3147,7 @@ class ErrorReporter {
    * Setting the source to `null` will cause the default source to be used.
    */
   void set source(Source source) {
-    this._source = source == null ? _defaultSource : source;
+    this._source = source ?? _defaultSource;
   }
 
   /**
@@ -3267,12 +3266,12 @@ class ErrorReporter {
       for (int i = 0; i < count; i++) {
         Object argument = arguments[i];
         if (argument is DartType) {
-          DartType type = argument;
-          Element element = type.element;
+          Element element = argument.element;
           if (element == null) {
-            arguments[i] = displayName(type);
+            arguments[i] = displayName(argument);
           } else {
-            arguments[i] = element.getExtendedDisplayName(displayName(type));
+            arguments[i] =
+                element.getExtendedDisplayName(displayName(argument));
           }
         }
       }
@@ -3295,8 +3294,8 @@ class ErrorReporter {
     int count = arguments.length;
     HashSet<String> typeNames = new HashSet<String>();
     for (int i = 0; i < count; i++) {
-      if (arguments[i] is DartType &&
-          !typeNames.add((arguments[i] as DartType).displayName)) {
+      Object argument = arguments[i];
+      if (argument is DartType && !typeNames.add(argument.displayName)) {
         return true;
       }
     }
@@ -3586,7 +3585,6 @@ class HintCode extends ErrorCode {
    */
   static const HintCode MISSING_REQUIRED_PARAM = const HintCode(
       'MISSING_REQUIRED_PARAM', "The parameter '{0}' is required.");
-
 
   /**
    * Generate a hint for a constructor, function or method invocation where a

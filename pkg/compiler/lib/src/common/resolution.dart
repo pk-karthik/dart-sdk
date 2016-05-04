@@ -14,6 +14,7 @@ import '../elements/elements.dart'
         AstElement,
         ClassElement,
         Element,
+        ExecutableElement,
         FunctionElement,
         FunctionSignature,
         MetadataAnnotation,
@@ -188,8 +189,11 @@ class ListLiteralUse {
 /// Interface for the accessing the front-end analysis.
 // TODO(johnniwinther): Find a better name for this.
 abstract class Frontend {
+  /// Returns `true` if [element] has a [ResolvedAst].
+  bool hasResolvedAst(ExecutableElement element);
+
   /// Returns the `ResolvedAst` for the [element].
-  ResolvedAst getResolvedAst(Element element);
+  ResolvedAst getResolvedAst(ExecutableElement element);
 
   /// Returns the [ResolutionImpact] for [element].
   ResolutionImpact getResolutionImpact(Element element);
@@ -212,22 +216,32 @@ abstract class Resolution implements Frontend {
   FunctionSignature resolveSignature(FunctionElement function);
   DartType resolveTypeAnnotation(Element element, TypeAnnotation node);
 
+  /// Returns `true` if [element] has been resolved.
+  // TODO(johnniwinther): Normalize semantics between normal and deserialized
+  // elements; deserialized elements are always resolved but the method will
+  // return `false`.
   bool hasBeenResolved(Element element);
+
+  /// Resolve [element] if it has not already been resolved.
+  void ensureResolved(Element element);
 
   ResolutionWorkItem createWorkItem(
       Element element, ItemCompilationContext compilationContext);
 
   /// Returns `true` if [element] as a fully computed [ResolvedAst].
-  bool hasResolvedAst(Element element);
+  bool hasResolvedAst(ExecutableElement element);
 
   /// Returns the `ResolvedAst` for the [element].
-  ResolvedAst getResolvedAst(Element element);
+  ResolvedAst getResolvedAst(ExecutableElement element);
 
   /// Returns `true` if the [ResolutionImpact] for [element] is cached.
   bool hasResolutionImpact(Element element);
 
   /// Returns the precomputed [ResolutionImpact] for [element].
   ResolutionImpact getResolutionImpact(Element element);
+
+  /// Returns the [ResolvedAst] for [element], computing it if necessary.
+  ResolvedAst computeResolvedAst(Element element);
 
   /// Returns the precomputed [WorldImpact] for [element].
   WorldImpact getWorldImpact(Element element);
@@ -243,6 +257,8 @@ abstract class Resolution implements Frontend {
   /// Later calls to [getWorldImpact] or [computeWorldImpact] returns an empty
   /// impact.
   void emptyCache();
+
+  void forgetElement(Element element);
 }
 
 /// A container of commonly used dependencies for tasks that involve parsing.

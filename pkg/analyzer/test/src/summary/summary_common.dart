@@ -43,7 +43,8 @@ Object canonicalize(Object obj, {bool orderByName: false}) {
     Map<String, Object> result = <String, Object>{};
     obj.toMap().forEach((String key, Object value) {
       bool orderByName = false;
-      if (obj is UnlinkedPublicNamespace && key == 'names') {
+      if (obj is UnlinkedPublicNamespace && key == 'names' ||
+          obj is UnlinkedPublicName && key == 'members') {
         orderByName = true;
       }
       result[key] = canonicalize(value, orderByName: orderByName);
@@ -1156,17 +1157,19 @@ class C {
     Map<String, UnlinkedPublicName> executablesMap =
         <String, UnlinkedPublicName>{};
     className.members.forEach((e) => executablesMap[e.name] = e);
-    expect(executablesMap, hasLength(2));
-    {
-      UnlinkedPublicName executable = executablesMap['fieldStaticConst'];
-      expect(executable.kind, ReferenceKind.propertyAccessor);
+    expect(executablesMap, hasLength(4));
+    Map<String, ReferenceKind> expectedExecutableKinds =
+        <String, ReferenceKind>{
+      'fieldStaticConst': ReferenceKind.propertyAccessor,
+      'fieldStaticFinal': ReferenceKind.propertyAccessor,
+      'fieldStatic': ReferenceKind.propertyAccessor,
+      'methodStaticPublic': ReferenceKind.method,
+    };
+    expectedExecutableKinds.forEach((String name, ReferenceKind expectedKind) {
+      UnlinkedPublicName executable = executablesMap[name];
+      expect(executable.kind, expectedKind);
       expect(executable.members, isEmpty);
-    }
-    {
-      UnlinkedPublicName executable = executablesMap['methodStaticPublic'];
-      expect(executable.kind, ReferenceKind.method);
-      expect(executable.members, isEmpty);
-    }
+    });
   }
 
   test_class_constMembers_constructors() {
@@ -2819,6 +2822,73 @@ class C {
     ]);
   }
 
+  test_constExpr_pushReference_staticGetter() {
+    UnlinkedVariable variable = serializeVariableText('''
+class C {
+  static int get x => null;
+}
+const v = C.x;
+''');
+    _assertUnlinkedConst(variable.constExpr, operators: [
+      UnlinkedConstOperation.pushReference
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, null, null, 'x',
+              expectedKind: ReferenceKind.propertyAccessor,
+              prefixExpectations: [
+                new _PrefixExpectation(ReferenceKind.classOrEnum, 'C')
+              ])
+    ]);
+  }
+
+  test_constExpr_pushReference_staticGetter_imported() {
+    addNamedSource(
+        '/a.dart',
+        '''
+class C {
+  static int get x => null;
+}
+''');
+    UnlinkedVariable variable = serializeVariableText('''
+import 'a.dart';
+const v = C.x;
+''');
+    _assertUnlinkedConst(variable.constExpr, operators: [
+      UnlinkedConstOperation.pushReference
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, null, null, 'x',
+              expectedKind: ReferenceKind.propertyAccessor,
+              prefixExpectations: [
+                new _PrefixExpectation(ReferenceKind.classOrEnum, 'C',
+                    absoluteUri: absUri('/a.dart'), relativeUri: 'a.dart')
+              ])
+    ]);
+  }
+
+  test_constExpr_pushReference_staticGetter_imported_withPrefix() {
+    addNamedSource(
+        '/a.dart',
+        '''
+class C {
+  static int get x => null;
+}
+''');
+    UnlinkedVariable variable = serializeVariableText('''
+import 'a.dart' as p;
+const v = p.C.x;
+''');
+    _assertUnlinkedConst(variable.constExpr, operators: [
+      UnlinkedConstOperation.pushReference
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, null, null, 'x',
+              expectedKind: ReferenceKind.propertyAccessor,
+              prefixExpectations: [
+                new _PrefixExpectation(ReferenceKind.classOrEnum, 'C',
+                    absoluteUri: absUri('/a.dart'), relativeUri: 'a.dart'),
+                new _PrefixExpectation(ReferenceKind.prefix, 'p')
+              ])
+    ]);
+  }
+
   test_constExpr_pushReference_staticMethod() {
     UnlinkedVariable variable = serializeVariableText('''
 class C {
@@ -2953,6 +3023,48 @@ const v = p.f;
               prefixExpectations: [
                 new _PrefixExpectation(ReferenceKind.prefix, 'p')
               ])
+    ]);
+  }
+
+  test_constExpr_pushReference_topLevelGetter() {
+    UnlinkedVariable variable = serializeVariableText('''
+int get x => null;
+const v = x;
+''');
+    _assertUnlinkedConst(variable.constExpr, operators: [
+      UnlinkedConstOperation.pushReference
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, null, null, 'x',
+          expectedKind: ReferenceKind.topLevelPropertyAccessor)
+    ]);
+  }
+
+  test_constExpr_pushReference_topLevelGetter_imported() {
+    addNamedSource('/a.dart', 'int get x => null;');
+    UnlinkedVariable variable = serializeVariableText('''
+import 'a.dart';
+const v = x;
+''');
+    _assertUnlinkedConst(variable.constExpr, operators: [
+      UnlinkedConstOperation.pushReference
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, absUri('/a.dart'), 'a.dart', 'x',
+          expectedKind: ReferenceKind.topLevelPropertyAccessor)
+    ]);
+  }
+
+  test_constExpr_pushReference_topLevelGetter_imported_withPrefix() {
+    addNamedSource('/a.dart', 'int get x => null;');
+    UnlinkedVariable variable = serializeVariableText('''
+import 'a.dart' as p;
+const v = p.x;
+''');
+    _assertUnlinkedConst(variable.constExpr, operators: [
+      UnlinkedConstOperation.pushReference
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, absUri('/a.dart'), 'a.dart', 'x',
+          expectedKind: ReferenceKind.topLevelPropertyAccessor,
+          expectedPrefix: 'p')
     ]);
   }
 
@@ -3142,7 +3254,9 @@ const v = p.C.foo;
         findExecutable('', executables: serializeClassText(text).executables);
     expect(executable.kind, UnlinkedExecutableKind.constructor);
     expect(executable.returnType, isNull);
+    expect(executable.isAsynchronous, isFalse);
     expect(executable.isExternal, isFalse);
+    expect(executable.isGenerator, isFalse);
     expect(executable.nameOffset, text.indexOf('C();'));
     expect(executable.periodOffset, 0);
     expect(executable.nameEnd, 0);
@@ -4738,7 +4852,9 @@ enum E {
     UnlinkedExecutable executable = serializeExecutableText(text);
     expect(executable.kind, UnlinkedExecutableKind.functionOrMethod);
     expect(executable.returnType, isNull);
+    expect(executable.isAsynchronous, isFalse);
     expect(executable.isExternal, isFalse);
+    expect(executable.isGenerator, isFalse);
     expect(executable.nameOffset, text.indexOf('f'));
     expect(executable.visibleOffset, 0);
     expect(executable.visibleLength, 0);
@@ -4747,6 +4863,24 @@ enum E {
         ReferenceKind.topLevelFunction);
     expect(unlinkedUnits[0].publicNamespace.names[0].name, 'f');
     expect(unlinkedUnits[0].publicNamespace.names[0].numTypeParameters, 0);
+  }
+
+  test_executable_function_async() {
+    UnlinkedExecutable executable = serializeExecutableText(r'''
+import 'dart:async';
+Future f() async {}
+''');
+    expect(executable.isAsynchronous, isTrue);
+    expect(executable.isGenerator, isFalse);
+  }
+
+  test_executable_function_asyncStar() {
+    UnlinkedExecutable executable = serializeExecutableText(r'''
+import 'dart:async';
+Stream f() async* {}
+''');
+    expect(executable.isAsynchronous, isTrue);
+    expect(executable.isGenerator, isTrue);
   }
 
   test_executable_function_explicit_return() {
@@ -4770,7 +4904,9 @@ enum E {
     UnlinkedExecutable executable = serializeExecutableText(text);
     expect(executable.kind, UnlinkedExecutableKind.getter);
     expect(executable.returnType, isNotNull);
+    expect(executable.isAsynchronous, isFalse);
     expect(executable.isExternal, isFalse);
+    expect(executable.isGenerator, isFalse);
     expect(executable.nameOffset, text.indexOf('f'));
     expect(findVariable('f'), isNull);
     expect(findExecutable('f='), isNull);
@@ -5203,10 +5339,36 @@ get g { // 1
         executables: serializeClassText('class C { f() {} }').executables);
     expect(executable.kind, UnlinkedExecutableKind.functionOrMethod);
     expect(executable.returnType, isNull);
+    expect(executable.isAsynchronous, isFalse);
     expect(executable.isExternal, isFalse);
+    expect(executable.isGenerator, isFalse);
     expect(executable.visibleOffset, 0);
     expect(executable.visibleLength, 0);
     _assertCodeRange(executable.codeRange, 10, 6);
+  }
+
+  test_executable_member_function_async() {
+    UnlinkedExecutable executable =
+        findExecutable('f', executables: serializeClassText(r'''
+import 'dart:async';
+class C {
+  Future f() async {}
+}
+''').executables);
+    expect(executable.isAsynchronous, isTrue);
+    expect(executable.isGenerator, isFalse);
+  }
+
+  test_executable_member_function_asyncStar() {
+    UnlinkedExecutable executable =
+        findExecutable('f', executables: serializeClassText(r'''
+import 'dart:async';
+class C {
+  Stream f() async* {}
+}
+''').executables);
+    expect(executable.isAsynchronous, isTrue);
+    expect(executable.isGenerator, isTrue);
   }
 
   test_executable_member_function_explicit_return() {
@@ -5229,10 +5391,16 @@ get g { // 1
         findExecutable('f', executables: cls.executables, failIfAbsent: true);
     expect(executable.kind, UnlinkedExecutableKind.getter);
     expect(executable.returnType, isNotNull);
+    expect(executable.isAsynchronous, isFalse);
     expect(executable.isExternal, isFalse);
+    expect(executable.isGenerator, isFalse);
+    expect(executable.isStatic, isFalse);
     _assertCodeRange(executable.codeRange, 10, 15);
     expect(findVariable('f', variables: cls.fields), isNull);
     expect(findExecutable('f=', executables: cls.executables), isNull);
+    expect(unlinkedUnits[0].publicNamespace.names, hasLength(1));
+    expect(unlinkedUnits[0].publicNamespace.names[0].name, 'C');
+    expect(unlinkedUnits[0].publicNamespace.names[0].members, isEmpty);
   }
 
   test_executable_member_getter_external() {
@@ -5242,13 +5410,34 @@ get g { // 1
     expect(executable.isExternal, isTrue);
   }
 
+  test_executable_member_getter_static() {
+    UnlinkedClass cls =
+        serializeClassText('class C { static int get f => 1; }');
+    UnlinkedExecutable executable =
+        findExecutable('f', executables: cls.executables, failIfAbsent: true);
+    expect(executable.isStatic, isTrue);
+    expect(unlinkedUnits[0].publicNamespace.names, hasLength(1));
+    expect(unlinkedUnits[0].publicNamespace.names[0].name, 'C');
+    expect(unlinkedUnits[0].publicNamespace.names[0].members, hasLength(1));
+    expect(unlinkedUnits[0].publicNamespace.names[0].members[0].name, 'f');
+    expect(unlinkedUnits[0].publicNamespace.names[0].members[0].kind,
+        ReferenceKind.propertyAccessor);
+    expect(
+        unlinkedUnits[0].publicNamespace.names[0].members[0].numTypeParameters,
+        0);
+    expect(
+        unlinkedUnits[0].publicNamespace.names[0].members[0].members, isEmpty);
+  }
+
   test_executable_member_setter() {
     UnlinkedClass cls = serializeClassText('class C { void set f(value) {} }');
     UnlinkedExecutable executable =
         findExecutable('f=', executables: cls.executables, failIfAbsent: true);
     expect(executable.kind, UnlinkedExecutableKind.setter);
     expect(executable.returnType, isNotNull);
+    expect(executable.isAsynchronous, isFalse);
     expect(executable.isExternal, isFalse);
+    expect(executable.isGenerator, isFalse);
     _assertCodeRange(executable.codeRange, 10, 20);
     expect(findVariable('f', variables: cls.fields), isNull);
     expect(findExecutable('f', executables: cls.executables), isNull);
@@ -5302,8 +5491,10 @@ get g { // 1
     expect(executable.name, '+');
     expect(executable.returnType, isNotNull);
     expect(executable.isAbstract, false);
+    expect(executable.isAsynchronous, isFalse);
     expect(executable.isConst, false);
     expect(executable.isFactory, false);
+    expect(executable.isGenerator, isFalse);
     expect(executable.isStatic, false);
     expect(executable.parameters, hasLength(1));
     checkTypeRef(executable.returnType, null, null, 'C');
@@ -5316,7 +5507,9 @@ get g { // 1
         serializeClassText('class C { C operator+(C c); }', allowErrors: true)
             .executables[0];
     expect(executable.isAbstract, true);
+    expect(executable.isAsynchronous, isFalse);
     expect(executable.isExternal, false);
+    expect(executable.isGenerator, isFalse);
   }
 
   test_executable_operator_equal() {
@@ -5331,7 +5524,9 @@ get g { // 1
         serializeClassText('class C { external C operator+(C c); }')
             .executables[0];
     expect(executable.isAbstract, false);
+    expect(executable.isAsynchronous, isFalse);
     expect(executable.isExternal, true);
+    expect(executable.isGenerator, isFalse);
   }
 
   test_executable_operator_greater_equal() {
@@ -5582,7 +5777,9 @@ f(MyFunction myFunction) {}
         serializeExecutableText(text, executableName: 'f=');
     expect(executable.kind, UnlinkedExecutableKind.setter);
     expect(executable.returnType, isNotNull);
+    expect(executable.isAsynchronous, isFalse);
     expect(executable.isExternal, isFalse);
+    expect(executable.isGenerator, isFalse);
     expect(executable.nameOffset, text.indexOf('f'));
     expect(findVariable('f'), isNull);
     expect(findExecutable('f'), isNull);
@@ -6752,6 +6949,9 @@ final v = 42 is num;
     expect(variable.constExpr, isNull);
     expect(findExecutable('i', executables: cls.executables), isNull);
     expect(findExecutable('i=', executables: cls.executables), isNull);
+    expect(unlinkedUnits[0].publicNamespace.names, hasLength(1));
+    expect(unlinkedUnits[0].publicNamespace.names[0].name, 'C');
+    expect(unlinkedUnits[0].publicNamespace.names[0].members, isEmpty);
   }
 
   test_field_const() {
@@ -6902,6 +7102,17 @@ class C<T> {
         serializeClassText('class C { static int i; }').fields[0];
     expect(variable.isStatic, isTrue);
     expect(variable.constExpr, isNull);
+    expect(unlinkedUnits[0].publicNamespace.names, hasLength(1));
+    expect(unlinkedUnits[0].publicNamespace.names[0].name, 'C');
+    expect(unlinkedUnits[0].publicNamespace.names[0].members, hasLength(1));
+    expect(unlinkedUnits[0].publicNamespace.names[0].members[0].name, 'i');
+    expect(unlinkedUnits[0].publicNamespace.names[0].members[0].kind,
+        ReferenceKind.propertyAccessor);
+    expect(
+        unlinkedUnits[0].publicNamespace.names[0].members[0].numTypeParameters,
+        0);
+    expect(
+        unlinkedUnits[0].publicNamespace.names[0].members[0].members, isEmpty);
   }
 
   test_field_static_final() {
@@ -7806,6 +8017,89 @@ D d;''');
     ]);
   }
 
+  test_metadata_constructor_call_named_prefixed_unresolved_class() {
+    addNamedSource('/foo.dart', '');
+    UnlinkedClass cls = serializeClassText(
+        'import "foo.dart" as foo; @foo.A.named() class C {}',
+        allowErrors: true);
+    expect(cls.annotations, hasLength(1));
+    _assertUnlinkedConst(cls.annotations[0], operators: [
+      UnlinkedConstOperation.invokeConstructor,
+    ], ints: [
+      0,
+      0
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, null, null, 'named',
+          expectedKind: ReferenceKind.unresolved,
+          prefixExpectations: [
+            new _PrefixExpectation(ReferenceKind.unresolved, 'A'),
+            new _PrefixExpectation(ReferenceKind.prefix, 'foo')
+          ],
+          checkAstDerivedDataOverride: true)
+    ]);
+  }
+
+  test_metadata_constructor_call_named_prefixed_unresolved_constructor() {
+    addNamedSource('/foo.dart', 'class A {}');
+    UnlinkedClass cls = serializeClassText(
+        'import "foo.dart" as foo; @foo.A.named() class C {}',
+        allowErrors: true);
+    expect(cls.annotations, hasLength(1));
+    _assertUnlinkedConst(cls.annotations[0], operators: [
+      UnlinkedConstOperation.invokeConstructor,
+    ], ints: [
+      0,
+      0
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, null, null, 'named',
+          expectedKind: ReferenceKind.unresolved,
+          prefixExpectations: [
+            new _PrefixExpectation(ReferenceKind.classOrEnum, 'A',
+                absoluteUri: absUri('/foo.dart'), relativeUri: 'foo.dart'),
+            new _PrefixExpectation(ReferenceKind.prefix, 'foo')
+          ],
+          checkAstDerivedDataOverride: true)
+    ]);
+  }
+
+  test_metadata_constructor_call_named_unresolved_class() {
+    UnlinkedClass cls =
+        serializeClassText('@A.named() class C {}', allowErrors: true);
+    expect(cls.annotations, hasLength(1));
+    _assertUnlinkedConst(cls.annotations[0], operators: [
+      UnlinkedConstOperation.invokeConstructor,
+    ], ints: [
+      0,
+      0
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, null, null, 'named',
+          expectedKind: ReferenceKind.unresolved,
+          prefixExpectations: [
+            new _PrefixExpectation(ReferenceKind.unresolved, 'A')
+          ],
+          checkAstDerivedDataOverride: true)
+    ]);
+  }
+
+  test_metadata_constructor_call_named_unresolved_constructor() {
+    UnlinkedClass cls = serializeClassText('class A {} @A.named() class C {}',
+        allowErrors: true);
+    expect(cls.annotations, hasLength(1));
+    _assertUnlinkedConst(cls.annotations[0], operators: [
+      UnlinkedConstOperation.invokeConstructor,
+    ], ints: [
+      0,
+      0
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, null, null, 'named',
+          expectedKind: ReferenceKind.unresolved,
+          prefixExpectations: [
+            new _PrefixExpectation(ReferenceKind.classOrEnum, 'A')
+          ],
+          checkAstDerivedDataOverride: true)
+    ]);
+  }
+
   test_metadata_constructor_call_unnamed() {
     UnlinkedClass cls =
         serializeClassText('class A { const A(); } @A() class C {}');
@@ -7834,6 +8128,41 @@ D d;''');
     ], referenceValidators: [
       (EntityRef r) => checkTypeRef(r, absUri('/foo.dart'), 'foo.dart', 'A',
           expectedKind: ReferenceKind.classOrEnum, expectedPrefix: 'foo')
+    ]);
+  }
+
+  test_metadata_constructor_call_unnamed_prefixed_unresolved() {
+    addNamedSource('/foo.dart', '');
+    UnlinkedClass cls = serializeClassText(
+        'import "foo.dart" as foo; @foo.A() class C {}',
+        allowErrors: true);
+    expect(cls.annotations, hasLength(1));
+    _assertUnlinkedConst(cls.annotations[0], operators: [
+      UnlinkedConstOperation.invokeConstructor,
+    ], ints: [
+      0,
+      0
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, null, null, 'A',
+          expectedKind: ReferenceKind.unresolved,
+          expectedPrefix: 'foo',
+          checkAstDerivedDataOverride: true)
+    ]);
+  }
+
+  test_metadata_constructor_call_unnamed_unresolved() {
+    UnlinkedClass cls =
+        serializeClassText('@A() class C {}', allowErrors: true);
+    expect(cls.annotations, hasLength(1));
+    _assertUnlinkedConst(cls.annotations[0], operators: [
+      UnlinkedConstOperation.invokeConstructor,
+    ], ints: [
+      0,
+      0
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, null, null, 'A',
+          expectedKind: ReferenceKind.unresolved,
+          checkAstDerivedDataOverride: true)
     ]);
   }
 
@@ -8005,6 +8334,22 @@ D d;''');
     ]);
   }
 
+  test_metadata_prefixed_variable_unresolved() {
+    addNamedSource('/a.dart', '');
+    UnlinkedClass cls = serializeClassText(
+        'import "a.dart" as a; @a.b class C {}',
+        allowErrors: true);
+    expect(cls.annotations, hasLength(1));
+    _assertUnlinkedConst(cls.annotations[0], operators: [
+      UnlinkedConstOperation.pushReference
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, null, null, 'b',
+          expectedKind: ReferenceKind.unresolved,
+          expectedPrefix: 'a',
+          checkAstDerivedDataOverride: true)
+    ]);
+  }
+
   test_metadata_simpleFormalParameter() {
     checkAnnotationA(serializeExecutableText('const a = null; f(@a x) {}')
         .parameters[0]
@@ -8047,6 +8392,18 @@ D d;''');
     checkAnnotationA(serializeTypedefText('const a = null; typedef F<@a T>();')
         .typeParameters[0]
         .annotations);
+  }
+
+  test_metadata_variable_unresolved() {
+    UnlinkedClass cls = serializeClassText('@a class C {}', allowErrors: true);
+    expect(cls.annotations, hasLength(1));
+    _assertUnlinkedConst(cls.annotations[0], operators: [
+      UnlinkedConstOperation.pushReference
+    ], referenceValidators: [
+      (EntityRef r) => checkTypeRef(r, null, null, 'a',
+          expectedKind: ReferenceKind.unresolved,
+          checkAstDerivedDataOverride: true)
+    ]);
   }
 
   test_method_documented() {
@@ -8257,6 +8614,23 @@ f(x) => 42;
     expect(unlinkedUnits[0].publicNamespace.names, isEmpty);
     expect(unlinkedUnits[1].publicNamespace.names, hasLength(1));
     expect(unlinkedUnits[1].publicNamespace.names[0].name, 'C');
+  }
+
+  test_reference_zero() {
+    // Element zero of the references table should be populated in a standard
+    // way.
+    serializeLibraryText('');
+    UnlinkedReference unlinkedReference0 = unlinkedUnits[0].references[0];
+    expect(unlinkedReference0.name, '');
+    expect(unlinkedReference0.prefixReference, 0);
+    LinkedReference linkedReference0 = linked.units[0].references[0];
+    expect(linkedReference0.containingReference, 0);
+    expect(linkedReference0.dependency, 0);
+    expect(linkedReference0.kind, ReferenceKind.unresolved);
+    expect(linkedReference0.localIndex, 0);
+    expect(linkedReference0.name, '');
+    expect(linkedReference0.numTypeParameters, 0);
+    expect(linkedReference0.unit, 0);
   }
 
   test_setter_documented() {
