@@ -1838,6 +1838,8 @@ class ICData : public Object {
     return raw_ptr()->deopt_id_;
   }
 
+  bool IsImmutable() const;
+
   void Reset(bool is_static_call) const;
   void ResetData() const;
 
@@ -1886,7 +1888,9 @@ class ICData : public Object {
   bool HasDeoptReason(ICData::DeoptReasonId reason) const;
   void AddDeoptReason(ICData::DeoptReasonId reason) const;
 
-  intptr_t LengthWithoutSentinel() const;
+  // The length of the array. This includes all sentinel entries including
+  // the final one.
+  intptr_t Length() const;
 
   intptr_t NumberOfChecks() const;
 
@@ -1927,8 +1931,10 @@ class ICData : public Object {
 
   // Replaces entry |index| with the sentinel.
   void WriteSentinelAt(intptr_t index) const;
+
   // Clears the count for entry |index|.
   void ClearCountAt(intptr_t index) const;
+
   // Clear all entries with the sentinel value (but will preserve initial
   // smi smi checks).
   void ClearWithSentinel() const;
@@ -2264,7 +2270,7 @@ class Function : public Object {
   // visible formal parameters of the function.
   RawString* UserVisibleFormalParameters() const;
 
-  // object_reload:
+  // Reloading support:
   void Reparent(const Class& new_cls) const;
   void ZeroEdgeCounters() const;
   void FillICDataWithSentinels(const Code& code) const;
@@ -2306,9 +2312,11 @@ class Function : public Object {
 
   // Disables optimized code and switches to unoptimized code.
   void SwitchToUnoptimizedCode() const;
+
   // Disables optimized code and switches to unoptimized code (or the lazy
   // compilation stub).
   void SwitchToLazyCompiledUnoptimizedCode() const;
+
   // Compiles unoptimized code (if necessary) and attaches it to the function.
   void EnsureHasCompiledUnoptimizedCode() const;
 
