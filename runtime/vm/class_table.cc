@@ -179,24 +179,6 @@ void ClassTable::RegisterAt(intptr_t index, const Class& cls) {
 }
 
 
-void ClassTable::ReplaceClass(const Class& cls, const Class& replacement) {
-  const intptr_t cid = cls.id();
-  const intptr_t replacement_cid = replacement.id();
-
-  // Sanity check the state of the class table.
-  ASSERT(table_[cid] == cls.raw());
-  ASSERT(table_[replacement_cid] == replacement.raw());
-
-  // Replacement needs |cls|'s id.
-  replacement.set_id(cid);
-  // Replace |cls| in the class table.
-  table_[cid] = replacement.raw();
-
-  // Sanity check the state of the class table.
-  ASSERT(table_[cid] = replacement.raw());
-}
-
-
 #if defined(DEBUG)
 void ClassTable::Unregister(intptr_t index) {
   table_[index] = 0;
@@ -243,30 +225,6 @@ void ClassTable::Print() {
     if (cls.raw() != reinterpret_cast<RawClass*>(0)) {
       name = cls.Name();
       OS::Print("%" Pd ": %s\n", i, name.ToCString());
-    }
-  }
-}
-
-
-void ClassTable::PrintNonDartClasses() {
-  Class& cls = Class::Handle();
-  Library& lib = Library::Handle();
-  String& name = String::Handle();
-
-  for (intptr_t i = 1; i < top_; i++) {
-    if (!HasValidClassAt(i)) {
-      continue;
-    }
-    if (i == kFreeListElement) {
-      continue;
-    }
-    cls = At(i);
-    if (cls.raw() != reinterpret_cast<RawClass*>(0)) {
-      lib = cls.library();
-      if (!lib.IsNull() && !lib.is_dart_scheme()) {
-        name = cls.Name();
-        OS::Print("%" Pd ": %s\n", i, name.ToCString());
-      }
     }
   }
 }

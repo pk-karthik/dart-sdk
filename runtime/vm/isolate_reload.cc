@@ -715,7 +715,6 @@ void IsolateReloadContext::VerifyCanonicalTypeArguments() {
 
 void IsolateReloadContext::Commit() {
   TIMELINE_SCOPE(Commit);
-  // I->class_table()->PrintNonDartClasses();
   TIR_Print("---- COMMITTING REVERSE MAP\n");
 
 #ifdef DEBUG

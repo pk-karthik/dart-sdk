@@ -181,8 +181,6 @@ class ClassTable {
 
   void RegisterAt(intptr_t index, const Class& cls);
 
-  void ReplaceClass(const Class& cls, const Class& replacement);
-
 #if defined(DEBUG)
   void Unregister(intptr_t index);
 #endif
@@ -192,7 +190,6 @@ class ClassTable {
   void Validate();
 
   void Print();
-  void PrintNonDartClasses();
 
   void PrintToJSONObject(JSONObject* object);
 
