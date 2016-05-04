@@ -498,17 +498,26 @@ void IsolateReloadContext::BuildCleanScriptSet() {
 
 
 void IsolateReloadContext::FilterCompileTimeConstants() {
-  UnorderedHashSet<ScriptUrlSetTraits>
-      clean_scripts_set(clean_scripts_set_storage_);
   // Save the compile time constants array.
   compile_time_constants_ = I->object_store()->compile_time_constants();
+  // Clear the compile time constants array. This will be repopulated
+  // in the loop below.
   I->object_store()->set_compile_time_constants(Array::Handle());
+
+  // Iterate over the saved compile time constants map.
   ConstantsMap old_constants(compile_time_constants_);
   ConstantsMap::Iterator it(&old_constants);
+
   Array& key = Array::Handle();
   String& url = String::Handle();
   Smi& token_pos = Smi::Handle();
   Instance& value = Instance::Handle();
+
+  // We filter the compile time constants map so that after it only contains
+  // constants from scripts contained in this set.
+  UnorderedHashSet<ScriptUrlSetTraits>
+      clean_scripts_set(clean_scripts_set_storage_);
+
   while (it.MoveNext()) {
     const intptr_t entry = it.Current();
     ASSERT(entry != -1);
@@ -516,14 +525,17 @@ void IsolateReloadContext::FilterCompileTimeConstants() {
     ASSERT(!key.IsNull());
     url = String::RawCast(key.At(0));
     ASSERT(!url.IsNull());
-    if (!clean_scripts_set.ContainsKey(url)) {
-      continue;
+    if (clean_scripts_set.ContainsKey(url)) {
+      // We've found a cached constant from a clean script, add it to the
+      // compile time constants map again.
+      token_pos = Smi::RawCast(key.At(1));
+      TokenPosition tp(token_pos.Value());
+      // Use ^= because this might be null.
+      value ^= old_constants.GetPayload(entry, 0);
+      Parser::InsertCachedConstantValue(url, tp, value);
     }
-    token_pos = Smi::RawCast(key.At(1));
-    TokenPosition tp(token_pos.Value());
-    value ^= old_constants.GetPayload(entry, 0);
-    Parser::InsertCachedConstantValue(url, tp, value);
   }
+
   old_constants.Release();
   clean_scripts_set.Release();
 }
