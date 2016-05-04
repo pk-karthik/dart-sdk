@@ -6087,7 +6087,8 @@ void Parser::ParseTopLevel() {
   Object& tl_owner = Object::Handle(Z);
   Class& toplevel_class = Class::Handle(Z, library_.toplevel_class());
   if (toplevel_class.IsNull()) {
-    toplevel_class = Class::New(library_, Symbols::TopLevel(), script_, TokenPos());
+    toplevel_class =
+        Class::New(library_, Symbols::TopLevel(), script_, TokenPos());
     toplevel_class.set_library(library_);
     library_.set_toplevel_class(toplevel_class);
     tl_owner = toplevel_class.raw();
@@ -11949,81 +11950,33 @@ bool Parser::IsInstantiatorRequired() const {
   return current_class().IsGeneric();
 }
 
-// We cache computed compile-time constants in a map so we can look them
-// up when the same code gets compiled again. The map key is a pair
-// (script url, token position) which is encoded in an array with 2
-// elements:
-// - key[0] contains the canonicalized url of the script.
-// - key[1] contains the token position of the constant in the script.
 
-// ConstantPosKey allows us to look up a constant in the map without
-// allocating a key pair (array).
-struct ConstantPosKey : ValueObject {
-  ConstantPosKey(const String& url, TokenPosition pos)
-      : script_url(url), token_pos(pos) { }
-  const String& script_url;
-  TokenPosition token_pos;
-};
-
-
-class ConstMapKeyEqualsTraits {
- public:
-  static const char* Name() { return "ConstMapKeyEqualsTraits"; }
-  static bool ReportStats() { return false; }
-
-  static bool IsMatch(const Object& a, const Object& b) {
-    const Array& key1 = Array::Cast(a);
-    const Array& key2 = Array::Cast(b);
-    // Compare raw strings of script url symbol and raw smi of token positon.
-    return (key1.At(0) == key2.At(0)) && (key1.At(1) == key2.At(1));
+void Parser::InsertCachedConstantValue(const String& url,
+                                       TokenPosition token_pos,
+                                       const Instance& value) {
+  Isolate* isolate = Isolate::Current();
+  ConstantPosKey key(url, token_pos);
+  if (isolate->object_store()->compile_time_constants() == Array::null()) {
+    const intptr_t kInitialConstMapSize = 16;
+    isolate->object_store()->set_compile_time_constants(
+        Array::Handle(HashTables::New<ConstantsMap>(kInitialConstMapSize,
+                                                    Heap::kNew)));
   }
-  static bool IsMatch(const ConstantPosKey& key1, const Object& b) {
-    const Array& key2 = Array::Cast(b);
-    // Compare raw strings of script url symbol and token positon.
-    return (key1.script_url.raw() == key2.At(0))
-        && (key1.token_pos.value() == Smi::Value(Smi::RawCast(key2.At(1))));
-  }
-  static uword Hash(const Object& obj) {
-    const Array& key = Array::Cast(obj);
-    intptr_t url_hash = String::HashRawSymbol(String::RawCast(key.At(0)));
-    intptr_t pos = Smi::Value(Smi::RawCast(key.At(1)));
-    return HashValue(url_hash, pos);
-  }
-  static uword Hash(const ConstantPosKey& key) {
-    return HashValue(String::HashRawSymbol(key.script_url.raw()),
-                     key.token_pos.value());
-  }
-  // Used by CachConstantValue if a new constant is added to the map.
-  static RawObject* NewKey(const ConstantPosKey& key) {
-    const Array& key_obj = Array::Handle(Array::New(2));
-    key_obj.SetAt(0, key.script_url);
-    key_obj.SetAt(1, Smi::Handle(Smi::New(key.token_pos.value())));
-    return key_obj.raw();;
-  }
-
- private:
-  static uword HashValue(intptr_t url_hash, intptr_t pos) {
-    return url_hash * pos % (Smi::kMaxValue - 13);
-  }
-};
-typedef UnorderedHashMap<ConstMapKeyEqualsTraits> ConstantsMap;
+  ConstantsMap constants(isolate->object_store()->compile_time_constants());
+  constants.InsertNewOrGetValue(key, value);
+  isolate->object_store()->set_compile_time_constants(constants.Release());
+}
 
 
 void Parser::CacheConstantValue(TokenPosition token_pos,
                                 const Instance& value) {
-  ConstantPosKey key(String::Handle(Z, script_.url()), token_pos);
-  if (isolate()->object_store()->compile_time_constants() == Array::null()) {
-    const intptr_t kInitialConstMapSize = 16;
-    isolate()->object_store()->set_compile_time_constants(
-        Array::Handle(Z, HashTables::New<ConstantsMap>(kInitialConstMapSize,
-                                                       Heap::kNew)));
-  }
-  ConstantsMap constants(isolate()->object_store()->compile_time_constants());
-  constants.InsertNewOrGetValue(key, value);
+  const String& url = String::Handle(Z, script_.url());
+  InsertCachedConstantValue(url, token_pos, value);
   if (FLAG_compiler_stats) {
+    ConstantsMap constants(isolate()->object_store()->compile_time_constants());
     thread_->compiler_stats()->num_cached_consts = constants.NumOccupied();
+    constants.Release();
   }
-  isolate()->object_store()->set_compile_time_constants(constants.Release());
 }
 
 

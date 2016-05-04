@@ -13,6 +13,7 @@
 #include "vm/log.h"
 #include "vm/object.h"
 #include "vm/object_store.h"
+#include "vm/parser.h"
 #include "vm/safepoint.h"
 #include "vm/service_event.h"
 #include "vm/stack_frame.h"
@@ -34,6 +35,25 @@ DEFINE_FLAG(bool, reload_every_optimized, true, "Only from optimized code.");
     TimelineDurationScope tds##name(Thread::Current(),                         \
                                    Timeline::GetIsolateStream(),               \
                                    #name)
+
+
+class ScriptUrlSetTraits {
+ public:
+  static bool ReportStats() { return false; }
+  static const char* Name() { return "ScriptUrlSetTraits"; }
+
+  static bool IsMatch(const Object& a, const Object& b) {
+    if (!a.IsString() || !b.IsString()) {
+      return false;
+    }
+
+    return String::Cast(a).Equals(String::Cast(b));
+  }
+
+  static uword Hash(const Object& obj) {
+    return String::Cast(obj).Hash();
+  }
+};
 
 
 class ClassMapTraits {
@@ -165,6 +185,8 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       num_saved_libs_(-1),
       script_uri_(String::null()),
       error_(Error::null()),
+      clean_scripts_set_storage_(Array::null()),
+      compile_time_constants_(Array::null()),
       old_classes_set_storage_(Array::null()),
       class_map_storage_(Array::null()),
       old_libraries_set_storage_(Array::null()),
@@ -173,6 +195,8 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       saved_root_library_(Library::null()),
       saved_libraries_(GrowableObjectArray::null()) {
   // Preallocate storage for maps.
+  clean_scripts_set_storage_ =
+      HashTables::New<UnorderedHashSet<ScriptUrlSetTraits> >(4);
   old_classes_set_storage_ =
       HashTables::New<UnorderedHashSet<ClassMapTraits> >(4);
   class_map_storage_ =
@@ -442,13 +466,75 @@ void IsolateReloadContext::CheckpointLibraries() {
 }
 
 
+void IsolateReloadContext::BuildCleanScriptSet() {
+  const GrowableObjectArray& libs =
+      GrowableObjectArray::Handle(object_store()->libraries());
+
+  UnorderedHashSet<ScriptUrlSetTraits>
+      clean_scripts_set(clean_scripts_set_storage_);
+
+  Library& lib = Library::Handle();
+  Array& scripts = Array::Handle();
+  Script& script = Script::Handle();
+  String& script_url = String::Handle();
+  for (intptr_t lib_idx = 0; lib_idx < libs.Length(); lib_idx++) {
+    lib = Library::RawCast(libs.At(lib_idx));
+    ASSERT(!lib.IsNull());
+    ASSERT(IsCleanLibrary(lib));
+    scripts = lib.LoadedScripts();
+    ASSERT(!scripts.IsNull());
+    for (intptr_t script_idx = 0; script_idx < scripts.Length(); script_idx++) {
+      script = Script::RawCast(scripts.At(script_idx));
+      ASSERT(!script.IsNull());
+      script_url = script.url();
+      ASSERT(!script_url.IsNull());
+      bool already_present = clean_scripts_set.Insert(script_url);
+      ASSERT(!already_present);
+    }
+  }
+
+  clean_scripts_set_storage_ = clean_scripts_set.Release().raw();
+}
+
+
+void IsolateReloadContext::FilterCompileTimeConstants() {
+  UnorderedHashSet<ScriptUrlSetTraits>
+      clean_scripts_set(clean_scripts_set_storage_);
+  // Save the compile time constants array.
+  compile_time_constants_ = I->object_store()->compile_time_constants();
+  I->object_store()->set_compile_time_constants(Array::Handle());
+  ConstantsMap old_constants(compile_time_constants_);
+  ConstantsMap::Iterator it(&old_constants);
+  Array& key = Array::Handle();
+  String& url = String::Handle();
+  Smi& token_pos = Smi::Handle();
+  Instance& value = Instance::Handle();
+  while (it.MoveNext()) {
+    const intptr_t entry = it.Current();
+    ASSERT(entry != -1);
+    key = Array::RawCast(old_constants.GetKey(entry));
+    ASSERT(!key.IsNull());
+    url = String::RawCast(key.At(0));
+    ASSERT(!url.IsNull());
+    if (!clean_scripts_set.ContainsKey(url)) {
+      continue;
+    }
+    token_pos = Smi::RawCast(key.At(1));
+    TokenPosition tp(token_pos.Value());
+    value ^= old_constants.GetPayload(entry, 0);
+    Parser::InsertCachedConstantValue(url, tp, value);
+  }
+  old_constants.Release();
+  clean_scripts_set.Release();
+}
+
+
 void IsolateReloadContext::Checkpoint() {
   TIMELINE_SCOPE(Checkpoint);
   CheckpointClasses();
   CheckpointLibraries();
-  // Clear the compile time constants cache.
-  // TODO(turnidge): Can this be moved into Commit?
-  I->object_store()->set_compile_time_constants(Object::null_array());
+  BuildCleanScriptSet();
+  FilterCompileTimeConstants();
 }
 
 
@@ -499,6 +585,8 @@ void IsolateReloadContext::RollbackLibraries() {
 
 
 void IsolateReloadContext::Rollback() {
+  I->object_store()->set_compile_time_constants(
+      Array::Handle(compile_time_constants_));
   RollbackClasses();
   RollbackLibraries();
 }
@@ -536,6 +624,7 @@ class VerifyInstanceClassesVisitor : public ObjectVisitor {
 
 void IsolateReloadContext::VerifyInstanceClasses() {
   TIR_Print("---- BEGIN Verifying instance classes\n");
+  HeapIterationScope heap_iteration_scope;
   Thread* thread = Thread::Current();
   Isolate* isolate = thread->isolate();
   Heap* heap = isolate->heap();
@@ -852,7 +941,8 @@ static void ResetICs(const Function& function, const Code& code) {
   ZoneGrowableArray<const ICData*>* ic_data_array =
       new(zone) ZoneGrowableArray<const ICData*>();
   function.RestoreICDataMap(ic_data_array, false /* clone ic-data */);
-  if (ic_data_array->length() == 0) {
+  const intptr_t ic_data_array_length = ic_data_array->length();
+  if (ic_data_array_length == 0) {
     return;
   }
   const PcDescriptors& descriptors =
@@ -860,8 +950,14 @@ static void ResetICs(const Function& function, const Code& code) {
   PcDescriptors::Iterator iter(descriptors, RawPcDescriptors::kIcCall |
                                             RawPcDescriptors::kUnoptStaticCall);
   while (iter.MoveNext()) {
-    const ICData* ic_data = (*ic_data_array)[iter.DeoptId()];
+    const intptr_t index = iter.DeoptId();
+    if (index >= ic_data_array_length) {
+      // TODO(johnmccutchan): Investigate how this can happen.
+      continue;
+    }
+    const ICData* ic_data = (*ic_data_array)[index];
     if (ic_data == NULL) {
+      // TODO(johnmccutchan): Investigate how this can happen.
       continue;
     }
     bool is_static_call = iter.Kind() == RawPcDescriptors::kUnoptStaticCall;
