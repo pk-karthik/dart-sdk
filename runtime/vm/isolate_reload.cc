@@ -504,6 +504,11 @@ void IsolateReloadContext::FilterCompileTimeConstants() {
   // in the loop below.
   I->object_store()->set_compile_time_constants(Array::Handle());
 
+  if (compile_time_constants_ == Array::null()) {
+    // Nothing to do.
+    return;
+  }
+
   // Iterate over the saved compile time constants map.
   ConstantsMap old_constants(compile_time_constants_);
   ConstantsMap::Iterator it(&old_constants);
