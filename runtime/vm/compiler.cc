@@ -1455,10 +1455,12 @@ NOT_IN_PRODUCT(
   TIMELINE_FUNCTION_COMPILATION_DURATION(thread, event_name, function);
 )  // !PRODUCT
 
-  // Optimization must happen in non-mutator/Dart thread if background
-  // compilation is on. OSR compilation still occurs in the main thread.
-  ASSERT((osr_id != kNoOSRDeoptId) || !FLAG_background_compilation ||
-         !thread->IsMutatorThread() || BackgroundCompiler::IsDisabled());
+  // If we are in the optimizing in the mutator/Dart thread, then
+  // this is either an OSR compilation or background compilation is
+  // not currently allowed.
+  ASSERT(!thread->IsMutatorThread() ||
+         (osr_id != kNoOSRDeoptId) ||
+         !FLAG_background_compilation || BackgroundCompiler::IsDisabled());
   CompilationPipeline* pipeline =
       CompilationPipeline::New(thread->zone(), function);
   return CompileFunctionHelper(pipeline,
@@ -1568,6 +1570,7 @@ RawObject* Compiler::EvaluateStaticInitializer(const Field& field) {
   LongJumpScope jump;
   Thread* thread = Thread::Current();
   if (setjmp(*jump.Set()) == 0) {
+    // TODO(turnidge): Should we add a NoOOBMessageScope here?  Investigate.
     NoReloadScope no_reload_scope(thread->isolate(), thread);
     // Under lazy compilation initializer has not yet been created, so create
     // it now, but don't bother remembering it because it won't be used again.
@@ -1614,6 +1617,7 @@ RawObject* Compiler::ExecuteOnce(SequenceNode* fragment) {
     // Don't allow message interrupts while executing constant
     // expressions.  They can cause bogus recursive compilation.
     NoOOBMessageScope no_msg_scope(thread);
+
     // Don't allow reload requests to come in.
     NoReloadScope no_reload_scope(thread->isolate(), thread);
 
@@ -2056,7 +2060,6 @@ DEFINE_RUNTIME_ENTRY(CompileFunction, 1) {
 }
 
 
-
 bool Compiler::IsBackgroundCompilation() {
   return false;
 }
@@ -2160,17 +2163,17 @@ void BackgroundCompiler::EnsureInit(Thread* thread) {
 
 
 void BackgroundCompiler::Disable() {
-  // TODO(johnmccutchan): Do we want this to UNREACHABLE() ?
+  UNREACHABLE();
 }
 
 
 void BackgroundCompiler::Enable() {
-  // TODO(johnmccutchan): Do we want this to UNREACHABLE() ?
+  UNREACHABLE();
 }
 
 
 bool BackgroundCompiler::IsDisabled() {
-  // TODO(johnmccutchan): Do we want this to UNREACHABLE() ?
+  UNREACHABLE();
   return true;
 }
 

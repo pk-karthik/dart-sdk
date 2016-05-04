@@ -408,20 +408,20 @@ class Isolate : public BaseIsolate {
     background_compiler_ = value;
   }
 
-  void disable_background_compiler() {
-    background_compiler_disabled_++;
-  }
-
-  bool is_background_compiler_disabled() const {
-    return background_compiler_disabled_ > 0;
-  }
-
   void enable_background_compiler() {
-    background_compiler_disabled_--;
-    if (background_compiler_disabled_ < 0) {
+    background_compiler_disabled_count_--;
+    if (background_compiler_disabled_count_ < 0) {
       FATAL("Mismatched number of calls to disable_background_compiler and "
             "enable_background_compiler.");
     }
+  }
+
+  void disable_background_compiler() {
+    background_compiler_disabled_count_++;
+  }
+
+  bool is_background_compiler_disabled() const {
+    return background_compiler_disabled_count_ > 0;
   }
 
   void UpdateLastAllocationProfileAccumulatorResetTimestamp() {
@@ -468,14 +468,6 @@ class Isolate : public BaseIsolate {
     return &vm_tag_counters_;
   }
 
-  bool CanReloadNow() const {
-    return reload_blocked_ == 0;
-  }
-
-  bool HasAttemptedReload() const {
-    return has_attempted_reload_;
-  }
-
   bool IsReloading() const {
     return reload_context_ != NULL;
   }
@@ -483,6 +475,12 @@ class Isolate : public BaseIsolate {
   IsolateReloadContext* reload_context() {
     return reload_context_;
   }
+
+  bool HasAttemptedReload() const {
+    return has_attempted_reload_;
+  }
+
+  bool CanReload() const;
 
   void ReportReloadError(const Error& error);
 
@@ -696,11 +694,6 @@ class Isolate : public BaseIsolate {
     return mutator_thread_->zone();
   }
 
-  void CheckpointClassTable();
-  void CommitClassTable();
-  void RollbackClassTable();
-  bool ValidateReload();
-
   // Accessed from generated code:
   StoreBuffer* store_buffer_;
   Heap* heap_;
@@ -777,7 +770,7 @@ class Isolate : public BaseIsolate {
 
   // Background compilation.
   BackgroundCompiler* background_compiler_;
-  intptr_t background_compiler_disabled_;
+  intptr_t background_compiler_disabled_count_;
 
   // We use 6 list entries for each pending service extension calls.
   enum {
@@ -832,7 +825,7 @@ class Isolate : public BaseIsolate {
 
   // Has a reload ever been attempted?
   bool has_attempted_reload_;
-  intptr_t reload_blocked_;  // we can only reload when this is 0.
+  intptr_t no_reload_scope_depth_;  // we can only reload when this is 0.
   IsolateReloadContext* reload_context_;
 
 #define ISOLATE_METRIC_VARIABLE(type, variable, name, unit)                    \

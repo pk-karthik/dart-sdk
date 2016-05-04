@@ -139,14 +139,14 @@ NoReloadScope::NoReloadScope(Isolate* isolate, Thread* thread)
     : StackResource(thread),
       isolate_(isolate) {
   ASSERT(isolate_ != NULL);
-  isolate_->reload_blocked_++;
-  ASSERT(isolate_->reload_blocked_ >= 0);
+  isolate_->no_reload_scope_depth_++;
+  ASSERT(isolate_->no_reload_scope_depth_ >= 0);
 }
 
 
 NoReloadScope::~NoReloadScope() {
-  isolate_->reload_blocked_--;
-  ASSERT(isolate_->reload_blocked_ >= 0);
+  isolate_->no_reload_scope_depth_--;
+  ASSERT(isolate_->no_reload_scope_depth_ >= 0);
 }
 
 
@@ -805,7 +805,7 @@ Isolate::Isolate(const Dart_IsolateFlags& api_flags)
       deoptimized_code_array_(GrowableObjectArray::null()),
       sticky_error_(Error::null()),
       background_compiler_(NULL),
-      background_compiler_disabled_(0),
+      background_compiler_disabled_count_(0),
       pending_service_extension_calls_(GrowableObjectArray::null()),
       registered_service_extension_handlers_(GrowableObjectArray::null()),
       metrics_list_head_(NULL),
@@ -822,7 +822,7 @@ Isolate::Isolate(const Dart_IsolateFlags& api_flags)
       spawn_count_monitor_(new Monitor()),
       spawn_count_(0),
       has_attempted_reload_(false),
-      reload_blocked_(0),
+      no_reload_scope_depth_(0),
       reload_context_(NULL) {
   NOT_IN_PRODUCT(FlagsCopyFrom(api_flags));
   // TODO(asiva): A Thread is not available here, need to figure out
@@ -1040,6 +1040,12 @@ void Isolate::DoneLoading() {
 }
 
 
+bool Isolate::CanReload() const {
+  return (!ServiceIsolate::IsServiceIsolateDescendant(this) &&
+          is_runnable() && !IsReloading() && no_reload_scope_depth_ == 0);
+}
+
+
 void Isolate::ReportReloadError(const Error& error) {
   ASSERT(IsReloading());
   reload_context_->AbortReload(error);
@@ -1049,8 +1055,7 @@ void Isolate::ReportReloadError(const Error& error) {
 
 
 void Isolate::OnStackReload() {
-  ASSERT(reload_context_ == NULL);
-
+  ASSERT(!IsReloading());
   Thread* thread = Thread::Current();
   TimelineDurationScope tds(thread,
                             Timeline::GetIsolateStream(),
@@ -1061,7 +1066,7 @@ void Isolate::OnStackReload() {
 
 
 void Isolate::ReloadSources(bool test_mode) {
-  ASSERT(reload_context_ == NULL);
+  ASSERT(!IsReloading());
   has_attempted_reload_ = true;
   reload_context_ = new IsolateReloadContext(this, test_mode);
   reload_context_->StartReload();
@@ -1849,7 +1854,7 @@ void Isolate::PrintJSON(JSONStream* stream, bool ref) {
   jsobj.AddProperty("runnable", is_runnable());
   jsobj.AddProperty("livePorts", message_handler()->live_ports());
   jsobj.AddProperty("pauseOnExit", message_handler()->should_pause_on_exit());
-  jsobj.AddProperty("isReloading", IsReloading());
+  jsobj.AddProperty("_isReloading", IsReloading());
 
   if (debugger() != NULL) {
     if (!is_runnable()) {
