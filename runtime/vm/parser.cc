@@ -14430,6 +14430,13 @@ ParsedFunction* Parser::ParseStaticFieldInitializer(const Field& field) {
 }
 
 
+void Parser::InsertCachedConstantValue(const String& url,
+                                       TokenPosition token_pos,
+                                       const Instance& value) {
+  UNREACHABLE();
+}
+
+
 ArgumentListNode* Parser::BuildNoSuchMethodArguments(
     TokenPosition call_pos,
     const String& function_name,

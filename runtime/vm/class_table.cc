@@ -76,47 +76,6 @@ ClassTable::~ClassTable() {
 }
 
 
-void ClassTable::CopyFrom(ClassTable* original) {
-  intptr_t new_capacity = original->capacity_;
-
-  // Resize this table to hold the original class table.
-  if (new_capacity > capacity_) {
-    // Grow the capacity of the class table.
-    // TODO(koda): Add ClassTable::Grow to share code.
-    RawClass** new_table = reinterpret_cast<RawClass**>(
-        malloc(new_capacity * sizeof(RawClass*)));  // NOLINT
-    memmove(new_table, table_, capacity_ * sizeof(RawClass*));
-    ClassHeapStats* new_stats_table = reinterpret_cast<ClassHeapStats*>(
-        realloc(class_heap_stats_table_,
-                new_capacity * sizeof(ClassHeapStats)));  // NOLINT
-    for (intptr_t i = capacity_; i < new_capacity; i++) {
-      new_table[i] = NULL;
-      new_stats_table[i].Initialize();
-    }
-    capacity_ = new_capacity;
-    old_tables_->Add(table_);
-    table_ = new_table;  // TODO(koda): This should use atomics.
-    class_heap_stats_table_ = new_stats_table;
-    ASSERT(capacity_increment_ >= 1);
-  }
-
-  // Copy over entries from the original table, if any.  The two
-  // tables must agree on any class ids which they hold in common
-  // already.
-  intptr_t new_top = original->top_;
-  for (intptr_t i = top_; i < new_top; i++) {
-    table_[i] = original->table_[i];
-  }
-  top_ = new_top;
-}
-
-
-void ClassTable::Reset() {
-  ASSERT(Dart::vm_isolate() != NULL);
-  top_ = Dart::vm_isolate()->class_table()->NumCids();
-}
-
-
 void ClassTable::FreeOldTables() {
   while (old_tables_->length() > 0) {
     free(old_tables_->RemoveLast());
@@ -133,29 +92,6 @@ void ClassTable::SetTraceAllocationFor(intptr_t cid, bool trace) {
 bool ClassTable::TraceAllocationFor(intptr_t cid) {
   ClassHeapStats* stats = PreliminaryStatsAt(cid);
   return stats->trace_allocation();
-}
-
-
-void ClassTable::ClearClassAt(intptr_t index) {
-  ASSERT(index < top_);
-  table_[index] = NULL;
-}
-
-
-void ClassTable::MoveClass(intptr_t free_index, intptr_t cls_index) {
-  ASSERT(HasValidClassAt(cls_index));
-  const Class& cls = Class::Handle(table_[cls_index]);
-  // Update the class id.
-  cls.set_id(free_index);
-  // Move the class.
-  table_[free_index] = table_[cls_index];
-  ASSERT(HasValidClassAt(free_index));
-}
-
-
-void ClassTable::DropNewClasses(intptr_t saved_num_cids) {
-  ASSERT(saved_num_cids <= top_);
-  top_ = saved_num_cids;
 }
 
 
@@ -243,24 +179,6 @@ void ClassTable::RegisterAt(intptr_t index, const Class& cls) {
 }
 
 
-void ClassTable::ReplaceClass(const Class& cls, const Class& replacement) {
-  const intptr_t cid = cls.id();
-  const intptr_t replacement_cid = replacement.id();
-
-  // Sanity check the state of the class table.
-  ASSERT(table_[cid] == cls.raw());
-  ASSERT(table_[replacement_cid] == replacement.raw());
-
-  // Replacement needs |cls|'s id.
-  replacement.set_id(cid);
-  // Replace |cls| in the class table.
-  table_[cid] = replacement.raw();
-
-  // Sanity check the state of the class table.
-  ASSERT(table_[cid] = replacement.raw());
-}
-
-
 #if defined(DEBUG)
 void ClassTable::Unregister(intptr_t index) {
   table_[index] = 0;
@@ -307,30 +225,6 @@ void ClassTable::Print() {
     if (cls.raw() != reinterpret_cast<RawClass*>(0)) {
       name = cls.Name();
       OS::Print("%" Pd ": %s\n", i, name.ToCString());
-    }
-  }
-}
-
-
-void ClassTable::PrintNonDartClasses() {
-  Class& cls = Class::Handle();
-  Library& lib = Library::Handle();
-  String& name = String::Handle();
-
-  for (intptr_t i = 1; i < top_; i++) {
-    if (!HasValidClassAt(i)) {
-      continue;
-    }
-    if (i == kFreeListElement) {
-      continue;
-    }
-    cls = At(i);
-    if (cls.raw() != reinterpret_cast<RawClass*>(0)) {
-      lib = cls.library();
-      if (!lib.IsNull() && !lib.is_dart_scheme()) {
-        name = cls.Name();
-        OS::Print("%" Pd ": %s\n", i, name.ToCString());
-      }
     }
   }
 }

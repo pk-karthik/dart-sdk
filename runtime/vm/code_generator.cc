@@ -1259,10 +1259,7 @@ DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
     }
     if ((FLAG_reload_every > 0) &&
         (count % FLAG_reload_every) == 0) {
-      do_reload = !ServiceIsolate::IsServiceIsolateDescendant(isolate) &&
-                  isolate->is_runnable() &&
-                  isolate->CanReloadNow() &&
-                  !isolate->IsReloading();
+      do_reload = isolate->CanReload();
     }
   }
   if ((FLAG_deoptimize_filter != NULL) ||

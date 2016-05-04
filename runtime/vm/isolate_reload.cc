@@ -181,7 +181,6 @@ IsolateReloadContext::IsolateReloadContext(Isolate* isolate, bool test_mode)
       has_error_(false),
       saved_num_cids_(-1),
       saved_class_table_(NULL),
-      dead_classes_(NULL),
       num_saved_libs_(-1),
       script_uri_(String::null()),
       error_(Error::null()),
@@ -563,7 +562,7 @@ void IsolateReloadContext::RollbackClasses() {
   ASSERT(saved_num_cids_ > 0);
   ASSERT(saved_class_table_ != NULL);
   ClassTable* class_table = I->class_table();
-  class_table->DropNewClasses(saved_num_cids_);
+  class_table->SetNumCids(saved_num_cids_);
   // Overwrite classes in class table with the saved classes.
   for (intptr_t i = 0; i < saved_num_cids_; i++) {
     if (class_table->IsValidIndex(i)) {
@@ -716,7 +715,6 @@ void IsolateReloadContext::VerifyCanonicalTypeArguments() {
 
 void IsolateReloadContext::Commit() {
   TIMELINE_SCOPE(Commit);
-  // I->class_table()->PrintNonDartClasses();
   TIR_Print("---- COMMITTING REVERSE MAP\n");
 
 #ifdef DEBUG
@@ -1161,46 +1159,6 @@ RawClass* IsolateReloadContext::OldClassOrNull(
   cls ^= old_classes_set.GetOrNull(replacement_or_new);
   old_classes_set_storage_ = old_classes_set.Release().raw();
   return cls.raw();
-}
-
-
-bool IsolateReloadContext::IsDeadClassAt(intptr_t index) {
-  ASSERT(dead_classes_ != NULL);
-  return dead_classes_->At(index);
-}
-
-
-void IsolateReloadContext::MarkClassDeadAt(intptr_t index) {
-  ASSERT(dead_classes_ != NULL);
-  (*dead_classes_)[index] = true;
-}
-
-
-void IsolateReloadContext::CompactClassTable() {
-  const intptr_t top = I->class_table()->NumCids();
-  intptr_t new_top = saved_num_cids_;
-  for (intptr_t free_index = saved_num_cids_; free_index < top; free_index++) {
-    // Scan forward until we find a cleared class.
-    if (!IsDeadClassAt(free_index)) {
-      new_top++;
-      continue;
-    }
-
-    for (intptr_t cls_index = free_index + 1; cls_index < top; cls_index++) {
-      // Scan forward until we find a live class.
-      if (IsDeadClassAt(cls_index)) {
-        continue;
-      }
-      // Move the class into the free slot.
-      I->class_table()->MoveClass(free_index, cls_index);
-      // Mark |cls_index| as dead.
-      MarkClassDeadAt(cls_index);
-      new_top++;
-      break;
-    }
-  }
-
-  I->class_table()->DropNewClasses(new_top);
 }
 
 
