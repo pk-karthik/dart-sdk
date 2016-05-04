@@ -453,9 +453,9 @@ DEFINE_RUNTIME_ENTRY(Instanceof, 4) {
   const SubtypeTestCache& cache =
       SubtypeTestCache::CheckedHandle(zone, arguments.ArgAt(3));
   ASSERT(type.IsFinalized());
-  ASSERT(!type.IsDynamicType());  // No need to check assignment.
   ASSERT(!type.IsMalformed());  // Already checked in code generator.
   ASSERT(!type.IsMalbounded());  // Already checked in code generator.
+  ASSERT(!type.IsDynamicType());  // No need to check assignment.
   Error& bound_error = Error::Handle(zone);
   const Bool& result =
       Bool::Get(instance.IsInstanceOf(type,
@@ -499,9 +499,9 @@ DEFINE_RUNTIME_ENTRY(TypeCheck, 5) {
   const String& dst_name = String::CheckedHandle(zone, arguments.ArgAt(3));
   const SubtypeTestCache& cache =
       SubtypeTestCache::CheckedHandle(zone, arguments.ArgAt(4));
-  ASSERT(!dst_type.IsDynamicType());  // No need to check assignment.
   ASSERT(!dst_type.IsMalformed());  // Already checked in code generator.
   ASSERT(!dst_type.IsMalbounded());  // Already checked in code generator.
+  ASSERT(!dst_type.IsDynamicType());  // No need to check assignment.
   ASSERT(!src_instance.IsNull());  // Already checked in inlined code.
 
   Error& bound_error = Error::Handle(zone);
@@ -1305,6 +1305,14 @@ DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
   if (FLAG_support_debugger && do_stacktrace) {
     String& var_name = String::Handle();
     Instance& var_value = Instance::Handle();
+    // Collecting the stack trace and accessing local variables
+    // of frames may trigger parsing of functions to compute
+    // variable descriptors of functions. Parsing may trigger
+    // code execution, e.g. to compute compile-time constants. Thus,
+    // disable FLAG_stacktrace_every during trace collection to prevent
+    // recursive stack trace collection.
+    intptr_t saved_stacktrace_every = FLAG_stacktrace_every;
+    FLAG_stacktrace_every = 0;
     DebuggerStackTrace* stack = isolate->debugger()->StackTrace();
     intptr_t num_frames = stack->Length();
     for (intptr_t i = 0; i < num_frames; i++) {
@@ -1317,6 +1325,7 @@ DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
         frame->VariableAt(v, &var_name, &unused, &unused, &var_value);
       }
     }
+    FLAG_stacktrace_every = saved_stacktrace_every;
   }
 
   const Error& error = Error::Handle(thread->HandleInterrupts());

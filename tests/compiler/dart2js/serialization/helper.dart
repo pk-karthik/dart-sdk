@@ -19,6 +19,7 @@ import 'package:compiler/src/scanner/scanner.dart';
 import 'package:compiler/src/script.dart';
 import 'package:compiler/src/serialization/impact_serialization.dart';
 import 'package:compiler/src/serialization/json_serializer.dart';
+import 'package:compiler/src/serialization/modelz.dart';
 import 'package:compiler/src/serialization/resolved_ast_serialization.dart';
 import 'package:compiler/src/serialization/serialization.dart';
 import 'package:compiler/src/serialization/task.dart';
@@ -27,7 +28,7 @@ import 'package:compiler/src/universe/call_structure.dart';
 import 'package:compiler/src/universe/world_impact.dart';
 import 'package:compiler/src/universe/use.dart';
 
-import 'memory_compiler.dart';
+import '../memory_compiler.dart';
 
 class Arguments {
   final String filename;
@@ -196,9 +197,10 @@ class _DeserializerSystem extends DeserializerSystem {
       if (_deserializeResolvedAst) {
         return Future.forEach(library.compilationUnits,
             (CompilationUnitElement compilationUnit) {
-          Script script = compilationUnit.script;
+          ScriptZ script = compilationUnit.script;
           return _compiler.readScript(script.readableUri)
               .then((Script newScript) {
+            script.file = newScript.file;
             _resolvedAstDeserializer.sourceFiles[script.resourceUri] =
                 newScript.file;
           });
@@ -209,7 +211,7 @@ class _DeserializerSystem extends DeserializerSystem {
   }
 
   @override
-  bool hasResolvedAst(Element element) {
+  bool hasResolvedAst(ExecutableElement element) {
     if (_resolvedAstDeserializer != null) {
       return _resolvedAstDeserializer.hasResolvedAst(element);
     }
@@ -217,7 +219,7 @@ class _DeserializerSystem extends DeserializerSystem {
   }
 
   @override
-  ResolvedAst getResolvedAst(Element element) {
+  ResolvedAst getResolvedAst(ExecutableElement element) {
     if (_resolvedAstDeserializer != null) {
       return _resolvedAstDeserializer.getResolvedAst(element);
     }
@@ -298,27 +300,30 @@ class ResolvedAstDeserializerPlugin extends DeserializerPlugin {
   final Backend backend;
   final Map<Uri, SourceFile> sourceFiles = <Uri, SourceFile>{};
 
-  Map<Element, ResolvedAst> _resolvedAstMap = <Element, ResolvedAst>{};
-  Map<Element, ObjectDecoder> _decoderMap = <Element, ObjectDecoder>{};
+  Map<ExecutableElement, ResolvedAst> _resolvedAstMap =
+      <ExecutableElement, ResolvedAst>{};
+  Map<MemberElement, ObjectDecoder> _decoderMap =
+      <MemberElement, ObjectDecoder>{};
   Map<Uri, Token> beginTokenMap = <Uri, Token>{};
 
   ResolvedAstDeserializerPlugin(this.parsingContext, this.backend);
 
-  bool hasResolvedAst(Element element) {
+  bool hasResolvedAst(ExecutableElement element) {
     return _resolvedAstMap.containsKey(element) ||
-        _decoderMap.containsKey(element);
+        _decoderMap.containsKey(element.memberContext);
   }
 
-  ResolvedAst getResolvedAst(Element element) {
+  ResolvedAst getResolvedAst(ExecutableElement element) {
     ResolvedAst resolvedAst = _resolvedAstMap[element];
     if (resolvedAst == null) {
-      ObjectDecoder decoder = _decoderMap[element];
+      ObjectDecoder decoder = _decoderMap[element.memberContext];
       if (decoder != null) {
-        resolvedAst = _resolvedAstMap[element] =
-            ResolvedAstDeserializer.deserialize(
-                element, decoder, parsingContext, findToken,
-                backend.serialization.deserializer);
+         ResolvedAstDeserializer.deserialize(
+             element.memberContext, decoder, parsingContext, findToken,
+             backend.serialization.deserializer,
+             _resolvedAstMap);
         _decoderMap.remove(element);
+        resolvedAst = _resolvedAstMap[element];
       }
     }
     return resolvedAst;

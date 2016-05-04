@@ -227,6 +227,8 @@ class JavaScriptBackend extends Backend {
 
   bool get supportsReflection => emitter.emitter.supportsReflection;
 
+  bool get supportsAsyncAwait => true;
+
   final Annotations annotations;
 
   /// Set of classes that need to be considered for reflection although not
@@ -1449,8 +1451,16 @@ class JavaScriptBackend extends Backend {
   WorldImpact codegen(CodegenWorkItem work) {
     Element element = work.element;
     if (compiler.elementHasCompileTimeError(element)) {
-      generatedCode[element] = jsAst.js(
-          "function () { throw new Error('Compile time error in $element') }");
+      DiagnosticMessage message =
+          // If there's more than one error, the first is probably most
+          // informative, as the following errors may be side-effects of the
+          // first error.
+          compiler.elementsWithCompileTimeErrors[element].first;
+      String messageText = message.message.computeMessage();
+      jsAst.LiteralString messageLiteral =
+          js.escapedString("Compile time error in $element: $messageText");
+      generatedCode[element] =
+          js("function () { throw new Error(#); }", [messageLiteral]);
       return const CodegenImpact();
     }
     var kind = element.kind;
@@ -1463,9 +1473,10 @@ class JavaScriptBackend extends Backend {
       return const CodegenImpact();
     }
     if (kind.category == ElementCategory.VARIABLE) {
-      ConstantValue initialValue =
-          constants.getConstantValueForVariable(element);
-      if (initialValue != null) {
+      VariableElement variableElement = element;
+      ConstantExpression constant = variableElement.constant;
+      if (constant != null) {
+        ConstantValue initialValue = constants.getConstantValue(constant);
         registerCompileTimeConstant(initialValue, work.registry);
         addCompileTimeConstantForEmission(initialValue);
         // We don't need to generate code for static or top-level
@@ -1840,7 +1851,9 @@ class JavaScriptBackend extends Backend {
       if (library.isPlatformLibrary &&
           // Don't patch library currently disallowed.
           !library.isSynthesized &&
-          !library.isPatched) {
+          !library.isPatched &&
+          // Don't patch deserialized libraries.
+          !compiler.serialization.isDeserialized(library)) {
         // Apply patch, if any.
         Uri patchUri = compiler.resolvePatchUri(library.canonicalUri.path);
         if (patchUri != null) {
@@ -2494,10 +2507,32 @@ class JSFrontendAccess implements Frontend {
   }
 
   @override
-  ResolvedAst getResolvedAst(Element element) {
+  bool hasResolvedAst(ExecutableElement element) {
+    if (element is SynthesizedCallMethodElementX) {
+      return true;
+    } else if (element is ConstructorBodyElementX) {
+      return true;
+    } else if (element is FieldElementX) {
+      return true;
+    } else if (element is DeferredLoaderGetterElementX) {
+      return true;
+    } else {
+      return resolution.hasResolvedAst(element);
+    }
+  }
+
+  @override
+  ResolvedAst getResolvedAst(ExecutableElement element) {
     if (element is SynthesizedCallMethodElementX) {
       return element.resolvedAst;
     } else if (element is ConstructorBodyElementX) {
+      return element.resolvedAst;
+    } else if (element is DeferredLoaderGetterElementX) {
+      return element.resolvedAst;
+    } else if (element is FieldElementX) {
+      // TODO(johnniwinther): Find a good invariant for resolution of fields.
+      // Currently some but not all are resolved (maybe it has to do with
+      // initializers?)
       return element.resolvedAst;
     } else {
       assert(invariant(element, resolution.hasResolvedAst(element.declaration),

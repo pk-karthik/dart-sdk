@@ -229,10 +229,8 @@ void main() {
 
   test('dynamic invocation', () {
     checkFile('''
-      class A {
-        dynamic call(dynamic x) => x;
-      }
-      class B extends A {
+      typedef dynamic A(dynamic x);
+      class B {
         int call(int x) => x;
         double col(double x) => x;
       }
@@ -276,7 +274,6 @@ void main() {
           /*info:DYNAMIC_INVOKE*/g.foo(42.0);
           /*info:DYNAMIC_INVOKE*/g./*info:UNDEFINED_GETTER*/x;
           A f = new B();
-          f.call(/*info:ARGUMENT_TYPE_NOT_ASSIGNABLE*/32.0);
           /*info:DYNAMIC_INVOKE*/f.col(42.0);
           /*info:DYNAMIC_INVOKE*/f.foo(42.0);
           /*info:DYNAMIC_INVOKE*/f./*warning:UNDEFINED_GETTER*/x;
@@ -1686,10 +1683,10 @@ void main() {
                l = <int>[i, /*info:DOWN_CAST_IMPLICIT*/n, /*warning:LIST_ELEMENT_TYPE_NOT_ASSIGNABLE*/s];
             }
             {
-               List l = [i];
-               l = [s];
-               l = [n];
-               l = [i, n, s];
+               List l = /*info:INFERRED_TYPE_LITERAL*/[i];
+               l = /*info:INFERRED_TYPE_LITERAL*/[s];
+               l = /*info:INFERRED_TYPE_LITERAL*/[n];
+               l = /*info:INFERRED_TYPE_LITERAL*/[i, n, s];
             }
             {
                Map<String, int> m = <String, int>{s: i};
@@ -1702,13 +1699,15 @@ void main() {
            // TODO(leafp): We can't currently test for key errors since the
            // error marker binds to the entire entry.
             {
-               Map m = {s: i};
-               m = {s: s};
-               m = {s: n};
-               m = {s: i,
+               Map m = /*info:INFERRED_TYPE_LITERAL*/{s: i};
+               m = /*info:INFERRED_TYPE_LITERAL*/{s: s};
+               m = /*info:INFERRED_TYPE_LITERAL*/{s: n};
+               m = /*info:INFERRED_TYPE_LITERAL*/
+                   {s: i,
                     s: n,
                     s: s};
-               m = {i: s,
+               m = /*info:INFERRED_TYPE_LITERAL*/
+                   {i: s,
                     n: s,
                     s: s};
             }
@@ -1997,6 +1996,99 @@ void main() {
             m5(value) => null;
             /*severe:INVALID_METHOD_OVERRIDE*/dynamic m6(dynamic value) => null;
           }
+       ''');
+  });
+
+  test('method override, fuzzy arrows', () {
+    checkFile('''
+      abstract class A {
+        bool operator ==(Object object);
+      }
+
+      class B implements A {}
+
+
+      class F {
+        void f(x) {}
+        void g(int x) {}
+      }
+
+      class G extends F {
+        /*severe:INVALID_METHOD_OVERRIDE*/void f(int x) {}
+        void g(dynamic x) {}
+      }
+
+      class H implements F {
+        /*severe:INVALID_METHOD_OVERRIDE*/void f(int x) {}
+        void g(dynamic x) {}
+      }
+
+      ''');
+  });
+
+  test('getter override, fuzzy arrows', () {
+    checkFile('''
+      typedef void ToVoid<T>(T x);
+      class F {
+        ToVoid<dynamic> get f => null;
+        ToVoid<int> get g => null;
+      }
+
+      class G extends F {
+        ToVoid<int> get f => null;
+        /*severe:INVALID_METHOD_OVERRIDE*/ToVoid<dynamic> get g => null;
+      }
+
+      class H implements F {
+        ToVoid<int> get f => null;
+        /*severe:INVALID_METHOD_OVERRIDE*/ToVoid<dynamic> get g => null;
+      }
+       ''');
+  });
+
+  test('setter override, fuzzy arrows', () {
+    checkFile('''
+      typedef void ToVoid<T>(T x);
+      class F {
+        void set f(ToVoid<dynamic> x) {}
+        void set g(ToVoid<int> x) {} 
+        void set h(dynamic x) {}
+        void set i(int x) {}
+     }
+
+      class G extends F {
+        /*severe:INVALID_METHOD_OVERRIDE*/void set f(ToVoid<int> x) {}
+        void set g(ToVoid<dynamic> x) {}
+        void set h(int x) {}
+        /*severe:INVALID_METHOD_OVERRIDE*/void set i(dynamic x) {}
+      }
+
+      class H implements F {
+        /*severe:INVALID_METHOD_OVERRIDE*/void set f(ToVoid<int> x) {}
+        void set g(ToVoid<dynamic> x) {}
+        void set h(int x) {}
+        /*severe:INVALID_METHOD_OVERRIDE*/void set i(dynamic x) {}
+      }
+       ''');
+  });
+
+  test('field override, fuzzy arrows', () {
+    checkFile('''
+      typedef void ToVoid<T>(T x);
+      class F {
+        final ToVoid<dynamic> f = null;
+        final ToVoid<int> g = null;
+      }
+
+      class G extends F {
+        /*severe:INVALID_FIELD_OVERRIDE*/final ToVoid<int> f = null;
+        /*severe:INVALID_FIELD_OVERRIDE, severe:INVALID_METHOD_OVERRIDE*/final ToVoid<dynamic> g = null;
+      }
+
+      class H implements F {
+        final ToVoid<int> f = null;
+        /*severe:INVALID_METHOD_OVERRIDE*/final ToVoid<dynamic> g = null;
+      }
        ''');
   });
 
@@ -2629,7 +2721,7 @@ void main() {
                 implements I1 {}
 
             class T2 extends Base implements I1 {
-                /*severe:INVALID_METHOD_OVERRIDE,severe:INVALID_METHOD_OVERRIDE*/m(a) {}
+                m(a) {}
             }
 
             class /*warning:INCONSISTENT_METHOD_INHERITANCE*/T3
@@ -2637,7 +2729,7 @@ void main() {
                 implements I1 {}
 
             class T4 extends Object with Base implements I1 {
-                /*severe:INVALID_METHOD_OVERRIDE,severe:INVALID_METHOD_OVERRIDE*/m(a) {}
+                m(a) {}
             }
          ''');
     });

@@ -201,7 +201,7 @@
       bit_cast<int32_t, uword>(entry),                                         \
       bit_cast<int32_t, intptr_t>(pointer_arg),                                \
       0, 0, 0))
-#endif
+#endif  // defined(ARCH_IS_64_BIT)
 #define EXECUTE_TEST_CODE_INT64_LL(name, entry, long_arg0, long_arg1)          \
   static_cast<int64_t>(Simulator::Current()->Call(                             \
       bit_cast<int32_t, uword>(entry),                                         \
@@ -224,7 +224,7 @@
       Utils::High32Bits(bit_cast<int64_t, double>(double_arg)),                \
       0, 0, false, true))
 #endif  // defined(HOST_ARCH_ARM) || defined(HOST_ARCH_MIPS)
-#endif  // defined(TARGET_ARCH_ARM) || defined(TARGET_ARCH_MIPS)
+#endif  // defined(TARGET_ARCH_{ARM, ARM64, MIPS})
 
 
 inline Dart_Handle NewString(const char* str) {
@@ -438,6 +438,29 @@ class AssemblerTest {
         reinterpret_cast<intptr_t>(arg2),
         reinterpret_cast<intptr_t>(arg3),
         0, fp_return, fp_args);
+  }
+#elif defined(USING_SIMULATOR) && defined(TARGET_ARCH_DBC)
+  template<typename ResultType,
+           typename Arg1Type,
+           typename Arg2Type,
+           typename Arg3Type>
+  ResultType Invoke(Arg1Type arg1, Arg2Type arg2, Arg3Type arg3) {
+    // TODO(fschneider): Support double arguments for simulator calls.
+    COMPILE_ASSERT(is_void<ResultType>::value);
+    COMPILE_ASSERT(!is_double<Arg1Type>::value);
+    COMPILE_ASSERT(!is_double<Arg2Type>::value);
+    COMPILE_ASSERT(!is_double<Arg3Type>::value);
+    const Object& arg1obj = Object::Handle(reinterpret_cast<RawObject*>(arg1));
+    const Object& arg2obj = Object::Handle(reinterpret_cast<RawObject*>(arg2));
+    const Array& argdesc = Array::Handle(ArgumentsDescriptor::New(2));
+    const Array& arguments = Array::Handle(Array::New(2));
+    arguments.SetAt(0, arg1obj);
+    arguments.SetAt(1, arg2obj);
+    Simulator::Current()->Call(
+        code(),
+        argdesc,
+        arguments,
+        reinterpret_cast<Thread*>(arg3));
   }
 #else
   template<typename ResultType> ResultType InvokeWithCodeAndThread() {

@@ -104,23 +104,22 @@ class CodeChecker extends RecursiveAstVisitor {
   final bool _hints;
 
   bool _failure = false;
-  CodeChecker(this.typeProvider, StrongTypeSystemImpl rules,
+  CodeChecker(TypeProvider typeProvider, StrongTypeSystemImpl rules,
       AnalysisErrorListener reporter,
       {bool hints: false})
-      : rules = rules,
+      : typeProvider = typeProvider,
+        rules = rules,
         reporter = reporter,
         _hints = hints,
-        _overrideChecker = new _OverrideChecker(rules, reporter);
+        _overrideChecker = new _OverrideChecker(typeProvider, rules, reporter);
 
   bool get failure => _failure || _overrideChecker._failure;
 
   void checkArgument(Expression arg, DartType expectedType) {
     // Preserve named argument structure, so their immediate parent is the
     // method invocation.
-    if (arg is NamedExpression) {
-      arg = (arg as NamedExpression).expression;
-    }
-    checkAssignment(arg, expectedType);
+    Expression baseExpression = arg is NamedExpression ? arg.expression : arg;
+    checkAssignment(baseExpression, expectedType);
   }
 
   void checkArgumentList(ArgumentList node, FunctionType type) {
@@ -326,9 +325,7 @@ class CodeChecker extends RecursiveAstVisitor {
 
   @override
   void visitForEachStatement(ForEachStatement node) {
-    var loopVariable = node.identifier != null
-        ? node.identifier
-        : node.loopVariable?.identifier;
+    var loopVariable = node.identifier ?? node.loopVariable?.identifier;
 
     // Safely handle malformed statements.
     if (loopVariable != null) {
@@ -427,16 +424,22 @@ class CodeChecker extends RecursiveAstVisitor {
 
   @override
   void visitListLiteral(ListLiteral node) {
-    var type = DynamicTypeImpl.instance;
+    DartType type = DynamicTypeImpl.instance;
     if (node.typeArguments != null) {
-      var targs = node.typeArguments.arguments;
-      if (targs.length > 0) type = targs[0].type;
-    } else if (node.staticType is InterfaceType) {
-      InterfaceType listT = node.staticType;
-      var targs = listT.typeArguments;
-      if (targs != null && targs.length > 0) type = targs[0];
+      NodeList<TypeName> targs = node.typeArguments.arguments;
+      if (targs.length > 0) {
+        type = targs[0].type;
+      }
+    } else {
+      DartType staticType = node.staticType;
+      if (staticType is InterfaceType) {
+        List<DartType> targs = staticType.typeArguments;
+        if (targs != null && targs.length > 0) {
+          type = targs[0];
+        }
+      }
     }
-    var elements = node.elements;
+    NodeList<Expression> elements = node.elements;
     for (int i = 0; i < elements.length; i++) {
       checkArgument(elements[i], type);
     }
@@ -445,23 +448,33 @@ class CodeChecker extends RecursiveAstVisitor {
 
   @override
   void visitMapLiteral(MapLiteral node) {
-    var ktype = DynamicTypeImpl.instance;
-    var vtype = DynamicTypeImpl.instance;
+    DartType ktype = DynamicTypeImpl.instance;
+    DartType vtype = DynamicTypeImpl.instance;
     if (node.typeArguments != null) {
-      var targs = node.typeArguments.arguments;
-      if (targs.length > 0) ktype = targs[0].type;
-      if (targs.length > 1) vtype = targs[1].type;
-    } else if (node.staticType is InterfaceType) {
-      InterfaceType mapT = node.staticType;
-      var targs = mapT.typeArguments;
-      if (targs != null) {
-        if (targs.length > 0) ktype = targs[0];
-        if (targs.length > 1) vtype = targs[1];
+      NodeList<TypeName> targs = node.typeArguments.arguments;
+      if (targs.length > 0) {
+        ktype = targs[0].type;
+      }
+      if (targs.length > 1) {
+        vtype = targs[1].type;
+      }
+    } else {
+      DartType staticType = node.staticType;
+      if (staticType is InterfaceType) {
+        List<DartType> targs = staticType.typeArguments;
+        if (targs != null) {
+          if (targs.length > 0) {
+            ktype = targs[0];
+          }
+          if (targs.length > 1) {
+            vtype = targs[1];
+          }
+        }
       }
     }
-    var entries = node.entries;
+    NodeList<MapLiteralEntry> entries = node.entries;
     for (int i = 0; i < entries.length; i++) {
-      var entry = entries[i];
+      MapLiteralEntry entry = entries[i];
       checkArgument(entry.key, ktype);
       checkArgument(entry.value, vtype);
     }
@@ -820,7 +833,9 @@ class CodeChecker extends RecursiveAstVisitor {
     if (t is InterfaceType) {
       return rules.getCallMethodType(t);
     }
-    if (t is FunctionType) return t;
+    if (t is FunctionType) {
+      return t;
+    }
     return null;
   }
 
@@ -940,9 +955,10 @@ class CodeChecker extends RecursiveAstVisitor {
 class _OverrideChecker {
   bool _failure = false;
   final StrongTypeSystemImpl rules;
+  final TypeProvider _typeProvider;
   final AnalysisErrorListener _reporter;
 
-  _OverrideChecker(this.rules, this._reporter);
+  _OverrideChecker(this._typeProvider, this.rules, this._reporter);
 
   void check(ClassDeclaration node) {
     if (node.element.type.isObject) return;
@@ -1011,11 +1027,15 @@ class _OverrideChecker {
       InterfaceType baseType, Set<String> seen, bool isSubclass) {
     for (var member in node.members) {
       if (member is FieldDeclaration) {
-        if (member.isStatic) continue;
+        if (member.isStatic) {
+          continue;
+        }
         for (var variable in member.fields.variables) {
           var element = variable.element as PropertyInducingElement;
           var name = element.name;
-          if (seen.contains(name)) continue;
+          if (seen.contains(name)) {
+            continue;
+          }
           var getter = element.getter;
           var setter = element.setter;
           bool found = _checkSingleOverride(
@@ -1026,12 +1046,18 @@ class _OverrideChecker {
                   setter, baseType, variable.name, member, isSubclass)) {
             found = true;
           }
-          if (found) seen.add(name);
+          if (found) {
+            seen.add(name);
+          }
         }
       } else if (member is MethodDeclaration) {
-        if (member.isStatic) continue;
+        if (member.isStatic) {
+          continue;
+        }
         var method = member.element;
-        if (seen.contains(method.name)) continue;
+        if (seen.contains(method.name)) {
+          continue;
+        }
         if (_checkSingleOverride(
             method, baseType, member.name, member, isSubclass)) {
           seen.add(method.name);
@@ -1106,8 +1132,7 @@ class _OverrideChecker {
 
     // Check overrides from its mixins
     for (int i = 0; i < type.mixins.length; i++) {
-      var loc =
-          errorLocation != null ? errorLocation : node.withClause.mixinTypes[i];
+      var loc = errorLocation ?? node.withClause.mixinTypes[i];
       for (var interfaceType in interfaces) {
         // We copy [seen] so we can report separately if more than one mixin or
         // the base class have an invalid override.
@@ -1119,8 +1144,10 @@ class _OverrideChecker {
     // Check overrides from its superclasses
     if (includeParents) {
       var parent = type.superclass;
-      if (parent.isObject) return;
-      var loc = errorLocation != null ? errorLocation : node.extendsClause;
+      if (parent.isObject) {
+        return;
+      }
+      var loc = errorLocation ?? node.extendsClause;
       // No need to copy [seen] here because we made copies above when reporting
       // errors on mixins.
       _checkInterfacesOverrides(parent, interfaces, seen,
@@ -1199,7 +1226,20 @@ class _OverrideChecker {
             errorLocation, element, type, subType, baseType));
       }
     }
-    if (!rules.isSubtypeOf(subType, baseType)) {
+    FunctionType concreteSubType = subType;
+    FunctionType concreteBaseType = baseType;
+    if (element is MethodElement) {
+      if (concreteSubType.typeFormals.isNotEmpty) {
+        if (concreteBaseType.typeFormals.isEmpty) {
+          concreteSubType = rules.instantiateToBounds(concreteSubType);
+        }
+      }
+      concreteSubType =
+          rules.typeToConcreteType(_typeProvider, concreteSubType);
+      concreteBaseType =
+          rules.typeToConcreteType(_typeProvider, concreteBaseType);
+    }
+    if (!rules.isSubtypeOf(concreteSubType, concreteBaseType)) {
       // See whether non-subtype cases fit one of our common patterns:
       //
       // Common pattern 1: Inferable return type (on getters and methods)

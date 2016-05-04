@@ -24,7 +24,8 @@ import '../elements/elements.dart'
         LibraryElement,
         MetadataAnnotation,
         MethodElement;
-import '../enqueue.dart' show Enqueuer, ResolutionEnqueuer;
+import '../enqueue.dart'
+    show Enqueuer, EnqueueTask, CodegenEnqueuer, ResolutionEnqueuer;
 import '../io/code_output.dart' show CodeBuffer;
 import '../io/source_information.dart' show SourceInformationStrategy;
 import '../js_backend/backend_helpers.dart' as js_backend show BackendHelpers;
@@ -50,6 +51,9 @@ abstract class Backend {
 
   /// Returns true if the backend supports reflection.
   bool get supportsReflection;
+
+  /// Returns true if the backend supports reflection.
+  bool get supportsAsyncAwait;
 
   /// The [ConstantSystem] used to interpret compile-time constants for this
   /// backend.
@@ -398,6 +402,8 @@ abstract class Backend {
 
   /// Backend access to the front-end.
   Frontend get frontend => compiler.resolution;
+
+  EnqueueTask makeEnqueuer() => new EnqueueTask(compiler);
 }
 
 /// Interface for resolving calls to foreign functions.

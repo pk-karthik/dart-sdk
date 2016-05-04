@@ -20,6 +20,11 @@ void main() {
 
 abstract class InferredTypeMixin {
   /**
+   * If `true` then types of local elements may be checked.
+   */
+  bool get mayCheckTypesOfLocals;
+
+  /**
    * Add a new file with the given [name] and [content].
    */
   void addFile(String content, {String name: '/main.dart'});
@@ -30,27 +35,10 @@ abstract class InferredTypeMixin {
    */
   CompilationUnitElement checkFile(String content);
 
-  void test_blockBodiedLambdas_async_allReturnsAreValues() {
-    var mainUnit = checkFile(r'''
-import 'dart:async';
-import 'dart:math' show Random;
-main() {
-  var f = /*info:INFERRED_TYPE_CLOSURE*/() async {
-    if (new Random().nextBool()) {
-      return 1;
-    } else {
-      return 2.0;
+  void test_blockBodiedLambdas_async_allReturnsAreFutures() {
+    if (!mayCheckTypesOfLocals) {
+      return;
     }
-  };
-  Future<num> g = f();
-  Future<int> h = /*info:ASSIGNMENT_CAST*/f();
-}
-''');
-    var f = mainUnit.functions[0].localVariables[0];
-    expect(f.type.toString(), '() → Future<num>');
-  }
-
-  void test_blockBodiedLambdas_async_alReturnsAreFutures() {
     var mainUnit = checkFile(r'''
 import 'dart:async';
 import 'dart:math' show Random;
@@ -70,40 +58,130 @@ main() {
     expect(f.type.toString(), '() → Future<num>');
   }
 
-  void test_blockBodiedLambdas_async_mixOfValuesAndFutures() {
+  void test_blockBodiedLambdas_async_allReturnsAreFutures_topLevel() {
     var mainUnit = checkFile(r'''
-  import 'dart:async';
-  import 'dart:math' show Random;
-  main() {
-    var f = /*info:INFERRED_TYPE_CLOSURE*/() async {
-      if (new Random().nextBool()) {
-        return new Future<int>.value(1);
-      } else {
-        return 2.0;
-      }
-    };
-    Future<num> g = f();
-    Future<int> h = /*info:ASSIGNMENT_CAST*/f();
+import 'dart:async';
+import 'dart:math' show Random;
+var f = /*info:INFERRED_TYPE_CLOSURE*/() async {
+  if (new Random().nextBool()) {
+    return new Future<int>.value(1);
+  } else {
+    return new Future<double>.value(2.0);
   }
+};
+''');
+    var f = mainUnit.topLevelVariables[0];
+    expect(f.type.toString(), '() → Future<num>');
+  }
+
+  void test_blockBodiedLambdas_async_allReturnsAreValues() {
+    if (!mayCheckTypesOfLocals) {
+      return;
+    }
+    var mainUnit = checkFile(r'''
+import 'dart:async';
+import 'dart:math' show Random;
+main() {
+  var f = /*info:INFERRED_TYPE_CLOSURE*/() async {
+    if (new Random().nextBool()) {
+      return 1;
+    } else {
+      return 2.0;
+    }
+  };
+  Future<num> g = f();
+  Future<int> h = /*info:ASSIGNMENT_CAST*/f();
+}
 ''');
     var f = mainUnit.functions[0].localVariables[0];
     expect(f.type.toString(), '() → Future<num>');
   }
 
-  void test_blockBodiedLambdas_asyncStar() {
+  void test_blockBodiedLambdas_async_allReturnsAreValues_topLevel() {
     var mainUnit = checkFile(r'''
-  import 'dart:async';
-  main() {
-    var f = /*info:INFERRED_TYPE_CLOSURE*/() async* {
-      yield 1;
-      Stream<double> s;
-      yield* s;
-    };
-    Stream<num> g = f();
-    Stream<int> h = /*info:ASSIGNMENT_CAST*/f();
+import 'dart:async';
+import 'dart:math' show Random;
+var f = /*info:INFERRED_TYPE_CLOSURE*/() async {
+  if (new Random().nextBool()) {
+    return 1;
+  } else {
+    return 2.0;
   }
+};
+''');
+    var f = mainUnit.topLevelVariables[0];
+    expect(f.type.toString(), '() → Future<num>');
+  }
+
+  void test_blockBodiedLambdas_async_mixOfValuesAndFutures() {
+    if (!mayCheckTypesOfLocals) {
+      return;
+    }
+    var mainUnit = checkFile(r'''
+import 'dart:async';
+import 'dart:math' show Random;
+main() {
+  var f = /*info:INFERRED_TYPE_CLOSURE*/() async {
+    if (new Random().nextBool()) {
+      return new Future<int>.value(1);
+    } else {
+      return 2.0;
+    }
+  };
+  Future<num> g = f();
+  Future<int> h = /*info:ASSIGNMENT_CAST*/f();
+}
 ''');
     var f = mainUnit.functions[0].localVariables[0];
+    expect(f.type.toString(), '() → Future<num>');
+  }
+
+  void test_blockBodiedLambdas_async_mixOfValuesAndFutures_topLevel() {
+    var mainUnit = checkFile(r'''
+import 'dart:async';
+import 'dart:math' show Random;
+var f = /*info:INFERRED_TYPE_CLOSURE*/() async {
+  if (new Random().nextBool()) {
+    return new Future<int>.value(1);
+  } else {
+    return 2.0;
+  }
+};
+''');
+    var f = mainUnit.topLevelVariables[0];
+    expect(f.type.toString(), '() → Future<num>');
+  }
+
+  void test_blockBodiedLambdas_asyncStar() {
+    if (!mayCheckTypesOfLocals) {
+      return;
+    }
+    var mainUnit = checkFile(r'''
+import 'dart:async';
+main() {
+  var f = /*info:INFERRED_TYPE_CLOSURE*/() async* {
+    yield 1;
+    Stream<double> s;
+    yield* s;
+  };
+  Stream<num> g = f();
+  Stream<int> h = /*info:ASSIGNMENT_CAST*/f();
+}
+''');
+    var f = mainUnit.functions[0].localVariables[0];
+    expect(f.type.toString(), '() → Stream<num>');
+  }
+
+  void test_blockBodiedLambdas_asyncStar_topLevel() {
+    var mainUnit = checkFile(r'''
+  import 'dart:async';
+var f = /*info:INFERRED_TYPE_CLOSURE*/() async* {
+  yield 1;
+  Stream<double> s;
+  yield* s;
+};
+''');
+    var f = mainUnit.topLevelVariables[0];
     expect(f.type.toString(), '() → Stream<num>');
   }
 
@@ -126,6 +204,9 @@ Iterable<int> z = y;
   }
 
   void test_blockBodiedLambdas_doesNotInferBottom_async() {
+    if (!mayCheckTypesOfLocals) {
+      return;
+    }
     var mainUnit = checkFile(r'''
 import 'dart:async';
 main() async {
@@ -135,12 +216,23 @@ main() async {
   String s = /*info:DYNAMIC_CAST*/await f();
 }
 ''');
-
     var f = mainUnit.functions[0].localVariables[0];
     expect(f.type.toString(), '() → Future<dynamic>');
   }
 
+  void test_blockBodiedLambdas_doesNotInferBottom_async_topLevel() {
+    var mainUnit = checkFile(r'''
+import 'dart:async';
+var f = () async { return null; };
+''');
+    var f = mainUnit.topLevelVariables[0];
+    expect(f.type.toString(), '() → Future<dynamic>');
+  }
+
   void test_blockBodiedLambdas_doesNotInferBottom_asyncStar() {
+    if (!mayCheckTypesOfLocals) {
+      return;
+    }
     var mainUnit = checkFile(r'''
 import 'dart:async';
 main() async {
@@ -150,12 +242,23 @@ main() async {
   String s = /*info:DYNAMIC_CAST*/await f().first;
 }
 ''');
-
     var f = mainUnit.functions[0].localVariables[0];
     expect(f.type.toString(), '() → Stream<dynamic>');
   }
 
+  void test_blockBodiedLambdas_doesNotInferBottom_asyncStar_topLevel() {
+    var mainUnit = checkFile(r'''
+import 'dart:async';
+var f = () async* { yield null; };
+''');
+    var f = mainUnit.topLevelVariables[0];
+    expect(f.type.toString(), '() → Stream<dynamic>');
+  }
+
   void test_blockBodiedLambdas_doesNotInferBottom_sync() {
+    if (!mayCheckTypesOfLocals) {
+      return;
+    }
     var mainUnit = checkFile(r'''
 var h = null;
 void foo(int f(Object _)) {}
@@ -175,7 +278,18 @@ main() {
     expect(f.type.toString(), '(Object) → dynamic');
   }
 
+  void test_blockBodiedLambdas_doesNotInferBottom_sync_topLevel() {
+    var mainUnit = checkFile(r'''
+var f = (Object x) { return null; };
+''');
+    var f = mainUnit.topLevelVariables[0];
+    expect(f.type.toString(), '(Object) → dynamic');
+  }
+
   void test_blockBodiedLambdas_doesNotInferBottom_syncStar() {
+    if (!mayCheckTypesOfLocals) {
+      return;
+    }
     var mainUnit = checkFile(r'''
 main() {
   var f = () sync* { yield null; };
@@ -184,12 +298,22 @@ main() {
   String s = /*info:DYNAMIC_CAST*/f().first;
 }
 ''');
-
     var f = mainUnit.functions[0].localVariables[0];
     expect(f.type.toString(), '() → Iterable<dynamic>');
   }
 
+  void test_blockBodiedLambdas_doesNotInferBottom_syncStar_topLevel() {
+    var mainUnit = checkFile(r'''
+var f = () sync* { yield null; };
+''');
+    var f = mainUnit.topLevelVariables[0];
+    expect(f.type.toString(), '() → Iterable<dynamic>');
+  }
+
   void test_blockBodiedLambdas_downwardsIncompatibleWithUpwardsInference() {
+    if (!mayCheckTypesOfLocals) {
+      return;
+    }
     var mainUnit = checkFile(r'''
 main() {
   String f() => null;
@@ -198,6 +322,16 @@ main() {
 }
 ''');
     var f = mainUnit.functions[0].localVariables[0];
+    expect(f.type.toString(), '() → String');
+  }
+
+  void
+      test_blockBodiedLambdas_downwardsIncompatibleWithUpwardsInference_topLevel() {
+    var mainUnit = checkFile(r'''
+String f() => null;
+var g = f;
+''');
+    var f = mainUnit.topLevelVariables[0];
     expect(f.type.toString(), '() → String');
   }
 
@@ -236,6 +370,9 @@ Iterable<int> z = /*info:ASSIGNMENT_CAST*/y;
   }
 
   void test_blockBodiedLambdas_nestedLambdas() {
+    if (!mayCheckTypesOfLocals) {
+      return;
+    }
     // Original feature request: https://github.com/dart-lang/sdk/issues/25487
     var mainUnit = checkFile(r'''
 main() {
@@ -248,7 +385,21 @@ main() {
     expect(f.type.toString(), '() → (int) → num');
   }
 
+  void test_blockBodiedLambdas_nestedLambdas_topLevel() {
+    // Original feature request: https://github.com/dart-lang/sdk/issues/25487
+    var mainUnit = checkFile(r'''
+var f = /*info:INFERRED_TYPE_CLOSURE*/() {
+  return /*info:INFERRED_TYPE_CLOSURE*/(int x) { return 2.0 * x; };
+};
+''');
+    var f = mainUnit.topLevelVariables[0];
+    expect(f.type.toString(), '() → (int) → num');
+  }
+
   void test_blockBodiedLambdas_noReturn() {
+    if (!mayCheckTypesOfLocals) {
+      return;
+    }
     var mainUnit = checkFile(r'''
 test1() {
   List<int> o;
@@ -260,18 +411,41 @@ test1() {
     expect(f.type.toString(), 'Iterable<dynamic>');
   }
 
+  void test_blockBodiedLambdas_noReturn_topLevel() {
+    var mainUnit = checkFile(r'''
+final List<int> o = <int>[];
+var y = o.map((x) { });
+''');
+    var f = mainUnit.topLevelVariables[1];
+    expect(f.type.toString(), 'Iterable<dynamic>');
+  }
+
   void test_blockBodiedLambdas_syncStar() {
+    if (!mayCheckTypesOfLocals) {
+      return;
+    }
     var mainUnit = checkFile(r'''
 main() {
   var f = /*info:INFERRED_TYPE_CLOSURE*/() sync* {
     yield 1;
-    yield* [3, 4.0];
+    yield* /*info:INFERRED_TYPE_LITERAL*/[3, 4.0];
   };
   Iterable<num> g = f();
   Iterable<int> h = /*info:ASSIGNMENT_CAST*/f();
 }
 ''');
     var f = mainUnit.functions[0].localVariables[0];
+    expect(f.type.toString(), '() → Iterable<num>');
+  }
+
+  void test_blockBodiedLambdas_syncStar_topLevel() {
+    var mainUnit = checkFile(r'''
+var f = /*info:INFERRED_TYPE_CLOSURE*/() sync* {
+  yield 1;
+  yield* /*info:INFERRED_TYPE_LITERAL*/[3, 4.0];
+};
+''');
+    var f = mainUnit.topLevelVariables[0];
     expect(f.type.toString(), '() → Iterable<num>');
   }
 
@@ -695,14 +869,16 @@ void main() {
                       /*info:INFERRED_TYPE_LITERAL*/[3]]);
 
   new F3(/*info:INFERRED_TYPE_LITERAL*/[]);
-  new F3(/*info:INFERRED_TYPE_LITERAL*/[[3]]);
-  new F3(/*info:INFERRED_TYPE_LITERAL*/[["hello"]]);
-  new F3(/*info:INFERRED_TYPE_LITERAL*/[["hello"], [3]]);
+  new F3(/*info:INFERRED_TYPE_LITERAL*/[/*info:INFERRED_TYPE_LITERAL*/[3]]);
+  new F3(/*info:INFERRED_TYPE_LITERAL*/[/*info:INFERRED_TYPE_LITERAL*/["hello"]]);
+  new F3(/*info:INFERRED_TYPE_LITERAL*/[/*info:INFERRED_TYPE_LITERAL*/["hello"],
+                                        /*info:INFERRED_TYPE_LITERAL*/[3]]);
 
   new F4(a: /*info:INFERRED_TYPE_LITERAL*/[]);
-  new F4(a: /*info:INFERRED_TYPE_LITERAL*/[[3]]);
-  new F4(a: /*info:INFERRED_TYPE_LITERAL*/[["hello"]]);
-  new F4(a: /*info:INFERRED_TYPE_LITERAL*/[["hello"], [3]]);
+  new F4(a: /*info:INFERRED_TYPE_LITERAL*/[/*info:INFERRED_TYPE_LITERAL*/[3]]);
+  new F4(a: /*info:INFERRED_TYPE_LITERAL*/[/*info:INFERRED_TYPE_LITERAL*/["hello"]]);
+  new F4(a: /*info:INFERRED_TYPE_LITERAL*/[/*info:INFERRED_TYPE_LITERAL*/["hello"],
+                                           /*info:INFERRED_TYPE_LITERAL*/[3]]);
 }
 ''');
   }
@@ -884,9 +1060,9 @@ void main() {
   }
   {
     List<dynamic> l0 = [];
-    List<dynamic> l1 = [3];
-    List<dynamic> l2 = ["hello"];
-    List<dynamic> l3 = ["hello", 3];
+    List<dynamic> l1 = /*info:INFERRED_TYPE_LITERAL*/[3];
+    List<dynamic> l2 = /*info:INFERRED_TYPE_LITERAL*/["hello"];
+    List<dynamic> l3 = /*info:INFERRED_TYPE_LITERAL*/["hello", 3];
   }
   {
     List<int> l0 = /*severe:STATIC_TYPE_ERROR*/<num>[];
@@ -997,10 +1173,10 @@ void main() {
   }
   {
     Map<dynamic, dynamic> l0 = {};
-    Map<dynamic, dynamic> l1 = {3: "hello"};
-    Map<dynamic, dynamic> l2 = {"hello": "hello"};
-    Map<dynamic, dynamic> l3 = {3: 3};
-    Map<dynamic, dynamic> l4 = {3:"hello", "hello": 3};
+    Map<dynamic, dynamic> l1 = /*info:INFERRED_TYPE_LITERAL*/{3: "hello"};
+    Map<dynamic, dynamic> l2 = /*info:INFERRED_TYPE_LITERAL*/{"hello": "hello"};
+    Map<dynamic, dynamic> l3 = /*info:INFERRED_TYPE_LITERAL*/{3: 3};
+    Map<dynamic, dynamic> l4 = /*info:INFERRED_TYPE_LITERAL*/{3:"hello", "hello": 3};
   }
   {
     Map<dynamic, String> l0 = /*info:INFERRED_TYPE_LITERAL*/{};
@@ -1070,6 +1246,28 @@ Iterable<Map<int, int>> bar() sync* {
   ''');
   }
 
+  void test_fieldRefersToStaticGetter() {
+    var mainUnit = checkFile('''
+class C {
+  final x = _x;
+  static int get _x => null;
+}
+''');
+    var x = mainUnit.types[0].fields[0];
+    expect(x.type.toString(), 'int');
+  }
+
+  void test_fieldRefersToTopLevelGetter() {
+    var mainUnit = checkFile('''
+class C {
+  final x = y;
+}
+int get y => null;
+''');
+    var x = mainUnit.types[0].fields[0];
+    expect(x.type.toString(), 'int');
+  }
+
   void test_genericMethods_basicDownwardInference() {
     checkFile(r'''
 /*=T*/ f/*<S, T>*/(/*=S*/ s) => null;
@@ -1084,7 +1282,7 @@ main() {
     // Regression test for https://github.com/dart-lang/sdk/issues/25740.
     checkFile(r'''
 class Foo<T extends Pattern> {
-void method/*<U extends T>*/(dynamic/*=U*/ u) {}
+  void method/*<U extends T>*/(dynamic/*=U*/ u) {}
 }
 main() {
   new Foo().method/*<String>*/("str");
@@ -1183,9 +1381,11 @@ void functionExpressionInvocation() {
     checkFile('''
 class C {
   m(x) => x;
+  dynamic g(int x) => x;
 }
 class D extends C {
   /*=T*/ m/*<T>*/(/*=T*/ x) => x;
+  /*=T*/ g/*<T>*/(/*=T*/ x) => x;
 }
 main() {
   int y = /*info:DYNAMIC_CAST*/(new D() as C).m(42);
@@ -2435,17 +2635,69 @@ main() {
 ''');
   }
 
+  void test_instantiateToBounds_generic2_hasBound_definedAfter() {
+    var unit = checkFile(r'''
+class B<T extends A> {}
+class A<T extends int> {}
+B v = null;
+''');
+    expect(unit.topLevelVariables[0].type.toString(), 'B<A<dynamic>>');
+  }
+
+  void test_instantiateToBounds_generic2_hasBound_definedBefore() {
+    var unit = checkFile(r'''
+class A<T extends int> {}
+class B<T extends A> {}
+B v = null;
+''');
+    expect(unit.topLevelVariables[0].type.toString(), 'B<A<dynamic>>');
+  }
+
+  void test_instantiateToBounds_generic2_noBound() {
+    var unit = checkFile(r'''
+class A<T> {}
+class B<T extends A> {}
+B v = null;
+''');
+    expect(unit.topLevelVariables[0].type.toString(), 'B<A<dynamic>>');
+  }
+
+  void test_instantiateToBounds_generic_hasBound_definedAfter() {
+    var unit = checkFile(r'''
+A v = null;
+class A<T extends int> {}
+''');
+    expect(unit.topLevelVariables[0].type.toString(), 'A<int>');
+  }
+
+  void test_instantiateToBounds_generic_hasBound_definedBefore() {
+    var unit = checkFile(r'''
+class A<T extends int> {}
+A v = null;
+''');
+    expect(unit.topLevelVariables[0].type.toString(), 'A<int>');
+  }
+
+  void test_instantiateToBounds_notGeneric() {
+    var unit = checkFile(r'''
+class A {}
+class B<T extends A> {}
+B v = null;
+''');
+    expect(unit.topLevelVariables[0].type.toString(), 'B<A>');
+  }
+
   void test_listLiterals() {
     checkFile(r'''
 test1() {
-  var x = [1, 2, 3];
+  var x = /*info:INFERRED_TYPE_LITERAL*/[1, 2, 3];
   x.add(/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi');
   x.add(/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/4.0);
   x.add(4);
   List<num> y = x;
 }
 test2() {
-  var x = [1, 2.0, 3];
+  var x = /*info:INFERRED_TYPE_LITERAL*/[1, 2.0, 3];
   x.add(/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi');
   x.add(4.0);
   List<int> y = /*info:ASSIGNMENT_CAST*/x;
@@ -2455,14 +2707,14 @@ test2() {
 
   void test_listLiterals_topLevel() {
     checkFile(r'''
-var x1 = [1, 2, 3];
+var x1 = /*info:INFERRED_TYPE_LITERAL*/[1, 2, 3];
 test1() {
   x1.add(/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi');
   x1.add(/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/4.0);
   x1.add(4);
   List<num> y = x1;
 }
-var x2 = [1, 2.0, 3];
+var x2 = /*info:INFERRED_TYPE_LITERAL*/[1, 2.0, 3];
 test2() {
   x2.add(/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi');
   x2.add(4.0);
@@ -2472,6 +2724,9 @@ test2() {
   }
 
   void test_listLiteralsShouldNotInferBottom() {
+    if (!mayCheckTypesOfLocals) {
+      return;
+    }
     var unit = checkFile(r'''
 test1() {
   var x = [null];
@@ -2482,10 +2737,18 @@ test1() {
     expect(x.type.toString(), 'List<dynamic>');
   }
 
+  void test_listLiteralsShouldNotInferBottom_topLevel() {
+    var unit = checkFile(r'''
+var x = [null];
+''');
+    var x = unit.topLevelVariables[0];
+    expect(x.type.toString(), 'List<dynamic>');
+  }
+
   void test_mapLiterals() {
     checkFile(r'''
 test1() {
-  var x = { 1: 'x', 2: 'y' };
+  var x = /*info:INFERRED_TYPE_LITERAL*/{ 1: 'x', 2: 'y' };
   x[3] = 'z';
   x[/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi'] = 'w';
   x[/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/4.0] = 'u';
@@ -2494,7 +2757,7 @@ test1() {
 }
 
 test2() {
-  var x = { 1: 'x', 2: 'y', 3.0: new RegExp('.') };
+  var x = /*info:INFERRED_TYPE_LITERAL*/{ 1: 'x', 2: 'y', 3.0: new RegExp('.') };
   x[3] = 'z';
   x[/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi'] = 'w';
   x[4.0] = 'u';
@@ -2508,7 +2771,7 @@ test2() {
 
   void test_mapLiterals_topLevel() {
     checkFile(r'''
-var x1 = { 1: 'x', 2: 'y' };
+var x1 = /*info:INFERRED_TYPE_LITERAL*/{ 1: 'x', 2: 'y' };
 test1() {
   x1[3] = 'z';
   x1[/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi'] = 'w';
@@ -2517,7 +2780,7 @@ test1() {
   Map<num, String> y = x1;
 }
 
-var x2 = { 1: 'x', 2: 'y', 3.0: new RegExp('.') };
+var x2 = /*info:INFERRED_TYPE_LITERAL*/{ 1: 'x', 2: 'y', 3.0: new RegExp('.') };
 test2() {
   x2[3] = 'z';
   x2[/*warning:ARGUMENT_TYPE_NOT_ASSIGNABLE*/'hi'] = 'w';
@@ -2531,6 +2794,9 @@ test2() {
   }
 
   void test_mapLiteralsShouldNotInferBottom() {
+    if (!mayCheckTypesOfLocals) {
+      return;
+    }
     var unit = checkFile(r'''
 test1() {
   var x = { null: null };
@@ -2538,6 +2804,14 @@ test1() {
 }
 ''');
     var x = unit.functions[0].localVariables[0];
+    expect(x.type.toString(), 'Map<dynamic, dynamic>');
+  }
+
+  void test_mapLiteralsShouldNotInferBottom_topLevel() {
+    var unit = checkFile(r'''
+var x = { null: null };
+''');
+    var x = unit.topLevelVariables[0];
     expect(x.type.toString(), 'Map<dynamic, dynamic>');
   }
 
@@ -2649,7 +2923,35 @@ void main() {
 ''');
   }
 
-  void test_staticRefersToNonstaticField_inOtherLibraryCycle() {
+  void test_referenceToFieldOfStaticField() {
+    var mainUnit = checkFile('''
+class C {
+  static D d;
+}
+class D {
+  int i;
+}
+final x = C.d.i;
+''');
+    var x = mainUnit.topLevelVariables[0];
+    expect(x.type.toString(), 'int');
+  }
+
+  void test_referenceToFieldOfStaticGetter() {
+    var mainUnit = checkFile('''
+class C {
+  static D get d => null;
+}
+class D {
+  int i;
+}
+final x = C.d.i;
+''');
+    var x = mainUnit.topLevelVariables[0];
+    expect(x.type.toString(), 'int');
+  }
+
+  void test_staticRefersToNonStaticField_inOtherLibraryCycle() {
     addFile(
         '''
 import 'b.dart';
@@ -2699,10 +3001,49 @@ test() {
 }
 ''');
   }
+
+  void test_typeInferenceDependency_staticVariable_inIdentifierSequence() {
+    // Check that type inference dependencies are properly checked when a static
+    // variable appears in the middle of a string of identifiers separated by
+    // '.'.
+    var mainUnit = checkFile('''
+final a = /*info:DYNAMIC_INVOKE*/C.d.i;
+class C {
+  static final d = new D(a);
+}
+class D {
+  D(_);
+  int i;
+}
+''');
+    // No type should be inferred for a because there is a circular reference
+    // between a and C.d.
+    var a = mainUnit.topLevelVariables[0];
+    expect(a.type.toString(), 'dynamic');
+  }
+
+  void test_typeInferenceDependency_topLevelVariable_inIdentifierSequence() {
+    // Check that type inference dependencies are properly checked when a top
+    // level variable appears at the beginning of a string of identifiers
+    // separated by '.'.
+    var mainUnit = checkFile('''
+final a = /*info:DYNAMIC_INVOKE*/c.i;
+final c = new C(a);
+class C {
+  C(_);
+  int i;
+}
+''');
+    // No type should be inferred for a because there is a circular reference
+    // between a and c.
+  }
 }
 
 @reflectiveTest
 class InferredTypeTest extends InferredTypeMixin {
+  @override
+  bool get mayCheckTypesOfLocals => true;
+
   /// Adds a file to check. The file should contain:
   ///
   ///   * all expected failures are listed in the source code using comments

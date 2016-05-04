@@ -1391,8 +1391,11 @@ class Class : public Object {
 
   void DisableAllCHAOptimizedCode();
 
-  RawArray* cha_codes() const { return raw_ptr()->cha_codes_; }
-  void set_cha_codes(const Array& value) const;
+  // Return the list of code objects that were compiled using CHA of this class.
+  // These code objects will be invalidated if new subclasses of this class
+  // are finalized.
+  RawArray* dependent_code() const { return raw_ptr()->dependent_code_; }
+  void set_dependent_code(const Array& array) const;
 
   bool TraceAllocation(Isolate* isolate) const;
   void SetTraceAllocation(bool trace_allocation) const;
@@ -2000,6 +2003,12 @@ class ICData : public Object {
   }
   RawICData* AsUnaryClassChecksForCid(
       intptr_t cid, const Function& target) const;
+
+  // Returns ICData with aggregated receiver count, sorted by highest count.
+  // Smi not first!! (the convention for ICData used in code generation is that
+  // Smi check is first)
+  // Used for printing and optimizations.
+  RawICData* AsUnaryClassChecksSortedByCount() const;
 
   // Consider only used entries.
   bool AllTargetsHaveSameOwner(intptr_t owner_cid) const;
@@ -4029,7 +4038,8 @@ class Instructions : public Object {
   FINAL_HEAP_OBJECT_IMPLEMENTATION(Instructions, Object);
   friend class Class;
   friend class Code;
-  friend class InstructionsWriter;
+  friend class AssemblyInstructionsWriter;
+  friend class BlobInstructionsWriter;
 };
 
 
@@ -4442,7 +4452,9 @@ class DeoptInfo : public AllStatic {
 
 class Code : public Object {
  public:
-  uword active_entry_point() const { return raw_ptr()->entry_point_; }
+  RawInstructions* active_instructions() const {
+    return raw_ptr()->active_instructions_;
+  }
 
   RawInstructions* instructions() const { return raw_ptr()->instructions_; }
 
@@ -4472,15 +4484,20 @@ class Code : public Object {
   }
   void set_is_alive(bool value) const;
 
-  uword EntryPoint() const;
-  intptr_t Size() const;
-
+  uword EntryPoint() const {
+    return Instructions::Handle(instructions()).EntryPoint();
+  }
+  intptr_t Size() const {
+    const Instructions& instr = Instructions::Handle(instructions());
+    return instr.size();
+  }
   RawObjectPool* GetObjectPool() const {
     return object_pool();
   }
   bool ContainsInstructionAt(uword addr) const {
-    const uword offset = addr - EntryPoint();
-    return offset < static_cast<uword>(Size());
+    const Instructions& instr = Instructions::Handle(instructions());
+    const uword offset = addr - instr.EntryPoint();
+    return offset < static_cast<uword>(instr.size());
   }
 
   // Returns true if there is a debugger breakpoint set in this code object.
@@ -4719,11 +4736,12 @@ class Code : public Object {
   void Enable() const {
     if (!IsDisabled()) return;
     ASSERT(Thread::Current()->IsMutatorThread());
+    ASSERT(instructions() != active_instructions());
     SetActiveInstructions(instructions());
   }
 
   bool IsDisabled() const {
-    return active_entry_point() != EntryPoint();
+    return instructions() != active_instructions();
   }
 
  private:
@@ -5529,22 +5547,16 @@ class AbstractType : public Instance {
   // type.
   RawString* ClassName() const;
 
-  // Check if this type represents the 'dynamic' type.
-  bool IsDynamicType() const {
-    return !IsFunctionType() &&
-        HasResolvedTypeClass() &&
-        (type_class() == Object::dynamic_class());
-  }
+  // Check if this type represents the 'dynamic' type or if it is malformed,
+  // since a malformed type is mapped to 'dynamic'.
+  // Call IsMalformed() first, if distinction is required.
+  bool IsDynamicType() const;
+
+  // Check if this type represents the 'void' type.
+  bool IsVoidType() const;
 
   // Check if this type represents the 'Null' type.
   bool IsNullType() const;
-
-  // Check if this type represents the 'void' type.
-  bool IsVoidType() const {
-    return !IsFunctionType() &&
-        HasResolvedTypeClass() &&
-        (type_class() == Object::void_class());
-  }
 
   bool IsObjectType() const {
     return !IsFunctionType() &&
@@ -6201,6 +6213,8 @@ class Smi : public Integer {
   friend class Api;  // For ValueFromRaw
   friend class Class;
   friend class Object;
+  friend class ReusableSmiHandleScope;
+  friend class Thread;
 };
 
 
@@ -6643,6 +6657,13 @@ class String : public Instance {
                               intptr_t begin_index,
                               Heap::Space space = Heap::kNew);
   static RawString* SubString(const String& str,
+                              intptr_t begin_index,
+                              intptr_t length,
+                              Heap::Space space = Heap::kNew) {
+    return SubString(Thread::Current(), str, begin_index, length, space);
+  }
+  static RawString* SubString(Thread* thread,
+                              const String& str,
                               intptr_t begin_index,
                               intptr_t length,
                               Heap::Space space = Heap::kNew);

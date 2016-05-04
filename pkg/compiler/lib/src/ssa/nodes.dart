@@ -198,6 +198,10 @@ class HGraph {
     HConstant result = constants[constant];
     // TODO(johnniwinther): Support source information per constant reference.
     if (result == null) {
+      if (!constant.isConstant) {
+        // We use `null` as the value for invalid constant expressions.
+        constant = const NullConstantValue();
+      }
       TypeMask type = computeTypeMask(compiler, constant);
       result = new HConstant.internal(constant, type)
         ..sourceInformation = sourceInformation;
@@ -2209,7 +2213,7 @@ class HConstant extends HInstruction {
   HConstant.internal(this.constant, TypeMask constantType)
       : super(<HInstruction>[], constantType);
 
-  toString() => 'literal: ${constant.toStructuredString()}';
+  toString() => 'literal: ${constant.toStructuredText()}';
   accept(HVisitor visitor) => visitor.visitConstant(this);
 
   bool isConstant() => true;
@@ -2264,6 +2268,17 @@ class HLocalValue extends HInstruction {
 
 class HParameterValue extends HLocalValue {
   HParameterValue(Entity variable, type) : super(variable, type);
+
+  // [HParameterValue]s are either the value of the parameter (in fully SSA
+  // converted code), or the mutable variable containing the value (in
+  // incompletely SSA converted code, e.g. methods containing exceptions).
+  bool usedAsVariable() {
+    for (HInstruction user in usedBy) {
+      if (user is HLocalGet) return true;
+      if (user is HLocalSet && user.local == this) return true;
+    }
+    return false;
+  }
 
   toString() => 'parameter ${sourceElement.name}';
   accept(HVisitor visitor) => visitor.visitParameterValue(this);

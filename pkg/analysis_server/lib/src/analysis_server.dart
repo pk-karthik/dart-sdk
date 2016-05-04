@@ -22,6 +22,7 @@ import 'package:analysis_server/src/services/correction/namespace.dart';
 import 'package:analysis_server/src/services/index/index.dart';
 import 'package:analysis_server/src/services/search/search_engine.dart';
 import 'package:analysis_server/src/services/search/search_engine_internal.dart';
+import 'package:analysis_server/src/single_context_manager.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/file_system/file_system.dart';
@@ -312,8 +313,9 @@ class AnalysisServer {
       this.options,
       this.defaultSdkCreator,
       this.instrumentationService,
-      {ResolverProvider packageResolverProvider: null,
-      EmbeddedResolverProvider embeddedResolverProvider: null,
+      {EmbeddedResolverProvider embeddedResolverProvider: null,
+      ResolverProvider packageResolverProvider: null,
+      bool useSingleContextManager: false,
       this.rethrowExceptions: true})
       : index = _index,
         searchEngine = _index != null ? new SearchEngineImpl(_index) : null {
@@ -326,15 +328,20 @@ class AnalysisServer {
     defaultContextOptions.generateImplicitErrors = false;
     operationQueue = new ServerOperationQueue();
     sdkManager = new DartSdkManager(defaultSdkCreator);
-    contextManager = new ContextManagerImpl(
-        resourceProvider,
-        sdkManager,
-        packageResolverProvider,
-        embeddedResolverProvider,
-        packageMapProvider,
-        analyzedFilesGlobs,
-        instrumentationService,
-        defaultContextOptions);
+    if (useSingleContextManager) {
+      contextManager = new SingleContextManager(resourceProvider, sdkManager,
+          packageResolverProvider, analyzedFilesGlobs, defaultContextOptions);
+    } else {
+      contextManager = new ContextManagerImpl(
+          resourceProvider,
+          sdkManager,
+          packageResolverProvider,
+          embeddedResolverProvider,
+          packageMapProvider,
+          analyzedFilesGlobs,
+          instrumentationService,
+          defaultContextOptions);
+    }
     ServerContextManagerCallbacks contextManagerCallbacks =
         new ServerContextManagerCallbacks(this, resourceProvider);
     contextManager.callbacks = contextManagerCallbacks;
@@ -1413,7 +1420,7 @@ class AnalysisServer {
     }
     // if library has not been resolved yet, the unit will be resolved later
     Source librarySource = librarySources[0];
-    if (context.getResult(librarySource, LIBRARY_ELEMENT5) == null) {
+    if (context.getResult(librarySource, LIBRARY_ELEMENT6) == null) {
       return null;
     }
     // if library has been already resolved, resolve unit
@@ -1581,6 +1588,13 @@ class ServerContextManagerCallbacks extends ContextManagerCallbacks {
   @override
   void computingPackageMap(bool computing) =>
       analysisServer._computingPackageMap(computing);
+
+  @override
+  void moveContext(Folder from, Folder to) {
+    // There is nothing to do.
+    // This method is mostly for tests.
+    // Context managers manage folders and contexts themselves.
+  }
 
   @override
   void removeContext(Folder folder, List<String> flushedFiles) {

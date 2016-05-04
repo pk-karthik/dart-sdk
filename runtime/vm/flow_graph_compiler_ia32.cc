@@ -1300,7 +1300,25 @@ void FlowGraphCompiler::EmitMegamorphicInstanceCall(
       MegamorphicCacheTable::Lookup(isolate(), name, arguments_descriptor));
 
   __ Comment("MegamorphicCall");
+  // Load receiver into EBX.
   __ movl(EBX, Address(ESP, (argument_count - 1) * kWordSize));
+  Label done;
+  if (ShouldInlineSmiStringHashCode(ic_data)) {
+    Label megamorphic_call;
+    __ Comment("Inlined get:hashCode for Smi and OneByteString");
+    __ movl(EAX, EBX);  // Move Smi hashcode to EAX.
+    __ testl(EBX, Immediate(kSmiTagMask));
+    __ j(ZERO, &done, Assembler::kNearJump);  // It is Smi, we are done.
+
+    __ CompareClassId(EBX, kOneByteStringCid, EAX);
+    __ j(NOT_EQUAL, &megamorphic_call, Assembler::kNearJump);
+    __ movl(EAX, FieldAddress(EBX, String::hash_offset()));
+    __ cmpl(EAX, Immediate(0));
+    __ j(NOT_EQUAL, &done, Assembler::kNearJump);
+
+    __ Bind(&megamorphic_call);
+    __ Comment("Slow case: megamorphic call");
+  }
   __ LoadObject(ECX, cache);
   if (FLAG_use_megamorphic_stub) {
     __ Call(*StubCode::MegamorphicLookup_entry());
@@ -1309,6 +1327,7 @@ void FlowGraphCompiler::EmitMegamorphicInstanceCall(
   }
   __ call(EBX);
 
+  __ Bind(&done);
   AddCurrentDescriptor(RawPcDescriptors::kOther,
       Thread::kNoDeoptId, token_pos);
   RecordSafepoint(locs, slow_path_argument_count);

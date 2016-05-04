@@ -49,6 +49,7 @@ generic_methods_test: CompiletimeError # Issue 25869
 generic_functions_test: CompiletimeError # Issue 25869
 generic_local_functions_test: CompiletimeError # Issue 25869
 generic_sends_test: CompiletimeError # Issue 25869
+generic_method_type_usage_test: CompiletimeError # Tests --generic-method-syntax, plus issue 25869
 
 [ ($compiler == none || $compiler == precompiler || $compiler == dart2app) && ($runtime == vm || $runtime == dart_precompiled || $runtime == dart_product) ]
 
@@ -94,6 +95,7 @@ generic_methods_test: RuntimeError # Issue 25869
 generic_functions_test: RuntimeError # Issue 25869
 generic_local_functions_test: RuntimeError # Issue 25869
 generic_sends_test: RuntimeError # Issue 25869
+generic_method_type_usage_test: CompiletimeError # Tests --generic-method-syntax, plus issue 25869
 config_import_test: Skip  # Issue 26250
 
 [ $compiler == none && $runtime == dartium && $system == linux && $arch != x64 ]
@@ -212,10 +214,14 @@ library_env_test/has_no_mirror_support: RuntimeError, OK
 # The following tests are supposed to fail.
 library_env_test/has_mirror_support: RuntimeError, OK
 
-[ $arch == simdbc ]
+[ $arch == simdbc || $arch == simdbc64 ]
 # TODO(vegorov) StopInstr is unimplemented.
 vm/debug_break_enabled_vm_test/none: Skip
 
 # TODO(vegorov) Encoding limitation: StoreField bytecode only supports 256
 # fields in an object.
 large_class_declaration_test: Skip
+
+[ $compiler == precompiler && $runtime == dart_precompiled && $system == android ]
+vm/optimized_guarded_field_isolates_test: Skip # Issue #26373
+issue23244_test: Skip # Issue #26373

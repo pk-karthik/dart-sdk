@@ -32,6 +32,10 @@ namespace dart {
 
 DEFINE_FLAG(bool, enable_simd_inline, true,
     "Enable inlining of SIMD related method calls.");
+DEFINE_FLAG(bool, inline_smi_string_hashcode, true,
+    "Inline hashcode for Smi and one-byte strings in case of megamorphic call");
+DEFINE_FLAG(int, inline_smi_string_hashcode_ratio, 50,
+    "Minimal hotness (0..100) of one-byte-string before inlining its hashcode");
 DEFINE_FLAG(int, min_optimization_counter_threshold, 5000,
     "The minimum invocation count for a function.");
 DEFINE_FLAG(int, optimization_counter_scale, 2000,
@@ -80,7 +84,7 @@ static void PrecompilationModeHandler(bool value) {
     FLAG_inlining_constant_arguments_max_size_threshold = 100;
     FLAG_inlining_constant_arguments_min_size_threshold = 30;
 
-    FLAG_allow_absolute_addresses = false;
+    FLAG_background_compilation = false;
     FLAG_always_megamorphic_calls = true;
     FLAG_collect_dynamic_function_names = true;
     FLAG_fields_may_be_reset = true;
@@ -97,7 +101,6 @@ static void PrecompilationModeHandler(bool value) {
 
 #if !defined(PRODUCT) && !defined(DART_PRECOMPILED_RUNTIME)
     // Set flags affecting runtime accordingly for dart_noopt.
-    FLAG_background_compilation = false;
     FLAG_collect_code = false;
     FLAG_support_debugger = false;
     FLAG_deoptimize_alot = false;  // Used in some tests.
@@ -116,7 +119,6 @@ DEFINE_FLAG_HANDLER(PrecompilationModeHandler,
 
 #ifdef DART_PRECOMPILED_RUNTIME
 
-COMPILE_ASSERT(!FLAG_background_compilation);
 COMPILE_ASSERT(!FLAG_collect_code);
 COMPILE_ASSERT(!FLAG_deoptimize_alot);  // Used in some tests.
 COMPILE_ASSERT(!FLAG_enable_mirrors);
@@ -156,6 +158,31 @@ void CompilerDeoptInfo::EmitMaterializations(Environment* env,
       builder->AddMaterialization(mat);
     }
   }
+}
+
+
+// Returns true if OnebyteString is a frequent receiver class. We inline
+// Smi check as well, since a Smi check must be done anyway.
+// TODO(srdjan): Add check and code if Smi class is hot.
+bool FlowGraphCompiler::ShouldInlineSmiStringHashCode(const ICData& ic_data) {
+  if (!FLAG_inline_smi_string_hashcode ||
+     (ic_data.target_name() != Symbols::hashCode().raw())) {
+    return false;
+  }
+  // Precompiled code has no ICData, optimistically inline it.
+  if (ic_data.IsNull() || (ic_data.NumberOfChecks() == 0)) {
+    return true;
+  }
+  // Check if OneByteString is hot enough.
+  const ICData& ic_data_sorted =
+      ICData::Handle(ic_data.AsUnaryClassChecksSortedByCount());
+  ASSERT(ic_data_sorted.NumberOfChecks() > 0);
+  if (ic_data_sorted.GetReceiverClassIdAt(0) == kOneByteStringCid) {
+    const intptr_t total_count = ic_data_sorted.AggregateCount();
+    const intptr_t ratio = (ic_data_sorted.GetCountAt(0) * 100) / total_count;
+    return ratio > FLAG_inline_smi_string_hashcode_ratio;
+  }
+  return false;
 }
 
 
@@ -1376,7 +1403,7 @@ void FlowGraphCompiler::AllocateRegistersLocally(Instruction* instr) {
   }
 
   // Allocate all unallocated input locations.
-  const bool should_pop = !instr->IsPushArgument() && !instr->IsPushTemp();
+  const bool should_pop = !instr->IsPushArgument();
   for (intptr_t i = locs->input_count() - 1; i >= 0; i--) {
     Location loc = locs->in(i);
     Register reg = kNoRegister;
@@ -1908,7 +1935,6 @@ void FlowGraphCompiler::FrameStateUpdateWith(Instruction* instr) {
 
   switch (instr->tag()) {
     case Instruction::kPushArgument:
-    case Instruction::kPushTemp:
       // Do nothing.
       break;
 
