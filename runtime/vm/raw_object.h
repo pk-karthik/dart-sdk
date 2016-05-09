@@ -432,55 +432,32 @@ class RawObject {
     return TryAcquireTagBit<RememberedBit>();
   }
 
-  void UpdateClassId(intptr_t id) {
-    uword tags = ptr()->tags_;
-    uword old_tags;
-    do {
-      old_tags = tags;
-      uword new_tags = ClassIdTag::update(id, old_tags);
-      tags = AtomicOperations::CompareAndSwapWord(
-          &ptr()->tags_, old_tags, new_tags);
-    } while (tags != old_tags);
-  }
+#define DEFINE_IS_CID(clazz)                                                   \
+  bool Is##clazz() const { return ((GetClassId() == k##clazz##Cid)); }
+CLASS_LIST(DEFINE_IS_CID)
+#undef DEFINE_IS_CID
 
-  bool IsDartInstance() {
-    return (!IsHeapObject() || (GetClassId() >= kInstanceCid));
+#define DEFINE_IS_CID(clazz)                                                   \
+  bool IsTypedData##clazz() const {                                            \
+    return ((GetClassId() == kTypedData##clazz##Cid));                         \
+  }                                                                            \
+  bool IsTypedDataView##clazz() const {                                        \
+    return ((GetClassId() == kTypedData##clazz##ViewCid));                     \
+  }                                                                            \
+  bool IsExternalTypedData##clazz() const {                                    \
+    return ((GetClassId() == kExternalTypedData##clazz##Cid));                 \
   }
-  bool IsClass() {
-    return ((GetClassId() == kClassCid));
-  }
-  bool IsLibrary() {
-    return ((GetClassId() == kLibraryCid));
-  }
-  bool IsFreeListElement() {
-    return ((GetClassId() == kFreeListElement));
-  }
-  bool IsScript() {
-    return ((GetClassId() == kScriptCid));
-  }
-  bool IsField() {
-    return ((GetClassId() == kFieldCid));
-  }
-  bool IsFunction() {
-    return ((GetClassId() == kFunctionCid));
-  }
-  bool IsInstructions() {
-    return ((GetClassId() == kInstructionsCid));
-  }
-  bool IsCode() {
-    return ((GetClassId() == kCodeCid));
-  }
-  bool IsString() {
+CLASS_LIST_TYPED_DATA(DEFINE_IS_CID)
+#undef DEFINE_IS_CID
+
+  bool IsStringInstance() const {
     return IsStringClassId(GetClassId());
   }
-  bool IsStackmap() {
-    return ((GetClassId() == kStackmapCid));
+  bool IsDartInstance() const {
+    return (!IsHeapObject() || (GetClassId() >= kInstanceCid));
   }
-  bool IsPcDescriptors() {
-    return ((GetClassId() == kPcDescriptorsCid));
-  }
-  bool IsOneByteString() {
-    return ((GetClassId() == kOneByteStringCid));
+  bool IsFreeListElement() const {
+    return ((GetClassId() == kFreeListElement));
   }
 
   intptr_t Size() const {
@@ -740,6 +717,8 @@ class RawClass : public RawObject {
       case Snapshot::kAppNoJIT:
         return reinterpret_cast<RawObject**>(&ptr()->direct_subclasses_);
       case Snapshot::kMessage:
+      case Snapshot::kNone:
+      case Snapshot::kInvalid:
         break;
     }
     UNREACHABLE();
@@ -970,6 +949,8 @@ class RawField : public RawObject {
       case Snapshot::kAppNoJIT:
         return reinterpret_cast<RawObject**>(&ptr()->initializer_);
       case Snapshot::kMessage:
+      case Snapshot::kNone:
+      case Snapshot::kInvalid:
         break;
     }
     UNREACHABLE();
@@ -1050,6 +1031,8 @@ class RawScript : public RawObject {
       case Snapshot::kScript:
         return reinterpret_cast<RawObject**>(&ptr()->tokens_);
       case Snapshot::kMessage:
+      case Snapshot::kNone:
+      case Snapshot::kInvalid:
         break;
     }
     UNREACHABLE();
@@ -1537,6 +1520,8 @@ class RawICData : public RawObject {
       case Snapshot::kAppWithJIT:
         return to();
       case Snapshot::kMessage:
+      case Snapshot::kNone:
+      case Snapshot::kInvalid:
         break;
     }
     UNREACHABLE();
@@ -1668,6 +1653,8 @@ class RawLibraryPrefix : public RawInstance {
       case Snapshot::kAppNoJIT:
         return reinterpret_cast<RawObject**>(&ptr()->importer_);
       case Snapshot::kMessage:
+      case Snapshot::kNone:
+      case Snapshot::kInvalid:
         break;
     }
     UNREACHABLE();

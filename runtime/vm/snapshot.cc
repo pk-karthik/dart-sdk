@@ -253,7 +253,7 @@ RawClass* SnapshotReader::ReadClassId(intptr_t object_id) {
   AddBackRef(object_id, &cls, kIsDeserialized);
   // Read the library/class information and lookup the class.
   str_ ^= ReadObjectImpl(class_header, kAsInlinedObject, kInvalidPatchIndex, 0);
-  library_ = Library::LookupLibrary(str_);
+  library_ = Library::LookupLibrary(thread(), str_);
   if (library_.IsNull() || !library_.Loaded()) {
     SetReadException("Invalid object found in message.");
   }
@@ -280,7 +280,7 @@ RawFunction* SnapshotReader::ReadFunctionId(intptr_t object_id) {
   AddBackRef(object_id, &func, kIsDeserialized);
   // Read the library/class/function information and lookup the function.
   str_ ^= ReadObjectImpl(func_header, kAsInlinedObject, kInvalidPatchIndex, 0);
-  library_ = Library::LookupLibrary(str_);
+  library_ = Library::LookupLibrary(thread(), str_);
   if (library_.IsNull() || !library_.Loaded()) {
     SetReadException("Expected a library name, but found an invalid name.");
   }
@@ -316,7 +316,7 @@ RawObject* SnapshotReader::ReadStaticImplicitClosure(intptr_t object_id,
 
   // Read the library/class/function information and lookup the function.
   str_ ^= ReadObjectImpl(kAsInlinedObject);
-  library_ = Library::LookupLibrary(str_);
+  library_ = Library::LookupLibrary(thread(), str_);
   if (library_.IsNull() || !library_.Loaded()) {
     SetReadException("Invalid Library object found in message.");
   }
@@ -625,7 +625,7 @@ RawApiError* SnapshotReader::ReadFullSnapshot() {
       }
     }
 
-    if (Snapshot::IncludesCode(kind_)) {
+    if (kind_ == Snapshot::kAppNoJIT) {
       ICData& ic = ICData::Handle(thread->zone());
       Object& funcOrCode = Object::Handle(thread->zone());
       Code& code = Code::Handle(thread->zone());
@@ -1764,7 +1764,7 @@ IsolateSnapshotReader::IsolateSnapshotReader(Snapshot::Kind kind,
                      new ZoneGrowableArray<BackRefNode>(
                          kNumInitialReferencesInFullSnapshot),
                      thread) {
-  isolate()->set_compilation_allowed(instructions_buffer_ == NULL);
+  isolate()->set_compilation_allowed(kind != Snapshot::kAppNoJIT);
   ASSERT(Snapshot::IsFull(kind));
 }
 
@@ -2037,6 +2037,7 @@ FullSnapshotWriter::FullSnapshotWriter(Snapshot::Kind kind,
 #if defined(DEBUG)
   isolate()->ValidateClassTable();
 #endif
+  ASSERT(isolate()->background_compiler() == NULL);
 
   // Collect all the script objects and their accompanying token stream objects
   // into an array so that we can write it out as part of the VM isolate
@@ -2186,23 +2187,6 @@ void FullSnapshotWriter::WriteFullSnapshot() {
     OS::Print("Total(CodeSize): %" Pd "\n", total);
   }
 }
-
-
-PrecompiledSnapshotWriter::PrecompiledSnapshotWriter(
-    uint8_t** vm_isolate_snapshot_buffer,
-    uint8_t** isolate_snapshot_buffer,
-    ReAlloc alloc,
-    InstructionsWriter* instructions_writer)
-  : FullSnapshotWriter(Snapshot::kAppNoJIT,
-                       vm_isolate_snapshot_buffer,
-                       isolate_snapshot_buffer,
-                       alloc,
-                       instructions_writer,
-                       false /* vm_isolate_is_symbolic */) {
-}
-
-
-PrecompiledSnapshotWriter::~PrecompiledSnapshotWriter() {}
 
 
 ForwardList::ForwardList(Thread* thread, intptr_t first_object_id)

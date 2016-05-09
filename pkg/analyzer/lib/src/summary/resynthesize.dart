@@ -283,9 +283,15 @@ class _ConstExprBuilder {
 
   _ConstExprBuilder(this.resynthesizer, this.uc);
 
-  Expression get expr => stack.single;
-
   Expression build() {
+    Expression expr = _build();
+    if (uc.name.isNotEmpty) {
+      return AstFactory.namedExpression2(uc.name, expr);
+    }
+    return expr;
+  }
+
+  Expression _build() {
     if (!uc.isValidConst) {
       return AstFactory.identifier3(r'$$invalidConstExpr$$');
     }
@@ -1252,8 +1258,8 @@ class _LibraryResynthesizer {
     String partUri;
     if (unit != 0) {
       String uri = dependency.parts[unit - 1];
-      Source partSource = summaryResynthesizer.sourceFactory
-          .resolveUri(referencedLibrarySource, uri);
+      Source partSource =
+          summaryResynthesizer.sourceFactory.resolveUri(librarySource, uri);
       partUri = partSource.uri.toString();
     } else {
       partUri = referencedLibraryUri;
@@ -1370,12 +1376,6 @@ class _ReferenceInfo {
     if (element is ClassElementHandle) {
       return new InterfaceTypeImpl.elementWithNameAndArgs(element, name,
           _buildTypeArguments(numTypeParameters, getTypeArgument));
-    } else if (element is FunctionTypeAliasElementHandle) {
-      return new FunctionTypeImpl.elementWithNameAndArgs(
-          element,
-          name,
-          _buildTypeArguments(numTypeParameters, getTypeArgument),
-          numTypeParameters != 0);
     } else if (element is FunctionTypedElement) {
       int numTypeArguments;
       FunctionTypedElementComputer computer;
@@ -1388,6 +1388,12 @@ class _ReferenceInfo {
           }
           return element;
         };
+      } else if (element is FunctionTypeAliasElementHandle) {
+        return new FunctionTypeImpl.elementWithNameAndArgs(
+            element,
+            name,
+            _buildTypeArguments(numTypeParameters, getTypeArgument),
+            numTypeParameters != 0);
       } else {
         // For a type that refers to a generic executable, the type arguments are
         // not supposed to include the arguments to the executable itself.
@@ -2143,13 +2149,20 @@ class _UnitResynthesizer {
       FunctionElementImpl parameterTypeElement =
           new FunctionElementImpl('', -1);
       parameterTypeElement.synthetic = true;
-      parameterElement.parameters =
-          serializedParameter.parameters.map(buildParameter).toList();
-      parameterTypeElement.enclosingElement = parameterElement;
-      parameterTypeElement.shareParameters(parameterElement.parameters);
+      List<ParameterElement> subParameters = serializedParameter.parameters
+          .map((UnlinkedParam p) => buildParameter(p, synthetic: synthetic))
+          .toList();
+      if (synthetic) {
+        parameterTypeElement.parameters = subParameters;
+      } else {
+        parameterElement.parameters = subParameters;
+        parameterTypeElement.shareParameters(subParameters);
+        parameterTypeElement.enclosingElement = parameterElement;
+      }
       parameterTypeElement.returnType = buildType(serializedParameter.type);
       parameterElement.type = new FunctionTypeImpl.elementWithNameAndArgs(
           parameterTypeElement, null, getCurrentTypeArguments(), false);
+      parameterTypeElement.type = parameterElement.type;
     } else {
       if (serializedParameter.isInitializingFormal &&
           serializedParameter.type == null) {

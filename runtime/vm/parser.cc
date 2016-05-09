@@ -364,10 +364,11 @@ void Parser::TryStack::AddNodeForFinallyInlining(AstNode* node) {
 Parser::Parser(const Script& script,
                const Library& library,
                TokenPosition token_pos)
-    : isolate_(Thread::Current()->isolate()),
-      thread_(Thread::Current()),
+    : thread_(Thread::Current()),
+      isolate_(thread()->isolate()),
       script_(Script::Handle(zone(), script.raw())),
-      tokens_iterator_(TokenStream::Handle(zone(), script.tokens()),
+      tokens_iterator_(zone(),
+                       TokenStream::Handle(zone(), script.tokens()),
                        token_pos),
       token_kind_(Token::kILLEGAL),
       current_block_(NULL),
@@ -395,10 +396,11 @@ Parser::Parser(const Script& script,
 Parser::Parser(const Script& script,
                ParsedFunction* parsed_function,
                TokenPosition token_pos)
-    : isolate_(Thread::Current()->isolate()),
-      thread_(Thread::Current()),
+    : thread_(Thread::Current()),
+      isolate_(thread()->isolate()),
       script_(Script::Handle(zone(), script.raw())),
-      tokens_iterator_(TokenStream::Handle(zone(), script.tokens()),
+      tokens_iterator_(zone(),
+                       TokenStream::Handle(zone(), script.tokens()),
                        token_pos),
       token_kind_(Token::kILLEGAL),
       current_block_(NULL),
@@ -5922,10 +5924,10 @@ void Parser::ParseLibraryImportExport(const Object& tl_owner,
       CallLibraryTagHandler(Dart_kCanonicalizeUrl, import_pos, url));
 
   // Create a new library if it does not exist yet.
-  Library& library = Library::Handle(Z, Library::LookupLibrary(canon_url));
+  Library& library = Library::Handle(Z, Library::LookupLibrary(T, canon_url));
   if (library.IsNull()) {
     library = Library::New(canon_url);
-    library.Register();
+    library.Register(T);
   }
 
   // If loading hasn't been requested yet, and if this is not a deferred

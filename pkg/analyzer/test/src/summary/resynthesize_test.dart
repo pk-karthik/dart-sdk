@@ -658,7 +658,13 @@ abstract class AbstractResynthesizeTest extends AbstractSingleUnitTest {
     }
     expect(original, isNotNull);
     expect(resynthesized, isNotNull, reason: desc);
-    expect(rImpl.runtimeType, oImpl.runtimeType);
+    if (rImpl is DefaultParameterElementImpl && oImpl is ParameterElementImpl) {
+      // This is ok provided the resynthesized parameter element doesn't have
+      // any evaluation result.
+      expect(rImpl.evaluationResult, isNull);
+    } else {
+      expect(rImpl.runtimeType, oImpl.runtimeType);
+    }
     expect(resynthesized.kind, original.kind);
     expect(resynthesized.location, original.location, reason: desc);
     expect(resynthesized.name, original.name);
@@ -2476,6 +2482,17 @@ class C extends A {
 ''');
   }
 
+  test_constructor_initializers_superInvocation_namedExpression() {
+    checkLibrary('''
+class A {
+  const A.aaa(a, {int b});
+}
+class C extends A {
+  const C() : super.aaa(1, b: 2);
+}
+''');
+  }
+
   test_constructor_initializers_superInvocation_unnamed() {
     checkLibrary('''
 class A {
@@ -3215,6 +3232,14 @@ Stream s;
     checkLibrary('import "a.dart"; import "b.dart"; C c; D d;');
   }
 
+  void test_inferedType_usesSyntheticFunctionType_functionTypedParam() {
+    checkLibrary('''
+int f(int x(String y)) => null;
+String g(int x(String y)) => null;
+var v = [f, g];
+''');
+  }
+
   test_inferred_function_type_for_variable_in_generic_function() {
     // In the code below, `x` has an inferred type of `() => int`, with 2
     // (unused) type parameters from the enclosing top level function.
@@ -3320,6 +3345,14 @@ f<T>() {
         ' abstract class D<U, V> { Map<V, U> get v; }');
   }
 
+  void test_inferred_type_refers_to_function_typed_param_of_typedef() {
+    checkLibrary('''
+typedef void F(int g(String s));
+h(F f) => null;
+var v = h(/*info:INFERRED_TYPE_CLOSURE*/(y) {});
+''');
+  }
+
   test_inferred_type_refers_to_function_typed_parameter_type_generic_class() {
     checkLibrary('class C<T, U> extends D<U, int> { void f(int x, g) {} }'
         ' abstract class D<V, W> { void f(int x, W g(V s)); }');
@@ -3336,6 +3369,20 @@ f<T>() {
   test_inferred_type_refers_to_method_function_typed_parameter_type() {
     checkLibrary('class C extends D { void f(int x, g) {} }'
         ' abstract class D { void f(int x, int g(String s)); }');
+  }
+
+  test_inferred_type_refers_to_nested_function_typed_param() {
+    checkLibrary('''
+f(void g(int x, void h())) => null;
+var v = f((x, y) {});
+''');
+  }
+
+  test_inferred_type_refers_to_nested_function_typed_param_named() {
+    checkLibrary('''
+f({void g(int x, void h())}) => null;
+var v = f(g: (x, y) {});
+''');
   }
 
   test_inferred_type_refers_to_setter_function_typed_parameter_type() {

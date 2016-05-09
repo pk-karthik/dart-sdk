@@ -45,9 +45,14 @@ UnlinkedConstructorInitializer serializeConstructorInitializer(
  */
 abstract class AbstractConstExprSerializer {
   /**
-   * See [UnlinkedConstBuilder.isInvalid].
+   * See [UnlinkedConstBuilder.isValidConst].
    */
   bool isValidConst = true;
+
+  /**
+   * See [UnlinkedConstBuilder.nmae].
+   */
+  String name = null;
 
   /**
    * See [UnlinkedConstBuilder.operations].
@@ -91,6 +96,11 @@ abstract class AbstractConstExprSerializer {
    */
   void serialize(Expression expr) {
     try {
+      if (expr is NamedExpression) {
+        NamedExpression namedExpression = expr;
+        name = namedExpression.name.label.name;
+        expr = namedExpression.expression;
+      }
       _serialize(expr);
     } on StateError {
       isValidConst = false;
@@ -152,6 +162,7 @@ abstract class AbstractConstExprSerializer {
   UnlinkedConstBuilder toBuilder() {
     return new UnlinkedConstBuilder(
         isValidConst: isValidConst,
+        name: name,
         operations: operations,
         assignmentOperators: assignmentOperators,
         ints: ints,
@@ -456,8 +467,8 @@ abstract class AbstractConstExprSerializer {
     ArgumentList argumentList = invocation.argumentList;
     if (_isIdentifierSequence(methodName)) {
       EntityRefBuilder ref = serializeIdentifierSequence(methodName);
-      references.add(ref);
       _serializeArguments(argumentList);
+      references.add(ref);
       operations.add(UnlinkedConstOperation.invokeMethodRef);
     } else {
       if (!invocation.isCascaded) {

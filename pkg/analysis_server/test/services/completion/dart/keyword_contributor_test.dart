@@ -670,6 +670,13 @@ class KeywordContributorTest extends DartCompletionContributorTest {
     assertSuggestKeywords(EXPRESSION_START_NO_INSTANCE);
   }
 
+  test_for_initialization_var() async {
+    addTestSource('main() {for (va^)}');
+    await computeSuggestions();
+    assertSuggestKeywords([Keyword.FINAL, Keyword.VAR],
+        relevance: DART_RELEVANCE_HIGH);
+  }
+
   test_function_async() async {
     addTestSource('main()^');
     await computeSuggestions();
@@ -856,6 +863,18 @@ class A {
     await computeSuggestions();
     assertSuggestKeywords(STMT_START_OUTSIDE_CLASS,
         pseudoKeywords: ['await', 'yield', 'yield*']);
+  }
+
+  test_if_condition_isKeyword() async {
+    addTestSource('main() { if (v i^) {} }');
+    await computeSuggestions();
+    assertSuggestKeywords([Keyword.IS], relevance: DART_RELEVANCE_HIGH);
+  }
+
+  test_if_condition_isKeyword2() async {
+    addTestSource('main() { if (v i^ && false) {} }');
+    await computeSuggestions();
+    assertSuggestKeywords([Keyword.IS], relevance: DART_RELEVANCE_HIGH);
   }
 
   test_if_expression_in_class() async {

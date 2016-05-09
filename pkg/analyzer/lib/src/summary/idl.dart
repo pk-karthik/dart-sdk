@@ -202,8 +202,7 @@ abstract class EntityRef extends base.SummaryClass {
 
   /**
    * If this is an instantiation of a generic type or generic executable, the
-   * type arguments used to instantiate it.  Trailing type arguments of type
-   * `dynamic` are omitted.
+   * type arguments used to instantiate it (if any).
    */
   @Id(1)
   List<EntityRef> get typeArguments;
@@ -1032,6 +1031,12 @@ abstract class UnlinkedConst extends base.SummaryClass {
    */
   @Id(5)
   bool get isValidConst;
+
+  /**
+   * If the expression is a [NamedExpression], the name of the expression.
+   */
+  @Id(7)
+  String get name;
 
   /**
    * Sequence of operations to execute (starting with an empty stack) to form

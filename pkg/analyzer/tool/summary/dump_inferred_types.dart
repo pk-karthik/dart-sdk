@@ -63,6 +63,11 @@ class InferredTypeCollector {
       properties.remove('initializer');
     } else if (obj is UnlinkedExecutable) {
       collectInferredType(obj.inferredReturnTypeSlot, path);
+      // As a temporary measure, prevent recursion into the executable's local
+      // variables and local functions, since AST-based type inference doesn't
+      // infer locals correctly yet.  TODO(paulberry): fix if necessary.
+      properties.remove('localFunctions');
+      properties.remove('localVariables');
     } else if (obj is UnlinkedParam) {
       collectInferredType(obj.inferredTypeSlot, path);
       // As a temporary measure, prevent recursion into the parameter's
@@ -173,14 +178,29 @@ class InferredTypeCollector {
           typeParamsInScope.length - entityRef.paramReference];
     }
     String result = formatReference(entityRef.reference, typeOf: true);
-    if (entityRef.typeArguments.isNotEmpty) {
-      result += '<${entityRef.typeArguments.map(formatType).join(', ')}>';
+    List<EntityRef> typeArguments = entityRef.typeArguments.toList();
+    while (typeArguments.isNotEmpty && isDynamic(typeArguments.last)) {
+      typeArguments.removeLast();
+    }
+    if (typeArguments.isNotEmpty) {
+      result += '<${typeArguments.map(formatType).join(', ')}>';
     }
     if (implicitFunctionTypeIndices.isNotEmpty) {
       result =
           'parameterOf($result, ${implicitFunctionTypeIndices.join(', ')})';
     }
     return result;
+  }
+
+  /**
+   * Determine if the given [entityRef] represents the pseudo-type `dynamic`.
+   */
+  bool isDynamic(EntityRef entityRef) {
+    if (entityRef.syntheticReturnType != null ||
+        entityRef.paramReference != 0) {
+      return false;
+    }
+    return formatReference(entityRef.reference, typeOf: true) == 'dynamic';
   }
 
   /**

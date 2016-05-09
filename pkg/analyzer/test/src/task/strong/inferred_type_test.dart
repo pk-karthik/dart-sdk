@@ -382,7 +382,7 @@ main() {
 }
 ''');
     var f = mainUnit.functions[0].localVariables[0];
-    expect(f.type.toString(), '() → (int) → num');
+    expect(f.type.toString(), '() → (int) → double');
   }
 
   void test_blockBodiedLambdas_nestedLambdas_topLevel() {
@@ -393,7 +393,7 @@ var f = /*info:INFERRED_TYPE_CLOSURE*/() {
 };
 ''');
     var f = mainUnit.topLevelVariables[0];
-    expect(f.type.toString(), '() → (int) → num');
+    expect(f.type.toString(), '() → (int) → double');
   }
 
   void test_blockBodiedLambdas_noReturn() {
@@ -1394,6 +1394,48 @@ main() {
   ''');
   }
 
+  void test_genericMethods_inferGenericFunctionParameterType() {
+    var mainUnit = checkFile('''
+class C<T> extends D<T> {
+  f/*<U>*/(x) {}
+}
+class D<T> {
+  F/*<U>*/ f/*<U>*/(/*=U*/ u) => null;
+}
+typedef void F<V>(V v);
+''');
+    var f = mainUnit.getType('C').methods[0];
+    expect(f.type.toString(), '<U>(U) → (U) → void');
+  }
+
+  void test_genericMethods_inferGenericFunctionParameterType2() {
+    var mainUnit = checkFile('''
+class C<T> extends D<T> {
+  f/*<U>*/(g) => null;
+}
+abstract class D<T> {
+  void f/*<U>*/(G/*<U>*/ g);
+}
+typedef List<V> G<V>();
+''');
+    var f = mainUnit.getType('C').methods[0];
+    expect(f.type.toString(), '<U>(() → List<U>) → void');
+  }
+
+  void test_genericMethods_inferGenericFunctionReturnType() {
+    var mainUnit = checkFile('''
+class C<T> extends D<T> {
+  f/*<U>*/(x) {}
+}
+class D<T> {
+  F/*<U>*/ f/*<U>*/(/*=U*/ u) => null;
+}
+typedef V F<V>();
+''');
+    var f = mainUnit.getType('C').methods[0];
+    expect(f.type.toString(), '<U>(U) → () → U');
+  }
+
   void test_genericMethods_inferGenericInstantiation() {
     checkFile('''
 import 'dart:math' as math;
@@ -1801,6 +1843,56 @@ foo() {
 ''');
   }
 
+  void test_inferedType_usesSyntheticFunctionType() {
+    var mainUnit = checkFile('''
+int f() => null;
+String g() => null;
+var v = /*info:INFERRED_TYPE_LITERAL*/[f, g];
+''');
+    var v = mainUnit.topLevelVariables[0];
+    expect(v.type.toString(), 'List<() → Object>');
+  }
+
+  void test_inferedType_usesSyntheticFunctionType_functionTypedParam() {
+    var mainUnit = checkFile('''
+int f(int x(String y)) => null;
+String g(int x(String y)) => null;
+var v = /*info:INFERRED_TYPE_LITERAL*/[f, g];
+''');
+    var v = mainUnit.topLevelVariables[0];
+    expect(v.type.toString(), 'List<((String) → int) → Object>');
+  }
+
+  void test_inferedType_usesSyntheticFunctionType_namedParam() {
+    var mainUnit = checkFile('''
+int f({int x}) => null;
+String g({int x}) => null;
+var v = /*info:INFERRED_TYPE_LITERAL*/[f, g];
+''');
+    var v = mainUnit.topLevelVariables[0];
+    expect(v.type.toString(), 'List<({x: int}) → Object>');
+  }
+
+  void test_inferedType_usesSyntheticFunctionType_positionalParam() {
+    var mainUnit = checkFile('''
+int f([int x]) => null;
+String g([int x]) => null;
+var v = /*info:INFERRED_TYPE_LITERAL*/[f, g];
+''');
+    var v = mainUnit.topLevelVariables[0];
+    expect(v.type.toString(), 'List<([int]) → Object>');
+  }
+
+  void test_inferedType_usesSyntheticFunctionType_requiredParam() {
+    var mainUnit = checkFile('''
+int f(int x) => null;
+String g(int x) => null;
+var v = /*info:INFERRED_TYPE_LITERAL*/[f, g];
+''');
+    var v = mainUnit.topLevelVariables[0];
+    expect(v.type.toString(), 'List<(int) → Object>');
+  }
+
   void test_inferenceInCyclesIsDeterministic() {
     addFile(
         '''
@@ -2154,12 +2246,81 @@ main() {
   ''');
   }
 
+  void test_inferred_nonstatic_field_depends_on_static_field_complex() {
+    var mainUnit = checkFile('''
+class C {
+  static var x = 'x';
+  var y = /*info:INFERRED_TYPE_LITERAL*/{
+    'a': /*info:INFERRED_TYPE_LITERAL*/{'b': 'c'},
+    'd': /*info:INFERRED_TYPE_LITERAL*/{'e': x}
+  };
+}
+''');
+    var x = mainUnit.getType('C').fields[0];
+    expect(x.name, 'x');
+    expect(x.type.toString(), 'String');
+    var y = mainUnit.getType('C').fields[1];
+    expect(y.name, 'y');
+    expect(y.type.toString(), 'Map<String, Map<String, String>>');
+  }
+
+  void test_inferred_nonstatic_field_depends_on_toplevel_var_simple() {
+    var mainUnit = checkFile('''
+var x = 'x';
+class C {
+  var y = x;
+}
+''');
+    var x = mainUnit.topLevelVariables[0];
+    expect(x.name, 'x');
+    expect(x.type.toString(), 'String');
+    var y = mainUnit.getType('C').fields[0];
+    expect(y.name, 'y');
+    expect(y.type.toString(), 'String');
+  }
+
   void test_inferredInitializingFormalChecksDefaultValue() {
     checkFile('''
 class Foo {
   var x = 1;
   Foo([this.x = /*warning:INVALID_ASSIGNMENT*/"1"]);
 }''');
+  }
+
+  void test_inferredType_isEnum() {
+    var mainUnit = checkFile('''
+enum E { v1 }
+final x = E.v1;
+''');
+    var x = mainUnit.topLevelVariables[0];
+    expect(x.type.toString(), 'E');
+  }
+
+  void test_inferredType_isEnumValues() {
+    var mainUnit = checkFile('''
+enum E { v1 }
+final x = E.values;
+''');
+    var x = mainUnit.topLevelVariables[0];
+    expect(x.type.toString(), 'List<E>');
+  }
+
+  void test_inferredType_isTypedef() {
+    var mainUnit = checkFile('''
+typedef void F();
+final x = <String, F>{};
+''');
+    var x = mainUnit.topLevelVariables[0];
+    expect(x.type.toString(), 'Map<String, () → void>');
+  }
+
+  void test_inferredType_isTypedef_parameterized() {
+    var mainUnit = checkFile('''
+typedef T F<T>();
+final x = <String, F<int>>{};
+''');
+    var x = mainUnit.topLevelVariables[0];
+    expect(x.type.toString(), 'Map<String, () → int>');
   }
 
   void test_inferStaticsTransitively() {
@@ -2949,6 +3110,55 @@ final x = C.d.i;
 ''');
     var x = mainUnit.topLevelVariables[0];
     expect(x.type.toString(), 'int');
+  }
+
+  void test_referenceToTypedef() {
+    var mainUnit = checkFile('''
+typedef void F();
+final x = F;
+''');
+    var x = mainUnit.topLevelVariables[0];
+    expect(x.type.toString(), 'Type');
+  }
+
+  void test_refineBinaryExpressionType_typeParameter() {
+    checkFile('''
+class Point<T extends num> {
+  T x;
+  T y;
+
+  Point(this.x, this.y);
+
+  Point<T> operator +(Point<T> other) {
+    return new Point<T>(x + other.x, y + other.y);
+  }
+
+  Point<T> operator -(Point<T> other) {
+    return new Point<T>(x - other.x, y - other.y);
+  }
+
+  Point<T> operator *(Point<T> other) {
+    return new Point<T>(x * other.x, y * other.y);
+  }
+
+  void compoundAssignment(T k) {
+    x += k;
+    x -= k;
+    x *= k;
+  }
+}
+  ''');
+  }
+
+  void test_staticMethod_tearoff() {
+    var mainUnit = checkFile('''
+const v = C.f;
+class C {
+  static int f(String s) => null;
+}
+''');
+    var v = mainUnit.topLevelVariables[0];
+    expect(v.type.toString(), '(String) → int');
   }
 
   void test_staticRefersToNonStaticField_inOtherLibraryCycle() {

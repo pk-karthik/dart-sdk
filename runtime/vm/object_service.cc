@@ -1039,7 +1039,6 @@ void Instance::PrintSharedInstanceJSON(JSONObject* jsobj,
   GrowableArray<Class*> classes;
   Class& cls = Class::Handle(this->clazz());
   do {
-    cls.Print();
     classes.Add(&Class::Handle(cls.raw()));
     cls = cls.SuperClass();
   } while (!cls.IsNull());
