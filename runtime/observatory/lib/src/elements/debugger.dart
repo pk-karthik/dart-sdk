@@ -902,6 +902,7 @@ class IsolateCommand extends DebuggerCommand {
   IsolateCommand(Debugger debugger) : super(debugger, 'isolate', [
     new IsolateListCommand(debugger),
     new IsolateNameCommand(debugger),
+    new IsolateReloadCommand(debugger),
   ]) {
     alias = 'i';
   }
@@ -962,10 +963,10 @@ class IsolateCommand extends DebuggerCommand {
     }
     return new Future.value(result);
   }
-  String helpShort = 'Switch the current isolate';
+  String helpShort = 'Switch, list, rename, or reload isolates';
 
   String helpLong =
-      'Switch, list, or rename isolates.\n'
+      'Switch the current isolate.\n'
       '\n'
       'Syntax: isolate <number>\n'
       '        isolate <name>\n';
@@ -1042,12 +1043,34 @@ class IsolateNameCommand extends DebuggerCommand {
     return debugger.isolate.setName(args[0]);
   }
 
-  String helpShort = 'Rename an isolate';
+  String helpShort = 'Rename the current isolate';
 
   String helpLong =
-      'Rename an isolate.\n'
+      'Rename the current isolate.\n'
       '\n'
       'Syntax: isolate name <name>\n';
+}
+
+class IsolateReloadCommand extends DebuggerCommand {
+  IsolateReloadCommand(Debugger debugger) : super(debugger, 'reload', []);
+
+  Future run(List<String> args) async {
+    if (debugger.isolate == null) {
+      debugger.console.print('There is no current vm');
+      return;
+    }
+
+    await debugger.isolate.reloadSources();
+
+    debugger.console.print('Isolate reloading....');
+  }
+
+  String helpShort = 'Reload the sources for the current isolate.';
+
+  String helpLong =
+      'Reload the sources for the current isolate.\n'
+      '\n'
+      'Syntax: reload\n';
 }
 
 class InfoCommand extends DebuggerCommand {
@@ -1100,29 +1123,6 @@ class RefreshCommand extends DebuggerCommand {
       '\n'
       'Syntax: refresh <subcommand>\n';
 }
-
-class ReloadCommand extends DebuggerCommand {
-  ReloadCommand(Debugger debugger) : super(debugger, 'reload', []);
-
-  Future run(List<String> args) async {
-    if (debugger.isolate == null) {
-      debugger.console.print('There is no current vm');
-      return;
-    }
-
-    await debugger.isolate.reloadSources();
-
-    debugger.console.print('Isolate reloading....');
-  }
-
-  String helpShort = 'Reload the sources for the current isolate.';
-
-  String helpLong =
-      'Reload the sources for the current isolate.\n'
-      '\n'
-      'Syntax: reload\n';
-}
-
 
 class VmListCommand extends DebuggerCommand {
   VmListCommand(Debugger debugger) : super(debugger, 'list', []);
@@ -1379,7 +1379,6 @@ class ObservatoryDebugger extends Debugger {
         new PauseCommand(this),
         new PrintCommand(this),
         new RefreshCommand(this),
-        new ReloadCommand(this),
         new SetCommand(this),
         new SmartNextCommand(this),
         new StepCommand(this),

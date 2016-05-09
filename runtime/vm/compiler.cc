@@ -1570,7 +1570,7 @@ RawObject* Compiler::EvaluateStaticInitializer(const Field& field) {
   LongJumpScope jump;
   Thread* thread = Thread::Current();
   if (setjmp(*jump.Set()) == 0) {
-    // TODO(turnidge): Should we add a NoOOBMessageScope here?  Investigate.
+    NoOOBMessageScope no_msg_scope(thread);
     NoReloadScope no_reload_scope(thread->isolate(), thread);
     // Under lazy compilation initializer has not yet been created, so create
     // it now, but don't bother remembering it because it won't be used again.

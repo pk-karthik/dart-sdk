@@ -2401,17 +2401,22 @@ static bool ReloadSources(Thread* thread, JSONStream* js) {
                    "A library tag handler must be installed.");
     return true;
   }
+  if (isolate->IsReloading()) {
+    js->PrintError(kIsolateAlreadyReloading,
+                   "This isolate is already reloading.");
+    return true;
+  }
   DebuggerStackTrace* stack = isolate->debugger()->StackTrace();
+  ASSERT(isolate->CanReload());
+
   if (stack->Length() > 0) {
     // TODO(turnidge): We need to support this case.
     js->PrintError(kFeatureDisabled,
-        "Source can only be reloaded when stack is empty.");
+                   "Source can only be reloaded when stack is empty.");
     return true;
+  } else {
+    isolate->ReloadSources();
   }
-
-  // TODO(johnmccutchan): Check if we are already reloading and report
-  // an error.
-  isolate->ReloadSources();
 
   PrintSuccess(js);
   return true;

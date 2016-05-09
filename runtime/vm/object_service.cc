@@ -430,10 +430,9 @@ void Script::PrintJSONImpl(JSONStream* stream, bool ref) const {
   const String& encoded_uri = String::Handle(String::EncodeIRI(uri));
   ASSERT(!encoded_uri.IsNull());
   const Library& lib = Library::Handle(FindLibrary());
-  if (kind() == RawScript::kEvaluateTag) {
+  if (lib.IsNull()) {
     jsobj.AddServiceId(*this);
   } else {
-    ASSERT(!lib.IsNull());
     jsobj.AddFixedServiceId("libraries/%" Pd "/scripts/%s/%" Px64 "",
                             lib.index(), encoded_uri.ToCString(),
                             load_timestamp());
