@@ -458,8 +458,9 @@ void IsolateReloadContext::CheckpointLibraries() {
     ASSERT(!already_present);
   }
   old_libraries_set_storage_ = old_libraries_set.Release().raw();
-  // Reset the libraries array to the filtered array.
-  object_store()->set_libraries(new_libs);
+
+  // Reset the registered libraries to the filtered array.
+  Library::RegisterLibraries(Thread::Current(), new_libs);
   // Reset the root library to null.
   object_store()->set_root_library(Library::Handle());
 }
@@ -582,12 +583,14 @@ void IsolateReloadContext::RollbackLibraries() {
   GrowableObjectArray& saved_libs = GrowableObjectArray::Handle(
       Z, saved_libraries());
   if (!saved_libs.IsNull()) {
-    object_store()->set_libraries(saved_libs);
     for (intptr_t i = 0; i < saved_libs.Length(); i++) {
       lib = Library::RawCast(saved_libs.At(i));
       // Restore indexes that were modified in CheckpointLibraries.
       lib.set_index(i);
     }
+
+    // Reset the registered libraries to the filtered array.
+    Library::RegisterLibraries(Thread::Current(), saved_libs);
   }
 
   Library& saved_root_lib = Library::Handle(Z, saved_root_library());
