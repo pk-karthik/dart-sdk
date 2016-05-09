@@ -163,6 +163,7 @@ class BackgroundCompiler : public ThreadPool::Task {
   static void EnsureInit(Thread* thread);
 
   // Stops background compiler of the given isolate.
+  // TODO(turnidge): Give Stop and Disable more distinct names.
   static void Stop(Isolate* isolate);
 
   static void Disable();
@@ -190,6 +191,7 @@ class BackgroundCompiler : public ThreadPool::Task {
   bool* done_;         // True if the thread is done.
   Monitor* queue_monitor_;  // Controls access to the queue.
   Monitor* done_monitor_;   // Notify/wait that the thread is done.
+
   BackgroundCompilationQueue* function_queue_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(BackgroundCompiler);

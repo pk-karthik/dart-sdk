@@ -367,7 +367,7 @@ class Heap {
   friend class Become;  // VisitObjectPointers
   friend class ServiceEvent;
   friend class PageSpace;  // VerifyGC
-  friend class IsolateReloadContext;
+  friend class IsolateReloadContext;  // VisitObjects
 
   DISALLOW_COPY_AND_ASSIGN(Heap);
 };

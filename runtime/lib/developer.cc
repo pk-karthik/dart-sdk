@@ -6,7 +6,6 @@
 
 #include "include/dart_api.h"
 
-#include "vm/class_finalizer.h"
 #include "vm/debugger.h"
 #include "vm/exceptions.h"
 #include "vm/flags.h"

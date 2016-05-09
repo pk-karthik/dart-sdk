@@ -1407,6 +1407,8 @@ class Class : public Object {
   bool CanReload(const Class& replacement) const;
 
  private:
+  template <class FakeObject> static RawClass* NewCommon(intptr_t index);
+
   enum MemberKind {
     kAny = 0,
     kStatic,
@@ -2743,8 +2745,6 @@ class Function : public Object {
     return RoundedAllocationSize(sizeof(RawFunction));
   }
 
-  int32_t kind_tag() const { return raw_ptr()->kind_tag_; }
-
   static RawFunction* New(const String& name,
                           RawFunction::Kind kind,
                           bool is_static,
@@ -3677,10 +3677,6 @@ class Library : public Object {
 
   void DropDependencies() const;
 
-  bool corelib_imported() const { return raw_ptr()->corelib_imported_; }
-  void set_corelib_imported(bool corelib_imported) {
-    StoreNonPointer(&raw_ptr()->corelib_imported_, corelib_imported);
-  }
   // Resolving native methods for script loaded in the library.
   Dart_NativeEntryResolver native_entry_resolver() const {
     return raw_ptr()->native_entry_resolver_;
@@ -7288,8 +7284,6 @@ class Array : public Instance {
   RawArray* Slice(intptr_t start,
                   intptr_t count,
                   bool with_type_argument) const;
-
-  bool Contains(RawObject** p);
 
  protected:
   static RawArray* New(intptr_t class_id,

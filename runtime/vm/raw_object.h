@@ -666,7 +666,6 @@ CLASS_LIST_TYPED_DATA(DEFINE_IS_CID)
   friend class NativeEntry;  // GetClassId
   friend class Simulator;
   friend class SimulatorHelpers;
-  friend class VerifyInstanceClassesVisitor;  // GetClassId
 
   DISALLOW_ALLOCATION();
   DISALLOW_IMPLICIT_CONSTRUCTORS(RawObject);
@@ -742,7 +741,6 @@ class RawClass : public RawObject {
   friend class RawInstance;
   friend class RawInstructions;
   friend class SnapshotReader;
-  friend class UpdateHeapVisitor;
 };
 
 
@@ -1732,8 +1730,7 @@ class RawTypeParameter : public RawAbstractType {
   RawObject** from() {
     return reinterpret_cast<RawObject**>(&ptr()->parameterized_class_id_);
   }
-  // The parameterized class id is stored as a RawSmi*.  Just before
-  // snapshotting we temporarily store a RawClass* in this field.
+  // The parameterized class id is stored as a RawSmi*.
   RawObject* parameterized_class_id_;
   RawString* name_;
   RawAbstractType* bound_;  // ObjectType if no explicit bound specified.

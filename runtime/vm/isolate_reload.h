@@ -101,7 +101,6 @@ class IsolateReloadContext {
 #ifdef DEBUG
   void VerifyMaps();
   void VerifyCanonicalTypeArguments();
-  void VerifyInstanceClasses();
 #endif
 
   void Commit();
@@ -167,7 +166,6 @@ class IsolateReloadContext {
   RawGrowableObjectArray* saved_libraries_;
   RawObject** to() { return reinterpret_cast<RawObject**>(&saved_libraries_); }
 
-  friend class UpdateHeapVisitor;
   friend class Isolate;
   friend class Class;  // AddStaticFieldMapping.
 };

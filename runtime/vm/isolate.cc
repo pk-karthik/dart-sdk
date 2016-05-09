@@ -151,7 +151,11 @@ NoReloadScope::~NoReloadScope() {
 
 
 void Isolate::RegisterClass(const Class& cls) {
-  class_table()->Register(cls);
+  if (IsReloading()) {
+    reload_context()->RegisterClass(cls);
+  } else {
+    class_table()->Register(cls);
+  }
 }
 
 
@@ -1797,11 +1801,9 @@ RawClass* Isolate::GetClassForHeapWalkAt(intptr_t cid) {
     raw_class = reload_context()->GetClassForHeapWalkAt(cid);
   } else {
     raw_class = class_table()->At(cid);
-    // TODO(johnmccutchan): Move this assertion out of the branch once the new
-    // class table is in place before we call finalize.
-    ASSERT(raw_class->ptr()->id_ == cid);
   }
   ASSERT(raw_class != NULL);
+  ASSERT(raw_class->ptr()->id_ == cid);
   return raw_class;
 }
 

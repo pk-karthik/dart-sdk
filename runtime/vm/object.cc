@@ -3135,7 +3135,7 @@ void Class::AddFields(const GrowableArray<const Field*>& new_fields) const {
 
 
 template <class FakeInstance>
-RawClass* Class::New(intptr_t index) {
+RawClass* Class::NewCommon(intptr_t index) {
   ASSERT(Object::class_class() != Class::null());
   Class& result = Class::Handle();
   {
@@ -3158,6 +3158,13 @@ RawClass* Class::New(intptr_t index) {
   result.set_num_native_fields(0);
   result.set_token_pos(TokenPosition::kNoSource);
   result.InitEmptyFields();
+  return result.raw();
+}
+
+
+template <class FakeInstance>
+RawClass* Class::New(intptr_t index) {
+  Class& result = Class::Handle(NewCommon<FakeInstance>(index));
   Isolate::Current()->RegisterClass(result);
   return result.raw();
 }
@@ -3167,39 +3174,12 @@ RawClass* Class::New(const Library& lib,
                      const String& name,
                      const Script& script,
                      TokenPosition token_pos) {
-  ASSERT(Object::class_class() != Class::null());
-  Class& result = Class::Handle();
-  {
-    RawObject* raw = Object::Allocate(Class::kClassId,
-                                      Class::InstanceSize(),
-                                      Heap::kOld);
-    NoSafepointScope no_safepoint;
-    result ^= raw;
-  }
-  Instance fake;
-  ASSERT(fake.IsInstance());
-  result.set_handle_vtable(fake.vtable());
-  result.set_instance_size(Instance::InstanceSize());
-  result.set_next_field_offset(Instance::NextFieldOffset());
-  result.set_id(kIllegalCid);
-  result.set_state_bits(0);
-  result.set_type_arguments_field_offset_in_words(kNoTypeArguments);
-  result.set_num_type_arguments(kUnknownNumTypeArguments);
-  result.set_num_own_type_arguments(kUnknownNumTypeArguments);
-  result.set_num_native_fields(0);
-  result.set_token_pos(TokenPosition::kNoSource);
-  result.InitEmptyFields();
-
+  Class& result = Class::Handle(NewCommon<Instance>(kIllegalCid));
   result.set_library(lib);
   result.set_name(name);
   result.set_script(script);
   result.set_token_pos(token_pos);
-  Isolate* isolate = Isolate::Current();
-  if (isolate->IsReloading()) {
-    Isolate::Current()->reload_context()->RegisterClass(result);
-  } else {
-    Isolate::Current()->RegisterClass(result);
-  }
+  Isolate::Current()->RegisterClass(result);
   return result.raw();
 }
 
@@ -21533,13 +21513,6 @@ RawArray* Array::Slice(intptr_t start,
   }
 
   return dest.raw();
-}
-
-
-bool Array::Contains(RawObject** p) {
-  RawObject* const* start = ObjectAddr(0);
-  RawObject* const* end = ObjectAddr(Length() - 1);
-  return (p >= start) && (p <= end);
 }
 
 
