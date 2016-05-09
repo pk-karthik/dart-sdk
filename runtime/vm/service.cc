@@ -2402,8 +2402,8 @@ static bool ReloadSources(Thread* thread, JSONStream* js) {
     return true;
   }
   if (isolate->IsReloading()) {
-    js->PrintError(kIsolateAlreadyReloading,
-                   "This isolate is already reloading.");
+    js->PrintError(kIsolateIsReloading,
+                   "This isolate is being reloaded.");
     return true;
   }
   DebuggerStackTrace* stack = isolate->debugger()->StackTrace();
