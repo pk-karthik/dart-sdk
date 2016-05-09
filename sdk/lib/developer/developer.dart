@@ -8,9 +8,9 @@
 /// as a result of developer feedback. This library is platform dependent and
 /// therefore it has implementations for both dart2js and the Dart VM. Both are
 /// under development and may not support all operations yet.
-/// 
+///
 /// To use this library in your code:
-/// 
+///
 ///     import 'dart:developer';
 ///
 library dart.developer;
@@ -21,8 +21,6 @@ import 'dart:convert';
 part 'extension.dart';
 part 'profiler.dart';
 part 'timeline.dart';
-
-external void reloadIsolate();
 
 /// If [when] is true, stop the program as if a breakpoint were hit at the
 /// following statement.
