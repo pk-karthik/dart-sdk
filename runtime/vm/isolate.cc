@@ -151,11 +151,13 @@ NoReloadScope::~NoReloadScope() {
 
 
 void Isolate::RegisterClass(const Class& cls) {
-  if (IsReloading()) {
-    reload_context()->RegisterClass(cls);
-  } else {
-    class_table()->Register(cls);
-  }
+  NOT_IN_PRODUCT(
+    if (IsReloading()) {
+      reload_context()->RegisterClass(cls);
+      return;
+    }
+  )
+  class_table()->Register(cls);
 }
 
 
@@ -644,10 +646,12 @@ static MessageHandler::MessageStatus StoreError(Thread* thread,
 
 MessageHandler::MessageStatus IsolateMessageHandler::ProcessUnhandledException(
     const Error& result) {
-  if (I->IsReloading()) {
-    I->ReportReloadError(result);
-    return kOK;
-  }
+  NOT_IN_PRODUCT(
+    if (I->IsReloading()) {
+      I->ReportReloadError(result);
+      return kOK;
+    }
+  )
   // Generate the error and stacktrace strings for the error message.
   String& exc_str = String::Handle(T->zone());
   String& stacktrace_str = String::Handle(T->zone());
@@ -1045,11 +1049,16 @@ void Isolate::DoneLoading() {
 
 
 bool Isolate::CanReload() const {
+#ifndef PRODUCT
   return (!ServiceIsolate::IsServiceIsolateDescendant(this) &&
           is_runnable() && !IsReloading() && no_reload_scope_depth_ == 0);
+#else
+  return false;
+#endif
 }
 
 
+#ifndef PRODUCT
 void Isolate::ReportReloadError(const Error& error) {
   ASSERT(IsReloading());
   reload_context_->AbortReload(error);
@@ -1076,22 +1085,27 @@ void Isolate::ReloadSources(bool test_mode) {
   reload_context_->StartReload();
 }
 
+#endif
+
 
 void Isolate::DoneFinalizing() {
-  if (IsReloading()) {
-    reload_context_->FinishReload();
-    if (reload_context_->has_error() && reload_context_->test_mode()) {
-      // If the reload has an error and we are in test mode keep the reload
-      // context on the isolate so that it can be used by unit tests.
-      return;
+  NOT_IN_PRODUCT(
+    if (IsReloading()) {
+      reload_context_->FinishReload();
+      if (reload_context_->has_error() && reload_context_->test_mode()) {
+        // If the reload has an error and we are in test mode keep the reload
+        // context on the isolate so that it can be used by unit tests.
+        return;
+      }
+      if (!reload_context_->has_error()) {
+        reload_context_->ReportSuccess();
+      }
+      delete reload_context_;
+      reload_context_ = NULL;
     }
-    if (!reload_context_->has_error()) {
-      reload_context_->ReportSuccess();
-    }
-    delete reload_context_;
-    reload_context_ = NULL;
-  }
+  )
 }
+
 
 
 bool Isolate::MakeRunnable() {
@@ -1768,10 +1782,12 @@ void Isolate::VisitObjectPointers(ObjectPointerVisitor* visitor,
     debugger()->VisitObjectPointers(visitor);
   }
 
-  // Visit objects that are being used for isolate reload.
-  if (reload_context() != NULL) {
-    reload_context()->VisitObjectPointers(visitor);
-  }
+  NOT_IN_PRODUCT(
+    // Visit objects that are being used for isolate reload.
+    if (reload_context() != NULL) {
+      reload_context()->VisitObjectPointers(visitor);
+    }
+  )
 
   // Visit objects that are being used for deoptimization.
   if (deopt_context() != NULL) {
@@ -1797,11 +1813,15 @@ void Isolate::PrepareForGC() {
 
 RawClass* Isolate::GetClassForHeapWalkAt(intptr_t cid) {
   RawClass* raw_class = NULL;
+#ifndef PRODUCT
   if (IsReloading()) {
     raw_class = reload_context()->GetClassForHeapWalkAt(cid);
   } else {
     raw_class = class_table()->At(cid);
   }
+#else
+  raw_class = class_table()->At(cid);
+#endif  // !PRODUCT
   ASSERT(raw_class != NULL);
   ASSERT(raw_class->ptr()->id_ == cid);
   return raw_class;

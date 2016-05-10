@@ -1297,7 +1297,7 @@ DEFINE_RUNTIME_ENTRY(StackOverflow, 0) {
     DeoptimizeFunctionsOnStack();
   }
   if (do_reload) {
-    isolate->OnStackReload();
+    NOT_IN_PRODUCT(isolate->OnStackReload();)
   }
   if (FLAG_support_debugger && do_stacktrace) {
     String& var_name = String::Handle();

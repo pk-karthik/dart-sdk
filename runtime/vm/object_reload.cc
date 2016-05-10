@@ -11,6 +11,8 @@
 
 namespace dart {
 
+#ifndef PRODUCT
+
 DECLARE_FLAG(bool, trace_reload);
 DECLARE_FLAG(bool, two_args_smi_icd);
 
@@ -537,5 +539,6 @@ void ICData::Reset(bool is_static_call) const {
   }
 }
 
+#endif  // !PRODUCT
 
 }   // namespace dart.

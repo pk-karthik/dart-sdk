@@ -102,6 +102,7 @@ static bool IsIsolateReloadTestLib(const char* url_name) {
 }
 
 
+#ifndef PRODUCT
 static Dart_Handle IsolateReloadTestLibSource() {
   // Special library with one function.
   return DartUtils::NewString("void reloadTest() native 'Reload_Test';\n");
@@ -119,6 +120,7 @@ static Dart_NativeFunction IsolateReloadTestNativeResolver(
     bool* auto_setup_scope) {
   return ReloadTest;
 }
+#endif  // !PRODUCT
 
 
 static Dart_Handle ResolvePackageUri(const char* uri_chars) {
@@ -201,13 +203,14 @@ static Dart_Handle LibraryTagHandler(Dart_LibraryTag tag,
   if (IsImportableTestLib(url_chars)) {
     return Dart_LoadLibrary(url, ImportableTestLibSource(), 0, 0);
   }
+  NOT_IN_PRODUCT(
   if (IsIsolateReloadTestLib(url_chars)) {
     Dart_Handle library =
         Dart_LoadLibrary(url, IsolateReloadTestLibSource(), 0, 0);
     DART_CHECK_VALID(library);
     Dart_SetNativeResolver(library, IsolateReloadTestNativeResolver, 0);
     return library;
-  }
+  })
   if (is_io_library) {
     ASSERT(tag == Dart_kSourceTag);
     return Dart_LoadSource(library,
@@ -257,6 +260,9 @@ Dart_Handle TestCase::LoadTestScript(const char* script,
 }
 
 
+#ifndef PRODUCT
+
+
 void TestCase::SetReloadTestScript(const char* script) {
   if (script_reload_key == kUnsetThreadLocalKey) {
     script_reload_key = OSThread::CreateThreadLocal();
@@ -304,6 +310,9 @@ Dart_Handle TestCase::ReloadTestScript(const char* script) {
 
   return GetReloadErrorOrRootLibrary();
 }
+
+
+#endif  // !PRODUCT
 
 
 Dart_Handle TestCase::LoadCoreTestScript(const char* script,

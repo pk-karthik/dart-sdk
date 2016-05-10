@@ -14,6 +14,8 @@
 
 namespace dart {
 
+#ifndef PRODUCT
+
 int64_t SimpleInvoke(Dart_Handle lib, const char* method) {
   Dart_Handle result = Dart_Invoke(lib, NewString(method), 0, NULL);
   EXPECT_VALID(result);
@@ -1761,5 +1763,7 @@ TEST_CASE(IsolateReload_DirectSubclasses_Failure) {
   name = Class::Cast(new_subclass).Name();
   EXPECT_STREQ("AIterator", name.ToCString());
 }
+
+#endif  // !PRODUCT
 
 }  // namespace dart
