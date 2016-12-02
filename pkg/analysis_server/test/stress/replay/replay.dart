@@ -9,12 +9,13 @@ library analysis_server.test.stress.replay.replay;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:analysis_server/plugin/protocol/protocol.dart';
 import 'package:analyzer/dart/ast/token.dart';
+import 'package:analyzer/error/listener.dart' as error;
 import 'package:analyzer/src/dart/scanner/reader.dart';
 import 'package:analyzer/src/dart/scanner/scanner.dart';
-import 'package:analyzer/src/generated/error.dart' as error;
 import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/util/glob.dart';
@@ -168,7 +169,8 @@ class Driver {
     LineInfo info = fileEdit.lineInfo;
     for (DiffHunk hunk in blobDiff.hunks) {
       int srcStart = info.getOffsetOfLine(hunk.srcLine);
-      int srcEnd = info.getOffsetOfLine(hunk.srcLine + hunk.removeLines.length);
+      int srcEnd = info.getOffsetOfLine(
+          math.min(hunk.srcLine + hunk.removeLines.length, info.lineCount - 1));
       String addedText = _join(hunk.addLines);
       //
       // Create the source edits.
@@ -320,6 +322,7 @@ class Driver {
     //
     // Iterate over the history, applying changes.
     //
+    int dotCount = 0;
     bool firstCheckout = true;
     ErrorMap expectedErrors = null;
     Iterable<String> changedPubspecs;
@@ -363,6 +366,10 @@ class Driver {
       }
       changedPubspecs = commitDelta.filesMatching(PUBSPEC_FILE_NAME);
       stdout.write('.');
+      if (dotCount++ > 100) {
+        stdout.writeln();
+        dotCount = 0;
+      }
     }
     server.removeAllOverlays();
     stdout.writeln();
@@ -632,10 +639,8 @@ class Statistics {
     if (hours > 0) {
       return '$hours:$minutes:$seconds.$milliseconds';
     } else if (minutes > 0) {
-      return '$minutes:$seconds.$milliseconds m';
-    } else if (seconds > 0) {
-      return '$seconds.$milliseconds s';
+      return '$minutes:$seconds.$milliseconds';
     }
-    return '$milliseconds ms';
+    return '$seconds.$milliseconds';
   }
 }

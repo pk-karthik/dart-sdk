@@ -12,8 +12,8 @@ import 'dart:collection';
 import 'package:analyzer/dart/constant/value.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
-import 'package:analyzer/src/generated/error.dart';
-import 'package:analyzer/src/generated/java_core.dart';
+import 'package:analyzer/error/error.dart';
+import 'package:analyzer/src/error/codes.dart';
 import 'package:analyzer/src/generated/resolver.dart' show TypeProvider;
 import 'package:analyzer/src/generated/utilities_general.dart';
 
@@ -240,7 +240,7 @@ class DartObjectImpl implements DartObject {
       return new DartObjectImpl(typeProvider.stringType, result);
     }
     // We should never get here.
-    throw new IllegalStateException("add returned a ${result.runtimeType}");
+    throw new StateError("add returned a ${result.runtimeType}");
   }
 
   /**
@@ -339,7 +339,7 @@ class DartObjectImpl implements DartObject {
       return new DartObjectImpl(typeProvider.numType, result);
     }
     // We should never get here.
-    throw new IllegalStateException("divide returned a ${result.runtimeType}");
+    throw new StateError("divide returned a ${result.runtimeType}");
   }
 
   /**
@@ -508,7 +508,7 @@ class DartObjectImpl implements DartObject {
       return new DartObjectImpl(typeProvider.numType, result);
     }
     // We should never get here.
-    throw new IllegalStateException("minus returned a ${result.runtimeType}");
+    throw new StateError("minus returned a ${result.runtimeType}");
   }
 
   /**
@@ -528,7 +528,7 @@ class DartObjectImpl implements DartObject {
       return new DartObjectImpl(typeProvider.numType, result);
     }
     // We should never get here.
-    throw new IllegalStateException("negated returned a ${result.runtimeType}");
+    throw new StateError("negated returned a ${result.runtimeType}");
   }
 
   /**
@@ -589,8 +589,7 @@ class DartObjectImpl implements DartObject {
       return new DartObjectImpl(typeProvider.numType, result);
     }
     // We should never get here.
-    throw new IllegalStateException(
-        "remainder returned a ${result.runtimeType}");
+    throw new StateError("remainder returned a ${result.runtimeType}");
   }
 
   /**
@@ -647,7 +646,7 @@ class DartObjectImpl implements DartObject {
       return new DartObjectImpl(typeProvider.numType, result);
     }
     // We should never get here.
-    throw new IllegalStateException("times returned a ${result.runtimeType}");
+    throw new StateError("times returned a ${result.runtimeType}");
   }
 
   @override
@@ -720,10 +719,7 @@ class DartObjectImpl implements DartObject {
   DartType toTypeValue() {
     InstanceState state = _state;
     if (state is TypeState) {
-      Element element = state._element;
-      if (element is TypeDefiningElement) {
-        return element.type;
-      }
+      return state._type;
     }
     return null;
   }
@@ -1234,9 +1230,9 @@ class DynamicState extends InstanceState {
 }
 
 /**
- * A run-time exception that would be thrown during the evaluation of Dart code.
+ * Exception that would be thrown during the evaluation of Dart code.
  */
-class EvaluationException extends JavaException {
+class EvaluationException {
   /**
    * The error code associated with the exception.
    */
@@ -2771,29 +2767,29 @@ class TypeState extends InstanceState {
   /**
    * The element representing the type being modeled.
    */
-  final Element _element;
+  final DartType _type;
 
   /**
    * Initialize a newly created state to represent the given [value].
    */
-  TypeState(this._element);
+  TypeState(this._type);
 
   @override
-  int get hashCode => _element == null ? 0 : _element.hashCode;
+  int get hashCode => _type?.hashCode ?? 0;
 
   @override
   String get typeName => "Type";
 
   @override
   bool operator ==(Object object) =>
-      object is TypeState && (_element == object._element);
+      object is TypeState && (_type == object._type);
 
   @override
   StringState convertToString() {
-    if (_element == null) {
+    if (_type == null) {
       return StringState.UNKNOWN_VALUE;
     }
-    return new StringState(_element.name);
+    return new StringState(_type.displayName);
   }
 
   @override
@@ -2804,15 +2800,15 @@ class TypeState extends InstanceState {
 
   @override
   BoolState isIdentical(InstanceState rightOperand) {
-    if (_element == null) {
+    if (_type == null) {
       return BoolState.UNKNOWN_VALUE;
     }
     if (rightOperand is TypeState) {
-      Element rightElement = rightOperand._element;
-      if (rightElement == null) {
+      DartType rightType = rightOperand._type;
+      if (rightType == null) {
         return BoolState.UNKNOWN_VALUE;
       }
-      return BoolState.from(_element == rightElement);
+      return BoolState.from(_type == rightType);
     } else if (rightOperand is DynamicState) {
       return BoolState.UNKNOWN_VALUE;
     }
@@ -2820,5 +2816,5 @@ class TypeState extends InstanceState {
   }
 
   @override
-  String toString() => _element == null ? "-unknown-" : _element.name;
+  String toString() => _type?.toString() ?? "-unknown-";
 }

@@ -4,12 +4,14 @@
 
 #include "platform/assert.h"
 
+#include "include/dart_native_api.h"
 #include "vm/dart_entry.h"
 #include "vm/debugger.h"
 #include "vm/json_stream.h"
 #include "vm/message.h"
 #include "vm/metrics.h"
 #include "vm/object.h"
+#include "vm/safepoint.h"
 #include "vm/service.h"
 #include "vm/service_event.h"
 #include "vm/timeline.h"
@@ -46,6 +48,8 @@ JSONStream::JSONStream(intptr_t buf_size)
       id_zone_(&default_id_zone_),
       reply_port_(ILLEGAL_PORT),
       seq_(NULL),
+      parameter_keys_(NULL),
+      parameter_values_(NULL),
       method_(""),
       param_keys_(NULL),
       param_values_(NULL),
@@ -61,8 +65,7 @@ JSONStream::JSONStream(intptr_t buf_size)
 }
 
 
-JSONStream::~JSONStream() {
-}
+JSONStream::~JSONStream() {}
 
 
 void JSONStream::Setup(Zone* zone,
@@ -70,13 +73,18 @@ void JSONStream::Setup(Zone* zone,
                        const Instance& seq,
                        const String& method,
                        const Array& param_keys,
-                       const Array& param_values) {
+                       const Array& param_values,
+                       bool parameters_are_dart_objects) {
   set_reply_port(reply_port);
   seq_ = &Instance::ZoneHandle(seq.raw());
   method_ = method.ToCString();
 
-  String& string_iterator = String::Handle();
-  if (param_keys.Length() > 0) {
+  if (parameters_are_dart_objects) {
+    parameter_keys_ = &Array::ZoneHandle(param_keys.raw());
+    parameter_values_ = &Array::ZoneHandle(param_values.raw());
+    ASSERT(parameter_keys_->Length() == parameter_values_->Length());
+  } else if (param_keys.Length() > 0) {
+    String& string_iterator = String::Handle();
     ASSERT(param_keys.Length() == param_values.Length());
     const char** param_keys_native =
         zone->Alloc<const char*>(param_keys.Length());
@@ -92,6 +100,7 @@ void JSONStream::Setup(Zone* zone,
     }
     SetParams(param_keys_native, param_values_native, param_keys.Length());
   }
+
   if (FLAG_trace_service) {
     Isolate* isolate = Isolate::Current();
     ASSERT(isolate != NULL);
@@ -130,6 +139,18 @@ static const char* GetJSONRpcErrorMessage(intptr_t code) {
       return "Isolate must be runnable";
     case kIsolateMustBePaused:
       return "Isolate must be paused";
+    case kCannotResume:
+      return "Cannot resume execution";
+    case kIsolateIsReloading:
+      return "Isolate is reloading";
+    case kFileSystemAlreadyExists:
+      return "File system already exists";
+    case kFileSystemDoesNotExist:
+      return "File system does not exist";
+    case kFileDoesNotExist:
+      return "File does not exist";
+    case kIsolateReloadFailed:
+      return "Isolate reload failed";
     default:
       return "Extension error";
   }
@@ -148,8 +169,7 @@ static void PrintRequest(JSONObject* obj, JSONStream* js) {
 }
 
 
-void JSONStream::PrintError(intptr_t code,
-                            const char* details_format, ...) {
+void JSONStream::PrintError(intptr_t code, const char* details_format, ...) {
   SetupError();
   JSONObject jsobj(this);
   jsobj.AddProperty("code", code);
@@ -175,15 +195,16 @@ void JSONStream::PrintError(intptr_t code,
 }
 
 
-static uint8_t* allocator(uint8_t* ptr, intptr_t old_size, intptr_t new_size) {
-  void* new_ptr = realloc(reinterpret_cast<void*>(ptr), new_size);
-  return reinterpret_cast<uint8_t*>(new_ptr);
+void JSONStream::PostNullReply(Dart_Port port) {
+  PortMap::PostMessage(
+      new Message(port, Object::null(), Message::kNormalPriority));
 }
 
 
-void JSONStream::PostNullReply(Dart_Port port) {
-  PortMap::PostMessage(new Message(
-      port, Object::null(), Message::kNormalPriority));
+static void Finalizer(void* isolate_callback_data,
+                      Dart_WeakPersistentHandle handle,
+                      void* buffer) {
+  free(buffer);
 }
 
 
@@ -208,26 +229,46 @@ void JSONStream::PostReply() {
   }
   buffer_.AddChar('}');
 
-  const String& reply = String::Handle(String::New(ToCString()));
-  ASSERT(!reply.IsNull());
+  char* cstr;
+  intptr_t length;
+  Steal(&cstr, &length);
 
-  uint8_t* data = NULL;
-  MessageWriter writer(&data, &allocator, false);
-  writer.WriteMessage(reply);
-  bool result = PortMap::PostMessage(new Message(port, data,
-                                                 writer.BytesWritten(),
-                                                 Message::kNormalPriority));
+  bool result;
+  {
+    TransitionVMToNative transition(Thread::Current());
+    Dart_CObject bytes;
+    bytes.type = Dart_CObject_kExternalTypedData;
+    bytes.value.as_external_typed_data.type = Dart_TypedData_kUint8;
+    bytes.value.as_external_typed_data.length = length;
+    bytes.value.as_external_typed_data.data = reinterpret_cast<uint8_t*>(cstr);
+    bytes.value.as_external_typed_data.peer = cstr;
+    bytes.value.as_external_typed_data.callback = Finalizer;
+    Dart_CObject* elements[1];
+    elements[0] = &bytes;
+    Dart_CObject message;
+    message.type = Dart_CObject_kArray;
+    message.value.as_array.length = 1;
+    message.value.as_array.values = elements;
+    result = Dart_PostCObject(port, &message);
+  }
+
+  if (!result) {
+    free(cstr);
+  }
+
   if (FLAG_trace_service) {
     Isolate* isolate = Isolate::Current();
     ASSERT(isolate != NULL);
     const char* isolate_name = isolate->name();
     int64_t total_time = OS::GetCurrentTimeMicros() - setup_time_micros_;
     if (result) {
-      OS::Print("[+%" Pd64 "ms] Isolate %s processed service request %s "
+      OS::Print("[+%" Pd64
+                "ms] Isolate %s processed service request %s "
                 "(%" Pd64 "us)\n",
                 Dart::timestamp(), isolate_name, method_, total_time);
     } else {
-      OS::Print("[+%" Pd64 "ms] Isolate %s processed service request %s "
+      OS::Print("[+%" Pd64
+                "ms] Isolate %s processed service request %s "
                 "(%" Pd64 "us) FAILED\n",
                 Dart::timestamp(), isolate_name, method_, total_time);
     }
@@ -378,7 +419,7 @@ void JSONStream::PrintValue(double d) {
 
 
 static const char base64_digits[65] =
-  "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 static const char base64_pad = '=';
 
 
@@ -445,9 +486,9 @@ void JSONStream::PrintfValue(const char* format, ...) {
   va_start(args, format);
   intptr_t len = OS::VSNPrint(NULL, 0, format, args);
   va_end(args);
-  char* p = reinterpret_cast<char*>(malloc(len+1));
+  char* p = reinterpret_cast<char*>(malloc(len + 1));
   va_start(args, format);
-  intptr_t len2 = OS::VSNPrint(p, len+1, format, args);
+  intptr_t len2 = OS::VSNPrint(p, len + 1, format, args);
   va_end(args);
   ASSERT(len == len2);
   buffer_.AddChar('"');
@@ -642,9 +683,9 @@ void JSONStream::PrintfProperty(const char* name, const char* format, ...) {
   va_start(args, format);
   intptr_t len = OS::VSNPrint(NULL, 0, format, args);
   va_end(args);
-  char* p = reinterpret_cast<char*>(malloc(len+1));
+  char* p = reinterpret_cast<char*>(malloc(len + 1));
   va_start(args, format);
-  intptr_t len2 = OS::VSNPrint(p, len+1, format, args);
+  intptr_t len2 = OS::VSNPrint(p, len + 1, format, args);
   va_end(args);
   ASSERT(len == len2);
   buffer_.AddChar('"');
@@ -654,7 +695,7 @@ void JSONStream::PrintfProperty(const char* name, const char* format, ...) {
 }
 
 
-void JSONStream::Steal(const char** buffer, intptr_t* buffer_length) {
+void JSONStream::Steal(char** buffer, intptr_t* buffer_length) {
   ASSERT(buffer != NULL);
   ASSERT(buffer_length != NULL);
   *buffer_length = buffer_.length();
@@ -664,6 +705,42 @@ void JSONStream::Steal(const char** buffer, intptr_t* buffer_length) {
 
 void JSONStream::set_reply_port(Dart_Port port) {
   reply_port_ = port;
+}
+
+
+intptr_t JSONStream::NumObjectParameters() const {
+  if (parameter_keys_ == NULL) {
+    return 0;
+  }
+  ASSERT(parameter_keys_ != NULL);
+  ASSERT(parameter_values_ != NULL);
+  return parameter_keys_->Length();
+}
+
+
+RawObject* JSONStream::GetObjectParameterKey(intptr_t i) const {
+  ASSERT((i >= 0) && (i < NumObjectParameters()));
+  return parameter_keys_->At(i);
+}
+
+
+RawObject* JSONStream::GetObjectParameterValue(intptr_t i) const {
+  ASSERT((i >= 0) && (i < NumObjectParameters()));
+  return parameter_values_->At(i);
+}
+
+
+RawObject* JSONStream::LookupObjectParam(const char* c_key) const {
+  const String& key = String::Handle(String::New(c_key));
+  Object& test = Object::Handle();
+  const intptr_t num_object_parameters = NumObjectParameters();
+  for (intptr_t i = 0; i < num_object_parameters; i++) {
+    test = GetObjectParameterKey(i);
+    if (test.IsString() && String::Cast(test).Equals(key)) {
+      return GetObjectParameterValue(i);
+    }
+  }
+  return Object::null();
 }
 
 
@@ -711,7 +788,7 @@ bool JSONStream::NeedComma() {
   if (length == 0) {
     return false;
   }
-  char ch = buffer[length-1];
+  char ch = buffer[length - 1];
   return (ch != '[') && (ch != '{') && (ch != ':') && (ch != ',');
 }
 
@@ -719,8 +796,10 @@ bool JSONStream::NeedComma() {
 void JSONStream::EnsureIntegerIsRepresentableInJavaScript(int64_t i) {
 #ifdef DEBUG
   if (!Utils::IsJavascriptInt(i)) {
-    OS::Print("JSONStream::EnsureIntegerIsRepresentableInJavaScript failed on "
-              "%" Pd64 "\n", i);
+    OS::Print(
+        "JSONStream::EnsureIntegerIsRepresentableInJavaScript failed on "
+        "%" Pd64 "\n",
+        i);
     UNREACHABLE();
   }
 #endif
@@ -742,7 +821,7 @@ void JSONStream::AddEscapedUTF8String(const char* s, intptr_t len) {
   }
   const uint8_t* s8 = reinterpret_cast<const uint8_t*>(s);
   intptr_t i = 0;
-  for (; i < len; ) {
+  for (; i < len;) {
     // Extract next UTF8 character.
     int32_t ch = 0;
     int32_t ch_len = Utf8::Decode(&s8[i], len - i, &ch);
@@ -768,8 +847,25 @@ bool JSONStream::AddDartString(const String& s,
   }
   intptr_t limit = offset + count;
   for (intptr_t i = offset; i < limit; i++) {
-    intptr_t code_unit = s.CharAt(i);
-    buffer_.EscapeAndAddCodeUnit(code_unit);
+    uint16_t code_unit = s.CharAt(i);
+    if (Utf16::IsTrailSurrogate(code_unit)) {
+      buffer_.EscapeAndAddUTF16CodeUnit(code_unit);
+    } else if (Utf16::IsLeadSurrogate(code_unit)) {
+      if (i + 1 == limit) {
+        buffer_.EscapeAndAddUTF16CodeUnit(code_unit);
+      } else {
+        uint16_t next_code_unit = s.CharAt(i + 1);
+        if (Utf16::IsTrailSurrogate(next_code_unit)) {
+          uint32_t decoded = Utf16::Decode(code_unit, next_code_unit);
+          buffer_.EscapeAndAddCodeUnit(decoded);
+          i++;
+        } else {
+          buffer_.EscapeAndAddUTF16CodeUnit(code_unit);
+        }
+      }
+    } else {
+      buffer_.EscapeAndAddCodeUnit(code_unit);
+    }
   }
   // Return value indicates whether the string is truncated.
   return (offset > 0) || (limit < length);
@@ -790,9 +886,9 @@ void JSONObject::AddFixedServiceId(const char* format, ...) const {
   va_start(args, format);
   intptr_t len = OS::VSNPrint(NULL, 0, format, args);
   va_end(args);
-  char* p = reinterpret_cast<char*>(malloc(len+1));
+  char* p = reinterpret_cast<char*>(malloc(len + 1));
   va_start(args, format);
-  intptr_t len2 = OS::VSNPrint(p, len+1, format, args);
+  intptr_t len2 = OS::VSNPrint(p, len + 1, format, args);
   va_end(args);
   ASSERT(len == len2);
   stream_->buffer_.AddChar('"');
@@ -849,8 +945,7 @@ void JSONObject::AddUnresolvedLocation(
     // This unresolved breakpoint was specified at a particular line.
     location.AddProperty("line", bpt_loc->requested_line_number());
     if (bpt_loc->requested_column_number() >= 0) {
-      location.AddProperty("column",
-                           bpt_loc->requested_column_number());
+      location.AddProperty("column", bpt_loc->requested_column_number());
     }
   } else {
     // This unresolved breakpoint was requested at some function entry.
@@ -859,16 +954,15 @@ void JSONObject::AddUnresolvedLocation(
 }
 
 
-void JSONObject::AddPropertyF(const char* name,
-                              const char* format, ...) const {
+void JSONObject::AddPropertyF(const char* name, const char* format, ...) const {
   stream_->PrintPropertyName(name);
   va_list args;
   va_start(args, format);
   intptr_t len = OS::VSNPrint(NULL, 0, format, args);
   va_end(args);
-  char* p = reinterpret_cast<char*>(malloc(len+1));
+  char* p = reinterpret_cast<char*>(malloc(len + 1));
   va_start(args, format);
-  intptr_t len2 = OS::VSNPrint(p, len+1, format, args);
+  intptr_t len2 = OS::VSNPrint(p, len + 1, format, args);
   va_end(args);
   ASSERT(len == len2);
   stream_->buffer_.AddChar('"');
@@ -884,9 +978,9 @@ void JSONArray::AddValueF(const char* format, ...) const {
   va_start(args, format);
   intptr_t len = OS::VSNPrint(NULL, 0, format, args);
   va_end(args);
-  char* p = reinterpret_cast<char*>(malloc(len+1));
+  char* p = reinterpret_cast<char*>(malloc(len + 1));
   va_start(args, format);
-  intptr_t len2 = OS::VSNPrint(p, len+1, format, args);
+  intptr_t len2 = OS::VSNPrint(p, len + 1, format, args);
   va_end(args);
   ASSERT(len == len2);
   stream_->buffer_.AddChar('"');

@@ -2,7 +2,12 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-part of js_backend;
+import '../common.dart';
+import '../common/names.dart' show Identifiers, Names, Selectors;
+import '../compiler.dart' show Compiler;
+import '../elements/elements.dart';
+import '../tree/tree.dart';
+import 'backend.dart';
 
 /**
  * Categorizes `noSuchMethod` implementations.
@@ -119,9 +124,7 @@ class NoSuchMethodRegistry {
   }
 
   _subcategorizeOther(FunctionElement element) {
-    TypeMask returnType =
-        _compiler.typesTask.getGuaranteedReturnTypeOfElement(element);
-    if (returnType == const TypeMask.nonNullEmpty()) {
+    if (_compiler.globalInference.results.resultOf(element).throwsAlways) {
       complexNoReturnImpls.add(element);
     } else {
       complexReturningImpls.add(element);
@@ -146,7 +149,7 @@ class NoSuchMethodRegistry {
       notApplicableImpls.add(element);
       return NsmCategory.NOT_APPLICABLE;
     }
-    if (_isDefaultNoSuchMethodImplementation(element)) {
+    if (isDefaultNoSuchMethodImplementation(element)) {
       defaultImpls.add(element);
       return NsmCategory.DEFAULT;
     } else if (_hasForwardingSyntax(element)) {
@@ -182,7 +185,7 @@ class NoSuchMethodRegistry {
     }
   }
 
-  bool _isDefaultNoSuchMethodImplementation(FunctionElement element) {
+  bool isDefaultNoSuchMethodImplementation(FunctionElement element) {
     ClassElement classElement = element.enclosingClass;
     return classElement == _compiler.coreClasses.objectClass ||
         classElement == _backend.helpers.jsInterceptorClass ||
@@ -193,8 +196,16 @@ class NoSuchMethodRegistry {
     // At this point we know that this is signature-compatible with
     // Object.noSuchMethod, but it may have more than one argument as long as
     // it only has one required argument.
+    if (!element.hasResolvedAst) {
+      // TODO(johnniwinther): Why do we see unresolved elements here?
+      return false;
+    }
+    ResolvedAst resolvedAst = element.resolvedAst;
+    if (resolvedAst.kind != ResolvedAstKind.PARSED) {
+      return false;
+    }
     String param = element.parameters.first.name;
-    Statement body = element.node.body;
+    Statement body = resolvedAst.body;
     Expression expr;
     if (body is Return && body.isArrowBody) {
       expr = body.expression;
@@ -231,7 +242,15 @@ class NoSuchMethodRegistry {
   }
 
   bool _hasThrowingSyntax(FunctionElement element) {
-    Statement body = element.node.body;
+    if (!element.hasResolvedAst) {
+      // TODO(johnniwinther): Why do we see unresolved elements here?
+      return false;
+    }
+    ResolvedAst resolvedAst = element.resolvedAst;
+    if (resolvedAst.kind != ResolvedAstKind.PARSED) {
+      return false;
+    }
+    Statement body = resolvedAst.body;
     if (body is Return && body.isArrowBody) {
       if (body.expression is Throw) {
         return true;

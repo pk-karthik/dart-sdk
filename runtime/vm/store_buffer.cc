@@ -15,40 +15,39 @@ DEFINE_LEAF_RUNTIME_ENTRY(void, StoreBufferBlockProcess, 1, Thread* thread) {
 }
 END_LEAF_RUNTIME_ENTRY
 
-template<int BlockSize>
-typename BlockStack<BlockSize>::List*
-BlockStack<BlockSize>::global_empty_ = NULL;
-template<int BlockSize>
+template <int BlockSize>
+typename BlockStack<BlockSize>::List* BlockStack<BlockSize>::global_empty_ =
+    NULL;
+template <int BlockSize>
 Mutex* BlockStack<BlockSize>::global_mutex_ = NULL;
 
 
-template<int BlockSize>
+template <int BlockSize>
 void BlockStack<BlockSize>::InitOnce() {
   global_empty_ = new List();
   global_mutex_ = new Mutex();
 }
 
 
-template<int BlockSize>
+template <int BlockSize>
 void BlockStack<BlockSize>::ShutDown() {
   delete global_empty_;
   delete global_mutex_;
 }
 
 
-template<int BlockSize>
-BlockStack<BlockSize>::BlockStack() : mutex_(new Mutex()) {
-}
+template <int BlockSize>
+BlockStack<BlockSize>::BlockStack() : mutex_(new Mutex()) {}
 
 
-template<int BlockSize>
+template <int BlockSize>
 BlockStack<BlockSize>::~BlockStack() {
   Reset();
   delete mutex_;
 }
 
 
-template<int BlockSize>
+template <int BlockSize>
 void BlockStack<BlockSize>::Reset() {
   MutexLocker local_mutex_locker(mutex_);
   {
@@ -69,7 +68,7 @@ void BlockStack<BlockSize>::Reset() {
 }
 
 
-template<int BlockSize>
+template <int BlockSize>
 typename BlockStack<BlockSize>::Block* BlockStack<BlockSize>::Blocks() {
   MutexLocker ml(mutex_);
   while (!partial_.IsEmpty()) {
@@ -79,7 +78,7 @@ typename BlockStack<BlockSize>::Block* BlockStack<BlockSize>::Blocks() {
 }
 
 
-template<int BlockSize>
+template <int BlockSize>
 void BlockStack<BlockSize>::PushBlockImpl(Block* block) {
   ASSERT(block->next() == NULL);  // Should be just a single block.
   if (block->IsFull()) {
@@ -104,14 +103,13 @@ void StoreBuffer::PushBlock(Block* block, ThresholdPolicy policy) {
     // Sanity check: it makes no sense to schedule the GC in another isolate.
     // (If Isolate ever gets multiple store buffers, we should avoid this
     // coupling by passing in an explicit callback+parameter at construction.)
-    ASSERT(thread->isolate()->mutator_thread() == thread);
     ASSERT(thread->isolate()->store_buffer() == this);
     thread->ScheduleInterrupts(Thread::kVMInterrupt);
   }
 }
 
 
-template<int BlockSize>
+template <int BlockSize>
 typename BlockStack<BlockSize>::Block*
 BlockStack<BlockSize>::PopNonFullBlock() {
   {
@@ -124,7 +122,7 @@ BlockStack<BlockSize>::PopNonFullBlock() {
 }
 
 
-template<int BlockSize>
+template <int BlockSize>
 typename BlockStack<BlockSize>::Block* BlockStack<BlockSize>::PopEmptyBlock() {
   {
     MutexLocker ml(global_mutex_);
@@ -136,7 +134,7 @@ typename BlockStack<BlockSize>::Block* BlockStack<BlockSize>::PopEmptyBlock() {
 }
 
 
-template<int BlockSize>
+template <int BlockSize>
 typename BlockStack<BlockSize>::Block*
 BlockStack<BlockSize>::PopNonEmptyBlock() {
   MutexLocker ml(mutex_);
@@ -150,14 +148,14 @@ BlockStack<BlockSize>::PopNonEmptyBlock() {
 }
 
 
-template<int BlockSize>
+template <int BlockSize>
 bool BlockStack<BlockSize>::IsEmpty() {
   MutexLocker ml(mutex_);
   return full_.IsEmpty() && partial_.IsEmpty();
 }
 
 
-template<int BlockSize>
+template <int BlockSize>
 BlockStack<BlockSize>::List::~List() {
   while (!IsEmpty()) {
     delete Pop();
@@ -165,7 +163,7 @@ BlockStack<BlockSize>::List::~List() {
 }
 
 
-template<int BlockSize>
+template <int BlockSize>
 typename BlockStack<BlockSize>::Block* BlockStack<BlockSize>::List::Pop() {
   Block* result = head_;
   head_ = head_->next_;
@@ -175,7 +173,7 @@ typename BlockStack<BlockSize>::Block* BlockStack<BlockSize>::List::Pop() {
 }
 
 
-template<int BlockSize>
+template <int BlockSize>
 typename BlockStack<BlockSize>::Block* BlockStack<BlockSize>::List::PopAll() {
   Block* result = head_;
   head_ = NULL;
@@ -184,7 +182,7 @@ typename BlockStack<BlockSize>::Block* BlockStack<BlockSize>::List::PopAll() {
 }
 
 
-template<int BlockSize>
+template <int BlockSize>
 void BlockStack<BlockSize>::List::Push(Block* block) {
   ASSERT(block->next_ == NULL);
   block->next_ = head_;
@@ -199,7 +197,7 @@ bool StoreBuffer::Overflowed() {
 }
 
 
-template<int BlockSize>
+template <int BlockSize>
 void BlockStack<BlockSize>::TrimGlobalEmpty() {
   DEBUG_ASSERT(global_mutex_->IsOwnedByCurrentThread());
   while (global_empty_->length() > kMaxGlobalEmpty) {

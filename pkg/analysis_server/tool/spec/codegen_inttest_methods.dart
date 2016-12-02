@@ -104,7 +104,7 @@ class CodegenInttestMethodsVisitor extends DartCodegenVisitor
     writeln("import 'package:analysis_server/plugin/protocol/protocol.dart';");
     writeln(
         "import 'package:analysis_server/src/protocol/protocol_internal.dart';");
-    writeln("import 'package:unittest/unittest.dart';");
+    writeln("import 'package:test/test.dart';");
     writeln();
     writeln("import 'integration_tests.dart';");
     writeln("import 'protocol_matchers.dart';");
@@ -179,7 +179,7 @@ class CodegenInttestMethodsVisitor extends DartCodegenVisitor
       indent(() {
         String paramsValidator = camelJoin(
             ['is', notification.domainName, notification.event, 'params']);
-        writeln('expect(params, $paramsValidator);');
+        writeln('outOfTestExpect(params, $paramsValidator);');
         String constructorCall;
         if (notification.params == null) {
           constructorCall = 'new $className()';
@@ -225,7 +225,7 @@ class CodegenInttestMethodsVisitor extends DartCodegenVisitor
           doCapitalize: true);
       futureClass = 'Future<$resultClass>';
     }
-    writeln('$futureClass $methodName(${args.join(', ')}) {');
+    writeln('$futureClass $methodName(${args.join(', ')}) async {');
     indent(() {
       String requestClass = camelJoin(
           [request.domainName, request.method, 'params'],
@@ -245,24 +245,19 @@ class CodegenInttestMethodsVisitor extends DartCodegenVisitor
         args.addAll(optionalArgs);
         writeln('var params = new $requestClass(${args.join(', ')}).toJson();');
       }
-      writeln(
-          'return server.send(${JSON.encode(request.longMethod)}, $paramsVar)');
-      indent(() {
-        writeln('  .then((result) {');
-        if (request.result != null) {
-          String kind = 'null';
-          if (requestClass == 'EditGetRefactoringParams') {
-            kind = 'kind';
-          }
-          writeln('ResponseDecoder decoder = new ResponseDecoder($kind);');
-          writeln(
-              "return new $resultClass.fromJson(decoder, 'result', result);");
-        } else {
-          writeln('expect(result, isNull);');
-          writeln('return null;');
+      String methodJson = JSON.encode(request.longMethod);
+      writeln('var result = await server.send($methodJson, $paramsVar);');
+      if (request.result != null) {
+        String kind = 'null';
+        if (requestClass == 'EditGetRefactoringParams') {
+          kind = 'kind';
         }
-      });
-      writeln('});');
+        writeln('ResponseDecoder decoder = new ResponseDecoder($kind);');
+        writeln("return new $resultClass.fromJson(decoder, 'result', result);");
+      } else {
+        writeln('outOfTestExpect(result, isNull);');
+        writeln('return null;');
+      }
     });
     writeln('}');
   }

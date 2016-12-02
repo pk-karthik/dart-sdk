@@ -29,10 +29,8 @@ void CodePatcher::PatchStaticCallAt(uword return_address,
 }
 
 
-void CodePatcher::InsertDeoptimizationCallAt(uword start, uword target) {
-  // The inserted call should not overlap the lazy deopt jump code.
-  ASSERT(start + CallPattern::kDeoptCallLengthInBytes <= target);
-  CallPattern::InsertDeoptCallAt(start, target);
+void CodePatcher::InsertDeoptimizationCallAt(uword start) {
+  UNREACHABLE();
 }
 
 
@@ -55,8 +53,9 @@ intptr_t CodePatcher::InstanceCallSizeInBytes() {
 }
 
 
-RawFunction* CodePatcher::GetUnoptimizedStaticCallAt(
-    uword return_address, const Code& code, ICData* ic_data_result) {
+RawFunction* CodePatcher::GetUnoptimizedStaticCallAt(uword return_address,
+                                                     const Code& code,
+                                                     ICData* ic_data_result) {
   ASSERT(code.ContainsInstructionAt(return_address));
   CallPattern static_call(return_address, code);
   ICData& ic_data = ICData::Handle();
@@ -69,15 +68,29 @@ RawFunction* CodePatcher::GetUnoptimizedStaticCallAt(
 
 
 void CodePatcher::PatchSwitchableCallAt(uword return_address,
-                                        const Code& code,
-                                        const ICData& ic_data,
-                                        const MegamorphicCache& cache,
-                                        const Code& lookup_stub) {
-  ASSERT(code.ContainsInstructionAt(return_address));
-  SwitchableCallPattern call(return_address, code);
-  ASSERT(call.cache() == ic_data.raw());
-  call.SetLookupStub(lookup_stub);
-  call.SetCache(cache);
+                                        const Code& caller_code,
+                                        const Object& data,
+                                        const Code& target) {
+  ASSERT(caller_code.ContainsInstructionAt(return_address));
+  SwitchableCallPattern call(return_address, caller_code);
+  call.SetData(data);
+  call.SetTarget(target);
+}
+
+
+RawCode* CodePatcher::GetSwitchableCallTargetAt(uword return_address,
+                                                const Code& caller_code) {
+  ASSERT(caller_code.ContainsInstructionAt(return_address));
+  SwitchableCallPattern call(return_address, caller_code);
+  return call.target();
+}
+
+
+RawObject* CodePatcher::GetSwitchableCallDataAt(uword return_address,
+                                                const Code& caller_code) {
+  ASSERT(caller_code.ContainsInstructionAt(return_address));
+  SwitchableCallPattern call(return_address, caller_code);
+  return call.data();
 }
 
 

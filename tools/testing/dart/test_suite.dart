@@ -234,6 +234,13 @@ abstract class TestSuite {
     return dartExecutable;
   }
 
+  String get processTestBinaryFileName {
+    String suffix = executableBinarySuffix;
+    String processTestExecutable = '$buildDir/process_test$suffix';
+    TestUtils.ensureExists(processTestExecutable, configuration);
+    return processTestExecutable;
+  }
+
   String get d8FileName {
     var suffix = getExecutableSuffix('d8');
     var d8Dir = TestUtils.dartDir.append('third_party/d8');
@@ -298,6 +305,16 @@ abstract class TestSuite {
     RegExp pattern = configuration['selectors'][suiteName];
     if (!pattern.hasMatch(testCase.displayName)) {
       return;
+    }
+
+    if (configuration['hot_reload'] || configuration['hot_reload_rollback']) {
+      // Handle reload special cases.
+      if (expectations.contains(Expectation.COMPILETIME_ERROR) ||
+          testCase.hasCompileError || testCase.expectCompileError) {
+        // Running a test that expects a compilation error with hot reloading
+        // is redundant with a regular run of the test.
+        return;
+      }
     }
 
     // Update Summary report
@@ -368,25 +385,27 @@ abstract class TestSuite {
 
   String createOutputDirectory(Path testPath, String optionsName) {
     var checked = configuration['checked'] ? '-checked' : '';
+    var strong =  configuration['strong'] ? '-strong' : '';
     var minified = configuration['minified'] ? '-minified' : '';
     var sdk = configuration['use_sdk'] ? '-sdk' : '';
     var packages =
         configuration['use_public_packages'] ? '-public_packages' : '';
     var dirName = "${configuration['compiler']}-${configuration['runtime']}"
-        "$checked$minified$packages$sdk";
+        "$checked$strong$minified$packages$sdk";
     return createGeneratedTestDirectoryHelper(
         "tests", dirName, testPath, optionsName);
   }
 
   String createCompilationOutputDirectory(Path testPath) {
     var checked = configuration['checked'] ? '-checked' : '';
+    var strong =  configuration['strong'] ? '-strong' : '';
     var minified = configuration['minified'] ? '-minified' : '';
     var csp = configuration['csp'] ? '-csp' : '';
     var sdk = configuration['use_sdk'] ? '-sdk' : '';
     var packages =
         configuration['use_public_packages'] ? '-public_packages' : '';
     var dirName = "${configuration['compiler']}"
-        "$checked$minified$csp$packages$sdk";
+        "$checked$strong$minified$csp$packages$sdk";
     return createGeneratedTestDirectoryHelper(
         "compilations", dirName, testPath, "");
   }
@@ -705,7 +724,8 @@ class StandardTestSuite extends TestSuite {
       '$directory/$name.status',
       '$directory/.status',
       '$directory/${name}_dart2js.status',
-      '$directory/${name}_analyzer2.status'
+      '$directory/${name}_analyzer2.status',
+      '$directory/${name}_kernel.status'
     ];
 
     return new StandardTestSuite(configuration, name, directory, status_paths,
@@ -837,7 +857,12 @@ class StandardTestSuite extends TestSuite {
     CreateTest createTestCase = makeTestCaseCreator(optionsFromFile);
 
     if (optionsFromFile['isMultitest']) {
-      group.add(doMultitest(filePath, buildDir, suiteDir, createTestCase));
+      group.add(doMultitest(filePath,
+                            buildDir,
+                            suiteDir,
+                            createTestCase,
+                            (configuration['hot_reload'] ||
+                             configuration['hot_reload_rollback'])));
     } else {
       createTestCase(filePath, filePath, optionsFromFile['hasCompileError'],
           optionsFromFile['hasRuntimeError'],
@@ -940,6 +965,7 @@ class StandardTestSuite extends TestSuite {
     // pubspec.yaml file and if so, create a custom package root for it.
     List<Command> baseCommands = <Command>[];
     Path packageRoot;
+    Path packages;
     if (configuration['use_repository_packages'] ||
         configuration['use_public_packages']) {
       Path pubspecYamlFile = _findPubspecYamlFile(filePath);
@@ -953,11 +979,17 @@ class StandardTestSuite extends TestSuite {
         }
       }
     }
-    if (configuration['package_root'] != null) {
-      packageRoot = new Path(configuration['package_root']);
-      optionsFromFile['packageRoot'] = packageRoot.toNativePath();
+    if (optionsFromFile['packageRoot'] == null &&
+        optionsFromFile['packages'] == null) {
+      if (configuration['package_root'] != null) {
+        packageRoot = new Path(configuration['package_root']);
+        optionsFromFile['packageRoot'] = packageRoot.toNativePath();
+      }
+      if (configuration['packages'] != null) {
+        Path packages = new Path(configuration['packages']);
+        optionsFromFile['packages'] = packages.toNativePath();
+      }
     }
-
     if (new CompilerConfiguration(configuration).hasCompiler &&
         expectCompileError(info)) {
       // If a compile-time error is expected, and we're testing a
@@ -975,11 +1007,11 @@ class StandardTestSuite extends TestSuite {
           multiHtmlTestExpectations[fullTestName] =
               testExpectations.expectations(fullTestName);
         }
-        enqueueBrowserTest(baseCommands, packageRoot, info, testName,
+        enqueueBrowserTest(baseCommands, packageRoot, packages, info, testName,
             multiHtmlTestExpectations);
       } else {
         enqueueBrowserTest(
-            baseCommands, packageRoot, info, testName, expectations);
+            baseCommands, packageRoot, packages, info, testName, expectations);
       }
     } else {
       enqueueStandardTest(baseCommands, info, testName, expectations);
@@ -1045,6 +1077,15 @@ class StandardTestSuite extends TestSuite {
         path = path.join(new Path(vmOptionsVarient.toString()));
       }
       tempDir = createCompilationOutputDirectory(path);
+
+      List<String> otherResources = info.optionsFromFile['otherResources'];
+      for (String name in otherResources) {
+        Path namePath = new Path(name);
+        String fileName = namePath.filename;
+        Path fromPath = info.filePath.directoryPath.join(namePath);
+        new File('$tempDir/$name').parent.createSync(recursive: true);
+        new File(fromPath.toNativePath()).copySync('$tempDir/$name');
+      }
     }
 
     CommandArtifact compilationArtifact =
@@ -1180,7 +1221,7 @@ class StandardTestSuite extends TestSuite {
    * compilation and many browser runs).
    */
   void enqueueBrowserTest(List<Command> baseCommands, Path packageRoot,
-      TestInformation info, String testName, expectations) {
+      Path packages, TestInformation info, String testName, expectations) {
     RegExp badChars = new RegExp('[-=/]');
     List VmOptionsList = getVmOptions(info.optionsFromFile);
     bool multipleOptions = VmOptionsList.length > 1;
@@ -1188,14 +1229,15 @@ class StandardTestSuite extends TestSuite {
       String optionsName =
           multipleOptions ? vmOptions.join('-').replaceAll(badChars, '') : '';
       String tempDir = createOutputDirectory(info.filePath, optionsName);
-      enqueueBrowserTestWithOptions(baseCommands, packageRoot, info, testName,
-          expectations, vmOptions, tempDir);
+      enqueueBrowserTestWithOptions(baseCommands, packageRoot, packages,
+          info, testName, expectations, vmOptions, tempDir);
     }
   }
 
   void enqueueBrowserTestWithOptions(
       List<Command> baseCommands,
       Path packageRoot,
+      Path packages,
       TestInformation info,
       String testName,
       expectations,
@@ -1338,6 +1380,14 @@ class StandardTestSuite extends TestSuite {
         contentShellOptions.add('--no-timeout');
         contentShellOptions.add('--dump-render-tree');
 
+        // Disable the GPU under Linux and Dartium. If the GPU is enabled,
+        // Chrome may send a termination signal to a test.  The test will be
+        // terminated if a machine (bot) doesn't have a GPU or if a test is
+        // still running after a certain period of time.
+        if (configuration['system'] == 'linux' &&
+            configuration['runtime'] == 'drt') {
+          contentShellOptions.add('--disable-gpu');
+        }
         if (compiler == 'none') {
           dartFlags.add('--ignore-unrecognized-flags');
           if (configuration["checked"]) {
@@ -1447,9 +1497,8 @@ class StandardTestSuite extends TestSuite {
       args = [];
     }
     args.addAll(TestUtils.standardOptions(configuration));
-    String packageRoot = packageRootArgument(optionsFromFile['packageRoot']);
-    if (packageRoot != null) args.add(packageRoot);
-    String packages = packagesArgument(optionsFromFile['packages']);
+    String packages = packagesArgument(optionsFromFile['packageRoot'],
+                                       optionsFromFile['packages']);
     if (packages != null) args.add(packages);
     args.add('--out=$outputFile');
     args.add(inputFile);
@@ -1469,9 +1518,8 @@ class StandardTestSuite extends TestSuite {
   Command _polymerDeployCommand(
       String inputFile, String outputDir, optionsFromFile) {
     List<String> args = [];
-    String packageRoot = packageRootArgument(optionsFromFile['packageRoot']);
-    if (packageRoot != null) args.add(packageRoot);
-    String packages = packagesArgument(optionsFromFile['packages']);
+    String packages = packagesArgument(optionsFromFile['packageRoot'],
+                                       optionsFromFile['packages']);
     if (packages != null) args.add(packages);
     args
       ..add('package:polymer/deploy.dart')
@@ -1526,11 +1574,8 @@ class StandardTestSuite extends TestSuite {
   List<String> commonArgumentsFromFile(Path filePath, Map optionsFromFile) {
     List args = TestUtils.standardOptions(configuration);
 
-    String packageRoot = packageRootArgument(optionsFromFile['packageRoot']);
-    if (packageRoot != null) {
-      args.add(packageRoot);
-    }
-    String packages = packagesArgument(optionsFromFile['packages']);
+    String packages = packagesArgument(optionsFromFile['packageRoot'],
+                                       optionsFromFile['packages']);
     if (packages != null) {
       args.add(packages);
     }
@@ -1558,30 +1603,18 @@ class StandardTestSuite extends TestSuite {
     return args;
   }
 
-  String packageRoot(String packageRootFromFile) {
-    if (packageRootFromFile == "none") {
+  String packagesArgument(String packageRootFromFile,
+                             String packagesFromFile) {
+    if (packageRootFromFile == 'none' ||
+        packagesFromFile == 'none') {
       return null;
+    } else if (packagesFromFile != null) {
+      return '--packages=$packagesFromFile';
+    } else if (packageRootFromFile != null) {
+      return '--package-root=$packageRootFromFile';
+    } else {
+    return null;
     }
-    String packageRoot = packageRootFromFile;
-    if (packageRootFromFile == null) {
-      packageRoot = "$buildDir/packages/";
-    }
-    return packageRoot;
-  }
-
-  String packageRootArgument(String packageRootFromFile) {
-    var packageRootPath = packageRoot(packageRootFromFile);
-    if (packageRootPath == null) {
-      return null;
-    }
-    return "--package-root=$packageRootPath";
-  }
-
-  String packagesArgument(String packagesFromFile) {
-    if (packagesFromFile == null || packagesFromFile == "none") {
-      return null;
-    }
-    return "--packages=$packagesFromFile";
   }
 
   /**
@@ -1650,13 +1683,16 @@ class StandardTestSuite extends TestSuite {
    * configurations, so it may not use [configuration].
    */
   Map readOptionsFromFile(Path filePath) {
-    if (filePath.segments().contains('co19')) {
+    if (filePath.filename.endsWith('.dill')) {
+      return optionsFromKernelFile();
+    } else if (filePath.segments().contains('co19')) {
       return readOptionsFromCo19File(filePath);
     }
     RegExp testOptionsRegExp = new RegExp(r"// VMOptions=(.*)");
     RegExp sharedOptionsRegExp = new RegExp(r"// SharedOptions=(.*)");
     RegExp dartOptionsRegExp = new RegExp(r"// DartOptions=(.*)");
     RegExp otherScriptsRegExp = new RegExp(r"// OtherScripts=(.*)");
+    RegExp otherResourcesRegExp = new RegExp(r"// OtherResources=(.*)");
     RegExp packageRootRegExp = new RegExp(r"// PackageRoot=(.*)");
     RegExp packagesRegExp = new RegExp(r"// Packages=(.*)");
     RegExp isolateStubsRegExp = new RegExp(r"// IsolateStubs=(.*)");
@@ -1702,26 +1738,30 @@ class StandardTestSuite extends TestSuite {
 
     matches = packageRootRegExp.allMatches(contents);
     for (var match in matches) {
-      if (packageRoot != null) {
+      if (packageRoot != null || packages != null) {
         throw new Exception(
-            'More than one "// PackageRoot=" line in test $filePath');
+            'More than one "// Package... line in test $filePath');
       }
       packageRoot = match[1];
       if (packageRoot != 'none') {
-        // PackageRoot=none means that no package-root option should be given.
+        // PackageRoot=none means that no packages or package-root option
+        // should be given. Any other value overrides package-root and
+        // removes any packages option.  Don't use with // Packages=.
         packageRoot = '${filePath.directoryPath.join(new Path(packageRoot))}';
       }
     }
 
     matches = packagesRegExp.allMatches(contents);
     for (var match in matches) {
-      if (packages != null) {
+      if (packages != null || packageRoot != null) {
         throw new Exception(
-            'More than one "// Packages=" line in test $filePath');
+            'More than one "// Package..." line in test $filePath');
       }
       packages = match[1];
       if (packages != 'none') {
-        // Packages=none means that no packages option should be given.
+        // Packages=none means that no packages or package-root option
+        // should be given. Any other value overrides packages and removes
+        // any package-root option. Don't use with // PackageRoot=.
         packages = '${filePath.directoryPath.join(new Path(packages))}';
       }
     }
@@ -1730,6 +1770,12 @@ class StandardTestSuite extends TestSuite {
     matches = otherScriptsRegExp.allMatches(contents);
     for (var match in matches) {
       otherScripts.addAll(match[1].split(' ').where((e) => e != '').toList());
+    }
+
+    List<String> otherResources = new List<String>();
+    matches = otherResourcesRegExp.allMatches(contents);
+    for (var match in matches) {
+      otherResources.addAll(match[1].split(' ').where((e) => e != '').toList());
     }
 
     bool isMultitest = multiTestRegExp.hasMatch(contents);
@@ -1756,6 +1802,7 @@ class StandardTestSuite extends TestSuite {
       "hasRuntimeError": false,
       "hasStaticWarning": false,
       "otherScripts": otherScripts,
+      "otherResources": otherResources,
       "isMultitest": isMultitest,
       "isMultiHtmlTest": isMultiHtmlTest,
       "subtestNames": subtestNames,
@@ -1764,12 +1811,30 @@ class StandardTestSuite extends TestSuite {
     };
   }
 
+  Map optionsFromKernelFile() {
+    return const {
+      "vmOptions": const [ const []],
+      "sharedOptions": const [],
+      "dartOptions": null,
+      "packageRoot": null,
+      "packages": null,
+      "hasCompileError": false,
+      "hasRuntimeError": false,
+      "hasStaticWarning": false,
+      "otherScripts": const [],
+      "isMultitest": false,
+      "isMultiHtmlTest": false,
+      "subtestNames": const [],
+      "isolateStubs": '',
+      "containsDomImport": false,
+    };
+  }
+
   List<List<String>> getVmOptions(Map optionsFromFile) {
-    var COMPILERS = const ['none', 'precompiler', 'dart2app', 'dart2appjit'];
+    var COMPILERS = const ['none', 'precompiler', 'app_jit'];
     var RUNTIMES = const [
       'none',
       'dart_precompiled',
-      'dart_app',
       'vm',
       'drt',
       'dartium',
@@ -1815,6 +1880,7 @@ class StandardTestSuite extends TestSuite {
       "hasRuntimeError": hasRuntimeError,
       "hasStaticWarning": hasStaticWarning,
       "otherScripts": <String>[],
+      "otherResources": <String>[],
       "isMultitest": isMultitest,
       "isMultiHtmlTest": false,
       "subtestNames": <String>[],
@@ -1834,7 +1900,7 @@ class PKGTestSuite extends StandardTestSuite {
             recursive: true);
 
   void enqueueBrowserTest(List<Command> baseCommands, Path packageRoot,
-      TestInformation info, String testName, expectations) {
+      packages, TestInformation info, String testName, expectations) {
     String runtime = configuration['runtime'];
     Path filePath = info.filePath;
     Path dir = filePath.directoryPath;
@@ -1843,7 +1909,7 @@ class PKGTestSuite extends StandardTestSuite {
     File customHtml = new File(customHtmlPath.toNativePath());
     if (!customHtml.existsSync()) {
       super.enqueueBrowserTest(
-          baseCommands, packageRoot, info, testName, expectations);
+          baseCommands, packageRoot, packages, info, testName, expectations);
     } else {
       Path relativeHtml = customHtmlPath.relativeTo(TestUtils.dartDir);
       List<Command> commands = []..addAll(baseCommands);
@@ -2189,13 +2255,14 @@ class TestUtils {
         configuration['compiler'] == 'dart2appjit' ||
         configuration['compiler'] == 'precompiler') {
       var checked = configuration['checked'] ? '-checked' : '';
+      var strong =  configuration['strong'] ? '-strong' : '';
       var minified = configuration['minified'] ? '-minified' : '';
       var csp = configuration['csp'] ? '-csp' : '';
       var sdk = configuration['use_sdk'] ? '-sdk' : '';
       var packages =
           configuration['use_public_packages'] ? '-public_packages' : '';
       var dirName = "${configuration['compiler']}"
-          "$checked$minified$csp$packages$sdk";
+          "$checked$strong$minified$csp$packages$sdk";
       String generatedPath = "${TestUtils.buildDir(configuration)}"
           "/generated_compilations/$dirName";
       TestUtils.deleteDirectory(generatedPath);
@@ -2237,12 +2304,10 @@ class TestUtils {
   static String outputDir(Map configuration) {
     var result = '';
     var system = configuration['system'];
-    if (system == 'linux' || system == 'android') {
+    if (system == 'linux' || system == 'android' || system == 'windows') {
       result = 'out/';
     } else if (system == 'macos') {
       result = 'xcodebuild/';
-    } else if (system == 'windows') {
-      result = 'build/';
     } else {
       throw new Exception('Unknown operating system: "$system"');
     }
@@ -2271,6 +2336,9 @@ class TestUtils {
     }
     if (compiler == "dart2js" && configuration["cps_ir"]) {
       args.add("--use-cps-ir");
+    }
+    if (compiler == "dart2js" && configuration["fast_startup"]) {
+      args.add("--fast-startup");
     }
     if (compiler == "dart2analyzer") {
       args.add("--show-package-warnings");
@@ -2388,6 +2456,8 @@ class TestUtils {
   static List<String> getExtraVmOptions(Map configuration) =>
       getExtraOptions(configuration, 'vm_options');
 
+  static int shortNameCounter = 0;  // Make unique short file names on Windows.
+
   static String getShortName(String path) {
     final PATH_REPLACEMENTS = const {
       "pkg_polymer_e2e_test_bad_import_test": "polymer_bi",
@@ -2451,6 +2521,7 @@ class TestUtils {
     }
     path = path.replaceAll('/', '_');
     final int WINDOWS_SHORTEN_PATH_LIMIT = 58;
+    final int WINDOWS_PATH_END_LENGTH = 30;
     if (Platform.operatingSystem == 'windows' &&
         path.length > WINDOWS_SHORTEN_PATH_LIMIT) {
       for (var key in PATH_REPLACEMENTS.keys) {
@@ -2458,6 +2529,11 @@ class TestUtils {
           path = path.replaceFirst(key, PATH_REPLACEMENTS[key]);
           break;
         }
+      }
+      if (path.length > WINDOWS_SHORTEN_PATH_LIMIT) {
+        ++shortNameCounter;
+        var pathEnd = path.substring(path.length - WINDOWS_PATH_END_LENGTH);
+        path = "short${shortNameCounter}_$pathEnd";
       }
     }
     return path;

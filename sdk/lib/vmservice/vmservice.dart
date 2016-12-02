@@ -7,31 +7,68 @@ library dart._vmservice;
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:developer' show ServiceProtocolInfo;
 import 'dart:isolate';
+import 'dart:math';
 import 'dart:typed_data';
 
 part 'asset.dart';
 part 'client.dart';
+part 'devfs.dart';
 part 'constants.dart';
 part 'running_isolate.dart';
 part 'running_isolates.dart';
 part 'message.dart';
 part 'message_router.dart';
 
-final RawReceivePort isolateLifecyclePort = new RawReceivePort();
+final RawReceivePort isolateControlPort = new RawReceivePort();
 final RawReceivePort scriptLoadPort = new RawReceivePort();
 
+abstract class IsolateEmbedderData {
+  void cleanup();
+}
+
+String _makeAuthToken() {
+  final kTokenByteSize = 8;
+  Uint8List bytes = new Uint8List(kTokenByteSize);
+  Random random = new Random.secure();
+  for (int i = 0; i < kTokenByteSize; i++) {
+    bytes[i] = random.nextInt(256);
+  }
+  return BASE64URL.encode(bytes);
+}
+
+// The randomly generated auth token used to access the VM service.
+final String serviceAuthToken = _makeAuthToken();
+
+// TODO(johnmccutchan): Enable the auth token and drop the origin check.
+final bool useAuthToken = const bool.fromEnvironment('DART_SERVICE_USE_AUTH');
+
+// This is for use by the embedder. It is a map from the isolateId to
+// anything implementing IsolateEmbedderData. When an isolate goes away,
+// the cleanup method will be invoked after being removed from the map.
+final Map<int, IsolateEmbedderData> isolateEmbedderData =
+    new Map<int, IsolateEmbedderData>();
+
 // These must be kept in sync with the declarations in vm/json_stream.h.
-const kInvalidParams = -32602;
-const kInternalError = -32603;
-const kStreamAlreadySubscribed = 103;
-const kStreamNotSubscribed = 104;
+const kInvalidParams             = -32602;
+const kInternalError             = -32603;
+const kFeatureDisabled           = 100;
+const kStreamAlreadySubscribed   = 103;
+const kStreamNotSubscribed       = 104;
+const kFileSystemAlreadyExists   = 1001;
+const kFileSystemDoesNotExist    = 1002;
+const kFileDoesNotExist          = 1003;
 
 var _errorMessages = {
   kInvalidParams: 'Invalid params',
   kInternalError: 'Internal error',
+  kFeatureDisabled: 'Feature is disabled',
   kStreamAlreadySubscribed: 'Stream already subscribed',
   kStreamNotSubscribed: 'Stream not subscribed',
+  kFileSystemAlreadyExists: 'File system already exists',
+  kFileSystemDoesNotExist: 'File system does not exist',
+  kFileDoesNotExist: 'File does not exist',
 };
 
 String encodeRpcError(Message message, int code, {String details}) {
@@ -51,6 +88,19 @@ String encodeRpcError(Message message, int code, {String details}) {
   return JSON.encode(response);
 }
 
+String encodeMissingParamError(Message message, String param) {
+  return encodeRpcError(
+      message, kInvalidParams,
+      details: "${message.method} expects the '${param}' parameter");
+}
+
+String encodeInvalidParamError(Message message, String param) {
+  var value = message.params[param];
+  return encodeRpcError(
+      message, kInvalidParams,
+      details: "${message.method}: invalid '${param}' parameter: ${value}");
+}
+
 String encodeResult(Message message, Map result) {
   var response = {
     'jsonrpc': '2.0',
@@ -58,6 +108,10 @@ String encodeResult(Message message, Map result) {
     'result' : result,
   };
   return JSON.encode(response);
+}
+
+String encodeSuccess(Message message) {
+  return encodeResult(message, { 'type': 'Success' });
 }
 
 const shortDelay = const Duration(milliseconds: 10);
@@ -71,11 +125,43 @@ typedef Future ServerStopCallback();
 /// Called when the service is exiting.
 typedef Future CleanupCallback();
 
+/// Called to create a temporary directory
+typedef Future<Uri> CreateTempDirCallback(String base);
+
+/// Called to delete a directory
+typedef Future DeleteDirCallback(Uri path);
+
+/// Called to write a file.
+typedef Future WriteFileCallback(Uri path, List<int> bytes);
+
+/// Called to write a stream into a file.
+typedef Future WriteStreamFileCallback(Uri path, Stream<List<int>> bytes);
+
+/// Called to read a file.
+typedef Future<List<int>> ReadFileCallback(Uri path);
+
+/// Called to list all files under some path.
+typedef Future<List<Map<String,String>>> ListFilesCallback(Uri path);
+
+/// Called when we need information about the server.
+typedef Future<Uri> ServerInformationCallback();
+
+/// Called when we want to [enable] or disable the web server.
+typedef Future<Uri> WebServerControlCallback(bool enable);
+
 /// Hooks that are setup by the embedder.
 class VMServiceEmbedderHooks {
   static ServerStartCallback serverStart;
   static ServerStopCallback serverStop;
   static CleanupCallback cleanup;
+  static CreateTempDirCallback createTempDir;
+  static DeleteDirCallback deleteDir;
+  static WriteFileCallback writeFile;
+  static WriteStreamFileCallback writeStreamFile;
+  static ReadFileCallback readFile;
+  static ListFilesCallback listFiles;
+  static ServerInformationCallback serverInformation;
+  static WebServerControlCallback webServerControl;
 }
 
 class VMService extends MessageRouter {
@@ -89,6 +175,8 @@ class VMService extends MessageRouter {
 
   /// A port used to receive events from the VM.
   final RawReceivePort eventPort;
+
+  final devfs = new DevFS();
 
   void _addClient(Client client) {
     assert(client.streams.isEmpty);
@@ -124,6 +212,31 @@ class VMService extends MessageRouter {
       break;
       case Constants.ISOLATE_SHUTDOWN_MESSAGE_ID:
         runningIsolates.isolateShutdown(portId, sp);
+        IsolateEmbedderData ied = isolateEmbedderData.remove(portId);
+        if (ied != null) {
+          ied.cleanup();
+        }
+      break;
+    }
+  }
+
+  Future<Null> _serverMessageHandler(int code, SendPort sp, bool enable) async {
+    switch (code) {
+      case Constants.WEB_SERVER_CONTROL_MESSAGE_ID:
+        if (VMServiceEmbedderHooks.webServerControl == null) {
+          sp.send(null);
+          return;
+        }
+        Uri uri = await VMServiceEmbedderHooks.webServerControl(enable);
+        sp.send(uri);
+      break;
+      case Constants.SERVER_INFO_MESSAGE_ID:
+        if (VMServiceEmbedderHooks.serverInformation == null) {
+          sp.send(null);
+          return;
+        }
+        Uri uri = await VMServiceEmbedderHooks.serverInformation();
+        sp.send(uri);
       break;
     }
   }
@@ -135,7 +248,7 @@ class VMService extends MessageRouter {
     }
 
     // Close receive ports.
-    isolateLifecyclePort.close();
+    isolateControlPort.close();
     scriptLoadPort.close();
 
     // Create a copy of the set as a list because client.disconnect() will
@@ -144,6 +257,7 @@ class VMService extends MessageRouter {
     for (var client in clientsList) {
       client.disconnect();
     }
+    devfs.cleanup();
     if (VMServiceEmbedderHooks.cleanup != null) {
       await VMServiceEmbedderHooks.cleanup();
     }
@@ -166,6 +280,13 @@ class VMService extends MessageRouter {
         _exit();
         return;
       }
+      if (message.length == 3) {
+        // This is a message interacting with the web server.
+        assert((message[0] == Constants.WEB_SERVER_CONTROL_MESSAGE_ID) ||
+               (message[0] == Constants.SERVER_INFO_MESSAGE_ID));
+        _serverMessageHandler(message[0], message[1], message[2]);
+        return;
+      }
       if (message.length == 4) {
         // This is a message informing us of the birth or death of an
         // isolate.
@@ -177,7 +298,7 @@ class VMService extends MessageRouter {
   }
 
   VMService._internal()
-      : eventPort = isolateLifecyclePort {
+      : eventPort = isolateControlPort {
     eventPort.handler = messageHandler;
   }
 
@@ -214,8 +335,7 @@ class VMService extends MessageRouter {
     }
     client.streams.add(streamId);
 
-    var result = { 'type' : 'Success' };
-    return encodeResult(message, result);
+    return encodeSuccess(message);
   }
 
   Future<String> _streamCancel(Message message) async {
@@ -230,8 +350,47 @@ class VMService extends MessageRouter {
       _vmCancelStream(streamId);
     }
 
-    var result = { 'type' : 'Success' };
-    return encodeResult(message, result);
+    return encodeSuccess(message);
+  }
+
+  Future<String> _spawnUri(Message message) async {
+    var token = message.params['token'];
+    if (token == null) {
+      return encodeMissingParamError(message, 'token');
+    }
+    if (token is! String) {
+      return encodeInvalidParamError(message, 'token');
+    }
+    var uri = message.params['uri'];
+    if (uri == null) {
+      return encodeMissingParamError(message, 'uri');
+    }
+    if (uri is! String) {
+      return encodeInvalidParamError(message, 'uri');
+    }
+    var args = message.params['args'];
+    if (args != null &&
+        args is! List<String>) {
+      return encodeInvalidParamError(message, 'args');
+    }
+    var msg = message.params['message'];
+
+    Isolate.spawnUri(Uri.parse(uri), args, msg).then((isolate) {
+      _spawnUriNotify(isolate.controlPort, token);
+    }).catchError((e) {
+      _spawnUriNotify(e.toString(), token);
+    });
+
+    return encodeSuccess(message);
+  }
+
+  static responseAsJson(portResponse) {
+    if (portResponse is String) {
+      return JSON.decode(portResponse);
+    } else {
+      var cstring = portResponse[0];
+      return JSON.fuse(UTF8).decode(cstring);
+    }
   }
 
   // TODO(johnmccutchan): Turn this into a command line tool that uses the
@@ -257,13 +416,13 @@ class VMService extends MessageRouter {
 
     // Request VM.
     var getVM = Uri.parse('getVM');
-    var getVmResponse = JSON.decode(
+    var getVmResponse = responseAsJson(
         await new Message.fromUri(client, getVM).sendToVM());
     responses[getVM.toString()] = getVmResponse['result'];
 
     // Request command line flags.
     var getFlagList = Uri.parse('getFlagList');
-    var getFlagListResponse = JSON.decode(
+    var getFlagListResponse = responseAsJson(
         await new Message.fromUri(client, getFlagList).sendToVM());
     responses[getFlagList.toString()] = getFlagListResponse['result'];
 
@@ -273,13 +432,13 @@ class VMService extends MessageRouter {
         var message = new Message.forIsolate(client, request, isolate);
         // Decode the JSON and and insert it into the map. The map key
         // is the request Uri.
-        var response = JSON.decode(await isolate.route(message));
+        var response = responseAsJson(await isolate.route(message));
         responses[message.toUri().toString()] = response['result'];
       }
       // Dump the object id ring requests.
       var message =
           new Message.forIsolate(client, Uri.parse('_dumpIdZone'), isolate);
-      var response = JSON.decode(await isolate.route(message));
+      var response = responseAsJson(await isolate.route(message));
       // Insert getObject requests into responses map.
       for (var object in response['result']['objects']) {
         final requestUri =
@@ -306,6 +465,12 @@ class VMService extends MessageRouter {
     if (message.method == 'streamCancel') {
       return _streamCancel(message);
     }
+    if (message.method == '_spawnUri') {
+      return _spawnUri(message);
+    }
+    if (devfs.shouldHandleMessage(message)) {
+      return devfs.handleMessage(message);
+    }
     if (message.params['isolateId'] != null) {
       return runningIsolates.route(message);
     }
@@ -314,8 +479,8 @@ class VMService extends MessageRouter {
 }
 
 RawReceivePort boot() {
-  // Return the port we expect isolate startup and shutdown messages on.
-  return isolateLifecyclePort;
+  // Return the port we expect isolate control messages on.
+  return isolateControlPort;
 }
 
 void _registerIsolate(int port_id, SendPort sp, String name) {
@@ -340,3 +505,6 @@ external void _vmCancelStream(String streamId);
 
 /// Get the bytes to the tar archive.
 external Uint8List _requestAssets();
+
+/// Notify the vm service that an isolate has been spawned via rpc.
+external void _spawnUriNotify(obj, String token);

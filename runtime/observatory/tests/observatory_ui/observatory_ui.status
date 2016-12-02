@@ -1,0 +1,23 @@
+# Copyright (c) 2016, the Dart project authors.  Please see the AUTHORS file
+# for details. All rights reserved. Use of this source code is governed by a
+# BSD-style license that can be found in the LICENSE file.
+
+[ $browser == false || $runtime == drt || $fast_startup]
+*: SkipByDesign
+
+[ $runtime == dartium ]
+isolate/*: Skip
+allocation_profile: Skip
+vm_connect/element_test: Skip # See issue 27714
+heap_snapshot/element_test: RuntimeError # Issue 27925
+
+[ $runtime == ff || $runtime == safari ]
+allocation_profile: Skip
+cpu_profile_table: Skip
+persistent_handles_page: Skip
+vm_connect/element_test: Skip # See issue 27714
+heap_snapshot/element_test: RuntimeError # Issue 27925
+
+[ $runtime == ff || $runtime == chrome ]
+vm_connect/element_test: Skip # Times out
+heap_snapshot/element_test: RuntimeError # Issue 27925

@@ -122,6 +122,7 @@ class MemberListener extends NodeListener {
       Element element = new FieldElementX(name, enclosingClass, fields);
       addMember(element);
     }
+
     buildFieldElements(modifiers, variableDefinitions.definitions,
         enclosingClass, buildFieldElement, beginToken, endToken, hasParseError);
   }
@@ -146,11 +147,7 @@ class MemberListener extends NodeListener {
   }
 
   void endMetadata(Token beginToken, Token periodBeforeName, Token endToken) {
-    popNode(); // Discard arguments.
-    if (periodBeforeName != null) {
-      popNode(); // Discard name.
-    }
-    popNode(); // Discard node (Send or Identifier).
+    super.endMetadata(beginToken, periodBeforeName, endToken);
     pushMetadata(new PartialMetadataAnnotation(beginToken, endToken));
   }
 }

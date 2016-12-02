@@ -2,8 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
 // Test that native methods with unnamed* optional arguments are called with the
 // number of arguments in the call site.  This is necessary because native
@@ -15,19 +14,19 @@ import "package:expect/expect.dart";
 
 @Native("A")
 class A {
-  int foo(int x) native;
+  int foo(int x) native ;
 }
 
 @Native("B")
 class B {
-  int foo([x, y, z]) native;
+  int foo([x, y, z]) native ;
 }
 
 // TODO(sra): Add a case where the parameters have default values.  Wait until
 // dart:html need non-null default values.
 
-A makeA() native;
-B makeB() native;
+A makeA() native ;
+B makeB() native ;
 
 void setup() native """
 function A() {}
@@ -38,13 +37,14 @@ B.prototype.foo = function () { return arguments.length; };
 
 makeA = function(){return new A;};
 makeB = function(){return new B;};
+
+self.nativeConstructor(A);
+self.nativeConstructor(B);
 """;
 
-
 testDynamicContext() {
-  var things = [makeA(), makeB()];
-  var a = things[0];
-  var b = things[1];
+  var a = confuse(makeA());
+  var b = confuse(makeB());
 
   Expect.throws(() => a.foo());
   Expect.equals(1, a.foo(10));
@@ -77,6 +77,7 @@ testStaticContext() {
 }
 
 main() {
+  nativeTesting();
   setup();
   testDynamicContext();
   testStaticContext();

@@ -14,20 +14,20 @@ import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/resolver.dart';
 import 'package:analyzer/src/generated/testing/element_factory.dart';
 import 'package:analyzer/src/generated/testing/test_type_provider.dart';
-import 'package:unittest/unittest.dart';
+import 'package:test/test.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 
-import '../reflective_tests.dart';
-import '../utils.dart';
 import 'analysis_context_factory.dart';
 
 main() {
-  initializeTestEnvironment();
-  runReflectiveTests(StrongAssignabilityTest);
-  runReflectiveTests(StrongSubtypingTest);
-  runReflectiveTests(StrongGenericFunctionInferenceTest);
-  runReflectiveTests(LeastUpperBoundTest);
-  runReflectiveTests(StrongLeastUpperBoundTest);
-  runReflectiveTests(StrongGreatestLowerBoundTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(StrongAssignabilityTest);
+    defineReflectiveTests(StrongSubtypingTest);
+    defineReflectiveTests(StrongGenericFunctionInferenceTest);
+    defineReflectiveTests(LeastUpperBoundTest);
+    defineReflectiveTests(StrongLeastUpperBoundTest);
+    defineReflectiveTests(StrongGreatestLowerBoundTest);
+  });
 }
 
 /**
@@ -621,7 +621,11 @@ class StrongAssignabilityTest {
       numType,
       bottomType
     ];
-    List<DartType> unrelated = <DartType>[intType, stringType, interfaceType,];
+    List<DartType> unrelated = <DartType>[
+      intType,
+      stringType,
+      interfaceType,
+    ];
 
     _checkGroups(doubleType,
         interassignable: interassignable, unrelated: unrelated);
@@ -751,7 +755,10 @@ class StrongAssignabilityTest {
       doubleType,
       bottomType
     ];
-    List<DartType> unrelated = <DartType>[stringType, interfaceType,];
+    List<DartType> unrelated = <DartType>[
+      stringType,
+      interfaceType,
+    ];
 
     _checkGroups(numType,
         interassignable: interassignable, unrelated: unrelated);
@@ -781,10 +788,12 @@ class StrongAssignabilityTest {
 
   void _checkCrossLattice(
       DartType top, DartType left, DartType right, DartType bottom) {
-    _checkGroups(top, interassignable: <DartType>[top, left, right, bottom]);
-    _checkGroups(left, interassignable: <DartType>[top, left, right, bottom]);
-    _checkGroups(right, interassignable: <DartType>[top, left, right, bottom]);
-    _checkGroups(bottom, interassignable: <DartType>[top, left, right, bottom]);
+    _checkGroups(top, interassignable: [top, left, right, bottom]);
+    _checkGroups(left,
+        interassignable: [top, left, bottom], unrelated: [right]);
+    _checkGroups(right,
+        interassignable: [top, right, bottom], unrelated: [left]);
+    _checkGroups(bottom, interassignable: [top, left, right, bottom]);
   }
 
   void _checkEquivalent(DartType type1, DartType type2) {
@@ -872,6 +881,80 @@ class StrongGenericFunctionInferenceTest {
     ]);
   }
 
+  void test_boundedByOuterClass() {
+    // Regression test for https://github.com/dart-lang/sdk/issues/25740.
+
+    // class A {}
+    var a = ElementFactory.classElement('A', objectType);
+
+    // class B extends A {}
+    var b = ElementFactory.classElement('B', a.type);
+
+    // class C<T extends A> {
+    var c = ElementFactory.classElement('C', objectType, ['T']);
+    (c.typeParameters[0] as TypeParameterElementImpl).bound = a.type;
+    //   S m<S extends T>(S);
+    var s = TypeBuilder.variable('S');
+    (s.element as TypeParameterElementImpl).bound = c.typeParameters[0].type;
+    var m = ElementFactory.methodElement('m', s, [s]);
+    m.typeParameters = [s.element];
+    c.methods = [m];
+    // }
+
+    // C<Object> cOfObject;
+    var cOfObject = c.type.instantiate([objectType]);
+    // C<A> cOfA;
+    var cOfA = c.type.instantiate([a.type]);
+    // C<B> cOfB;
+    var cOfB = c.type.instantiate([b.type]);
+    // B b;
+    // cOfB.m(b); // infer <B>
+    expect(_inferCall(cOfB.getMethod('m').type, [b.type]), [b.type, b.type]);
+    // cOfA.m(b); // infer <B>
+    expect(_inferCall(cOfA.getMethod('m').type, [b.type]), [a.type, b.type]);
+    // cOfObject.m(b); // infer <B>
+    expect(_inferCall(cOfObject.getMethod('m').type, [b.type]),
+        [objectType, b.type]);
+  }
+
+  void test_boundedByOuterClassSubstituted() {
+    // Regression test for https://github.com/dart-lang/sdk/issues/25740.
+
+    // class A {}
+    var a = ElementFactory.classElement('A', objectType);
+
+    // class B extends A {}
+    var b = ElementFactory.classElement('B', a.type);
+
+    // class C<T extends A> {
+    var c = ElementFactory.classElement('C', objectType, ['T']);
+    (c.typeParameters[0] as TypeParameterElementImpl).bound = a.type;
+    //   S m<S extends Iterable<T>>(S);
+    var s = TypeBuilder.variable('S');
+    var iterableOfT = iterableType.instantiate([c.typeParameters[0].type]);
+    (s.element as TypeParameterElementImpl).bound = iterableOfT;
+    var m = ElementFactory.methodElement('m', s, [s]);
+    m.typeParameters = [s.element];
+    c.methods = [m];
+    // }
+
+    // C<Object> cOfObject;
+    var cOfObject = c.type.instantiate([objectType]);
+    // C<A> cOfA;
+    var cOfA = c.type.instantiate([a.type]);
+    // C<B> cOfB;
+    var cOfB = c.type.instantiate([b.type]);
+    // List<B> b;
+    var listOfB = listType.instantiate([b.type]);
+    // cOfB.m(b); // infer <B>
+    expect(_inferCall(cOfB.getMethod('m').type, [listOfB]), [b.type, listOfB]);
+    // cOfA.m(b); // infer <B>
+    expect(_inferCall(cOfA.getMethod('m').type, [listOfB]), [a.type, listOfB]);
+    // cOfObject.m(b); // infer <B>
+    expect(_inferCall(cOfObject.getMethod('m').type, [listOfB]),
+        [objectType, listOfB]);
+  }
+
   void test_boundedRecursively() {
     // class Clonable<T extends Clonable<T>>
     ClassElementImpl clonable =
@@ -891,9 +974,7 @@ class StrongGenericFunctionInferenceTest {
     expect(_inferCall(clone, [foo.type, foo.type]), [foo.type]);
 
     // Something invalid...
-    expect(_inferCall(clone, [stringType, numType]), [
-      clonable.type.instantiate([dynamicType])
-    ]);
+    expect(_inferCall(clone, [stringType, numType]), null);
   }
 
   void test_genericCastFunction() {
@@ -1007,7 +1088,7 @@ class StrongGenericFunctionInferenceTest {
     // <T extends num>() -> T
     var t = TypeBuilder.variable('T', bound: numType);
     var f = TypeBuilder.function(types: [t], required: [], result: t);
-    expect(_inferCall(f, [], stringType), [numType]);
+    expect(_inferCall(f, [], stringType), null);
   }
 
   void test_unifyParametersToFunctionParam() {
@@ -1024,7 +1105,7 @@ class StrongGenericFunctionInferenceTest {
           TypeBuilder.function(required: [intType], result: dynamicType),
           TypeBuilder.function(required: [doubleType], result: dynamicType)
         ]),
-        [dynamicType]);
+        null);
   }
 
   void test_unusedReturnTypeIsDynamic() {
@@ -1043,9 +1124,14 @@ class StrongGenericFunctionInferenceTest {
 
   List<DartType> _inferCall(FunctionTypeImpl ft, List<DartType> arguments,
       [DartType returnType]) {
-    FunctionType inferred = typeSystem.inferGenericFunctionCall(typeProvider,
-        ft, ft.parameters.map((p) => p.type).toList(), arguments, returnType);
-    return inferred.typeArguments;
+    FunctionType inferred = typeSystem.inferGenericFunctionCall(
+        typeProvider,
+        ft,
+        ft.parameters.map((p) => p.type).toList(),
+        arguments,
+        ft.returnType,
+        returnType);
+    return inferred?.typeArguments;
   }
 }
 
@@ -1141,6 +1227,13 @@ class StrongGreatestLowerBoundTest extends BoundTestBase {
     FunctionType type2 = _functionType([intType, intType, intType]);
     FunctionType expected =
         _functionType([intType], optional: [intType, intType]);
+    _checkGreatestLowerBound(type1, type2, expected);
+  }
+
+  void test_functionsFuzzyArrows() {
+    FunctionType type1 = _functionType([dynamicType]);
+    FunctionType type2 = _functionType([intType]);
+    FunctionType expected = _functionType([intType]);
     _checkGreatestLowerBound(type1, type2, expected);
   }
 
@@ -1311,6 +1404,13 @@ class StrongLeastUpperBoundTest extends LeastUpperBoundTestBase {
   void setUp() {
     typeSystem = new StrongTypeSystemImpl();
     super.setUp();
+  }
+
+  void test_functionsFuzzyArrows() {
+    FunctionType type1 = _functionType([dynamicType]);
+    FunctionType type2 = _functionType([intType]);
+    FunctionType expected = _functionType([dynamicType]);
+    _checkLeastUpperBound(type1, type2, expected);
   }
 
   void test_functionsGlbNamedParams() {
@@ -1508,7 +1608,34 @@ class StrongSubtypingTest {
     DartType u = TypeBuilder.variable("U", bound: intType);
     DartType v = TypeBuilder.variable("V", bound: u);
 
+    DartType a = TypeBuilder.variable("A");
+    DartType b = TypeBuilder.variable("B", bound: a);
+    DartType c = TypeBuilder.variable("C", bound: intType);
+    DartType d = TypeBuilder.variable("D", bound: c);
+
     _checkIsStrictSubtypeOf(
+        TypeBuilder.function(types: [s, t], required: [s], result: t),
+        TypeBuilder.function(
+            types: [a, b], required: [dynamicType], result: dynamicType));
+
+    _checkIsNotSubtypeOf(
+        TypeBuilder.function(types: [u, v], required: [u], result: v),
+        TypeBuilder.function(
+            types: [c, d], required: [objectType], result: objectType));
+
+    _checkIsNotSubtypeOf(
+        TypeBuilder.function(types: [u, v], required: [u], result: v),
+        TypeBuilder
+            .function(types: [c, d], required: [intType], result: intType));
+  }
+
+  void test_genericFunction_genericDoesNotSubtypeNonGeneric() {
+    DartType s = TypeBuilder.variable("S");
+    DartType t = TypeBuilder.variable("T", bound: s);
+    DartType u = TypeBuilder.variable("U", bound: intType);
+    DartType v = TypeBuilder.variable("V", bound: u);
+
+    _checkIsNotSubtypeOf(
         TypeBuilder.function(types: [s, t], required: [s], result: t),
         TypeBuilder.function(required: [dynamicType], result: dynamicType));
 
@@ -1516,7 +1643,7 @@ class StrongSubtypingTest {
         TypeBuilder.function(types: [u, v], required: [u], result: v),
         TypeBuilder.function(required: [objectType], result: objectType));
 
-    _checkIsStrictSubtypeOf(
+    _checkIsNotSubtypeOf(
         TypeBuilder.function(types: [u, v], required: [u], result: v),
         TypeBuilder.function(required: [intType], result: intType));
   }

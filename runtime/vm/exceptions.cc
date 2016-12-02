@@ -11,6 +11,7 @@
 #include "vm/debugger.h"
 #include "vm/flags.h"
 #include "vm/log.h"
+#include "vm/longjump.h"
 #include "vm/object.h"
 #include "vm/object_store.h"
 #include "vm/stack_frame.h"
@@ -20,14 +21,17 @@
 
 namespace dart {
 
-DEFINE_FLAG(bool, print_stacktrace_at_throw, false,
+DECLARE_FLAG(bool, trace_deoptimization);
+DEFINE_FLAG(bool,
+            print_stacktrace_at_throw,
+            false,
             "Prints a stack trace everytime a throw occurs.");
 
 
 class StacktraceBuilder : public ValueObject {
  public:
-  StacktraceBuilder() { }
-  virtual ~StacktraceBuilder() { }
+  StacktraceBuilder() {}
+  virtual ~StacktraceBuilder() {}
 
   virtual void AddFrame(const Code& code, const Smi& offset) = 0;
 };
@@ -37,10 +41,10 @@ class RegularStacktraceBuilder : public StacktraceBuilder {
  public:
   explicit RegularStacktraceBuilder(Zone* zone)
       : code_list_(
-          GrowableObjectArray::Handle(zone, GrowableObjectArray::New())),
+            GrowableObjectArray::Handle(zone, GrowableObjectArray::New())),
         pc_offset_list_(
-          GrowableObjectArray::Handle(zone, GrowableObjectArray::New())) { }
-  ~RegularStacktraceBuilder() { }
+            GrowableObjectArray::Handle(zone, GrowableObjectArray::New())) {}
+  ~RegularStacktraceBuilder() {}
 
   const GrowableObjectArray& code_list() const { return code_list_; }
   const GrowableObjectArray& pc_offset_list() const { return pc_offset_list_; }
@@ -61,13 +65,13 @@ class RegularStacktraceBuilder : public StacktraceBuilder {
 class PreallocatedStacktraceBuilder : public StacktraceBuilder {
  public:
   explicit PreallocatedStacktraceBuilder(const Instance& stacktrace)
-  : stacktrace_(Stacktrace::Cast(stacktrace)),
+      : stacktrace_(Stacktrace::Cast(stacktrace)),
         cur_index_(0),
         dropped_frames_(0) {
     ASSERT(stacktrace_.raw() ==
            Isolate::Current()->object_store()->preallocated_stack_trace());
   }
-  ~PreallocatedStacktraceBuilder() { }
+  ~PreallocatedStacktraceBuilder() {}
 
   virtual void AddFrame(const Code& code, const Smi& offset);
 
@@ -127,7 +131,8 @@ static void BuildStackTrace(StacktraceBuilder* builder) {
   while (frame != NULL) {
     if (frame->IsDartFrame()) {
       code = frame->LookupDartCode();
-      offset = Smi::New(frame->pc() - code.EntryPoint());
+      ASSERT(code.ContainsInstructionAt(frame->pc()));
+      offset = Smi::New(frame->pc() - code.PayloadStart());
       builder->AddFrame(code, offset);
     }
     frame = frames.NextFrame();
@@ -146,17 +151,15 @@ static bool FindExceptionHandler(Thread* thread,
                                  bool* needs_stacktrace) {
   StackFrameIterator frames(StackFrameIterator::kDontValidateFrames);
   StackFrame* frame = frames.NextFrame();
-  ASSERT(frame != NULL);  // We expect to find a dart invocation frame.
+  if (frame == NULL) return false;  // No Dart frame.
   bool handler_pc_set = false;
   *needs_stacktrace = false;
   bool is_catch_all = false;
   uword temp_handler_pc = kUwordMax;
   while (!frame->IsEntryFrame()) {
     if (frame->IsDartFrame()) {
-      if (frame->FindExceptionHandler(thread,
-                                      &temp_handler_pc,
-                                      needs_stacktrace,
-                                      &is_catch_all)) {
+      if (frame->FindExceptionHandler(thread, &temp_handler_pc,
+                                      needs_stacktrace, &is_catch_all)) {
         if (!handler_pc_set) {
           handler_pc_set = true;
           *handler_pc = temp_handler_pc;
@@ -186,7 +189,6 @@ static bool FindExceptionHandler(Thread* thread,
 static void FindErrorHandler(uword* handler_pc,
                              uword* handler_sp,
                              uword* handler_fp) {
-  // TODO(turnidge): Is there a faster way to get the next entry frame?
   StackFrameIterator frames(StackFrameIterator::kDontValidateFrames);
   StackFrame* frame = frames.NextFrame();
   ASSERT(frame != NULL);
@@ -201,18 +203,104 @@ static void FindErrorHandler(uword* handler_pc,
 }
 
 
+static uword RemapExceptionPCForDeopt(Thread* thread,
+                                      uword program_counter,
+                                      uword frame_pointer) {
+#if !defined(TARGET_ARCH_DBC)
+  MallocGrowableArray<PendingLazyDeopt>* pending_deopts =
+      thread->isolate()->pending_deopts();
+  if (pending_deopts->length() > 0) {
+    // Check if the target frame is scheduled for lazy deopt.
+    for (intptr_t i = 0; i < pending_deopts->length(); i++) {
+      if ((*pending_deopts)[i].fp() == frame_pointer) {
+        // Deopt should now resume in the catch handler instead of after the
+        // call.
+        (*pending_deopts)[i].set_pc(program_counter);
+
+        // Jump to the deopt stub instead of the catch handler.
+        program_counter =
+            StubCode::DeoptimizeLazyFromThrow_entry()->EntryPoint();
+        if (FLAG_trace_deoptimization) {
+          THR_Print("Throwing to frame scheduled for lazy deopt fp=%" Pp "\n",
+                    frame_pointer);
+        }
+        break;
+      }
+    }
+  }
+#endif  // !DBC
+  return program_counter;
+}
+
+
+static void ClearLazyDeopts(Thread* thread, uword frame_pointer) {
+#if !defined(TARGET_ARCH_DBC)
+  MallocGrowableArray<PendingLazyDeopt>* pending_deopts =
+      thread->isolate()->pending_deopts();
+  if (pending_deopts->length() > 0) {
+    // We may be jumping over frames scheduled for lazy deopt. Remove these
+    // frames from the pending deopt table, but only after unmarking them so
+    // any stack walk that happens before the stack is unwound will still work.
+    {
+      DartFrameIterator frames(thread);
+      StackFrame* frame = frames.NextFrame();
+      while ((frame != NULL) && (frame->fp() < frame_pointer)) {
+        if (frame->IsMarkedForLazyDeopt()) {
+          frame->UnmarkForLazyDeopt();
+        }
+        frame = frames.NextFrame();
+      }
+    }
+
+#if defined(DEBUG)
+    ValidateFrames();
+#endif
+
+    for (intptr_t i = 0; i < pending_deopts->length(); i++) {
+      if ((*pending_deopts)[i].fp() < frame_pointer) {
+        if (FLAG_trace_deoptimization) {
+          THR_Print(
+              "Lazy deopt skipped due to throw for "
+              "fp=%" Pp ", pc=%" Pp "\n",
+              (*pending_deopts)[i].fp(), (*pending_deopts)[i].pc());
+        }
+        pending_deopts->RemoveAt(i);
+      }
+    }
+
+#if defined(DEBUG)
+    ValidateFrames();
+#endif
+  }
+#endif  // !DBC
+}
+
+
 static void JumpToExceptionHandler(Thread* thread,
                                    uword program_counter,
                                    uword stack_pointer,
                                    uword frame_pointer,
                                    const Object& exception_object,
                                    const Object& stacktrace_object) {
-  // The no_gc StackResource is unwound through the tear down of
-  // stack resources below.
-  NoSafepointScope no_safepoint;
-  RawObject* raw_exception = exception_object.raw();
-  RawObject* raw_stacktrace = stacktrace_object.raw();
+  uword remapped_pc =
+      RemapExceptionPCForDeopt(thread, program_counter, frame_pointer);
+  thread->set_active_exception(exception_object);
+  thread->set_active_stacktrace(stacktrace_object);
+  thread->set_resume_pc(remapped_pc);
+  uword run_exception_pc = StubCode::RunExceptionHandler_entry()->EntryPoint();
+  Exceptions::JumpToFrame(thread, run_exception_pc, stack_pointer,
+                          frame_pointer, false /* do not clear deopt */);
+}
 
+
+void Exceptions::JumpToFrame(Thread* thread,
+                             uword program_counter,
+                             uword stack_pointer,
+                             uword frame_pointer,
+                             bool clear_deopt_at_target) {
+  uword fp_for_clearing =
+      (clear_deopt_at_target ? frame_pointer + 1 : frame_pointer);
+  ClearLazyDeopts(thread, fp_for_clearing);
 #if defined(USING_SIMULATOR)
   // Unwinding of the C++ frames and destroying of their stack resources is done
   // by the simulator, because the target stack_pointer is a simulated stack
@@ -222,8 +310,8 @@ static void JumpToExceptionHandler(Thread* thread,
   // exception object in the kExceptionObjectReg register and the stacktrace
   // object (may be raw null) in the kStackTraceObjectReg register.
 
-  Simulator::Current()->Longjmp(program_counter, stack_pointer, frame_pointer,
-                                raw_exception, raw_stacktrace, thread);
+  Simulator::Current()->JumpToFrame(program_counter, stack_pointer,
+                                    frame_pointer, thread);
 #else
   // Prepare for unwinding frames by destroying all the stack resources
   // in the previous frames.
@@ -232,18 +320,16 @@ static void JumpToExceptionHandler(Thread* thread,
   // Call a stub to set up the exception object in kExceptionObjectReg,
   // to set up the stacktrace object in kStackTraceObjectReg, and to
   // continue execution at the given pc in the given frame.
-  typedef void (*ExcpHandler)(uword, uword, uword, RawObject*, RawObject*,
-                              Thread*);
+  typedef void (*ExcpHandler)(uword, uword, uword, Thread*);
   ExcpHandler func = reinterpret_cast<ExcpHandler>(
-      StubCode::JumpToExceptionHandler_entry()->EntryPoint());
+      StubCode::JumpToFrame_entry()->EntryPoint());
 
   // Unpoison the stack before we tear it down in the generated stub code.
   uword current_sp = Thread::GetCurrentStackPointer() - 1024;
   ASAN_UNPOISON(reinterpret_cast<void*>(current_sp),
                 stack_pointer - current_sp);
 
-  func(program_counter, stack_pointer, frame_pointer,
-       raw_exception, raw_stacktrace, thread);
+  func(program_counter, stack_pointer, frame_pointer, thread);
 #endif
   UNREACHABLE();
 }
@@ -257,8 +343,8 @@ static RawField* LookupStacktraceField(const Instance& instance) {
   Thread* thread = Thread::Current();
   Zone* zone = thread->zone();
   Isolate* isolate = thread->isolate();
-  Class& error_class = Class::Handle(zone,
-                                     isolate->object_store()->error_class());
+  Class& error_class =
+      Class::Handle(zone, isolate->object_store()->error_class());
   if (error_class.IsNull()) {
     const Library& core_lib = Library::Handle(zone, Library::CoreLibrary());
     error_class = core_lib.LookupClass(Symbols::Error());
@@ -288,10 +374,10 @@ RawStacktrace* Exceptions::CurrentStacktrace() {
   BuildStackTrace(&frame_builder);
 
   // Create arrays for code and pc_offset tuples of each frame.
-  const Array& full_code_array = Array::Handle(zone,
-      Array::MakeArray(frame_builder.code_list()));
-  const Array& full_pc_offset_array = Array::Handle(zone,
-      Array::MakeArray(frame_builder.pc_offset_list()));
+  const Array& full_code_array =
+      Array::Handle(zone, Array::MakeArray(frame_builder.code_list()));
+  const Array& full_pc_offset_array =
+      Array::Handle(zone, Array::MakeArray(frame_builder.pc_offset_list()));
   const Stacktrace& full_stacktrace = Stacktrace::Handle(
       Stacktrace::New(full_code_array, full_pc_offset_array));
   return full_stacktrace.raw();
@@ -307,8 +393,8 @@ static void ThrowExceptionHelper(Thread* thread,
   bool use_preallocated_stacktrace = false;
   Instance& exception = Instance::Handle(zone, incoming_exception.raw());
   if (exception.IsNull()) {
-    exception ^= Exceptions::Create(Exceptions::kNullThrown,
-                                    Object::empty_array());
+    exception ^=
+        Exceptions::Create(Exceptions::kNullThrown, Object::empty_array());
   } else if (exception.raw() == isolate->object_store()->out_of_memory() ||
              exception.raw() == isolate->object_store()->stack_overflow()) {
     use_preallocated_stacktrace = true;
@@ -319,47 +405,47 @@ static void ThrowExceptionHelper(Thread* thread,
   Instance& stacktrace = Instance::Handle(zone);
   bool handler_exists = false;
   bool handler_needs_stacktrace = false;
+  // Find the exception handler and determine if the handler needs a
+  // stacktrace.
+  handler_exists = FindExceptionHandler(thread, &handler_pc, &handler_sp,
+                                        &handler_fp, &handler_needs_stacktrace);
   if (use_preallocated_stacktrace) {
+    if (handler_pc == 0) {
+      // No Dart frame.
+      ASSERT(incoming_exception.raw() ==
+             isolate->object_store()->out_of_memory());
+      const UnhandledException& error = UnhandledException::Handle(
+          zone, isolate->object_store()->preallocated_unhandled_exception());
+      thread->long_jump_base()->Jump(1, error);
+      UNREACHABLE();
+    }
     stacktrace ^= isolate->object_store()->preallocated_stack_trace();
     PreallocatedStacktraceBuilder frame_builder(stacktrace);
-    handler_exists = FindExceptionHandler(thread,
-                                          &handler_pc,
-                                          &handler_sp,
-                                          &handler_fp,
-                                          &handler_needs_stacktrace);
     if (handler_needs_stacktrace) {
       BuildStackTrace(&frame_builder);
     }
   } else {
-    // Get stacktrace field of class Error. This is needed to determine whether
-    // we have a subclass of Error which carries around its stack trace.
-    const Field& stacktrace_field =
-        Field::Handle(zone, LookupStacktraceField(exception));
-
-    // Find the exception handler and determine if the handler needs a
-    // stacktrace.
-    handler_exists = FindExceptionHandler(thread,
-                                          &handler_pc,
-                                          &handler_sp,
-                                          &handler_fp,
-                                          &handler_needs_stacktrace);
     if (!existing_stacktrace.IsNull()) {
       // If we have an existing stack trace then this better be a rethrow. The
       // reverse is not necessarily true (e.g. Dart_PropagateError can cause
       // a rethrow being called without an existing stacktrace.)
       ASSERT(is_rethrow);
-      ASSERT(stacktrace_field.IsNull() ||
-             (exception.GetField(stacktrace_field) != Object::null()));
       stacktrace = existing_stacktrace.raw();
-    } else if (!stacktrace_field.IsNull() || handler_needs_stacktrace) {
-      // Collect the stacktrace if needed.
-      ASSERT(existing_stacktrace.IsNull());
-      stacktrace = Exceptions::CurrentStacktrace();
-      // If we have an Error object, then set its stackTrace field only if it
-      // not yet initialized.
-      if (!stacktrace_field.IsNull() &&
-          (exception.GetField(stacktrace_field) == Object::null())) {
-        exception.SetField(stacktrace_field, stacktrace);
+    } else {
+      // Get stacktrace field of class Error to determine whether we have a
+      // subclass of Error which carries around its stack trace.
+      const Field& stacktrace_field =
+          Field::Handle(zone, LookupStacktraceField(exception));
+      if (!stacktrace_field.IsNull() || handler_needs_stacktrace) {
+        // Collect the stacktrace if needed.
+        ASSERT(existing_stacktrace.IsNull());
+        stacktrace = Exceptions::CurrentStacktrace();
+        // If we have an Error object, then set its stackTrace field only if it
+        // not yet initialized.
+        if (!stacktrace_field.IsNull() &&
+            (exception.GetField(stacktrace_field) == Object::null())) {
+          exception.SetField(stacktrace_field, stacktrace);
+        }
       }
     }
   }
@@ -375,12 +461,8 @@ static void ThrowExceptionHelper(Thread* thread,
   }
   if (handler_exists) {
     // Found a dart handler for the exception, jump to it.
-    JumpToExceptionHandler(thread,
-                           handler_pc,
-                           handler_sp,
-                           handler_fp,
-                           exception,
-                           stacktrace);
+    JumpToExceptionHandler(thread, handler_pc, handler_sp, handler_fp,
+                           exception, stacktrace);
   } else {
     // No dart exception handler found in this invocation sequence,
     // so we create an unhandled exception object and return to the
@@ -392,12 +474,8 @@ static void ThrowExceptionHelper(Thread* thread,
     const UnhandledException& unhandled_exception = UnhandledException::Handle(
         zone, UnhandledException::New(exception, stacktrace));
     stacktrace = Stacktrace::null();
-    JumpToExceptionHandler(thread,
-                           handler_pc,
-                           handler_sp,
-                           handler_fp,
-                           unhandled_exception,
-                           stacktrace);
+    JumpToExceptionHandler(thread, handler_pc, handler_sp, handler_fp,
+                           unhandled_exception, stacktrace);
   }
   UNREACHABLE();
 }
@@ -422,8 +500,8 @@ RawScript* Exceptions::GetCallerScript(DartFrameIterator* iterator) {
 RawInstance* Exceptions::NewInstance(const char* class_name) {
   Thread* thread = Thread::Current();
   Zone* zone = thread->zone();
-  const String& cls_name = String::Handle(zone,
-                                          Symbols::New(thread, class_name));
+  const String& cls_name =
+      String::Handle(zone, Symbols::New(thread, class_name));
   const Library& core_lib = Library::Handle(Library::CoreLibrary());
   // No ambiguity error expected: passing NULL.
   Class& cls = Class::Handle(core_lib.LookupClass(cls_name));
@@ -446,16 +524,21 @@ void Exceptions::CreateAndThrowTypeError(TokenPosition location,
 
   ExceptionType exception_type =
       (bound_error_msg.IsNull() &&
-       (dst_name.raw() == Symbols::InTypeCast().raw())) ? kCast : kType;
+       (dst_name.raw() == Symbols::InTypeCast().raw()))
+          ? kCast
+          : kType;
 
   DartFrameIterator iterator;
   const Script& script = Script::Handle(zone, GetCallerScript(&iterator));
-  intptr_t line;
+  intptr_t line = -1;
   intptr_t column = -1;
-  if (script.HasSource()) {
-    script.GetTokenLocation(location, &line, &column);
-  } else {
-    script.GetTokenLocation(location, &line, NULL);
+  ASSERT(!script.IsNull());
+  if (location.IsReal()) {
+    if (script.HasSource() || script.kind() == RawScript::kKernelTag) {
+      script.GetTokenLocation(location, &line, &column);
+    } else {
+      script.GetTokenLocation(location, &line, NULL);
+    }
   }
   // Initialize '_url', '_line', and '_column' arguments.
   args.SetAt(0, String::Handle(zone, script.url()));
@@ -463,8 +546,8 @@ void Exceptions::CreateAndThrowTypeError(TokenPosition location,
   args.SetAt(2, Smi::Handle(zone, Smi::New(column)));
 
   // Construct '_errorMsg'.
-  const GrowableObjectArray& pieces = GrowableObjectArray::Handle(zone,
-      GrowableObjectArray::New(20));
+  const GrowableObjectArray& pieces =
+      GrowableObjectArray::Handle(zone, GrowableObjectArray::New(20));
 
   // Print bound error first, if any.
   if (!bound_error_msg.IsNull() && (bound_error_msg.Length() > 0)) {
@@ -549,9 +632,10 @@ void Exceptions::Throw(Thread* thread, const Instance& exception) {
     }
   }
   // Null object is a valid exception object.
-  ThrowExceptionHelper(thread, exception,
-      Stacktrace::Handle(thread->zone()), false);
+  ThrowExceptionHelper(thread, exception, Stacktrace::Handle(thread->zone()),
+                       false);
 }
+
 
 void Exceptions::ReThrow(Thread* thread,
                          const Instance& exception,
@@ -640,6 +724,13 @@ void Exceptions::ThrowRangeError(const char* argument_name,
 }
 
 
+void Exceptions::ThrowCompileTimeError(const LanguageError& error) {
+  const Array& args = Array::Handle(Array::New(1));
+  args.SetAt(0, String::Handle(error.FormatMessage()));
+  Exceptions::ThrowByType(Exceptions::kCompileTimeError, args);
+}
+
+
 RawObject* Exceptions::Create(ExceptionType type, const Array& arguments) {
   Library& library = Library::Handle();
   const String* class_name = NULL;
@@ -713,12 +804,15 @@ RawObject* Exceptions::Create(ExceptionType type, const Array& arguments) {
     case kCyclicInitializationError:
       library = Library::CoreLibrary();
       class_name = &Symbols::CyclicInitializationError();
+      break;
+    case kCompileTimeError:
+      library = Library::CoreLibrary();
+      class_name = &Symbols::_CompileTimeError();
+      break;
   }
 
-  return DartLibraryCalls::InstanceCreate(library,
-                                          *class_name,
-                                          *constructor_name,
-                                          arguments);
+  return DartLibraryCalls::InstanceCreate(library, *class_name,
+                                          *constructor_name, arguments);
 }
 
 

@@ -2,14 +2,28 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-part of js_backend;
+import '../common.dart';
+import '../compiler.dart' show Compiler;
+import '../constants/expressions.dart';
+import '../constants/values.dart';
+import '../dart_types.dart';
+import '../elements/elements.dart';
+import '../enqueue.dart' show Enqueuer;
+import '../js/js.dart' as jsAst;
+import '../js_emitter/js_emitter.dart'
+    show CodeEmitterTask, MetadataCollector, Placeholder;
+import '../universe/call_structure.dart' show CallStructure;
+import '../universe/use.dart' show StaticUse;
+import '../universe/world_impact.dart';
+import '../util/util.dart';
+import 'backend.dart';
 
 /**
  * Handles construction of TypeVariable constants needed at runtime.
  */
 class TypeVariableHandler {
   final Compiler _compiler;
-  FunctionElement _typeVariableConstructor;
+  ConstructorElement _typeVariableConstructor;
 
   /**
    * Set to 'true' on first encounter of a class with type variables.
@@ -30,6 +44,14 @@ class TypeVariableHandler {
   Map<TypeVariableElement, jsAst.Expression> _typeVariableConstants =
       new Map<TypeVariableElement, jsAst.Expression>();
 
+  /// Impact builder used for the resolution world computation.
+  final StagedWorldImpactBuilder impactBuilderForResolution =
+      new StagedWorldImpactBuilder();
+
+  /// Impact builder used for the codegen world computation.
+  final StagedWorldImpactBuilder impactBuilderForCodegen =
+      new StagedWorldImpactBuilder();
+
   TypeVariableHandler(this._compiler);
 
   ClassElement get _typeVariableClass => _backend.helpers.typeVariableClass;
@@ -38,13 +60,21 @@ class TypeVariableHandler {
   JavaScriptBackend get _backend => _compiler.backend;
   DiagnosticReporter get reporter => _compiler.reporter;
 
-  void registerClassWithTypeVariables(
-      ClassElement cls, Enqueuer enqueuer, Registry registry) {
-    if (enqueuer.isResolutionQueue) {
+  /// Compute the [WorldImpact] for the type variables registered since last
+  /// flush.
+  WorldImpact flush({bool forResolution}) {
+    if (forResolution) {
+      return impactBuilderForResolution.flush();
+    } else {
+      return impactBuilderForCodegen.flush();
+    }
+  }
+
+  void registerClassWithTypeVariables(ClassElement cls, {bool forResolution}) {
+    if (forResolution) {
       // On first encounter, we have to ensure that the support classes get
       // resolved.
       if (!_seenClassesWithTypeVariables) {
-        _backend.enqueueClass(enqueuer, _typeVariableClass, registry);
         _typeVariableClass.ensureResolved(_compiler.resolution);
         Link constructors = _typeVariableClass.constructors;
         if (constructors.isEmpty && constructors.tail.isEmpty) {
@@ -52,12 +82,12 @@ class TypeVariableHandler {
               "Class '$_typeVariableClass' should only have one constructor");
         }
         _typeVariableConstructor = _typeVariableClass.constructors.head;
-        _backend.enqueueInResolution(_typeVariableConstructor, registry);
-        _backend.registerInstantiatedType(
-            _typeVariableClass.rawType, enqueuer, registry);
-        enqueuer.registerStaticUse(new StaticUse.staticInvoke(
-            _backend.registerBackendUse(_backend.helpers.createRuntimeType),
-            CallStructure.ONE_ARG));
+        _backend.impactTransformer.registerBackendStaticUse(
+            impactBuilderForResolution, _typeVariableConstructor);
+        _backend.impactTransformer.registerBackendInstantiation(
+            impactBuilderForResolution, _typeVariableClass);
+        _backend.impactTransformer.registerBackendStaticUse(
+            impactBuilderForResolution, _backend.helpers.createRuntimeType);
         _seenClassesWithTypeVariables = true;
       }
     } else {
@@ -77,46 +107,26 @@ class TypeVariableHandler {
     for (TypeVariableType currentTypeVariable in cls.typeVariables) {
       TypeVariableElement typeVariableElement = currentTypeVariable.element;
 
-      AstConstant name = new AstConstant(
-          typeVariableElement,
-          typeVariableElement.node,
-          new StringConstantExpression(currentTypeVariable.name),
-          _backend.constantSystem
-              .createString(new DartString.literal(currentTypeVariable.name)));
       jsAst.Expression boundIndex =
           _metadataCollector.reifyType(typeVariableElement.bound);
       ConstantValue boundValue = new SyntheticConstantValue(
           SyntheticConstantKind.TYPEVARIABLE_REFERENCE, boundIndex);
       ConstantExpression boundExpression =
           new SyntheticConstantExpression(boundValue);
-      AstConstant bound = new AstConstant(typeVariableElement,
-          typeVariableElement.node, boundExpression, boundValue);
-      AstConstant type = new AstConstant(
-          typeVariableElement,
-          typeVariableElement.node,
-          new TypeConstantExpression(cls.rawType),
-          _backend.constantSystem.createType(_backend.compiler, cls.rawType));
-      List<AstConstant> arguments = [type, name, bound];
+      ConstantExpression constant = new ConstructedConstantExpression(
+          _typeVariableConstructor.enclosingClass.thisType,
+          _typeVariableConstructor,
+          const CallStructure.unnamed(3), [
+        new TypeConstantExpression(cls.rawType),
+        new StringConstantExpression(currentTypeVariable.name),
+        new SyntheticConstantExpression(boundValue)
+      ]);
 
-      // TODO(johnniwinther): Support a less front-end specific creation of
-      // constructed constants.
-      AstConstant constant =
-          CompileTimeConstantEvaluator.makeConstructedConstant(
-              _compiler,
-              _backend.constants,
-              typeVariableElement,
-              typeVariableElement.node,
-              typeVariableType,
-              _typeVariableConstructor,
-              typeVariableType,
-              _typeVariableConstructor,
-              const CallStructure.unnamed(3),
-              arguments,
-              arguments);
-      ConstantValue value = constant.value;
-      _backend.registerCompileTimeConstant(value, _compiler.globalDependencies);
+      _backend.constants.evaluate(constant);
+      ConstantValue value = _backend.constants.getConstantValue(constant);
+      _backend.computeImpactForCompileTimeConstant(
+          value, impactBuilderForCodegen, false);
       _backend.addCompileTimeConstantForEmission(value);
-      _backend.constants.addCompileTimeConstantForEmission(value);
       constants
           .add(_reifyTypeVariableConstant(value, currentTypeVariable.element));
     }

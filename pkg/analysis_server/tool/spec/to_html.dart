@@ -23,59 +23,106 @@ import 'from_html.dart';
  */
 final String stylesheet = '''
 body {
-  font-family: sans-serif, serif;
-  padding-left: 5%;
-  padding-right: 5%;
+  font-family: 'Roboto', sans-serif;
+  max-width: 800px;
+  margin: 0 auto;
+  padding: 0 16px;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #111;
+  background-color: #fdfdfd;
+  font-weight: 300;
+  -webkit-font-smoothing: auto;
 }
+
 h1 {
   text-align: center;
 }
+
+h2, h3, h4, h5 {
+  margin-bottom: 0;
+}
+
 h2.domain {
-  border-bottom: 3px solid rgb(160, 160, 160);
+  border-bottom: 1px solid rgb(200, 200, 200);
+  margin-bottom: 0.5em;
 }
+
+h4 {
+  font-size: 18px;
+}
+
+h5 {
+  font-size: 16px;
+}
+
+p {
+  margin-top: 0;
+}
+
 pre {
-  margin: 0px;
+  margin: 0;
+  font-family: 'Source Code Pro', monospace;
+  font-size: 15px;
 }
+
 div.box {
-  border: 1px solid rgb(0, 0, 0);
-  background-color: rgb(207, 226, 243);
-  padding: 0.5em;
+  background-color: rgb(240, 245, 240);
+  border-radius: 4px;
+  padding: 4px 12px;
+  margin: 16px 0;
 }
+
 div.hangingIndent {
   padding-left: 3em;
   text-indent: -3em;
 }
+
+dl dt {
+  font-weight: bold;
+}
+
+dl dd {
+  margin-left: 16px;
+}
+
 dt {
   margin-top: 1em;
-  margin-bottom: 1em;
 }
+
 dt.notification {
   font-weight: bold;
 }
+
 dt.refactoring {
   font-weight: bold;
 }
+
 dt.request {
   font-weight: bold;
 }
+
 dt.typeDefinition {
   font-weight: bold;
 }
 
-*/
-* Styles for index
-*/
-
-.subindex {
+a {
+  text-decoration: none;
 }
 
-.subindex ul {
-  padding-left: 0px;
-  margin-left: 0px;
+a:focus, a:hover {
+  text-decoration: underline;
+}
 
-  -webkit-margin-before: 0px;
-  -webkit-margin-start: 0px;
-  -webkit-padding-start: 0px;
+/* Styles for index */
+
+.subindex ul {
+  padding-left: 0;
+  margin-left: 0;
+
+  -webkit-margin-before: 0;
+  -webkit-margin-start: 0;
+  -webkit-padding-start: 0;
 
   list-style-type: none;
 }
@@ -146,6 +193,7 @@ abstract class HtmlMixin {
   void head(void callback()) => element('head', {}, callback);
   void html(void callback()) => element('html', {}, callback);
   void i(void callback()) => element('i', {}, callback);
+  void li(void callback()) => element('li', {}, callback);
   void link(String id, void callback()) {
     element('a', {'href': '#$id'}, callback);
   }
@@ -154,6 +202,7 @@ abstract class HtmlMixin {
   void pre(void callback()) => element('pre', {}, callback);
   void title(void callback()) => element('title', {}, callback);
   void tt(void callback()) => element('tt', {}, callback);
+  void ul(void callback()) => element('ul', {}, callback);
 }
 
 /**
@@ -218,6 +267,22 @@ class ToHtmlVisitor extends HierarchicalApiVisitor
         generateNotificationsIndex(domain.notifications);
       });
     }
+  }
+
+  void generateTableOfContents() {
+    ul(() {
+      writeln();
+
+      for (var domain in api.domains.where((domain) => !domain.experimental)) {
+        write('      ');
+        li(() {
+          link('domain_${domain.name}', () {
+            write(_toTitleCase(domain.name));
+          });
+        });
+        writeln();
+      }
+    });
   }
 
   void generateIndex() {
@@ -356,6 +421,11 @@ class ToHtmlVisitor extends HierarchicalApiVisitor
           case 'head':
             head(() {
               translateHtml(node, squashParagraphs: squashParagraphs);
+              element('link', {
+                'rel': 'stylesheet',
+                'href': 'https://fonts.googleapis.com/css?family=Source+Code+Pro|Roboto:500,400italic,300,400',
+                'type': 'text/css'
+                });
               element('style', {}, () {
                 writeln(stylesheet);
               });
@@ -369,6 +439,9 @@ class ToHtmlVisitor extends HierarchicalApiVisitor
             break;
           case 'version':
             translateHtml(node, squashParagraphs: squashParagraphs);
+            break;
+          case 'toc':
+            generateTableOfContents();
             break;
           case 'index':
             generateIndex();
@@ -405,7 +478,7 @@ class ToHtmlVisitor extends HierarchicalApiVisitor
     }
     h2('domain', () {
       anchor('domain_${domain.name}', () {
-        write('Domain: ${domain.name}');
+        write('${domain.name} domain');
       });
     });
     translateHtml(domain.html);
@@ -445,7 +518,7 @@ class ToHtmlVisitor extends HierarchicalApiVisitor
             'notification', notification.notificationType, notification.params);
       });
       translateHtml(notification.html);
-      describePayload(notification.params, 'Parameters');
+      describePayload(notification.params, 'parameters:');
     });
   }
 
@@ -456,8 +529,8 @@ class ToHtmlVisitor extends HierarchicalApiVisitor
     });
     dd(() {
       translateHtml(refactoring.html);
-      describePayload(refactoring.feedback, 'Feedback', force: true);
-      describePayload(refactoring.options, 'Options', force: true);
+      describePayload(refactoring.feedback, 'Feedback:', force: true);
+      describePayload(refactoring.options, 'Options:', force: true);
     });
   }
 
@@ -488,8 +561,8 @@ class ToHtmlVisitor extends HierarchicalApiVisitor
         showType('response', request.responseType, request.result);
       });
       translateHtml(request.html);
-      describePayload(request.params, 'Parameters');
-      describePayload(request.result, 'Returns');
+      describePayload(request.params, 'parameters:');
+      describePayload(request.result, 'returns:');
     });
   }
 
@@ -561,25 +634,23 @@ class ToHtmlVisitor extends HierarchicalApiVisitor
   void visitTypeObjectField(TypeObjectField typeObjectField) {
     dt('field', () {
       b(() {
-        i(() {
-          write(typeObjectField.name);
-          if (typeObjectField.value != null) {
-            write(' = ${JSON.encode(typeObjectField.value)}');
-          } else {
-            write(' ( ');
-            if (typeObjectField.optional) {
-              gray(() {
-                write('optional');
-              });
-              write(' ');
-            }
-            TypeVisitor typeVisitor = new TypeVisitor(api, short: true);
-            addAll(typeVisitor.collectHtml(() {
-              typeVisitor.visitTypeDecl(typeObjectField.type);
-            }));
-            write(' )');
+        write(typeObjectField.name);
+        if (typeObjectField.value != null) {
+          write(' = ${JSON.encode(typeObjectField.value)}');
+        } else {
+          write(' (');
+          if (typeObjectField.optional) {
+            gray(() {
+              write('optional');
+            });
+            write(' ');
           }
-        });
+          TypeVisitor typeVisitor = new TypeVisitor(api, short: true);
+          addAll(typeVisitor.collectHtml(() {
+            typeVisitor.visitTypeDecl(typeObjectField.type);
+          }));
+          write(')');
+        }
       });
     });
     dd(() {
@@ -715,4 +786,9 @@ class TypeVisitor extends HierarchicalApiVisitor
       verticalBarNeeded = true;
     }
   }
+}
+
+String _toTitleCase(String str) {
+  if (str.isEmpty) return str;
+  return str.substring(0, 1).toUpperCase() + str.substring(1);
 }

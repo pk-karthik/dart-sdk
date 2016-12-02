@@ -4,16 +4,15 @@
 
 import 'dart:io';
 
-import 'package:analyzer/src/generated/sdk_io.dart';
+import 'package:analyzer/src/dart/sdk/sdk.dart';
+import 'package:analyzer/src/generated/sdk.dart';
 import 'package:analyzer_cli/src/driver.dart' show Driver, errorSink, outSink;
 import 'package:path/path.dart' as path;
-import 'package:unittest/unittest.dart';
+import 'package:test/test.dart';
 
 import 'utils.dart';
 
 main() {
-  initializeTestEnvironment();
-
   group('_embedder.yaml', () {
     StringSink savedOutSink, savedErrorSink;
     int savedExitCode;
@@ -52,8 +51,9 @@ main() {
         path.join(testDir, 'embedder_yaml_user.dart')
       ]);
 
-      DirectoryBasedDartSdk sdk = driver.sdk;
-      expect(sdk.useSummary, false);
+      DartSdk sdk = driver.sdk;
+      expect(sdk, new isInstanceOf<FolderBasedDartSdk>());
+      expect((sdk as FolderBasedDartSdk).useSummary, isFalse);
     }));
   });
 }

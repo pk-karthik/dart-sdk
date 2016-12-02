@@ -135,7 +135,7 @@ class ProcessCommand extends Command {
 
   String get reproductionCommand {
     var env = new StringBuffer();
-    environmentOverrides.forEach((key, value) =>
+    environmentOverrides?.forEach((key, value) =>
         (io.Platform.operatingSystem == 'windows')
             ? env.write('set $key=${escapeCommandLineArgument(value)} & ')
             : env.write('$key=${escapeCommandLineArgument(value)} '));
@@ -219,6 +219,20 @@ class CompilationCommand extends ProcessCommand {
       _outputFile == other._outputFile &&
       _neverSkipCompilation == other._neverSkipCompilation &&
       deepJsonCompare(_bootstrapDependencies, other._bootstrapDependencies);
+}
+
+class KernelCompilationCommand extends CompilationCommand {
+  KernelCompilationCommand._(
+      String displayName,
+      String outputFile,
+      bool neverSkipCompilation,
+      List<Uri> bootstrapDependencies,
+      String executable,
+      List<String> arguments,
+      Map<String, String> environmentOverrides)
+      : super._(displayName, outputFile, neverSkipCompilation,
+                bootstrapDependencies, executable, arguments,
+                environmentOverrides);
 }
 
 /// This is just a Pair(String, Map) class with hashCode and operator ==
@@ -350,11 +364,13 @@ class VmCommand extends ProcessCommand {
 
 class AdbPrecompilationCommand extends Command {
   final String precompiledRunnerFilename;
+  final String processTestFilename;
   final String precompiledTestDirectory;
   final List<String> arguments;
   final bool useBlobs;
 
   AdbPrecompilationCommand._(this.precompiledRunnerFilename,
+                             this.processTestFilename,
                              this.precompiledTestDirectory,
                              this.arguments,
                              this.useBlobs)
@@ -376,7 +392,7 @@ class AdbPrecompilationCommand extends Command {
       precompiledTestDirectory == other.precompiledTestDirectory;
 
   String toString() => 'Steps to push precompiled runner and precompiled code '
-                       'to an attached device. Uses (and requires) adb.';
+      'to an attached device. Uses (and requires) adb.';
 }
 
 class JSCommandlineCommand extends ProcessCommand {
@@ -466,8 +482,8 @@ class ModifyPubspecYamlCommand extends ScriptCommand {
   String _destinationFile;
   Map<String, Map> _dependencyOverrides;
 
-  ModifyPubspecYamlCommand._(this._pubspecYamlFile,
-      this._destinationFile, this._dependencyOverrides)
+  ModifyPubspecYamlCommand._(
+      this._pubspecYamlFile, this._destinationFile, this._dependencyOverrides)
       : super._("modify_pubspec") {
     assert(_pubspecYamlFile.endsWith("pubspec.yaml"));
     assert(_destinationFile.endsWith("pubspec.yaml"));
@@ -652,6 +668,25 @@ class CommandBuilder {
     return _getUniqueCommand(command);
   }
 
+  CompilationCommand getKernelCompilationCommand(
+      String displayName,
+      outputFile,
+      neverSkipCompilation,
+      List<Uri> bootstrapDependencies,
+      String executable,
+      List<String> arguments,
+      Map<String, String> environment) {
+    var command = new KernelCompilationCommand._(
+        displayName,
+        outputFile,
+        neverSkipCompilation,
+        bootstrapDependencies,
+        executable,
+        arguments,
+        environment);
+    return _getUniqueCommand(command);
+  }
+
   AnalysisCommand getAnalysisCommand(
       String displayName, executable, arguments, environmentOverrides,
       {String flavor: 'dart2analyzer'}) {
@@ -667,11 +702,12 @@ class CommandBuilder {
   }
 
   AdbPrecompilationCommand getAdbPrecompiledCommand(String precompiledRunner,
+                                                    String processTest,
                                                     String testDirectory,
                                                     List<String> arguments,
                                                     bool useBlobs) {
     var command = new AdbPrecompilationCommand._(
-        precompiledRunner, testDirectory, arguments, useBlobs);
+        precompiledRunner, processTest, testDirectory, arguments, useBlobs);
     return _getUniqueCommand(command);
   }
 
@@ -921,8 +957,9 @@ class UnittestSuiteMessagesMixin {
 /**
  * CommandOutput records the output of a completed command: the process's exit
  * code, the standard output and standard error, whether the process timed out,
- * and the time the process took to run.  It also contains a pointer to the
- * [TestCase] this is the output of.
+ * and the time the process took to run.  It does not contain a pointer to the
+ * [TestCase] this is the output of, so some functions require the test case
+ * to be passed as an argument.
  */
 abstract class CommandOutput {
   Command get command;
@@ -974,7 +1011,6 @@ class CommandOutputImpl extends UniqueObject implements CommandOutput {
    */
   bool alreadyPrintedWarning = false;
 
-  // TODO(kustermann): Remove testCase from this class.
   CommandOutputImpl(
       Command this.command,
       int this.exitCode,
@@ -1040,7 +1076,7 @@ class CommandOutputImpl extends UniqueObject implements CommandOutput {
   Expectation _negateOutcomeIfNegativeTest(
       Expectation outcome, bool isNegative) {
     if (!isNegative) return outcome;
-
+    if (outcome == Expectation.IGNORE) return outcome;
     if (outcome.canBeOutcomeOf(Expectation.FAIL)) {
       return Expectation.PASS;
     }
@@ -1054,26 +1090,48 @@ class BrowserCommandOutputImpl extends CommandOutputImpl {
   // See: http://dartbug.com/15139.
   static int WHITELISTED_CONTENTSHELL_EXITCODE = -1073740022;
   static bool isWindows = io.Platform.operatingSystem == 'windows';
+  static bool _failedBecauseOfFlakyInfrastructure(List<int> stderrBytes) {
+    // If the browser test failed, it may have been because content shell
+    // and the virtual framebuffer X server didn't hook up, or it crashed with
+    // a core dump. Sometimes content shell crashes after it has set the stdout
+    // to PASS, so we have to do this check first.
+    // Content shell also fails with a broken pipe message: Issue 26739
+    var zygoteCrash =
+        new RegExp(r"ERROR:zygote_linux\.cc\(\d+\)] write: Broken pipe");
+    var stderr = decodeUtf8(stderrBytes);
+    // TODO(whesse): Issue: 7564
+    // This may not be happening anymore.  Test by removing this suppression.
+    if (stderr.contains(MESSAGE_CANNOT_OPEN_DISPLAY) ||
+        stderr.contains(MESSAGE_FAILED_TO_RUN_COMMAND)) {
+      DebugLogger.warning(
+          "Warning: Failure because of missing XDisplay. Test ignored");
+      return true;
+    }
+    // Issue 26739
+    if (zygoteCrash.hasMatch(stderr)) {
+      DebugLogger.warning("Warning: Failure because of content_shell "
+          "zygote crash. Test ignored");
+      return true;
+    }
+    return false;
+  }
 
-  bool _failedBecauseOfMissingXDisplay;
+  bool _infraFailure;
 
   BrowserCommandOutputImpl(
       command, exitCode, timedOut, stdout, stderr, time, compilationSkipped)
       : super(command, exitCode, timedOut, stdout, stderr, time,
-            compilationSkipped, 0) {
-    _failedBecauseOfMissingXDisplay = _didFailBecauseOfMissingXDisplay();
-    if (_failedBecauseOfMissingXDisplay) {
-      DebugLogger.warning("Warning: Test failure because of missing XDisplay");
-      // If we get the X server error, or DRT crashes with a core dump, retry
-      // the test.
-    }
-  }
+            compilationSkipped, 0),
+        _infraFailure = _failedBecauseOfFlakyInfrastructure(stderr);
 
   Expectation result(TestCase testCase) {
     // Handle crashes and timeouts first
     if (hasCrashed) return Expectation.CRASH;
     if (hasTimedOut) return Expectation.TIMEOUT;
 
+    if (_infraFailure) {
+      return Expectation.IGNORE;
+    }
     var outcome = _getOutcome();
 
     if (testCase.hasRuntimeError) {
@@ -1091,8 +1149,8 @@ class BrowserCommandOutputImpl extends CommandOutputImpl {
   bool get successful => canRunDependendCommands;
 
   bool get canRunDependendCommands {
-    // We cannot rely on the exit code of content_shell as a method to determine
-    // if we were successful or not.
+    // We cannot rely on the exit code of content_shell as a method to
+    // determine if we were successful or not.
     return super.canRunDependendCommands && !didFail(null);
   }
 
@@ -1101,32 +1159,10 @@ class BrowserCommandOutputImpl extends CommandOutputImpl {
   }
 
   Expectation _getOutcome() {
-    if (_failedBecauseOfMissingXDisplay) {
-      return Expectation.FAIL;
-    }
-
     if (_browserTestFailure) {
       return Expectation.RUNTIME_ERROR;
     }
     return Expectation.PASS;
-  }
-
-  bool _didFailBecauseOfMissingXDisplay() {
-    // Browser case:
-    // If the browser test failed, it may have been because content shell
-    // and the virtual framebuffer X server didn't hook up, or it crashed with
-    // a core dump. Sometimes content shell crashes after it has set the stdout
-    // to PASS, so we have to do this check first.
-    var stderrLines = decodeUtf8(super.stderr).split("\n");
-    for (String line in stderrLines) {
-      // TODO(kustermann,ricow): Issue: 7564
-      // This seems to happen quite frequently, we need to figure out why.
-      if (line.contains(MESSAGE_CANNOT_OPEN_DISPLAY) ||
-          line.contains(MESSAGE_FAILED_TO_RUN_COMMAND)) {
-        return true;
-      }
-    }
-    return false;
   }
 
   bool get _rendererCrashed =>
@@ -1334,13 +1370,6 @@ class BrowserControllerTestOutcome extends CommandOutputImpl
 
   factory BrowserControllerTestOutcome(
       Command command, BrowserTestOutput result) {
-    void validate(String assertion, bool value) {
-      if (!value) {
-        throw "InvalidFormat sent from browser driving page: $assertion:\n\n"
-            "${result.lastKnownMessage}";
-      }
-    }
-
     String indent(String string, int numSpaces) {
       var spaces = new List.filled(numSpaces, ' ').join('');
       return string
@@ -1374,11 +1403,7 @@ class BrowserControllerTestOutcome extends CommandOutputImpl
         stderr = "This test timed out. The delay until the test actually "
             "started was: ${result.delayUntilTestStarted}.";
       } else {
-        // TODO(ricow/kustermann) as soon as we record the state periodically,
-        // we will have more information and can remove this warning.
-        stderr = "This test has not notified test.py that it started running. "
-            "This could be a bug in test.py! "
-            "Please contact ricow/whesse";
+        stderr = "This test has not notified test.py that it started running.";
       }
     }
 
@@ -1583,7 +1608,15 @@ class CompilationCommandOutputImpl extends CommandOutputImpl {
   Expectation result(TestCase testCase) {
     // Handle general crash/timeout detection.
     if (hasCrashed) return Expectation.CRASH;
-    if (hasTimedOut) return Expectation.TIMEOUT;
+    if (hasTimedOut) {
+      bool isWindows = io.Platform.operatingSystem == 'windows';
+      bool isBrowserTestCase =
+          testCase.commands.any((command) => command is BrowserTestCommand);
+      // TODO(26060) Dart2js batch mode hangs on Windows under heavy load.
+      return (isWindows && isBrowserTestCase)
+          ? Expectation.IGNORE
+          : Expectation.TIMEOUT;
+    }
 
     // Handle dart2js specific crash detection
     if (exitCode == DART2JS_EXITCODE_CRASH ||
@@ -1614,6 +1647,43 @@ class CompilationCommandOutputImpl extends CommandOutputImpl {
         exitCode == 0 ? Expectation.PASS : Expectation.COMPILETIME_ERROR;
     return _negateOutcomeIfNegativeTest(outcome, testCase.isNegative);
   }
+}
+
+class KernelCompilationCommandOutputImpl extends CompilationCommandOutputImpl {
+  KernelCompilationCommandOutputImpl(
+      Command command, int exitCode, bool timedOut,
+      List<int> stdout, List<int> stderr,
+      Duration time, bool compilationSkipped)
+      : super(command, exitCode, timedOut, stdout, stderr, time,
+              compilationSkipped);
+
+  bool get canRunDependendCommands {
+    // See [BatchRunnerProcess]: 0 means success, 1 means compile-time error.
+    // TODO(asgerf): When the frontend supports it, continue running even if
+    //   there were compile-time errors. See kernel_sdk issue #18.
+    return !hasCrashed && !timedOut && exitCode == 0;
+  }
+
+  Expectation result(TestCase testCase) {
+    Expectation result = super.result(testCase);
+    if (result.canBeOutcomeOf(Expectation.CRASH)) {
+      return Expectation.DARTK_CRASH;
+    } else if (result.canBeOutcomeOf(Expectation.TIMEOUT)) {
+      return Expectation.DARTK_TIMEOUT;
+    } else if (result.canBeOutcomeOf(Expectation.MISSING_COMPILETIME_ERROR)) {
+      return Expectation.DARTK_MISSING_COMPILETIME_ERROR;
+    } else if (result.canBeOutcomeOf(Expectation.COMPILETIME_ERROR)) {
+      return Expectation.DARTK_COMPILETIME_ERROR;
+    }
+    return result;
+  }
+
+  // If the compiler was able to produce a Kernel IR file we want to run the
+  // result on the Dart VM.  We therefore mark the [KernelCompilationCommand] as
+  // successful.
+  // => This ensures we test that the DartVM produces correct CompileTime errors
+  //    as it is supposed to for our test suites.
+  bool get successful => canRunDependendCommands;
 }
 
 class JsCommandlineOutputImpl extends CommandOutputImpl
@@ -1690,12 +1760,15 @@ CommandOutput createCommandOutput(Command command, int exitCode, bool timedOut,
   } else if (command is VmCommand) {
     return new VmCommandOutputImpl(
         command, exitCode, timedOut, stdout, stderr, time, pid);
+  } else if (command is KernelCompilationCommand) {
+    return new KernelCompilationCommandOutputImpl(
+        command, exitCode, timedOut, stdout, stderr, time, compilationSkipped);
   } else if (command is AdbPrecompilationCommand) {
     return new VmCommandOutputImpl(
         command, exitCode, timedOut, stdout, stderr, time, pid);
   } else if (command is CompilationCommand) {
     if (command.displayName == 'precompiler' ||
-        command.displayName == 'dart2snapshot') {
+        command.displayName == 'app_jit') {
       return new VmCommandOutputImpl(
           command, exitCode, timedOut, stdout, stderr, time, pid);
     }
@@ -1795,6 +1868,7 @@ class RunningProcess {
   int pid;
   OutputLog stdout = new OutputLog();
   OutputLog stderr = new OutputLog();
+  List<String> diagnostics = <String>[];
   bool compilationSkipped = false;
   Completer<CommandOutput> completer;
 
@@ -1858,11 +1932,34 @@ class RunningProcess {
 
           // Close stdin so that tests that try to block on input will fail.
           process.stdin.close();
-          void timeoutHandler() {
+          timeoutHandler() async {
             timedOut = true;
             if (process != null) {
+              var executable, arguments;
+              if (io.Platform.isLinux) {
+                executable = 'eu-stack';
+                arguments = ['-p ${process.pid}'];
+              } else if (io.Platform.isMacOS) {
+                // Try to print stack traces of the timed out process.
+                // `sample` is a sampling profiler but we ask it sample for 1
+                // second with a 4 second delay between samples so that we only
+                // sample the threads once.
+                executable = '/usr/bin/sample';
+                arguments = ['${process.pid}', '1', '4000', '-mayDie'];
+              }
+
+              if (executable != null) {
+                try {
+                  var result = await io.Process.run(executable, arguments);
+                  diagnostics.addAll(result.stdout.split('\n'));
+                  diagnostics.addAll(result.stderr.split('\n'));
+                } catch (error) {
+                  diagnostics.add("Unable to capture stack traces: $error");
+                }
+              }
+
               if (!process.kill()) {
-                DebugLogger.error("Unable to kill ${process.pid}");
+                diagnostics.add("Unable to kill ${process.pid}");
               }
             }
           }
@@ -1921,6 +2018,7 @@ class RunningProcess {
         new DateTime.now().difference(startTime),
         compilationSkipped,
         pid);
+    commandOutput.diagnostics.addAll(diagnostics);
     return commandOutput;
   }
 
@@ -2522,6 +2620,12 @@ class CommandExecutorImpl implements CommandExecutor {
 
     if (command is BrowserTestCommand) {
       return _startBrowserControllerTest(command, timeout);
+    } else if (command is KernelCompilationCommand) {
+      // For now, we always run dartk in batch mode.
+      var name = command.displayName;
+      assert(name == 'dartk');
+      return _getBatchRunner(name)
+          .runCommand(name, command, timeout, command.arguments);
     } else if (command is CompilationCommand && dart2jsBatchMode) {
       return _getBatchRunner("dart2js")
           .runCommand("dart2js", command, timeout, command.arguments);
@@ -2533,8 +2637,8 @@ class CommandExecutorImpl implements CommandExecutor {
     } else if (command is AdbPrecompilationCommand) {
       assert(adbDevicePool != null);
       return adbDevicePool.acquireDevice().then((AdbDevice device) {
-        return _runAdbPrecompilationCommand(
-            device, command, timeout).whenComplete(() {
+        return _runAdbPrecompilationCommand(device, command, timeout)
+            .whenComplete(() {
           adbDevicePool.releaseDevice(device);
         });
       });
@@ -2546,6 +2650,7 @@ class CommandExecutorImpl implements CommandExecutor {
   Future<CommandOutput> _runAdbPrecompilationCommand(
       AdbDevice device, AdbPrecompilationCommand command, int timeout) async {
     var runner = command.precompiledRunnerFilename;
+    var processTest = command.processTestFilename;
     var testdir = command.precompiledTestDirectory;
     var arguments = command.arguments;
     var devicedir = '/data/local/tmp/precompilation-testing';
@@ -2555,7 +2660,6 @@ class CommandExecutorImpl implements CommandExecutor {
     // directory.
     List<String> files = new io.Directory(testdir)
         .listSync()
-        .where((fse) => fse is io.File)
         .map((file) => file.path)
         .map((path) => path.substring(path.lastIndexOf('/') + 1))
         .toList();
@@ -2565,36 +2669,36 @@ class CommandExecutorImpl implements CommandExecutor {
     // All closures are of type "Future<AdbCommandResult> run()"
     List<Function> steps = [];
 
-    steps.add(() => device.runAdbShellCommand(
-          ['rm', '-Rf', deviceTestDir]));
-    steps.add(() => device.runAdbShellCommand(
-          ['mkdir', '-p', deviceTestDir]));
+    steps.add(() => device.runAdbShellCommand(['rm', '-Rf', deviceTestDir]));
+    steps.add(() => device.runAdbShellCommand(['mkdir', '-p', deviceTestDir]));
     // TODO: We should find a way for us to cache the runner binary and avoid
     // pushhing it for every single test (this is bad for SSD cycle time, test
     // timing).
     steps.add(() => device.runAdbCommand(
-          ['push', runner, '$devicedir/dart_precompiled_runtime']));
+        ['push', runner, '$devicedir/dart_precompiled_runtime']));
+    steps.add(() => device.runAdbCommand(
+        ['push', processTest, '$devicedir/process_test']));
     steps.add(() => device.runAdbShellCommand(
-          ['chmod', '777', '$devicedir/dart_precompiled_runtime']));
+        ['chmod', '777', '$devicedir/dart_precompiled_runtime $devicedir/process_test']));
 
     for (var file in files) {
-      steps.add(() => device.runAdbCommand(
-            ['push', '$testdir/$file', '$deviceTestDir/$file']));
+      steps.add(() => device
+          .runAdbCommand(['push', '$testdir/$file', '$deviceTestDir/$file']));
     }
 
-    if (command.useBlobs) {
-      steps.add(() => device.runAdbShellCommand(
-            ['$devicedir/dart_precompiled_runtime',
-             '--run-app-snapshot=$deviceTestDir',
-             '--use-blobs']..addAll(arguments),
-            timeout: timeoutDuration));
-    } else {
-      steps.add(() => device.runAdbShellCommand(
-            ['$devicedir/dart_precompiled_runtime',
-             '--run-app-snapshot=$deviceTestDir'
-             ]..addAll(arguments),
-            timeout: timeoutDuration));
+    var args = new List();
+    args.addAll(arguments);
+    for (var i = 0; i < args.length; i++) {
+      if (args[i].endsWith(".dart")) {
+        args[i] = "$deviceTestDir/out.aotsnapshot";
+      }
     }
+
+    steps.add(() => device.runAdbShellCommand(
+        [
+          '$devicedir/dart_precompiled_runtime',
+        ]..addAll(args),
+        timeout: timeoutDuration));
 
     var stopwatch = new Stopwatch()..start();
     var writer = new StringBuffer();
@@ -2623,9 +2727,8 @@ class CommandExecutorImpl implements CommandExecutor {
       // immediately.
       if (result.exitCode != 0) break;
     }
-    return createCommandOutput(
-        command, result.exitCode, result.timedOut, UTF8.encode('$writer'),
-        [], stopwatch.elapsed, false);
+    return createCommandOutput(command, result.exitCode, result.timedOut,
+        UTF8.encode('$writer'), [], stopwatch.elapsed, false);
   }
 
   BatchRunnerProcess _getBatchRunner(String identifier) {
@@ -2919,7 +3022,7 @@ class ProcessQueue {
         cancelDebugTimer();
         _debugTimer = new Timer(debugTimerDuration, () {
           print("The debug timer of test.dart expired. Please report this issue"
-              " to ricow/whesse and provide the following information:");
+              " to whesse@ and provide the following information:");
           print("");
           print("Graph is sealed: ${_graph.isSealed}");
           print("");
@@ -2981,8 +3084,8 @@ class ProcessQueue {
         executor = new ReplayingCommandExecutor(new Path(recordedInputFile));
       } else {
         executor = new CommandExecutorImpl(
-            _globalConfiguration, maxProcesses,
-            maxBrowserProcesses, adbDevicePool: adbDevicePool);
+            _globalConfiguration, maxProcesses, maxBrowserProcesses,
+            adbDevicePool: adbDevicePool);
       }
 
       // Run "runnable commands" using [executor] subject to

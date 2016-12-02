@@ -7,14 +7,15 @@ library test.context.directory.manager;
 import 'dart:collection';
 
 import 'package:analysis_server/src/context_manager.dart';
+import 'package:analyzer/error/error.dart';
 import 'package:analyzer/file_system/file_system.dart';
 import 'package:analyzer/file_system/memory_file_system.dart';
 import 'package:analyzer/instrumentation/instrumentation.dart';
-import 'package:analyzer/source/embedder.dart';
 import 'package:analyzer/source/error_processor.dart';
+import 'package:analyzer/src/context/builder.dart';
+import 'package:analyzer/src/dart/analysis/driver.dart';
+import 'package:analyzer/src/error/codes.dart';
 import 'package:analyzer/src/generated/engine.dart';
-import 'package:analyzer/src/generated/error.dart';
-import 'package:analyzer/src/generated/java_io.dart';
 import 'package:analyzer/src/generated/sdk.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart';
@@ -22,31 +23,31 @@ import 'package:analyzer/src/services/lint.dart';
 import 'package:analyzer/src/util/glob.dart';
 import 'package:linter/src/plugin/linter_plugin.dart';
 import 'package:linter/src/rules/avoid_as.dart';
-import 'package:path/path.dart';
+import 'package:path/path.dart' as path;
 import 'package:plugin/manager.dart';
 import 'package:plugin/plugin.dart';
+import 'package:test/test.dart';
 import 'package:test_reflective_loader/test_reflective_loader.dart';
-import 'package:unittest/unittest.dart';
 
 import 'mock_sdk.dart';
 import 'mocks.dart';
-import 'utils.dart';
 
 main() {
-  initializeTestEnvironment();
-  defineReflectiveTests(AbstractContextManagerTest);
-  defineReflectiveTests(ContextManagerWithNewOptionsTest);
-  defineReflectiveTests(ContextManagerWithOldOptionsTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(AbstractContextManagerTest);
+    defineReflectiveTests(ContextManagerWithNewOptionsTest);
+    defineReflectiveTests(ContextManagerWithOldOptionsTest);
+  });
 }
 
 @reflectiveTest
 class AbstractContextManagerTest extends ContextManagerTest {
   void test_contextsInAnalysisRoot_nestedContext() {
-    String subProjPath = posix.join(projPath, 'subproj');
+    String subProjPath = path.posix.join(projPath, 'subproj');
     Folder subProjFolder = resourceProvider.newFolder(subProjPath);
     resourceProvider.newFile(
-        posix.join(subProjPath, 'pubspec.yaml'), 'contents');
-    String subProjFilePath = posix.join(subProjPath, 'file.dart');
+        path.posix.join(subProjPath, 'pubspec.yaml'), 'contents');
+    String subProjFilePath = path.posix.join(subProjPath, 'file.dart');
     resourceProvider.newFile(subProjFilePath, 'contents');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
     // Make sure that there really are contexts for both the main project and
@@ -153,8 +154,7 @@ test_pack:lib/''');
     var context = contexts[0];
     var source = context.sourceFactory.forUri('dart:foobar');
     expect(source, isNotNull);
-    expect(source.fullName,
-        '/my/proj/sdk_ext/entry.dart'.replaceAll('/', JavaFile.separator));
+    expect(source.fullName, '/my/proj/sdk_ext/entry.dart');
     // We can't find dart:core because we didn't list it in our
     // embedded_libs map.
     expect(context.sourceFactory.forUri('dart:core'), isNull);
@@ -165,16 +165,16 @@ test_pack:lib/''');
 
   test_ignoreFilesInPackagesFolder() {
     // create a context with a pubspec.yaml file
-    String pubspecPath = posix.join(projPath, 'pubspec.yaml');
+    String pubspecPath = path.posix.join(projPath, 'pubspec.yaml');
     resourceProvider.newFile(pubspecPath, 'pubspec');
     // create a file in the "packages" folder
-    String filePath1 = posix.join(projPath, 'packages', 'file1.dart');
+    String filePath1 = path.posix.join(projPath, 'packages', 'file1.dart');
     resourceProvider.newFile(filePath1, 'contents');
     // "packages" files are ignored initially
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
     expect(callbacks.currentContextFilePaths[projPath], isEmpty);
     // "packages" files are ignored during watch
-    String filePath2 = posix.join(projPath, 'packages', 'file2.dart');
+    String filePath2 = path.posix.join(projPath, 'packages', 'file2.dart');
     resourceProvider.newFile(filePath2, 'contents');
     return pumpEventQueue().then((_) {
       expect(callbacks.currentContextFilePaths[projPath], isEmpty);
@@ -195,11 +195,11 @@ test_pack:lib/''');
   }
 
   void test_isInAnalysisRoot_inNestedContext() {
-    String subProjPath = posix.join(projPath, 'subproj');
+    String subProjPath = path.posix.join(projPath, 'subproj');
     Folder subProjFolder = resourceProvider.newFolder(subProjPath);
     resourceProvider.newFile(
-        posix.join(subProjPath, 'pubspec.yaml'), 'contents');
-    String subProjFilePath = posix.join(subProjPath, 'file.dart');
+        path.posix.join(subProjPath, 'pubspec.yaml'), 'contents');
+    String subProjFilePath = path.posix.join(subProjPath, 'file.dart');
     resourceProvider.newFile(subProjFilePath, 'contents');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
     // Make sure that there really is a context for the subproject.
@@ -251,7 +251,7 @@ test_pack:lib/''');
 
   test_refresh_folder_with_packagespec() {
     // create a context with a .packages file
-    String packagespecFile = posix.join(projPath, '.packages');
+    String packagespecFile = path.posix.join(projPath, '.packages');
     resourceProvider.newFile(packagespecFile, '');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
     return pumpEventQueue().then((_) {
@@ -271,10 +271,10 @@ test_pack:lib/''');
   test_refresh_folder_with_packagespec_subfolders() {
     // Create a folder with no .packages file, containing two subfolders with
     // .packages files.
-    String subdir1Path = posix.join(projPath, 'subdir1');
-    String subdir2Path = posix.join(projPath, 'subdir2');
-    String packagespec1Path = posix.join(subdir1Path, '.packages');
-    String packagespec2Path = posix.join(subdir2Path, '.packages');
+    String subdir1Path = path.posix.join(projPath, 'subdir1');
+    String subdir2Path = path.posix.join(projPath, 'subdir2');
+    String packagespec1Path = path.posix.join(subdir1Path, '.packages');
+    String packagespec2Path = path.posix.join(subdir2Path, '.packages');
     resourceProvider.newFile(packagespec1Path, '');
     resourceProvider.newFile(packagespec2Path, '');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
@@ -295,7 +295,7 @@ test_pack:lib/''');
 
   test_refresh_folder_with_pubspec() {
     // create a context with a pubspec.yaml file
-    String pubspecPath = posix.join(projPath, 'pubspec.yaml');
+    String pubspecPath = path.posix.join(projPath, 'pubspec.yaml');
     resourceProvider.newFile(pubspecPath, 'pubspec');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
     return pumpEventQueue().then((_) {
@@ -312,10 +312,10 @@ test_pack:lib/''');
   test_refresh_folder_with_pubspec_subfolders() {
     // Create a folder with no pubspec.yaml, containing two subfolders with
     // pubspec.yaml files.
-    String subdir1Path = posix.join(projPath, 'subdir1');
-    String subdir2Path = posix.join(projPath, 'subdir2');
-    String pubspec1Path = posix.join(subdir1Path, 'pubspec.yaml');
-    String pubspec2Path = posix.join(subdir2Path, 'pubspec.yaml');
+    String subdir1Path = path.posix.join(projPath, 'subdir1');
+    String subdir2Path = path.posix.join(projPath, 'subdir2');
+    String pubspec1Path = path.posix.join(subdir1Path, 'pubspec.yaml');
+    String pubspec2Path = path.posix.join(subdir2Path, 'pubspec.yaml');
     resourceProvider.newFile(pubspec1Path, 'pubspec');
     resourceProvider.newFile(pubspec2Path, 'pubspec');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
@@ -336,12 +336,12 @@ test_pack:lib/''');
 
   test_refresh_oneContext() {
     // create two contexts with pubspec.yaml files
-    String pubspecPath = posix.join(projPath, 'pubspec.yaml');
+    String pubspecPath = path.posix.join(projPath, 'pubspec.yaml');
     resourceProvider.newFile(pubspecPath, 'pubspec1');
 
     String proj2Path = '/my/proj2';
     resourceProvider.newFolder(proj2Path);
-    String pubspec2Path = posix.join(proj2Path, 'pubspec.yaml');
+    String pubspec2Path = path.posix.join(proj2Path, 'pubspec.yaml');
     resourceProvider.newFile(pubspec2Path, 'pubspec2');
 
     List<String> roots = <String>[projPath, proj2Path];
@@ -394,7 +394,7 @@ test_pack:lib/''');
   }
 
   void test_setRoots_addFolderWithDartFile() {
-    String filePath = posix.join(projPath, 'foo.dart');
+    String filePath = path.posix.join(projPath, 'foo.dart');
     resourceProvider.newFile(filePath, 'contents');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
     // verify
@@ -412,7 +412,7 @@ test_pack:lib/''');
   }
 
   void test_setRoots_addFolderWithDartFileInSubfolder() {
-    String filePath = posix.join(projPath, 'foo', 'bar.dart');
+    String filePath = path.posix.join(projPath, 'foo', 'bar.dart');
     resourceProvider.newFile(filePath, 'contents');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
     // verify
@@ -422,7 +422,7 @@ test_pack:lib/''');
   }
 
   void test_setRoots_addFolderWithDummyLink() {
-    String filePath = posix.join(projPath, 'foo.dart');
+    String filePath = path.posix.join(projPath, 'foo.dart');
     resourceProvider.newDummyLink(filePath);
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
     // verify
@@ -439,7 +439,7 @@ test_pack:lib/''');
     newFile([examplePath, ContextManagerImpl.PACKAGE_SPEC_NAME]);
     newFile([examplePath, 'example.dart']);
 
-    packageMapProvider.packageMap['proj'] = [
+    packageMapProvider.packageMap['proj'] = <Folder>[
       resourceProvider.getResource(libPath)
     ];
 
@@ -464,13 +464,10 @@ test_pack:lib/''');
     String libPath = newFolder([projPath, ContextManagerTest.LIB_NAME]);
 
     newFile([projPath, ContextManagerImpl.PUBSPEC_NAME]);
+    newFile([projPath, ContextManagerImpl.PACKAGE_SPEC_NAME], 'proj:lib/');
     newFile([libPath, 'main.dart']);
     newFile([examplePath, ContextManagerImpl.PUBSPEC_NAME]);
     newFile([examplePath, 'example.dart']);
-
-    packageMapProvider.packageMap['proj'] = [
-      resourceProvider.getResource(libPath)
-    ];
 
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
 
@@ -498,12 +495,12 @@ test_pack:lib/''');
   }
 
   void test_setRoots_addFolderWithPackagespec() {
-    String packagespecPath = posix.join(projPath, '.packages');
+    String packagespecPath = path.posix.join(projPath, '.packages');
     resourceProvider.newFile(packagespecPath,
         'unittest:file:///home/somebody/.pub/cache/unittest-0.9.9/lib/');
     String libPath = newFolder([projPath, ContextManagerTest.LIB_NAME]);
     File mainFile =
-        resourceProvider.newFile(posix.join(libPath, 'main.dart'), '');
+        resourceProvider.newFile(path.posix.join(libPath, 'main.dart'), '');
     Source source = mainFile.createSource();
 
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
@@ -524,7 +521,7 @@ test_pack:lib/''');
 
   void test_setRoots_addFolderWithPackagespecAndPackageRoot() {
     // The package root should take priority.
-    String packagespecPath = posix.join(projPath, '.packages');
+    String packagespecPath = path.posix.join(projPath, '.packages');
     resourceProvider.newFile(packagespecPath,
         'unittest:file:///home/somebody/.pub/cache/unittest-0.9.9/lib/');
     String packageRootPath = '/package/root/';
@@ -536,7 +533,7 @@ test_pack:lib/''');
   }
 
   void test_setRoots_addFolderWithPubspec() {
-    String pubspecPath = posix.join(projPath, 'pubspec.yaml');
+    String pubspecPath = path.posix.join(projPath, 'pubspec.yaml');
     resourceProvider.newFile(pubspecPath, 'pubspec');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
     // verify
@@ -546,8 +543,8 @@ test_pack:lib/''');
   }
 
   void test_setRoots_addFolderWithPubspec_andPackagespec() {
-    String pubspecPath = posix.join(projPath, 'pubspec.yaml');
-    String packagespecPath = posix.join(projPath, '.packages');
+    String pubspecPath = path.posix.join(projPath, 'pubspec.yaml');
+    String packagespecPath = path.posix.join(projPath, '.packages');
     resourceProvider.newFile(pubspecPath, 'pubspec');
     resourceProvider.newFile(packagespecPath, '');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
@@ -562,14 +559,11 @@ test_pack:lib/''');
     String testPath = newFolder([projPath, ContextManagerTest.TEST_NAME]);
 
     newFile([projPath, ContextManagerImpl.PUBSPEC_NAME]);
+    newFile([projPath, ContextManagerImpl.PACKAGE_SPEC_NAME], 'proj:lib/');
     String appPath = newFile([binPath, 'app.dart']);
     newFile([libPath, 'main.dart']);
     newFile([srcPath, 'internal.dart']);
     String testFilePath = newFile([testPath, 'main_test.dart']);
-
-    packageMapProvider.packageMap['proj'] = [
-      resourceProvider.getResource(libPath)
-    ];
 
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
     Set<Source> sources = callbacks.currentContextSources[projPath];
@@ -616,51 +610,55 @@ test_pack:lib/''');
     // prepare paths
     String root = '/root';
     String rootFile = '$root/root.dart';
-    String subProjectA = '$root/sub/aaa';
-    String subProjectB = '$root/sub/sub2/bbb';
-    String subProjectA_file = '$subProjectA/bin/a.dart';
-    String subProjectB_file = '$subProjectB/bin/b.dart';
+    String projectA = '$root/sub/aaa';
+    String projectALib = '$root/sub/aaa/lib';
+    String subProjectA_file = '$projectA/bin/a.dart';
+    String projectB = '$root/sub/sub2/bbb';
+    String projectBLib = '$root/sub/sub2/bbb/lib';
+    String subProjectB_file = '$projectB/bin/b.dart';
     // create files
-    resourceProvider.newFile('$subProjectA/pubspec.yaml', 'pubspec');
-    resourceProvider.newFile('$subProjectB/pubspec.yaml', 'pubspec');
+    newFile([projectA, ContextManagerImpl.PUBSPEC_NAME]);
+    newFile([projectA, ContextManagerImpl.PACKAGE_SPEC_NAME], 'foo:lib/');
+    newFile([projectB, ContextManagerImpl.PUBSPEC_NAME]);
+    newFile([projectB, ContextManagerImpl.PACKAGE_SPEC_NAME], 'bar:lib/');
     resourceProvider.newFile(rootFile, 'library root;');
     resourceProvider.newFile(subProjectA_file, 'library a;');
     resourceProvider.newFile(subProjectB_file, 'library b;');
-    // configure package maps
-    packageMapProvider.packageMaps = {
-      subProjectA: {
-        'foo': [resourceProvider.newFolder('/package/foo')]
-      },
-      subProjectB: {
-        'bar': [resourceProvider.newFolder('/package/bar')]
-      },
-    };
     // set roots
     manager.setRoots(<String>[root], <String>[], <String, String>{});
-    callbacks.assertContextPaths([root, subProjectA, subProjectB]);
+    callbacks.assertContextPaths([root, projectA, projectB]);
     // verify files
     callbacks.assertContextFiles(root, [rootFile]);
-    callbacks.assertContextFiles(subProjectA, [subProjectA_file]);
-    callbacks.assertContextFiles(subProjectB, [subProjectB_file]);
+    callbacks.assertContextFiles(projectA, [subProjectA_file]);
+    callbacks.assertContextFiles(projectB, [subProjectB_file]);
     // verify package maps
-    expect(_packageMap(root), isNull);
-    expect(_packageMap(subProjectA),
-        equals(packageMapProvider.packageMaps[subProjectA]));
-    expect(_packageMap(subProjectB),
-        equals(packageMapProvider.packageMaps[subProjectB]));
+    expect(_packageMap(root), isEmpty);
+    expect(
+        _packageMap(projectA),
+        equals({
+          'foo': [resourceProvider.getFolder(projectALib)]
+        }));
+    expect(
+        _packageMap(projectB),
+        equals({
+          'bar': [resourceProvider.getFolder(projectBLib)]
+        }));
   }
 
   void test_setRoots_addPackageRoot() {
     String packagePathFoo = '/package1/foo';
     String packageRootPath = '/package2/foo';
+    newFile([projPath, ContextManagerImpl.PACKAGE_SPEC_NAME],
+        'foo:file:///package1/foo');
     Folder packageFolder = resourceProvider.newFolder(packagePathFoo);
-    packageMapProvider.packageMap = {
-      'foo': [packageFolder]
-    };
     List<String> includedPaths = <String>[projPath];
     List<String> excludedPaths = <String>[];
     manager.setRoots(includedPaths, excludedPaths, <String, String>{});
-    expect(_currentPackageMap, equals(packageMapProvider.packageMap));
+    expect(
+        _currentPackageMap,
+        equals({
+          'foo': [packageFolder]
+        }));
     manager.setRoots(includedPaths, excludedPaths,
         <String, String>{projPath: packageRootPath});
     _checkPackageRoot(projPath, equals(packageRootPath));
@@ -906,12 +904,15 @@ test_pack:lib/''');
 
   void test_setRoots_newlyAddedFoldersGetProperPackageMap() {
     String packagePath = '/package/foo';
+    newFile([projPath, ContextManagerImpl.PACKAGE_SPEC_NAME],
+        'foo:file:///package/foo');
     Folder packageFolder = resourceProvider.newFolder(packagePath);
-    packageMapProvider.packageMap = {
-      'foo': [packageFolder]
-    };
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
-    expect(_currentPackageMap, equals(packageMapProvider.packageMap));
+    expect(
+        _currentPackageMap,
+        equals({
+          'foo': [packageFolder]
+        }));
   }
 
   void test_setRoots_noContext_excludedFolder() {
@@ -928,7 +929,7 @@ test_pack:lib/''');
   }
 
   void test_setRoots_noContext_inDotFolder() {
-    String pubspecPath = posix.join(projPath, '.pub', 'pubspec.yaml');
+    String pubspecPath = path.posix.join(projPath, '.pub', 'pubspec.yaml');
     resourceProvider.newFile(pubspecPath, 'name: test');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
     // verify
@@ -938,7 +939,7 @@ test_pack:lib/''');
   }
 
   void test_setRoots_noContext_inPackagesFolder() {
-    String pubspecPath = posix.join(projPath, 'packages', 'pubspec.yaml');
+    String pubspecPath = path.posix.join(projPath, 'packages', 'pubspec.yaml');
     resourceProvider.newFile(pubspecPath, 'name: test');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
     // verify
@@ -948,10 +949,8 @@ test_pack:lib/''');
   }
 
   void test_setRoots_packageResolver() {
-    Uri uri = Uri.parse('package:foo/foo.dart');
-    Source source = new TestSource();
-    packageResolver = new TestUriResolver({uri: source});
-    String filePath = posix.join(projPath, 'foo.dart');
+    String filePath = path.posix.join(projPath, 'lib', 'foo.dart');
+    newFile([projPath, ContextManagerImpl.PACKAGE_SPEC_NAME], 'foo:lib/');
     resourceProvider.newFile(filePath, 'contents');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
 
@@ -960,8 +959,8 @@ test_pack:lib/''');
     expect(contextsInAnalysisRoot, hasLength(1));
     AnalysisContext context = contextsInAnalysisRoot[0];
     expect(context, isNotNull);
-    Source result = context.sourceFactory.forUri2(uri);
-    expect(result, same(source));
+    Source result = context.sourceFactory.forUri('package:foo/foo.dart');
+    expect(result.fullName, filePath);
   }
 
   void test_setRoots_pathContainsDotFile() {
@@ -990,7 +989,7 @@ test_pack:lib/''');
 
   void test_setRoots_removeFolderWithPackagespec() {
     // create a pubspec
-    String pubspecPath = posix.join(projPath, '.packages');
+    String pubspecPath = path.posix.join(projPath, '.packages');
     resourceProvider.newFile(pubspecPath, '');
     // add one root - there is a context
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
@@ -1040,7 +1039,7 @@ test_pack:lib/''');
 
   void test_setRoots_removeFolderWithPubspec() {
     // create a pubspec
-    String pubspecPath = posix.join(projPath, 'pubspec.yaml');
+    String pubspecPath = path.posix.join(projPath, 'pubspec.yaml');
     resourceProvider.newFile(pubspecPath, 'pubspec');
     // add one root - there is a context
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
@@ -1090,16 +1089,19 @@ test_pack:lib/''');
     String packagePathFoo = '/package1/foo';
     String packageRootPath = '/package2/foo';
     Folder packageFolder = resourceProvider.newFolder(packagePathFoo);
-    packageMapProvider.packageMap = {
-      'foo': [packageFolder]
-    };
+    newFile([projPath, ContextManagerImpl.PACKAGE_SPEC_NAME],
+        'foo:file:///package1/foo');
     List<String> includedPaths = <String>[projPath];
     List<String> excludedPaths = <String>[];
     manager.setRoots(includedPaths, excludedPaths,
         <String, String>{projPath: packageRootPath});
     _checkPackageRoot(projPath, equals(packageRootPath));
     manager.setRoots(includedPaths, excludedPaths, <String, String>{});
-    expect(_currentPackageMap, equals(packageMapProvider.packageMap));
+    expect(
+        _currentPackageMap,
+        equals({
+          'foo': [packageFolder]
+        }));
   }
 
   void test_setRoots_rootPathContainsDotFile() {
@@ -1120,7 +1122,7 @@ test_pack:lib/''');
     Map<String, int> filePaths = callbacks.currentContextFilePaths[projPath];
     expect(filePaths, isEmpty);
     // add link
-    String filePath = posix.join(projPath, 'foo.dart');
+    String filePath = path.posix.join(projPath, 'foo.dart');
     resourceProvider.newDummyLink(filePath);
     // the link was ignored
     return pumpEventQueue().then((_) {
@@ -1134,7 +1136,7 @@ test_pack:lib/''');
     Map<String, int> filePaths = callbacks.currentContextFilePaths[projPath];
     expect(filePaths, hasLength(0));
     // add file
-    String filePath = posix.join(projPath, 'foo.dart');
+    String filePath = path.posix.join(projPath, 'foo.dart');
     resourceProvider.newFile(filePath, 'contents');
     // the file was added
     return pumpEventQueue().then((_) {
@@ -1240,7 +1242,7 @@ test_pack:lib/''');
     Map<String, int> filePaths = callbacks.currentContextFilePaths[projPath];
     expect(filePaths, hasLength(0));
     // add file in subfolder
-    String filePath = posix.join(projPath, 'foo', 'bar.dart');
+    String filePath = path.posix.join(projPath, 'foo', 'bar.dart');
     resourceProvider.newFile(filePath, 'contents');
     // the file was added
     return pumpEventQueue().then((_) {
@@ -1421,7 +1423,7 @@ test_pack:lib/''');
   }
 
   test_watch_deleteFile() {
-    String filePath = posix.join(projPath, 'foo.dart');
+    String filePath = path.posix.join(projPath, 'foo.dart');
     // add root with a file
     File file = resourceProvider.newFile(filePath, 'contents');
     Folder projFolder = file.parent;
@@ -1442,7 +1444,7 @@ test_pack:lib/''');
   }
 
   test_watch_deleteFolder() {
-    String filePath = posix.join(projPath, 'foo.dart');
+    String filePath = path.posix.join(projPath, 'foo.dart');
     // add root with a file
     File file = resourceProvider.newFile(filePath, 'contents');
     Folder projFolder = file.parent;
@@ -1591,7 +1593,7 @@ test_pack:lib/''');
   }
 
   test_watch_modifyFile() {
-    String filePath = posix.join(projPath, 'foo.dart');
+    String filePath = path.posix.join(projPath, 'foo.dart');
     // add root with a file
     resourceProvider.newFile(filePath, 'contents');
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
@@ -1608,43 +1610,13 @@ test_pack:lib/''');
     });
   }
 
-  test_watch_modifyPackageMapDependency() {
+  test_watch_modifyPackageMapDependency_fail() async {
     // create a dependency file
-    String dependencyPath = posix.join(projPath, 'dep');
+    String dependencyPath = path.posix.join(projPath, 'dep');
     resourceProvider.newFile(dependencyPath, 'contents');
     packageMapProvider.dependencies.add(dependencyPath);
     // create a Dart file
-    String dartFilePath = posix.join(projPath, 'main.dart');
-    resourceProvider.newFile(dartFilePath, 'contents');
-    // the created context has the expected empty package map
-    manager.setRoots(<String>[projPath], <String>[], <String, String>{});
-    expect(_currentPackageMap, isEmpty);
-    // configure package map
-    String packagePath = '/package/foo';
-    resourceProvider.newFolder(packagePath);
-    packageMapProvider.packageMap = {
-      'foo': [resourceProvider.newFolder(projPath)]
-    };
-    // Changing a .dart file in the project shouldn't cause a new
-    // package map to be picked up.
-    resourceProvider.modifyFile(dartFilePath, 'new contents');
-    return pumpEventQueue().then((_) {
-      expect(_currentPackageMap, isEmpty);
-      // However, changing the package map dependency should.
-      resourceProvider.modifyFile(dependencyPath, 'new contents');
-      return pumpEventQueue().then((_) {
-        expect(_currentPackageMap, equals(packageMapProvider.packageMap));
-      });
-    });
-  }
-
-  test_watch_modifyPackageMapDependency_fail() {
-    // create a dependency file
-    String dependencyPath = posix.join(projPath, 'dep');
-    resourceProvider.newFile(dependencyPath, 'contents');
-    packageMapProvider.dependencies.add(dependencyPath);
-    // create a Dart file
-    String dartFilePath = posix.join(projPath, 'main.dart');
+    String dartFilePath = path.posix.join(projPath, 'main.dart');
     resourceProvider.newFile(dartFilePath, 'contents');
     // the created context has the expected empty package map
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
@@ -1653,10 +1625,9 @@ test_pack:lib/''');
     // re-run, and arrange for it to return null from computePackageMap().
     packageMapProvider.packageMap = null;
     resourceProvider.modifyFile(dependencyPath, 'new contents');
-    return pumpEventQueue().then((_) {
-      // The package map should have been changed to null.
-      expect(_currentPackageMap, isNull);
-    });
+    await pumpEventQueue();
+    // The package map should have been changed to null.
+    expect(_currentPackageMap, isEmpty);
   }
 
   test_watch_modifyPackagespec() {
@@ -1738,8 +1709,6 @@ abstract class ContextManagerTest {
 
   UriResolver packageResolver = null;
 
-  UriResolver embeddedUriResolver = null;
-
   String projPath = '/my/proj';
 
   AnalysisError missing_required_param = new AnalysisError(
@@ -1772,12 +1741,12 @@ abstract class ContextManagerTest {
       '**/${AnalysisEngine.ANALYSIS_OPTIONS_YAML_FILE}'
     ];
     return patterns
-        .map((pattern) => new Glob(JavaFile.pathContext.separator, pattern))
+        .map((pattern) => new Glob(path.posix.separator, pattern))
         .toList();
   }
 
-  List<ErrorProcessor> get errorProcessors => callbacks.currentContext
-      .getConfigurationData(CONFIGURED_ERROR_PROCESSORS);
+  List<ErrorProcessor> get errorProcessors =>
+      callbacks.currentContext.analysisOptions.errorProcessors;
 
   List<Linter> get lints => getLints(callbacks.currentContext);
 
@@ -1786,7 +1755,7 @@ abstract class ContextManagerTest {
   Map<String, List<Folder>> get _currentPackageMap => _packageMap(projPath);
 
   void deleteFile(List<String> pathComponents) {
-    String filePath = posix.joinAll(pathComponents);
+    String filePath = path.posix.joinAll(pathComponents);
     resourceProvider.deleteFile(filePath);
   }
 
@@ -1794,13 +1763,13 @@ abstract class ContextManagerTest {
       ErrorProcessor.getProcessor(callbacks.currentContext, error);
 
   String newFile(List<String> pathComponents, [String content = '']) {
-    String filePath = posix.joinAll(pathComponents);
+    String filePath = path.posix.joinAll(pathComponents);
     resourceProvider.newFile(filePath, content);
     return filePath;
   }
 
   String newFolder(List<String> pathComponents) {
-    String folderPath = posix.joinAll(pathComponents);
+    String folderPath = path.posix.joinAll(pathComponents);
     resourceProvider.newFolder(folderPath);
     return folderPath;
   }
@@ -1815,27 +1784,24 @@ abstract class ContextManagerTest {
     manager.processPlugins(plugins);
   }
 
-  EmbedderUriResolver provideEmbeddedUriResolver(Folder folder) =>
-      embeddedUriResolver;
-
   UriResolver providePackageResolver(Folder folder) => packageResolver;
 
   void setUp() {
     processRequiredPlugins();
     resourceProvider = new MemoryResourceProvider();
     packageMapProvider = new MockPackageMapProvider();
-    DartSdkManager sdkManager = new DartSdkManager((_) {
-      return new MockSdk();
-    });
+    // Create an SDK in the mock file system.
+    new MockSdk(resourceProvider: resourceProvider);
+    DartSdkManager sdkManager = new DartSdkManager('/', false);
     manager = new ContextManagerImpl(
         resourceProvider,
         sdkManager,
         providePackageResolver,
-        provideEmbeddedUriResolver,
         packageMapProvider,
         analysisFilesGlobs,
         InstrumentationService.NULL_SERVICE,
-        new AnalysisOptionsImpl());
+        new AnalysisOptionsImpl(),
+        false);
     callbacks = new TestContextManagerCallbacks(resourceProvider);
     manager.callbacks = callbacks;
     resourceProvider.newFolder(projPath);
@@ -1883,7 +1849,7 @@ embedded_libs:
   "dart:foobar": "../sdk_ext/entry.dart"
 analyzer:
   language:
-    enableGenericMethods: true
+    enableStrictCallChecks: true
   errors:
     unused_local_variable: false
 linter:
@@ -1898,7 +1864,7 @@ linter:
     // Verify options were set.
     expect(errorProcessors, hasLength(1));
     expect(lints, hasLength(1));
-    expect(options.enableGenericMethods, isTrue);
+    expect(options.enableStrictCallChecks, isTrue);
 
     // Remove options.
     deleteFile([projPath, optionsFileName]);
@@ -1907,7 +1873,7 @@ linter:
     // Verify defaults restored.
     expect(errorProcessors, isEmpty);
     expect(lints, isEmpty);
-    expect(options.enableGenericMethods, isFalse);
+    expect(options.enableStrictCallChecks, isFalse);
   }
 
   test_analysis_options_file_delete_with_embedder() async {
@@ -1937,7 +1903,7 @@ test_pack:lib/''');
         r'''
 analyzer:
   language:
-    enableGenericMethods: true
+    enableStrictCallChecks: true
   errors:
     unused_local_variable: false
 linter:
@@ -1950,7 +1916,7 @@ linter:
     await pumpEventQueue();
 
     // Verify options were set.
-    expect(options.enableGenericMethods, isTrue);
+    expect(options.enableStrictCallChecks, isTrue);
     expect(options.strongMode, isTrue);
     expect(errorProcessors, hasLength(2));
     expect(lints, hasLength(2));
@@ -1960,11 +1926,47 @@ linter:
     await pumpEventQueue();
 
     // Verify defaults restored.
-    expect(options.enableGenericMethods, isFalse);
+    expect(options.enableStrictCallChecks, isFalse);
     expect(lints, hasLength(1));
     expect(lints.first, new isInstanceOf<AvoidAs>());
     expect(errorProcessors, hasLength(1));
     expect(getProcessor(missing_return).severity, isNull);
+  }
+
+  test_analysis_options_include() async {
+    // Create files.
+    String libPath = newFolder([projPath, ContextManagerTest.LIB_NAME]);
+    newFile([libPath, 'main.dart']);
+    String sdkExtPath = newFolder([projPath, 'sdk_ext']);
+    newFile([sdkExtPath, 'entry.dart']);
+    String sdkExtSrcPath = newFolder([projPath, 'sdk_ext', 'src']);
+    newFile([sdkExtSrcPath, 'part.dart']);
+    // Setup analysis options file which includes another options file.
+    newFile(
+        [projPath, optionsFileName],
+        r'''
+include: other_options.yaml
+''');
+    newFile(
+        [projPath, 'other_options.yaml'],
+        r'''
+analyzer:
+  language:
+    enableStrictCallChecks: true
+  errors:
+    unused_local_variable: false
+linter:
+  rules:
+    - camel_case_types
+''');
+    // Setup context.
+    manager.setRoots(<String>[projPath], <String>[], <String, String>{});
+    await pumpEventQueue();
+    // Verify options were set.
+    expect(options.enableStrictCallChecks, isTrue);
+    expect(errorProcessors, hasLength(1));
+    expect(lints, hasLength(1));
+    expect(lints[0].name, 'camel_case_types');
   }
 
   test_analysis_options_parse_failure() async {
@@ -1985,222 +1987,6 @@ linter:
     manager.setRoots(<String>[projPath], <String>[], <String, String>{});
 
     // No error means success.
-  }
-
-  test_configed_options() async {
-    // Create files.
-    String libPath = newFolder([projPath, ContextManagerTest.LIB_NAME]);
-    newFile([projPath, 'test', 'test.dart']);
-    newFile(
-        [projPath, 'pubspec.yaml'],
-        r'''
-dependencies:
-  test_pack: any
-analyzer:
-  configuration: test_pack/config
-''');
-
-    // Setup .packages file
-    newFile(
-        [projPath, '.packages'],
-        r'''
-test_pack:lib/''');
-
-    // Setup config.yaml.
-    newFile(
-        [libPath, 'config', 'config.yaml'],
-        r'''
-analyzer:
-  strong-mode: true
-  language:
-    enableSuperMixins: true
-  errors:
-    missing_return: false
-linter:
-  rules:
-    - avoid_as
-''');
-
-    // Setup analysis options
-    newFile(
-        [projPath, optionsFileName],
-        r'''
-analyzer:
-  exclude:
-    - 'test/**'
-  language:
-    enableGenericMethods: true
-    enableAsync: false
-  errors:
-    unused_local_variable: false
-linter:
-  rules:
-    - camel_case_types
-''');
-
-    // Setup context.
-    manager.setRoots(<String>[projPath], <String>[], <String, String>{});
-    await pumpEventQueue();
-
-    // Confirm that one context was created.
-    var contexts =
-        manager.contextsInAnalysisRoot(resourceProvider.newFolder(projPath));
-    expect(contexts, isNotNull);
-    expect(contexts, hasLength(1));
-
-    var context = contexts.first;
-
-    // Verify options.
-    // * from `config.yaml`:
-    expect(context.analysisOptions.strongMode, isTrue);
-    expect(context.analysisOptions.enableSuperMixins, isTrue);
-    expect(context.analysisOptions.enableAsync, isFalse);
-    // * from analysis options:
-    expect(context.analysisOptions.enableGenericMethods, isTrue);
-
-    // * verify tests are excluded
-    expect(callbacks.currentContextFilePaths[projPath].keys,
-        unorderedEquals(['/my/proj/$optionsFileName']));
-
-    // Verify filter setup.
-    expect(errorProcessors, hasLength(2));
-
-    // * (config.)
-    expect(getProcessor(missing_return).severity, isNull);
-
-    // * (options.)
-    expect(getProcessor(unused_local_variable).severity, isNull);
-
-    // Verify lints.
-    var lintNames = lints.map((lint) => lint.name);
-    expect(
-        lintNames,
-        unorderedEquals(
-            ['avoid_as' /* config */, 'camel_case_types' /* options */]));
-  }
-
-  test_embedder_and_configed_options() async {
-    // Create files.
-    String libPath = newFolder([projPath, ContextManagerTest.LIB_NAME]);
-    String sdkExtPath = newFolder([projPath, 'sdk_ext']);
-    newFile([projPath, 'test', 'test.dart']);
-    newFile([sdkExtPath, 'entry.dart']);
-
-    // Setup pubspec with configuration.
-    newFile(
-        [projPath, 'pubspec.yaml'],
-        r'''
-dependencies:
-  test_pack: any
-analyzer:
-  configuration: test_pack/config
-''');
-
-    // Setup _embedder.yaml.
-    newFile(
-        [libPath, '_embedder.yaml'],
-        r'''
-embedded_libs:
-  "dart:foobar": "../sdk_ext/entry.dart"
-analyzer:
-  strong-mode: true
-  language:
-    enableSuperMixins: true
-  errors:
-    missing_return: false
-linter:
-  rules:
-    - avoid_as
-''');
-
-    // Setup .packages file
-    newFile(
-        [projPath, '.packages'],
-        r'''
-test_pack:lib/''');
-
-    // Setup analysis options
-    newFile(
-        [projPath, optionsFileName],
-        r'''
-analyzer:
-  exclude:
-    - 'test/**'
-  language:
-    enableGenericMethods: true
-    enableAsync: false
-  errors:
-    unused_local_variable: false
-linter:
-  rules:
-    - camel_case_types
-''');
-
-    // Setup config.yaml.
-    newFile(
-        [libPath, 'config', 'config.yaml'],
-        r'''
-analyzer:
-  errors:
-    missing_required_param: error
-linter:
-  rules:
-    - always_specify_types
-''');
-
-    // Setup context.
-    manager.setRoots(<String>[projPath], <String>[], <String, String>{});
-    await pumpEventQueue();
-
-    // Confirm that one context was created.
-    var contexts =
-        manager.contextsInAnalysisRoot(resourceProvider.newFolder(projPath));
-    expect(contexts, isNotNull);
-    expect(contexts, hasLength(1));
-    var context = contexts[0];
-
-    // Verify options.
-    // * from `_embedder.yaml`:
-    expect(context.analysisOptions.strongMode, isTrue);
-    expect(context.analysisOptions.enableSuperMixins, isTrue);
-    expect(context.analysisOptions.enableAsync, isFalse);
-    // * from analysis options:
-    expect(context.analysisOptions.enableGenericMethods, isTrue);
-
-    // * verify tests are excluded
-    expect(
-        callbacks.currentContextFilePaths[projPath].keys,
-        unorderedEquals(
-            ['/my/proj/sdk_ext/entry.dart', '/my/proj/$optionsFileName']));
-
-    // Verify filter setup.
-    expect(errorProcessors, hasLength(3));
-
-    // * (embedder.)
-    expect(getProcessor(missing_return).severity, isNull);
-
-    // * (config.)
-    expect(getProcessor(missing_required_param).severity, ErrorSeverity.ERROR);
-
-    // * (options.)
-    expect(getProcessor(unused_local_variable).severity, isNull);
-
-    // Verify lints.
-    var lintNames = lints.map((lint) => lint.name);
-
-    expect(
-        lintNames,
-        unorderedEquals([
-          'avoid_as' /* embedder */,
-          'always_specify_types' /* config*/,
-          'camel_case_types' /* options */
-        ]));
-
-    // Sanity check embedder libs.
-    var source = context.sourceFactory.forUri('dart:foobar');
-    expect(source, isNotNull);
-    expect(source.fullName,
-        '/my/proj/sdk_ext/entry.dart'.replaceAll('/', JavaFile.separator));
   }
 
   test_embedder_options() async {
@@ -2239,8 +2025,7 @@ analyzer:
   exclude:
     - 'test/**'
   language:
-    enableGenericMethods: true
-    enableAsync: false
+    enableStrictCallChecks: true
   errors:
     unused_local_variable: false
 linter:
@@ -2263,9 +2048,8 @@ linter:
     // * from `_embedder.yaml`:
     expect(context.analysisOptions.strongMode, isTrue);
     expect(context.analysisOptions.enableSuperMixins, isTrue);
-    expect(context.analysisOptions.enableAsync, isFalse);
     // * from analysis options:
-    expect(context.analysisOptions.enableGenericMethods, isTrue);
+    expect(context.analysisOptions.enableStrictCallChecks, isTrue);
 
     // * verify tests are excluded
     expect(
@@ -2293,8 +2077,7 @@ linter:
     // Sanity check embedder libs.
     var source = context.sourceFactory.forUri('dart:foobar');
     expect(source, isNotNull);
-    expect(source.fullName,
-        '/my/proj/sdk_ext/entry.dart'.replaceAll('/', JavaFile.separator));
+    expect(source.fullName, '/my/proj/sdk_ext/entry.dart');
   }
 
   test_error_filter_analysis_option() async {
@@ -2366,6 +2149,58 @@ analyzer:
 
     // Verify filter setup.
     expect(errorProcessors, isEmpty);
+  }
+
+  test_optionsFile_update_strongMode() async {
+    var file = resourceProvider.newFile(
+        '$projPath/bin/test.dart',
+        r'''
+main() {
+  var paths = <int>[];
+  var names = <String>[];
+  paths.addAll(names.map((s) => s.length));
+}
+''');
+    resourceProvider.newFile(
+        '$projPath/$optionsFileName',
+        r'''
+analyzer:
+  strong-mode: false
+''');
+    // Create the context.
+    manager.setRoots(<String>[projPath], <String>[], <String, String>{});
+    await pumpEventQueue();
+
+    AnalysisContext context = manager.getContextFor(projPath);
+    Source testSource = context.getSourcesWithFullName(file.path).single;
+
+    // Not strong mode - both in the context and the SDK context.
+    {
+      AnalysisContext sdkContext = context.sourceFactory.dartSdk.context;
+      expect(context.analysisOptions.strongMode, isFalse);
+      expect(sdkContext.analysisOptions.strongMode, isFalse);
+      expect(context.computeErrors(testSource), isEmpty);
+    }
+
+    // Update the options file - turn on 'strong-mode'.
+    resourceProvider.updateFile(
+        '$projPath/$optionsFileName',
+        r'''
+analyzer:
+  strong-mode: true
+''');
+    await pumpEventQueue();
+
+    // Strong mode - both in the context and the SDK context.
+    {
+      AnalysisContext context = manager.getContextFor(projPath);
+      AnalysisContext sdkContext = context.sourceFactory.dartSdk.context;
+      expect(context.analysisOptions.strongMode, isTrue);
+      expect(sdkContext.analysisOptions.strongMode, isTrue);
+      // The code is strong-mode clean.
+      // Verify that TypeSystem was reset.
+      expect(context.computeErrors(testSource), isEmpty);
+    }
   }
 
   test_path_filter_analysis_option() async {
@@ -2645,32 +2480,21 @@ class TestContextManagerCallbacks extends ContextManagerCallbacks {
   Iterable<String> get currentContextPaths => currentContextTimestamps.keys;
 
   @override
-  AnalysisContext addContext(
-      Folder folder, AnalysisOptions options, FolderDisposition disposition) {
+  AnalysisDriver addAnalysisDriver(Folder folder, AnalysisOptions options) {
+    // TODO: implement addAnalysisDriver
+    throw new UnimplementedError();
+  }
+
+  @override
+  AnalysisContext addContext(Folder folder, AnalysisOptions options) {
     String path = folder.path;
     expect(currentContextPaths, isNot(contains(path)));
     currentContextTimestamps[path] = now;
     currentContextFilePaths[path] = <String, int>{};
     currentContextSources[path] = new HashSet<Source>();
-    currentContext = AnalysisEngine.instance.createAnalysisContext();
-    _locateEmbedderYamls(currentContext, disposition);
-    List<UriResolver> resolvers = [];
-    if (currentContext is InternalAnalysisContext) {
-      EmbedderYamlLocator embedderYamlLocator =
-          (currentContext as InternalAnalysisContext).embedderYamlLocator;
-      EmbedderUriResolver embedderUriResolver =
-          new EmbedderUriResolver(embedderYamlLocator.embedderYamls);
-      if (embedderUriResolver.length > 0) {
-        // We have some embedder dart: uri mappings, add the resolver
-        // to the list.
-        resolvers.add(embedderUriResolver);
-      }
-    }
-    resolvers.addAll(disposition.createPackageUriResolvers(resourceProvider));
-    resolvers.add(new FileUriResolver());
-    currentContext.analysisOptions = options;
-    currentContext.sourceFactory =
-        new SourceFactory(resolvers, disposition.packages);
+
+    ContextBuilder builder = createContextBuilder(folder, options);
+    currentContext = builder.buildContext(folder.path);
     return currentContext;
   }
 
@@ -2712,6 +2536,17 @@ class TestContextManagerCallbacks extends ContextManagerCallbacks {
   }
 
   @override
+  ContextBuilder createContextBuilder(Folder folder, AnalysisOptions options) {
+    DartSdkManager sdkManager = new DartSdkManager('/', false);
+    ContextBuilderOptions builderOptions = new ContextBuilderOptions();
+    builderOptions.defaultOptions = options;
+    ContextBuilder builder = new ContextBuilder(
+        resourceProvider, sdkManager, new ContentCache(),
+        options: builderOptions);
+    return builder;
+  }
+
+  @override
   void moveContext(Folder from, Folder to) {
     String path = from.path;
     String path2 = to.path;
@@ -2739,19 +2574,6 @@ class TestContextManagerCallbacks extends ContextManagerCallbacks {
   @override
   void updateContextPackageUriResolver(AnalysisContext context) {
     // Nothing to do.
-  }
-
-  /// If [disposition] has a package map, attempt to locate `_embedder.yaml`
-  /// files.
-  void _locateEmbedderYamls(
-      InternalAnalysisContext context, FolderDisposition disposition) {
-    Map<String, List<Folder>> packageMap;
-    if (disposition is PackageMapDisposition) {
-      packageMap = disposition.packageMap;
-    } else if (disposition is PackagesFileDisposition) {
-      packageMap = disposition.buildPackageMap(resourceProvider);
-    }
-    context.embedderYamlLocator.refresh(packageMap);
   }
 }
 

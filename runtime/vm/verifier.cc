@@ -20,24 +20,24 @@ namespace dart {
 void VerifyObjectVisitor::VisitObject(RawObject* raw_obj) {
   if (raw_obj->IsHeapObject()) {
     uword raw_addr = RawObject::ToAddr(raw_obj);
-    if (raw_obj->IsFreeListElement()) {
+    if (raw_obj->IsFreeListElement() || raw_obj->IsForwardingCorpse()) {
       if (raw_obj->IsMarked()) {
         FATAL1("Marked free list element encountered %#" Px "\n", raw_addr);
       }
     } else {
       switch (mark_expectation_) {
-       case kForbidMarked:
-        if (raw_obj->IsMarked()) {
-          FATAL1("Marked object encountered %#" Px "\n", raw_addr);
-        }
-        break;
-       case kAllowMarked:
-        break;
-       case kRequireMarked:
-        if (!raw_obj->IsMarked()) {
-          FATAL1("Unmarked object encountered %#" Px "\n", raw_addr);
-        }
-        break;
+        case kForbidMarked:
+          if (raw_obj->IsMarked()) {
+            FATAL1("Marked object encountered %#" Px "\n", raw_addr);
+          }
+          break;
+        case kAllowMarked:
+          break;
+        case kRequireMarked:
+          if (!raw_obj->IsMarked()) {
+            FATAL1("Unmarked object encountered %#" Px "\n", raw_addr);
+          }
+          break;
       }
     }
   }
@@ -48,7 +48,6 @@ void VerifyObjectVisitor::VisitObject(RawObject* raw_obj) {
 
 void VerifyPointersVisitor::VisitPointers(RawObject** first, RawObject** last) {
   for (RawObject** current = first; current <= last; current++) {
-    VerifiedMemory::Verify(reinterpret_cast<uword>(current), kWordSize);
     RawObject* raw_obj = *current;
     if (raw_obj->IsHeapObject()) {
       if (!allocated_set_->Contains(raw_obj)) {
@@ -70,17 +69,38 @@ void VerifyWeakPointersVisitor::VisitHandle(uword addr) {
 
 void VerifyPointersVisitor::VerifyPointers(MarkExpectation mark_expectation) {
   NoSafepointScope no_safepoint;
-  Isolate* isolate = Isolate::Current();
-  ObjectSet* allocated_set =
-      isolate->heap()->CreateAllocatedObjectSet(mark_expectation);
+  Thread* thread = Thread::Current();
+  Isolate* isolate = thread->isolate();
+  StackZone stack_zone(thread);
+  ObjectSet* allocated_set = isolate->heap()->CreateAllocatedObjectSet(
+      stack_zone.GetZone(), mark_expectation);
   VerifyPointersVisitor visitor(isolate, allocated_set);
   // Visit all strongly reachable objects.
-  isolate->IterateObjectPointers(&visitor,
-                                 StackFrameIterator::kValidateFrames);
+  isolate->IterateObjectPointers(&visitor, StackFrameIterator::kValidateFrames);
   VerifyWeakPointersVisitor weak_visitor(&visitor);
   // Visit weak handles and prologue weak handles.
   isolate->VisitWeakPersistentHandles(&weak_visitor);
-  delete allocated_set;
 }
+
+
+#if defined(DEBUG)
+VerifyCanonicalVisitor::VerifyCanonicalVisitor(Thread* thread)
+    : thread_(thread), instanceHandle_(Instance::Handle(thread->zone())) {}
+
+
+void VerifyCanonicalVisitor::VisitObject(RawObject* obj) {
+  if (obj->GetClassId() >= kInstanceCid) {
+    if (obj->IsCanonical()) {
+      instanceHandle_ ^= obj;
+      const bool is_canonical = instanceHandle_.CheckIsCanonical(thread_);
+      if (!is_canonical) {
+        OS::PrintErr("Instance `%s` is not canonical!\n",
+                     instanceHandle_.ToCString());
+      }
+      ASSERT(is_canonical);
+    }
+  }
+}
+#endif  // defined(DEBUG)
 
 }  // namespace dart

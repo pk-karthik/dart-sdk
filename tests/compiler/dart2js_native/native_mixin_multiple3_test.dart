@@ -2,27 +2,24 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
 // Test that native classes and plain classes can access methods defined only by
 // the same mixin.
 
-
-class D extends Object with M1, M2, M3 {
-}
+class D extends Object with M1, M2, M3 {}
 
 class E extends D {
   foo() => 'E.foo';
 }
 
-class M1 { }
+class M1 {}
 
 class M2 {
   foo() => 'M2.foo';
 }
 
-class M3 { }
+class M3 {}
 
 @Native("A")
 class A {
@@ -37,9 +34,9 @@ class C extends B {
   foo() => 'C.foo';
 }
 
-makeA() native;
-makeB() native;
-makeC() native;
+makeA() native ;
+makeB() native ;
+makeC() native ;
 
 void setup() native """
 function A() {}
@@ -48,6 +45,10 @@ function C() {}
 makeA = function(){return new A;};
 makeB = function(){return new B;};
 makeC = function(){return new C;};
+
+self.nativeConstructor(A);
+self.nativeConstructor(B);
+self.nativeConstructor(C);
 """;
 
 var g;
@@ -64,6 +65,7 @@ callFoo(x) {
 makeAll() => [makeA(), makeB(), makeC(), new D(), new E()];
 
 main() {
+  nativeTesting();
   setup();
   /*
   var a = makeA();

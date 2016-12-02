@@ -18,18 +18,37 @@
 /// in the language tour.
 library meta;
 
-/// Used to annotate an instance method `m`. Indicates that `m` must either be
-/// abstract or must return a newly allocated object. In addition, every method
-/// that either implements or overrides `m` is implicitly annotated with this
-/// same annotation.
+/// Used to annotate a parameter of an instance method that overrides another
+/// method.
+///
+/// Indicates that this parameter may have a tighter type than the parameter on
+/// its superclass. The actual argument will be checked at runtime to ensure it
+/// is a subtype of the overridden parameter type.
+const _Checked checked = const _Checked();
+
+/// Used to annotate an instance or static method `m`. Indicates that `m` must
+/// either be abstract or must return a newly allocated object or `null`. In
+/// addition, every method that either implements or overrides `m` is implicitly
+/// annotated with this same annotation.
 ///
 /// Tools, such as the analyzer, can provide feedback if
 ///
-/// * the annotation is associated with anything other than an instance method,
-///   or
-/// * a method that has this annotation that can return anything other than a
-///   newly allocated object.
+/// * the annotation is associated with anything other than a method, or
+/// * the annotation is associated with a method that has this annotation that
+///   can return anything other than a newly allocated object or `null`.
 const _Factory factory = const _Factory();
+
+/// Used to annotate a class `C`. Indicates that `C` and all subtypes of `C`
+/// must be immutable.
+///
+/// A class is immutable if all of the instance fields of the class, whether
+/// defined directly or inherited, are `final`.
+///
+/// Tools, such as the analyzer, can provide feedback if
+/// * the annotation is associated with anything other than a class, or
+/// * a class that has this annotation or extends, implements or mixes in a
+///   class that has this annotation is not immutable.
+const Immutable immutable = const Immutable();
 
 /// Used to annotate a const constructor `c`. Indicates that any invocation of
 /// the constructor must use the keyword `const` unless one or more of the
@@ -69,8 +88,9 @@ const _OptionalTypeArgs optionalTypeArgs = const _OptionalTypeArgs();
 /// field) `m` in a class `C`. If the annotation is on a field it applies to the
 /// getter, and setter if appropriate, that are induced by the field. Indicates
 /// that `m` should only be invoked from instance methods of `C` or classes that
-/// extend or mix in `C`, either directly or indirectly. Additionally indicates
-/// that `m` should only be invoked on `this`, whether explicitly or implicitly.
+/// extend, implement or mix in `C`, either directly or indirectly. Additionally
+/// indicates that `m` should only be invoked on `this`, whether explicitly or
+/// implicitly.
 ///
 /// Tools, such as the analyzer, can provide feedback if
 ///
@@ -97,6 +117,44 @@ const _Protected protected = const _Protected();
 ///   corresponding to a named parameter that has this annotation.
 const Required required = const Required();
 
+/// Used to annotate a field that is allowed to be overridden in Strong Mode.
+const _Virtual virtual = const _Virtual();
+
+/// Used to annotate an instance member that was made public so that it could be
+/// overridden but that is not intended to be referenced from outside the
+/// defining library.
+///
+/// Tools, such as the analyzer, can provide feedback if
+///
+/// * the annotation is associated with a declaration other than a public
+///   instance member in a class, or
+/// * the member is referenced outside of the defining library.
+const _VisibleForOverriding visibleForOverriding =
+    const _VisibleForOverriding();
+
+/// Used to annotate a declaration was made public, so that it is more visible
+/// than otherwise necessary, to make code testable.
+///
+/// Tools, such as the analyzer, can provide feedback if
+///
+/// * the annotation is associated with a declaration not in the `lib` folder
+///   of a package;
+///   or
+/// * the declaration is referenced outside of its the defining library or a
+///   library which is in the `test` folder of the defining package.
+const _VisibleForTesting visibleForTesting = const _VisibleForTesting();
+
+/// Used to annotate a class.
+///
+/// See [immutable] for more details.
+class Immutable {
+  /// A human-readable explanation of the reason why the class is immutable.
+  final String reason;
+
+  /// Initialize a newly created instance to have the given [reason].
+  const Immutable([this.reason]);
+}
+
 /// Used to annotate a named parameter `p` in a method or function `f`.
 ///
 /// See [required] for more details.
@@ -114,6 +172,10 @@ class Required {
 
   /// Initialize a newly created instance to have the given [reason].
   const Required([this.reason]);
+}
+
+class _Checked {
+  const _Checked();
 }
 
 class _Factory {
@@ -134,4 +196,16 @@ class _OptionalTypeArgs {
 
 class _Protected {
   const _Protected();
+}
+
+class _Virtual {
+  const _Virtual();
+}
+
+class _VisibleForOverriding {
+  const _VisibleForOverriding();
+}
+
+class _VisibleForTesting {
+  const _VisibleForTesting();
 }

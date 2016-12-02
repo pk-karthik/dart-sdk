@@ -26,23 +26,17 @@ class TestTraits {
   static bool IsMatch(const char* key, const Object& obj) {
     return String::Cast(obj).Equals(key);
   }
-  static uword Hash(const char* key) {
-    return static_cast<uword>(strlen(key));
-  }
+  static uword Hash(const char* key) { return static_cast<uword>(strlen(key)); }
   static bool IsMatch(const Object& a, const Object& b) {
     return a.IsString() && b.IsString() &&
-        String::Cast(a).Equals(String::Cast(b));
+           String::Cast(a).Equals(String::Cast(b));
   }
-  static uword Hash(const Object& obj) {
-    return String::Cast(obj).Length();
-  }
-  static RawObject* NewKey(const char* key) {
-    return String::New(key);
-  }
+  static uword Hash(const Object& obj) { return String::Cast(obj).Length(); }
+  static RawObject* NewKey(const char* key) { return String::New(key); }
 };
 
 
-template<typename Table>
+template <typename Table>
 void Validate(const Table& table) {
   // Verify consistency of entry state tracking.
   intptr_t num_entries = table.NumEntries();
@@ -122,34 +116,6 @@ TEST_CASE(HashTable) {
 }
 
 
-TEST_CASE(EnumIndexHashMap) {
-  typedef EnumIndexHashMap<TestTraits> Table;
-  Table table(HashTables::New<Table>(5));
-  table.UpdateOrInsert(String::Handle(String::New("a")),
-                       String::Handle(String::New("A")));
-  EXPECT(table.ContainsKey("a"));
-  table.UpdateValue("a", String::Handle(String::New("AAA")));
-  String& a_value = String::Handle();
-  a_value ^= table.GetOrNull("a");
-  EXPECT(a_value.Equals("AAA"));
-  Object& null_value = Object::Handle(table.GetOrNull("0"));
-  EXPECT(null_value.IsNull());
-
-  // Test on-demand allocation of a new key object using NewKey in traits.
-  String& b_value = String::Handle();
-  b_value ^=
-      table.InsertNewOrGetValue("b", String::Handle(String::New("BBB")));
-  EXPECT(b_value.Equals("BBB"));
-  {
-    // When the key is already present, there should be no allocation.
-    NoSafepointScope no_safepoint;
-    b_value ^= table.InsertNewOrGetValue("b", a_value);
-    EXPECT(b_value.Equals("BBB"));
-  }
-  table.Release();
-}
-
-
 std::string ToStdString(const String& str) {
   EXPECT(str.IsOneByteString());
   std::string result;
@@ -163,7 +129,7 @@ std::string ToStdString(const String& str) {
 // Checks that 'expected' and 'actual' are equal sets. If 'ordered' is true,
 // it also verifies that their iteration orders match, i.e., that actual's
 // insertion order coincides with lexicographic order.
-template<typename Set>
+template <typename Set>
 void VerifyStringSetsEqual(const std::set<std::string>& expected,
                            const Set& actual,
                            bool ordered) {
@@ -186,15 +152,15 @@ void VerifyStringSetsEqual(const std::set<std::string>& expected,
   if (!ordered) {
     std::sort(actual_vec.begin(), actual_vec.end());
   }
-  EXPECT(std::equal(actual_vec.begin(), actual_vec.end(),
-                    expected_vec.begin()));
+  EXPECT(
+      std::equal(actual_vec.begin(), actual_vec.end(), expected_vec.begin()));
 }
 
 
 // Checks that 'expected' and 'actual' are equal maps. If 'ordered' is true,
 // it also verifies that their iteration orders match, i.e., that actual's
 // insertion order coincides with lexicographic order.
-template<typename Map>
+template <typename Map>
 void VerifyStringMapsEqual(const std::map<std::string, int>& expected,
                            const Map& actual,
                            bool ordered) {
@@ -228,7 +194,7 @@ void VerifyStringMapsEqual(const std::map<std::string, int>& expected,
 }
 
 
-template<typename Set>
+template <typename Set>
 void TestSet(intptr_t initial_capacity, bool ordered) {
   std::set<std::string> expected;
   Set actual(HashTables::New<Set>(initial_capacity));
@@ -254,7 +220,7 @@ void TestSet(intptr_t initial_capacity, bool ordered) {
 }
 
 
-template<typename Map>
+template <typename Map>
 void TestMap(intptr_t initial_capacity, bool ordered) {
   std::map<std::string, int> expected;
   Map actual(HashTables::New<Map>(initial_capacity));
@@ -286,21 +252,17 @@ void TestMap(intptr_t initial_capacity, bool ordered) {
 
 
 TEST_CASE(Sets) {
-  for (intptr_t initial_capacity = 0;
-       initial_capacity < 32;
+  for (intptr_t initial_capacity = 0; initial_capacity < 32;
        ++initial_capacity) {
     TestSet<UnorderedHashSet<TestTraits> >(initial_capacity, false);
-    TestSet<EnumIndexHashSet<TestTraits> >(initial_capacity, true);
   }
 }
 
 
 TEST_CASE(Maps) {
-  for (intptr_t initial_capacity = 0;
-       initial_capacity < 32;
+  for (intptr_t initial_capacity = 0; initial_capacity < 32;
        ++initial_capacity) {
     TestMap<UnorderedHashMap<TestTraits> >(initial_capacity, false);
-    TestMap<EnumIndexHashMap<TestTraits> >(initial_capacity, true);
   }
 }
 

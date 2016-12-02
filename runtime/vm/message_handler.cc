@@ -19,8 +19,7 @@ DECLARE_FLAG(bool, trace_service_pause_events);
 
 class MessageHandlerTask : public ThreadPool::Task {
  public:
-  explicit MessageHandlerTask(MessageHandler* handler)
-      : handler_(handler) {
+  explicit MessageHandlerTask(MessageHandler* handler) : handler_(handler) {
     ASSERT(handler != NULL);
   }
 
@@ -64,6 +63,7 @@ MessageHandler::MessageHandler()
       should_pause_on_exit_(false),
       is_paused_on_start_(false),
       is_paused_on_exit_(false),
+      delete_me_(false),
       paused_timestamp_(-1),
       pool_(NULL),
       task_(NULL),
@@ -78,6 +78,10 @@ MessageHandler::MessageHandler()
 MessageHandler::~MessageHandler() {
   delete queue_;
   delete oob_queue_;
+  queue_ = NULL;
+  oob_queue_ = NULL;
+  pool_ = NULL;
+  task_ = NULL;
 }
 
 
@@ -105,11 +109,13 @@ void MessageHandler::Run(ThreadPool* pool,
   bool task_running;
   MonitorLocker ml(&monitor_);
   if (FLAG_trace_isolates) {
-    OS::Print("[+] Starting message handler:\n"
-              "\thandler:    %s\n",
-              name());
+    OS::Print(
+        "[+] Starting message handler:\n"
+        "\thandler:    %s\n",
+        name());
   }
   ASSERT(pool_ == NULL);
+  ASSERT(!delete_me_);
   pool_ = pool;
   start_callback_ = start_callback;
   end_callback_ = end_callback;
@@ -131,12 +137,14 @@ void MessageHandler::PostMessage(Message* message, bool before_events) {
       if (source_isolate) {
         source_name = source_isolate->name();
       }
-      OS::Print("[>] Posting message:\n"
-                "\tlen:        %" Pd "\n"
-                "\tsource:     %s\n"
-                "\tdest:       %s\n"
-                "\tdest_port:  %" Pd64 "\n",
-                message->len(), source_name, name(), message->dest_port());
+      OS::Print(
+          "[>] Posting message:\n"
+          "\tlen:        %" Pd
+          "\n"
+          "\tsource:     %s\n"
+          "\tdest:       %s\n"
+          "\tdest_port:  %" Pd64 "\n",
+          message->len(), source_name, name(), message->dest_port());
     }
 
     saved_priority = message->priority();
@@ -148,6 +156,7 @@ void MessageHandler::PostMessage(Message* message, bool before_events) {
     message = NULL;  // Do not access message.  May have been deleted.
 
     if ((pool_ != NULL) && (task_ == NULL)) {
+      ASSERT(!delete_me_);
       task_ = new MessageHandlerTask(this);
       task_running = pool_->Run(task_);
     }
@@ -184,18 +193,20 @@ MessageHandler::MessageStatus MessageHandler::HandleMessages(
   StartIsolateScope start_isolate(isolate());
 
   MessageStatus max_status = kOK;
-  Message::Priority min_priority = ((allow_normal_messages && !paused())
-                                    ? Message::kNormalPriority
-                                    : Message::kOOBPriority);
+  Message::Priority min_priority =
+      ((allow_normal_messages && !paused()) ? Message::kNormalPriority
+                                            : Message::kOOBPriority);
   Message* message = DequeueMessage(min_priority);
   while (message != NULL) {
     intptr_t message_len = message->len();
     if (FLAG_trace_isolates) {
-      OS::Print("[<] Handling message:\n"
-                "\tlen:        %" Pd "\n"
-                "\thandler:    %s\n"
-                "\tport:       %" Pd64 "\n",
-                message_len, name(), message->dest_port());
+      OS::Print(
+          "[<] Handling message:\n"
+          "\tlen:        %" Pd
+          "\n"
+          "\thandler:    %s\n"
+          "\tport:       %" Pd64 "\n",
+          message_len, name(), message->dest_port());
     }
 
     // Release the monitor_ temporarily while we handle the message.
@@ -210,12 +221,13 @@ MessageHandler::MessageStatus MessageHandler::HandleMessages(
     message = NULL;  // May be deleted by now.
     ml->Enter();
     if (FLAG_trace_isolates) {
-      OS::Print("[.] Message handled (%s):\n"
-                "\tlen:        %" Pd "\n"
-                "\thandler:    %s\n"
-                "\tport:       %" Pd64 "\n",
-                MessageStatusString(status),
-                message_len, name(), saved_dest_port);
+      OS::Print(
+          "[.] Message handled (%s):\n"
+          "\tlen:        %" Pd
+          "\n"
+          "\thandler:    %s\n"
+          "\tport:       %" Pd64 "\n",
+          MessageStatusString(status), message_len, name(), saved_dest_port);
     }
     // If we are shutting down, do not process any more messages.
     if (status == kShutdown) {
@@ -238,8 +250,8 @@ MessageHandler::MessageStatus MessageHandler::HandleMessages(
     // Even if we encounter an error, we still process pending OOB
     // messages so that we don't lose the message notification.
     min_priority = (((max_status == kOK) && allow_normal_messages && !paused())
-                    ? Message::kNormalPriority
-                    : Message::kOOBPriority);
+                        ? Message::kNormalPriority
+                        : Message::kOOBPriority);
     message = DequeueMessage(min_priority);
   }
   return max_status;
@@ -251,6 +263,7 @@ MessageHandler::MessageStatus MessageHandler::HandleNextMessage() {
   // assigned to a thread pool.
   MonitorLocker ml(&monitor_);
   ASSERT(pool_ == NULL);
+  ASSERT(!delete_me_);
 #if defined(DEBUG)
   CheckAccess();
 #endif
@@ -263,6 +276,7 @@ MessageHandler::MessageStatus MessageHandler::HandleAllMessages() {
   // assigned to a thread pool.
   MonitorLocker ml(&monitor_);
   ASSERT(pool_ == NULL);
+  ASSERT(!delete_me_);
 #if defined(DEBUG)
   CheckAccess();
 #endif
@@ -275,6 +289,7 @@ MessageHandler::MessageStatus MessageHandler::HandleOOBMessages() {
     return kOK;
   }
   MonitorLocker ml(&monitor_);
+  ASSERT(!delete_me_);
 #if defined(DEBUG)
   CheckAccess();
 #endif
@@ -316,6 +331,7 @@ void MessageHandler::TaskCallback() {
   ASSERT(Isolate::Current() == NULL);
   MessageStatus status = kOK;
   bool run_end_callback = false;
+  bool delete_me = false;
   {
     // We will occasionally release and reacquire this monitor in this
     // function. Whenever we reacquire the monitor we *must* process
@@ -364,8 +380,10 @@ void MessageHandler::TaskCallback() {
       if (ShouldPauseOnExit(status)) {
         if (!is_paused_on_exit()) {
           if (FLAG_trace_service_pause_events) {
-            OS::PrintErr("Isolate %s paused before exiting. "
-                         "Use the Observatory to release it.\n", name());
+            OS::PrintErr(
+                "Isolate %s paused before exiting. "
+                "Use the Observatory to release it.\n",
+                name());
           }
           PausedOnExitLocked(&ml, true);
           // More messages may have come in while we released the monitor.
@@ -383,18 +401,21 @@ void MessageHandler::TaskCallback() {
       if (FLAG_trace_isolates) {
         if (status != kOK && thread() != NULL) {
           const Error& error = Error::Handle(thread()->sticky_error());
-          OS::Print("[-] Stopping message handler (%s):\n"
-                    "\thandler:    %s\n"
-                    "\terror:    %s\n",
-                    MessageStatusString(status), name(), error.ToCString());
+          OS::Print(
+              "[-] Stopping message handler (%s):\n"
+              "\thandler:    %s\n"
+              "\terror:    %s\n",
+              MessageStatusString(status), name(), error.ToCString());
         } else {
-          OS::Print("[-] Stopping message handler (%s):\n"
-                    "\thandler:    %s\n",
-                    MessageStatusString(status), name());
+          OS::Print(
+              "[-] Stopping message handler (%s):\n"
+              "\thandler:    %s\n",
+              MessageStatusString(status), name());
         }
       }
       pool_ = NULL;
       run_end_callback = true;
+      delete_me = delete_me_;
     }
 
     // Clear the task_ last.  This allows other tasks to potentially start
@@ -402,9 +423,16 @@ void MessageHandler::TaskCallback() {
     ASSERT(oob_queue_->IsEmpty());
     task_ = NULL;
   }
+
+  // Message handlers either use delete_me or end_callback but not both.
+  ASSERT(!delete_me || end_callback_ == NULL);
+
   if (run_end_callback && end_callback_ != NULL) {
     end_callback_(callback_data_);
     // The handler may have been deleted after this point.
+  }
+  if (delete_me) {
+    delete this;
   }
 }
 
@@ -412,11 +440,13 @@ void MessageHandler::TaskCallback() {
 void MessageHandler::ClosePort(Dart_Port port) {
   MonitorLocker ml(&monitor_);
   if (FLAG_trace_isolates) {
-    OS::Print("[-] Closing port:\n"
-              "\thandler:    %s\n"
-              "\tport:       %" Pd64 "\n"
-              "\tports:      live(%" Pd ")\n",
-              name(), port, live_ports_);
+    OS::Print(
+        "[-] Closing port:\n"
+        "\thandler:    %s\n"
+        "\tport:       %" Pd64
+        "\n"
+        "\tports:      live(%" Pd ")\n",
+        name(), port, live_ports_);
   }
 }
 
@@ -424,12 +454,29 @@ void MessageHandler::ClosePort(Dart_Port port) {
 void MessageHandler::CloseAllPorts() {
   MonitorLocker ml(&monitor_);
   if (FLAG_trace_isolates) {
-    OS::Print("[-] Closing all ports:\n"
-              "\thandler:    %s\n",
-              name());
+    OS::Print(
+        "[-] Closing all ports:\n"
+        "\thandler:    %s\n",
+        name());
   }
   queue_->Clear();
   oob_queue_->Clear();
+}
+
+
+void MessageHandler::RequestDeletion() {
+  ASSERT(OwnedByPortMap());
+  {
+    MonitorLocker ml(&monitor_);
+    if (task_ != NULL) {
+      // This message handler currently has a task running on the thread pool.
+      delete_me_ = true;
+      return;
+    }
+  }
+
+  // This message handler has no current task.  Delete it.
+  delete this;
 }
 
 
@@ -454,6 +501,11 @@ void MessageHandler::decrement_live_ports() {
 void MessageHandler::PausedOnStart(bool paused) {
   MonitorLocker ml(&monitor_);
   PausedOnStartLocked(&ml, paused);
+}
+
+
+void MessageHandler::DebugDump() {
+  PortMap::DebugDumpForMessageHandler(this);
 }
 
 

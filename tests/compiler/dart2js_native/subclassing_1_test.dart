@@ -2,8 +2,8 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "package:expect/expect.dart";
-import 'dart:_js_helper' show Native, Creates, setNativeSubclassDispatchRecord;
+import "native_testing.dart";
+import 'dart:_js_helper' show setNativeSubclassDispatchRecord;
 import 'dart:_interceptors' show findInterceptorForType;
 
 // Test that subclasses of native classes can be defined by setting the dispatch
@@ -11,7 +11,7 @@ import 'dart:_interceptors' show findInterceptorForType;
 
 @Native("A")
 class A {
-  foo(x) =>  '$x,${this.oof()}';
+  foo(x) => '$x,${this.oof()}';
   oof() => 'A';
 }
 
@@ -19,15 +19,15 @@ class B extends A {
   oof() => 'B';
 }
 
-B makeB1() native;
-B makeB2() native;
-B makeC() native;
+B makeB1() native ;
+B makeB2() native ;
+B makeC() native ;
 
 @Creates('=Object')
-getBPrototype() native;
+getBPrototype() native ;
 
 @Creates('=Object')
-getCPrototype() native;
+getCPrototype() native ;
 
 void setup() native r"""
 function A() {}
@@ -43,6 +43,7 @@ getCPrototype = function(){return C.prototype;};
 """;
 
 main() {
+  nativeTesting();
   setup();
 
   setNativeSubclassDispatchRecord(getBPrototype(), findInterceptorForType(B));

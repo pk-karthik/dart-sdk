@@ -11,7 +11,7 @@
  */
 library test.integration.protocol.matchers;
 
-import 'package:unittest/unittest.dart';
+import 'package:test/test.dart';
 
 import 'integration_tests.dart';
 
@@ -65,11 +65,16 @@ final Matcher isServerSetSubscriptionsResult = isNull;
  *
  * {
  *   "version": String
+ *   "pid": int
+ *   "sessionId": optional String
  * }
  */
 final Matcher isServerConnectedParams = new LazyMatcher(() => new MatchesJsonObject(
   "server.connected params", {
-    "version": isString
+    "version": isString,
+    "pid": isInt
+  }, optionalFields: {
+    "sessionId": isString
   }));
 
 /**
@@ -1699,6 +1704,7 @@ final Matcher isHighlightRegionType = new MatchesEnum("HighlightRegionType", [
  *   "dartdoc": optional String
  *   "elementDescription": optional String
  *   "elementKind": optional String
+ *   "isDeprecated": optional bool
  *   "parameter": optional String
  *   "propagatedType": optional String
  *   "staticType": optional String
@@ -1715,6 +1721,7 @@ final Matcher isHoverInformation = new LazyMatcher(() => new MatchesJsonObject(
     "dartdoc": isString,
     "elementDescription": isString,
     "elementKind": isString,
+    "isDeprecated": isBool,
     "parameter": isString,
     "propagatedType": isString,
     "staticType": isString

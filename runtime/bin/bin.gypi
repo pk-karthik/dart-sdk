@@ -11,6 +11,7 @@
     'html_cc_file': '<(gen_source_dir)/html_gen.cc',
     'html_common_cc_file': '<(gen_source_dir)/html_common_gen.cc',
     'js_cc_file': '<(gen_source_dir)/js_gen.cc',
+    'js_util_cc_file': '<(gen_source_dir)/js_util_gen.cc',
     'blink_cc_file': '<(gen_source_dir)/blink_gen.cc',
     'indexeddb_cc_file': '<(gen_source_dir)/indexeddb_gen.cc',
     'cached_patches_cc_file': '<(gen_source_dir)/cached_patches_gen.cc',
@@ -234,6 +235,38 @@
       ]
     },
     {
+      'target_name': 'generate_js_util_cc_file',
+      'type': 'none',
+      'toolsets':['host'],
+      'sources': [
+      '../../sdk/lib/js_util/dartium/js_util_dartium.dart',
+      ],
+      'actions': [
+      {
+        'action_name': 'generate_js_util_cc',
+        'inputs': [
+        '../tools/gen_library_src_paths.py',
+        '<(builtin_in_cc_file)',
+        '<@(_sources)',
+        ],
+        'outputs': [
+        '<(js_util_cc_file)',
+        ],
+        'action': [
+        'python',
+        'tools/gen_library_src_paths.py',
+        '--output', '<(js_util_cc_file)',
+        '--input_cc', '<(builtin_in_cc_file)',
+        '--include', 'bin/builtin.h',
+        '--var_name', 'dart::bin::Builtin::js_util_source_paths_',
+        '--library_name', 'dart:js_util',
+        '<@(_sources)',
+        ],
+        'message': 'Generating ''<(js_util_cc_file)'' file.'
+      },
+      ]
+    },
+    {
       'target_name': 'generate_blink_cc_file',
       'type': 'none',
       'toolsets':['host'],
@@ -257,7 +290,7 @@
         '--output', '<(blink_cc_file)',
         '--input_cc', '<(builtin_in_cc_file)',
         '--include', 'bin/builtin.h',
-        '--var_name', 'dart::bin::Builtin::blink_source_paths_',
+        '--var_name', 'dart::bin::Builtin::_blink_source_paths_',
         '--library_name', 'dart:_blink',
         '<@(_sources)',
         ],
@@ -289,7 +322,7 @@
         '--output', '<(indexeddb_cc_file)',
         '--input_cc', '<(builtin_in_cc_file)',
         '--include', 'bin/builtin.h',
-        '--var_name', 'dart::bin::Builtin::indexeddb_source_paths_',
+        '--var_name', 'dart::bin::Builtin::indexed_db_source_paths_',
         '--library_name', 'dart:indexed_db',
         '<@(_sources)',
         ],
@@ -417,7 +450,7 @@
         '--output', '<(websql_cc_file)',
         '--input_cc', '<(builtin_in_cc_file)',
         '--include', 'bin/builtin.h',
-        '--var_name', 'dart::bin::Builtin::websql_source_paths_',
+        '--var_name', 'dart::bin::Builtin::web_sql_source_paths_',
         '--library_name', 'dart:web_sql',
         '<@(_sources)',
         ],
@@ -481,7 +514,7 @@
         '--output', '<(webaudio_cc_file)',
         '--input_cc', '<(builtin_in_cc_file)',
         '--include', 'bin/builtin.h',
-        '--var_name', 'dart::bin::Builtin::webaudio_source_paths_',
+        '--var_name', 'dart::bin::Builtin::web_audio_source_paths_',
         '--library_name', 'dart:web_audio',
         '<@(_sources)',
         ],
@@ -500,6 +533,7 @@
         'generate_html_cc_file#host',
         'generate_html_common_cc_file#host',
         'generate_js_cc_file#host',
+        'generate_js_util_cc_file#host',
         'generate_blink_cc_file#host',
         'generate_indexeddb_cc_file#host',
         'generate_cached_patches_cc_file#host',
@@ -682,6 +716,10 @@
           'defines': [
             'DART_IO_SECURE_SOCKET_DISABLED'
           ],
+        }, {
+          'sources': [
+            '../../third_party/root_certificates/root_certificates.cc',
+          ],
         }],
         ['OS=="win"', {
           'sources/' : [
@@ -758,6 +796,10 @@
           'defines': [
             'DART_IO_SECURE_SOCKET_DISABLED'
           ],
+        }, {
+          'sources': [
+            '../../third_party/root_certificates/root_certificates.cc',
+          ],
         }],
         ['OS != "mac" and dart_io_support==1 and dart_io_secure_socket==1', {
           'dependencies': [
@@ -817,6 +859,10 @@
         ['dart_io_support==0 or dart_io_secure_socket==0', {
           'defines': [
             'DART_IO_SECURE_SOCKET_DISABLED',
+          ],
+        }, {
+          'sources': [
+            '../../third_party/root_certificates/root_certificates.cc',
           ],
         }],
         ['OS != "mac" and dart_io_support==1 and dart_io_secure_socket==1', {
@@ -1101,6 +1147,11 @@
             },
           },
         }],
+        ['OS == "linux" and asan == 0 and msan == 0', {
+          'dependencies': [
+            '../third_party/tcmalloc/tcmalloc.gypi:tcmalloc',
+          ],
+        }],
       ],
       'configurations': {
         'Dart_Linux_Base': {
@@ -1250,6 +1301,7 @@
         '<(html_cc_file)',
         '<(html_common_cc_file)',
         '<(js_cc_file)',
+        '<(js_util_cc_file)',
         '<(blink_cc_file)',
         '<(indexeddb_cc_file)',
         '<(cached_patches_cc_file)',
@@ -1345,6 +1397,11 @@
           'link_settings': {
             'libraries': [ '-lws2_32.lib', '-lRpcrt4.lib', '-lwinmm.lib' ],
           },
+        }],
+        ['OS == "linux" and asan == 0 and msan == 0', {
+          'dependencies': [
+            '../third_party/tcmalloc/tcmalloc.gypi:tcmalloc',
+          ],
         }],
       ],
       'configurations': {

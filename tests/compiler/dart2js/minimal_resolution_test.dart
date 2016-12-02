@@ -15,7 +15,7 @@ import 'memory_compiler.dart';
 main() {
   asyncTest(() async {
     await analyze('main() {}');
-    await analyze('main() => proxy;', proxyConstant: true);
+    await analyze('main() => proxy;', proxyConstantComputed: true);
     await analyze('@deprecated main() {}');
     await analyze('@deprecated main() => deprecated;', deprecatedClass: true);
     await analyze('main() => deprecated;', deprecatedClass: true);
@@ -26,28 +26,30 @@ void checkInstantiated(Compiler compiler, ClassElement cls, bool expected) {
   ResolutionEnqueuer enqueuer = compiler.enqueuer.resolution;
   bool isInstantiated =
       enqueuer.universe.directlyInstantiatedClasses.contains(cls);
-  bool isProcessed = enqueuer.isClassProcessed(cls);
+  bool isProcessed = enqueuer.processedClasses.contains(cls);
   Expect.equals(expected, isInstantiated,
       'Unexpected instantiation state of class $cls.');
-  Expect.equals(expected, isProcessed,
-      'Unexpected processing state of class $cls.');
+  Expect.equals(
+      expected, isProcessed, 'Unexpected processing state of class $cls.');
 }
 
 analyze(String code,
-        {bool proxyConstant: false,
-         bool deprecatedClass: false}) async {
+    {bool proxyConstantComputed: false, bool deprecatedClass: false}) async {
   CompilationResult result = await runCompiler(
-      memorySourceFiles: {'main.dart': code},
-      options: ['--analyze-only']);
+      memorySourceFiles: {'main.dart': code}, options: ['--analyze-only']);
   Expect.isTrue(result.isSuccess);
   Compiler compiler = result.compiler;
-  Expect.equals(proxyConstant, compiler.proxyConstant != null,
+  Expect.equals(
+      proxyConstantComputed,
+      compiler.resolution.wasProxyConstantComputedTestingOnly,
       "Unexpected computation of proxy constant.");
 
   checkInstantiated(
-      compiler, compiler.coreLibrary.find('_Proxy'), proxyConstant);
-  checkInstantiated(
-      compiler, compiler.coreLibrary.find('Deprecated'), deprecatedClass);
+      compiler,
+      compiler.commonElements.coreLibrary.find('_Proxy'),
+      proxyConstantComputed);
+  checkInstantiated(compiler,
+      compiler.commonElements.coreLibrary.find('Deprecated'), deprecatedClass);
 
   LibraryElement jsHelperLibrary =
       compiler.libraryLoader.lookupLibrary(BackendHelpers.DART_JS_HELPER);

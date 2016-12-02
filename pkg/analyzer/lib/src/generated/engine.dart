@@ -10,14 +10,16 @@ import 'dart:collection';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/error/error.dart';
+import 'package:analyzer/exception/exception.dart';
 import 'package:analyzer/instrumentation/instrumentation.dart';
-import 'package:analyzer/source/embedder.dart';
+import 'package:analyzer/plugin/resolver_provider.dart';
+import 'package:analyzer/source/error_processor.dart';
 import 'package:analyzer/src/cancelable_future.dart';
+import 'package:analyzer/src/context/builder.dart' show EmbedderYamlLocator;
 import 'package:analyzer/src/context/cache.dart';
 import 'package:analyzer/src/context/context.dart';
 import 'package:analyzer/src/generated/constant.dart';
-import 'package:analyzer/src/generated/error.dart';
-import 'package:analyzer/src/generated/java_core.dart';
 import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/resolver.dart';
 import 'package:analyzer/src/generated/source.dart';
@@ -25,13 +27,18 @@ import 'package:analyzer/src/generated/utilities_general.dart';
 import 'package:analyzer/src/plugin/command_line_plugin.dart';
 import 'package:analyzer/src/plugin/engine_plugin.dart';
 import 'package:analyzer/src/plugin/options_plugin.dart';
+import 'package:analyzer/src/services/lint.dart';
 import 'package:analyzer/src/task/manager.dart';
 import 'package:analyzer/task/dart.dart';
 import 'package:analyzer/task/model.dart';
+import 'package:front_end/src/base/timestamped_data.dart';
 import 'package:html/dom.dart' show Document;
 import 'package:path/path.dart' as pathos;
 import 'package:plugin/manager.dart';
 import 'package:plugin/plugin.dart';
+
+export 'package:analyzer/error/listener.dart' show RecordingErrorListener;
+export 'package:front_end/src/base/timestamped_data.dart' show TimestampedData;
 
 /**
  * Used by [AnalysisOptions] to allow function bodies to be analyzed in some
@@ -83,6 +90,12 @@ abstract class AnalysisContext {
    * An empty list of contexts.
    */
   static const List<AnalysisContext> EMPTY_LIST = const <AnalysisContext>[];
+
+  /**
+   * The file resolver provider used to override the way file URI's are
+   * resolved in some contexts.
+   */
+  ResolverProvider fileResolverProvider;
 
   /**
    * Return the set of analysis options controlling the behavior of this
@@ -220,7 +233,7 @@ abstract class AnalysisContext {
    * analysis results that have been invalidated by these changes will be
    * removed.
    */
-  ApplyChangesStatus applyChanges(ChangeSet changeSet);
+  void applyChanges(ChangeSet changeSet);
 
   /**
    * Return the documentation comment for the given [element] as it appears in
@@ -346,6 +359,7 @@ abstract class AnalysisContext {
    *
    * See [setConfigurationData].
    */
+  @deprecated
   Object/*=V*/ getConfigurationData/*<V>*/(ResultDescriptor/*<V>*/ key);
 
   /**
@@ -613,6 +627,7 @@ abstract class AnalysisContext {
    *
    * See [getConfigurationData].
    */
+  @deprecated
   void setConfigurationData(ResultDescriptor key, Object data);
 
   /**
@@ -622,14 +637,6 @@ abstract class AnalysisContext {
    * so that the default contents will be returned.
    */
   void setContents(Source source, String contents);
-
-  /**
-   * Check the cache for any invalid entries (entries whose modification time
-   * does not match the modification time of the source associated with the
-   * entry). Invalid entries will be marked as invalid so that the source will
-   * be re-analyzed. Return `true` if at least one entry was invalid.
-   */
-  bool validateCacheConsistency();
 }
 
 /**
@@ -778,12 +785,6 @@ class AnalysisEngine {
    * The partition manager being used to manage the shared partitions.
    */
   final PartitionManager partitionManager = new PartitionManager();
-
-  /**
-   * A flag indicating whether the task model should attempt to limit
-   * invalidation after a change.
-   */
-  bool limitInvalidationInTaskModel = false;
 
   /**
    * The task manager used to manage the tasks used to analyze code.
@@ -954,19 +955,21 @@ class AnalysisErrorInfoImpl implements AnalysisErrorInfo {
 /**
  * The levels at which a source can be analyzed.
  */
-class AnalysisLevel extends Enum<AnalysisLevel> {
+class AnalysisLevel implements Comparable<AnalysisLevel> {
   /**
    * Indicates a source should be fully analyzed.
    */
   static const AnalysisLevel ALL = const AnalysisLevel('ALL', 0);
 
   /**
-   * Indicates a source should be resolved and that errors, warnings and hints are needed.
+   * Indicates a source should be resolved and that errors, warnings and hints
+   * are needed.
    */
   static const AnalysisLevel ERRORS = const AnalysisLevel('ERRORS', 1);
 
   /**
-   * Indicates a source should be resolved, but that errors, warnings and hints are not needed.
+   * Indicates a source should be resolved, but that errors, warnings and hints
+   * are not needed.
    */
   static const AnalysisLevel RESOLVED = const AnalysisLevel('RESOLVED', 2);
 
@@ -977,7 +980,26 @@ class AnalysisLevel extends Enum<AnalysisLevel> {
 
   static const List<AnalysisLevel> values = const [ALL, ERRORS, RESOLVED, NONE];
 
-  const AnalysisLevel(String name, int ordinal) : super(name, ordinal);
+  /**
+   * The name of this analysis level.
+   */
+  final String name;
+
+  /**
+   * The ordinal value of the analysis level.
+   */
+  final int ordinal;
+
+  const AnalysisLevel(this.name, this.ordinal);
+
+  @override
+  int get hashCode => ordinal;
+
+  @override
+  int compareTo(AnalysisLevel other) => ordinal - other.ordinal;
+
+  @override
+  String toString() => name;
 }
 
 /**
@@ -1039,21 +1061,46 @@ class AnalysisNotScheduledError implements Exception {}
  */
 abstract class AnalysisOptions {
   /**
+   * The length of the list returned by [encodeCrossContextOptions].
+   */
+  static const int crossContextOptionsLength = 2;
+
+  /**
    * Function that returns `true` if analysis is to parse and analyze function
    * bodies for a given source.
    */
   AnalyzeFunctionBodiesPredicate get analyzeFunctionBodiesPredicate;
 
   /**
-   * Return the maximum number of sources for which AST structures should be
+   * DEPRECATED: Return the maximum number of sources for which AST structures should be
    * kept in the cache.
+   *
+   * This setting no longer has any effect.
    */
+  @deprecated
   int get cacheSize;
 
   /**
    * Return `true` if analysis is to generate dart2js related hint results.
    */
   bool get dart2jsHint;
+
+  /**
+   * Return `true` if cache flushing should be disabled.  Setting this option to
+   * `true` can improve analysis speed at the expense of memory usage.  It may
+   * also be useful for working around bugs.
+   *
+   * This option should not be used when the analyzer is part of a long running
+   * process (such as the analysis server) because it has the potential to
+   * prevent memory from being reclaimed.
+   */
+  bool get disableCacheFlushing;
+
+  /**
+   * Return `true` if the parser is to parse asserts in the initializer list of
+   * a constructor.
+   */
+  bool get enableAssertInitializer;
 
   /**
    * Return `true` to enable custom assert messages (DEP 37).
@@ -1063,6 +1110,7 @@ abstract class AnalysisOptions {
   /**
    * Return `true` to if analysis is to enable async support.
    */
+  @deprecated
   bool get enableAsync;
 
   /**
@@ -1074,7 +1122,21 @@ abstract class AnalysisOptions {
   /**
    * Return `true` to enable generic methods (DEP 22).
    */
+  @deprecated
   bool get enableGenericMethods => null;
+
+  /**
+   * Return `true` if access to field formal parameters should be allowed in a
+   * constructor's initializer list.
+   */
+  @deprecated
+  bool get enableInitializingFormalAccess;
+
+  /**
+   * Return `true` to enable the lazy compound assignment operators '&&=' and
+   * '||='.
+   */
+  bool get enableLazyAssignmentOperators;
 
   /**
    * Return `true` to strictly follow the specification when generating
@@ -1092,6 +1154,31 @@ abstract class AnalysisOptions {
    * Return `true` if timing data should be gathered during execution.
    */
   bool get enableTiming;
+
+  /**
+   * Return `true` to enable the use of URIs in part-of directives.
+   */
+  bool get enableUriInPartOf;
+
+  /**
+   * Return a list of error processors that are to be used when reporting
+   * errors in some analysis context.
+   */
+  List<ErrorProcessor> get errorProcessors;
+
+  /**
+   * Return a list of exclude patterns used to exclude some sources from
+   * analysis.
+   */
+  List<String> get excludePatterns;
+
+  /**
+   * A flag indicating whether finer grained dependencies should be used
+   * instead of just source level dependencies.
+   *
+   * This option is experimental and subject to change.
+   */
+  bool get finerGrainedInvalidation;
 
   /**
    * Return `true` if errors, warnings and hints should be generated for sources
@@ -1134,6 +1221,18 @@ abstract class AnalysisOptions {
   bool get lint;
 
   /**
+   * Return a list of the lint rules that are to be run in an analysis context
+   * if [lint] returns `true`.
+   */
+  List<Linter> get lintRules;
+
+  /**
+   * Return the "platform" bit mask which should be used to apply patch files,
+   * or `0` if no patch files should be applied.
+   */
+  int get patchPlatform;
+
+  /**
    * Return `true` if analysis is to parse comments.
    */
   bool get preserveComments;
@@ -1144,17 +1243,50 @@ abstract class AnalysisOptions {
   bool get strongMode;
 
   /**
-   * Return an integer encoding of the values of the options that need to be the
-   * same across all of the contexts associated with partitions that are to be
-   * shared by a single analysis context.
+   * Return `true` if dependencies between computed results should be tracked
+   * by analysis cache.  This option should only be set to `false` if analysis
+   * is performed in such a way that none of the inputs is ever changed
+   * during the life time of the context.
    */
-  int encodeCrossContextOptions();
+  bool get trackCacheDependencies;
+
+  /**
+   * Return a list of integers encoding of the values of the options that need
+   * to be the same across all of the contexts associated with partitions that
+   * are to be shared by a single analysis context.
+   *
+   * The length of the list is guaranteed to equal [crossContextOptionsLength].
+   */
+  List<int> encodeCrossContextOptions();
+
+  /**
+   * Reset the state of this set of analysis options to its original state.
+   */
+  void resetToDefaults();
 
   /**
    * Set the values of the cross-context options to match those in the given set
    * of [options].
    */
   void setCrossContextOptionsFrom(AnalysisOptions options);
+
+  /**
+   * Determine whether two lists returned by [encodeCrossContextOptions] are
+   * equal.
+   */
+  static bool crossContextOptionsEqual(List<int> a, List<int> b) {
+    assert(a.length == crossContextOptionsLength);
+    assert(b.length == crossContextOptionsLength);
+    if (a.length != b.length) {
+      return false;
+    }
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) {
+        return false;
+      }
+    }
+    return true;
+  }
 }
 
 /**
@@ -1163,17 +1295,25 @@ abstract class AnalysisOptions {
  */
 class AnalysisOptionsImpl implements AnalysisOptions {
   /**
-   * The maximum number of sources for which data should be kept in the cache.
+   * DEPRECATED: The maximum number of sources for which data should be kept in
+   * the cache.
+   *
+   * This constant no longer has any effect.
    */
+  @deprecated
   static const int DEFAULT_CACHE_SIZE = 64;
 
   static const int ENABLE_ASSERT_FLAG = 0x01;
-  static const int ENABLE_ASYNC_FLAG = 0x02;
-  static const int ENABLE_GENERIC_METHODS_FLAG = 0x04;
-  static const int ENABLE_STRICT_CALL_CHECKS_FLAG = 0x08;
-  static const int ENABLE_STRONG_MODE_FLAG = 0x10;
-  static const int ENABLE_STRONG_MODE_HINTS_FLAG = 0x20;
-  static const int ENABLE_SUPER_MIXINS_FLAG = 0x40;
+  static const int ENABLE_LAZY_ASSIGNMENT_OPERATORS = 0x02;
+  static const int ENABLE_STRICT_CALL_CHECKS_FLAG = 0x04;
+  static const int ENABLE_STRONG_MODE_FLAG = 0x08;
+  static const int ENABLE_STRONG_MODE_HINTS_FLAG = 0x10;
+  static const int ENABLE_SUPER_MIXINS_FLAG = 0x20;
+
+  /**
+   * The default list of non-nullable type names.
+   */
+  static const List<String> NONNULLABLE_TYPES = const <String>[];
 
   /**
    * A predicate indicating whether analysis is to parse and analyze function
@@ -1182,97 +1322,79 @@ class AnalysisOptionsImpl implements AnalysisOptions {
   AnalyzeFunctionBodiesPredicate _analyzeFunctionBodiesPredicate =
       _analyzeAllFunctionBodies;
 
-  /**
-   * The maximum number of sources for which AST structures should be kept in
-   * the cache.
-   */
-  int cacheSize = DEFAULT_CACHE_SIZE;
+  @override
+  @deprecated
+  int cacheSize = 64;
 
-  /**
-   * A flag indicating whether analysis is to generate dart2js related hint
-   * results.
-   */
+  @override
   bool dart2jsHint = false;
 
-  /**
-   * A flag indicating whether custom assert messages are to be supported (DEP
-   * 37).
-   */
+  @override
+  bool enableAssertInitializer = false;
+
+  @override
   bool enableAssertMessage = false;
 
-  /**
-   * A flag indicating whether analysis is to enable async support.
-   */
-  bool enableAsync = true;
+  @override
+  bool enableLazyAssignmentOperators = false;
 
-  /**
-   * A flag indicating whether generic methods are to be supported (DEP 22).
-   */
-  bool enableGenericMethods = false;
-
-  /**
-   * A flag indicating whether analysis is to strictly follow the specification
-   * when generating warnings on "call" methods (fixes dartbug.com/21938).
-   */
+  @override
   bool enableStrictCallChecks = false;
 
-  /**
-   * A flag indicating whether mixins are allowed to inherit from types other
-   * than Object, and are allowed to reference `super`.
-   */
+  @override
   bool enableSuperMixins = false;
 
   @override
   bool enableTiming = false;
 
   /**
-   * A flag indicating whether errors, warnings and hints should be generated
-   * for sources that are implicitly being analyzed.
+   * A list of error processors that are to be used when reporting errors in
+   * some analysis context.
    */
+  List<ErrorProcessor> _errorProcessors;
+
+  /**
+   * A list of exclude patterns used to exclude some sources from analysis.
+   */
+  List<String> _excludePatterns;
+
+  @override
+  bool enableUriInPartOf = false;
+
+  @override
   bool generateImplicitErrors = true;
 
-  /**
-   * A flag indicating whether errors, warnings and hints should be generated
-   * for sources in the SDK.
-   */
+  @override
   bool generateSdkErrors = false;
 
-  /**
-   * A flag indicating whether analysis is to generate hint results (e.g. type
-   * inference based information and pub best practices).
-   */
+  @override
   bool hint = true;
 
-  /**
-   * A flag indicating whether incremental analysis should be used.
-   */
+  @override
   bool incremental = false;
 
-  /**
-   * A flag indicating whether incremental analysis should be used for API
-   * changes.
-   */
+  @override
   bool incrementalApi = false;
 
-  /**
-   * A flag indicating whether validation should be performed after incremental
-   * analysis.
-   */
+  @override
   bool incrementalValidation = false;
 
-  /**
-   * A flag indicating whether analysis is to generate lint warnings.
-   */
+  @override
   bool lint = false;
 
   /**
-   * A flag indicating whether analysis is to parse comments.
+   * The lint rules that are to be run in an analysis context if [lint] returns
+   * `true`.
    */
+  List<Linter> _lintRules;
+
+  @override
+  int patchPlatform = 0;
+
+  @override
   bool preserveComments = true;
 
-  /**
-   * A flag indicating whether strong-mode analysis should be used.
-   */
+  @override
   bool strongMode = false;
 
   /**
@@ -1282,6 +1404,41 @@ class AnalysisOptionsImpl implements AnalysisOptions {
    */
   // TODO(leafp): replace this with something more general
   bool strongModeHints = false;
+
+  @override
+  bool trackCacheDependencies = true;
+
+  @override
+  bool disableCacheFlushing = false;
+
+  /**
+   * A flag indicating whether implicit casts are allowed in [strongMode]
+   * (they are always allowed in Dart 1.0 mode).
+   *
+   * This option is experimental and subject to change.
+   */
+  bool implicitCasts = true;
+
+  /**
+   * A list of non-nullable type names, prefixed by the library URI they belong
+   * to, e.g., 'dart:core,int', 'dart:core,bool', 'file:///foo.dart,bar', etc.
+   */
+  List<String> nonnullableTypes = NONNULLABLE_TYPES;
+
+  @override
+  bool finerGrainedInvalidation = false;
+
+  /**
+   * A flag indicating whether implicit dynamic type is allowed, on by default.
+   *
+   * This flag can be used without necessarily enabling [strongMode], but it is
+   * designed with strong mode's type inference in mind. Without type inference,
+   * it will raise many errors. Also it does not provide type safety without
+   * strong mode.
+   *
+   * This option is experimental and subject to change.
+   */
+  bool implicitDynamic = true;
 
   /**
    * Initialize a newly created set of analysis options to have their default
@@ -1295,14 +1452,15 @@ class AnalysisOptionsImpl implements AnalysisOptions {
    */
   AnalysisOptionsImpl.from(AnalysisOptions options) {
     analyzeFunctionBodiesPredicate = options.analyzeFunctionBodiesPredicate;
-    cacheSize = options.cacheSize;
     dart2jsHint = options.dart2jsHint;
+    enableAssertInitializer = options.enableAssertInitializer;
     enableAssertMessage = options.enableAssertMessage;
-    enableAsync = options.enableAsync;
     enableStrictCallChecks = options.enableStrictCallChecks;
-    enableGenericMethods = options.enableGenericMethods;
+    enableLazyAssignmentOperators = options.enableLazyAssignmentOperators;
     enableSuperMixins = options.enableSuperMixins;
     enableTiming = options.enableTiming;
+    errorProcessors = options.errorProcessors;
+    excludePatterns = options.excludePatterns;
     generateImplicitErrors = options.generateImplicitErrors;
     generateSdkErrors = options.generateSdkErrors;
     hint = options.hint;
@@ -1310,11 +1468,19 @@ class AnalysisOptionsImpl implements AnalysisOptions {
     incrementalApi = options.incrementalApi;
     incrementalValidation = options.incrementalValidation;
     lint = options.lint;
+    lintRules = options.lintRules;
     preserveComments = options.preserveComments;
     strongMode = options.strongMode;
     if (options is AnalysisOptionsImpl) {
       strongModeHints = options.strongModeHints;
+      implicitCasts = options.implicitCasts;
+      nonnullableTypes = options.nonnullableTypes;
+      implicitDynamic = options.implicitDynamic;
     }
+    trackCacheDependencies = options.trackCacheDependencies;
+    disableCacheFlushing = options.disableCacheFlushing;
+    finerGrainedInvalidation = options.finerGrainedInvalidation;
+    patchPlatform = options.patchPlatform;
   }
 
   bool get analyzeFunctionBodies {
@@ -1347,6 +1513,13 @@ class AnalysisOptionsImpl implements AnalysisOptions {
     _analyzeFunctionBodiesPredicate = value;
   }
 
+  @deprecated
+  @override
+  bool get enableAsync => true;
+
+  @deprecated
+  void set enableAsync(bool enable) {}
+
   /**
    * A flag indicating whether interface libraries are to be supported (DEP 40).
    */
@@ -1356,25 +1529,143 @@ class AnalysisOptionsImpl implements AnalysisOptions {
   void set enableConditionalDirectives(_) {}
 
   @override
-  int encodeCrossContextOptions() =>
-      (enableAssertMessage ? ENABLE_ASSERT_FLAG : 0) |
-      (enableAsync ? ENABLE_ASYNC_FLAG : 0) |
-      (enableGenericMethods ? ENABLE_GENERIC_METHODS_FLAG : 0) |
-      (enableStrictCallChecks ? ENABLE_STRICT_CALL_CHECKS_FLAG : 0) |
-      (strongMode ? ENABLE_STRONG_MODE_FLAG : 0) |
-      (strongModeHints ? ENABLE_STRONG_MODE_HINTS_FLAG : 0) |
-      (enableSuperMixins ? ENABLE_SUPER_MIXINS_FLAG : 0);
+  @deprecated
+  bool get enableGenericMethods => true;
+
+  @deprecated
+  void set enableGenericMethods(bool enable) {}
+
+  @deprecated
+  @override
+  bool get enableInitializingFormalAccess => true;
+
+  @deprecated
+  void set enableInitializingFormalAccess(bool enable) {}
+
+  @override
+  List<ErrorProcessor> get errorProcessors =>
+      _errorProcessors ??= const <ErrorProcessor>[];
+
+  /**
+   * Set the list of error [processors] that are to be used when reporting
+   * errors in some analysis context.
+   */
+  void set errorProcessors(List<ErrorProcessor> processors) {
+    _errorProcessors = processors;
+  }
+
+  @override
+  List<String> get excludePatterns => _excludePatterns ??= const <String>[];
+
+  /**
+   * Set the exclude patterns used to exclude some sources from analysis to
+   * those in the given list of [patterns].
+   */
+  void set excludePatterns(List<String> patterns) {
+    _excludePatterns = patterns;
+  }
+
+  @override
+  List<Linter> get lintRules => _lintRules ??= const <Linter>[];
+
+  /**
+   * Set the lint rules that are to be run in an analysis context if [lint]
+   * returns `true`.
+   */
+  void set lintRules(List<Linter> rules) {
+    _lintRules = rules;
+  }
+
+  @override
+  List<int> encodeCrossContextOptions() {
+    int flags = (enableAssertMessage ? ENABLE_ASSERT_FLAG : 0) |
+        (enableLazyAssignmentOperators ? ENABLE_LAZY_ASSIGNMENT_OPERATORS : 0) |
+        (enableStrictCallChecks ? ENABLE_STRICT_CALL_CHECKS_FLAG : 0) |
+        (enableSuperMixins ? ENABLE_SUPER_MIXINS_FLAG : 0) |
+        (strongMode ? ENABLE_STRONG_MODE_FLAG : 0) |
+        (strongModeHints ? ENABLE_STRONG_MODE_HINTS_FLAG : 0);
+    return <int>[flags, patchPlatform];
+  }
+
+  @override
+  void resetToDefaults() {
+    dart2jsHint = false;
+    disableCacheFlushing = false;
+    enableAssertInitializer = false;
+    enableAssertMessage = false;
+    enableLazyAssignmentOperators = false;
+    enableStrictCallChecks = false;
+    enableSuperMixins = false;
+    enableTiming = false;
+    enableUriInPartOf = false;
+    _errorProcessors = null;
+    _excludePatterns = null;
+    finerGrainedInvalidation = false;
+    generateImplicitErrors = true;
+    generateSdkErrors = false;
+    hint = true;
+    implicitCasts = true;
+    implicitDynamic = true;
+    incremental = false;
+    incrementalApi = false;
+    incrementalValidation = false;
+    lint = false;
+    _lintRules = null;
+    nonnullableTypes = NONNULLABLE_TYPES;
+    patchPlatform = 0;
+    preserveComments = true;
+    strongMode = false;
+    strongModeHints = false;
+    trackCacheDependencies = true;
+  }
 
   @override
   void setCrossContextOptionsFrom(AnalysisOptions options) {
     enableAssertMessage = options.enableAssertMessage;
-    enableAsync = options.enableAsync;
-    enableGenericMethods = options.enableGenericMethods;
+    enableLazyAssignmentOperators = options.enableLazyAssignmentOperators;
     enableStrictCallChecks = options.enableStrictCallChecks;
     enableSuperMixins = options.enableSuperMixins;
     strongMode = options.strongMode;
     if (options is AnalysisOptionsImpl) {
       strongModeHints = options.strongModeHints;
+    }
+    patchPlatform = options.patchPlatform;
+  }
+
+  /**
+   * Produce a human readable list of option names corresponding to the options
+   * encoded in the given [encoding], presumably from invoking the method
+   * [encodeCrossContextOptions].
+   */
+  static String decodeCrossContextOptions(List<int> encoding) {
+    List<String> parts = [];
+    int flags = encoding[0];
+    if (flags & ENABLE_ASSERT_FLAG > 0) {
+      parts.add('assert');
+    }
+    if (flags & ENABLE_LAZY_ASSIGNMENT_OPERATORS > 0) {
+      parts.add('lazyAssignmentOperators');
+    }
+    if (flags & ENABLE_STRICT_CALL_CHECKS_FLAG > 0) {
+      parts.add('strictCallChecks');
+    }
+    if (flags & ENABLE_SUPER_MIXINS_FLAG > 0) {
+      parts.add('superMixins');
+    }
+    if (flags & ENABLE_STRONG_MODE_FLAG > 0) {
+      parts.add('strongMode');
+    }
+    if (flags & ENABLE_STRONG_MODE_HINTS_FLAG > 0) {
+      parts.add('strongModeHints');
+    }
+    int patchPlatform = encoding[1];
+    if (patchPlatform != 0) {
+      parts.add('patchPlatform=$patchPlatform');
+    }
+    if (parts.isEmpty) {
+      return 'none';
+    } else {
+      return parts.join(', ');
     }
   }
 
@@ -1442,21 +1733,61 @@ class AnalysisResult {
 }
 
 /**
- * The result of applying a [ChangeSet] to a [AnalysisContext].
+ * Statistics about cache consistency validation.
  */
-class ApplyChangesStatus {
+class CacheConsistencyValidationStatistics {
   /**
-   * Is `true` if the given [ChangeSet] caused any changes in the context.
+   * Number of sources which were changed, but the context was not notified
+   * about it, so this fact was detected only during cache consistency
+   * validation.
    */
-  final bool hasChanges;
+  int numOfChanged = 0;
 
-  ApplyChangesStatus(this.hasChanges);
+  /**
+   * Number of sources which stopped existing, but the context was not notified
+   * about it, so this fact was detected only during cache consistency
+   * validation.
+   */
+  int numOfRemoved = 0;
+
+  /**
+   * Reset all counters.
+   */
+  void reset() {
+    numOfChanged = 0;
+    numOfRemoved = 0;
+  }
+}
+
+/**
+ * Interface for cache consistency validation in an [InternalAnalysisContext].
+ */
+abstract class CacheConsistencyValidator {
+  /**
+   * Return sources for which the contexts needs to know modification times.
+   */
+  List<Source> getSourcesToComputeModificationTimes();
+
+  /**
+   * Notify the validator that modification [times] were computed for [sources].
+   * If a source does not exist, its modification time is `-1`.
+   *
+   * It's up to the validator and the context how to use this information,
+   * the list of sources the context has might have been changed since the
+   * previous invocation of [getSourcesToComputeModificationTimes].
+   *
+   * Check the cache for any invalid entries (entries whose modification time
+   * does not match the modification time of the source associated with the
+   * entry). Invalid entries will be marked as invalid so that the source will
+   * be re-analyzed. Return `true` if at least one entry was invalid.
+   */
+  bool sourceModificationTimesComputed(List<Source> sources, List<int> times);
 }
 
 /**
  * The possible states of cached data.
  */
-class CacheState extends Enum<CacheState> {
+class CacheState implements Comparable<CacheState> {
   /**
    * The data is not in the cache and the last time an attempt was made to
    * compute the data an exception occurred, making it pointless to attempt to
@@ -1517,7 +1848,26 @@ class CacheState extends Enum<CacheState> {
     VALID
   ];
 
-  const CacheState(String name, int ordinal) : super(name, ordinal);
+  /**
+   * The name of this cache state.
+   */
+  final String name;
+
+  /**
+   * The ordinal value of the cache state.
+   */
+  final int ordinal;
+
+  const CacheState(this.name, this.ordinal);
+
+  @override
+  int get hashCode => ordinal;
+
+  @override
+  int compareTo(CacheState other) => ordinal - other.ordinal;
+
+  @override
+  String toString() => name;
 }
 
 /**
@@ -1661,12 +2011,6 @@ class ChangeSet {
   final List<SourceContainer> removedContainers = new List<SourceContainer>();
 
   /**
-   * A list containing the sources that have been deleted.
-   */
-  @deprecated
-  final List<Source> deletedSources = new List<Source>();
-
-  /**
    * Return a table mapping the sources whose content has been changed to the
    * current content of those sources.
    */
@@ -1681,8 +2025,7 @@ class ChangeSet {
       _changedContent.isEmpty &&
       changedRanges.isEmpty &&
       removedSources.isEmpty &&
-      removedContainers.isEmpty &&
-      deletedSources.isEmpty;
+      removedContainers.isEmpty;
 
   /**
    * Record that the specified [source] has been added and that its content is
@@ -1724,14 +2067,6 @@ class ChangeSet {
   }
 
   /**
-   * Record that the specified [source] has been deleted.
-   */
-  @deprecated
-  void deletedSource(Source source) {
-    deletedSources.add(source);
-  }
-
-  /**
    * Record that the specified source [container] has been removed.
    */
   void removedContainer(SourceContainer container) {
@@ -1760,8 +2095,6 @@ class ChangeSet {
         buffer, _changedContent, needsSeparator, "changedContent");
     needsSeparator =
         _appendSources2(buffer, changedRanges, needsSeparator, "changedRanges");
-    needsSeparator = _appendSources(
-        buffer, deletedSources, needsSeparator, "deletedSources");
     needsSeparator = _appendSources(
         buffer, removedSources, needsSeparator, "removedSources");
     int count = removedContainers.length;
@@ -1938,19 +2271,37 @@ abstract class InternalAnalysisContext implements AnalysisContext {
   AnalysisCache get analysisCache;
 
   /**
+   * The cache consistency validator for this context.
+   */
+  CacheConsistencyValidator get cacheConsistencyValidator;
+
+  /**
    * Allow the client to supply its own content cache.  This will take the
    * place of the content cache created by default, allowing clients to share
    * the content cache between contexts.
    */
   set contentCache(ContentCache value);
 
-  /// Get the [EmbedderYamlLocator] for this context.
+  /**
+   * Get the [EmbedderYamlLocator] for this context.
+   */
+  @deprecated
   EmbedderYamlLocator get embedderYamlLocator;
 
   /**
    * Return a list of the explicit targets being analyzed by this context.
    */
   List<AnalysisTarget> get explicitTargets;
+
+  /**
+   * Return `true` if the context is active, i.e. is being analyzed now.
+   */
+  bool get isActive;
+
+  /**
+   * Specify whether the context is active, i.e. is being analyzed now.
+   */
+  set isActive(bool value);
 
   /**
    * Return the [StreamController] reporting [InvalidatedResult]s for everything
@@ -2230,66 +2581,13 @@ class PerformanceStatistics {
    * The [PerformanceTag] for time spent in summaries support.
    */
   static PerformanceTag summary = new PerformanceTag('summary');
-}
-
-/**
- * An error listener that will record the errors that are reported to it in a
- * way that is appropriate for caching those errors within an analysis context.
- */
-class RecordingErrorListener implements AnalysisErrorListener {
-  /**
-   * A map of sets containing the errors that were collected, keyed by each
-   * source.
-   */
-  Map<Source, HashSet<AnalysisError>> _errors =
-      new HashMap<Source, HashSet<AnalysisError>>();
 
   /**
-   * Return the errors collected by the listener.
+   * Statistics about cache consistency validation.
    */
-  List<AnalysisError> get errors {
-    int numEntries = _errors.length;
-    if (numEntries == 0) {
-      return AnalysisError.NO_ERRORS;
-    }
-    List<AnalysisError> resultList = new List<AnalysisError>();
-    for (HashSet<AnalysisError> errors in _errors.values) {
-      resultList.addAll(errors);
-    }
-    return resultList;
-  }
-
-  /**
-   * Add all of the errors recorded by the given [listener] to this listener.
-   */
-  void addAll(RecordingErrorListener listener) {
-    for (AnalysisError error in listener.errors) {
-      onError(error);
-    }
-  }
-
-  /**
-   * Return the errors collected by the listener for the given [source].
-   */
-  List<AnalysisError> getErrorsForSource(Source source) {
-    HashSet<AnalysisError> errorsForSource = _errors[source];
-    if (errorsForSource == null) {
-      return AnalysisError.NO_ERRORS;
-    } else {
-      return new List.from(errorsForSource);
-    }
-  }
-
-  @override
-  void onError(AnalysisError error) {
-    Source source = error.source;
-    HashSet<AnalysisError> errorsForSource = _errors[source];
-    if (_errors[source] == null) {
-      errorsForSource = new HashSet<AnalysisError>();
-      _errors[source] = errorsForSource;
-    }
-    errorsForSource.add(error);
-  }
+  static final CacheConsistencyValidationStatistics
+      cacheConsistencyValidationStatistics =
+      new CacheConsistencyValidationStatistics();
 }
 
 /**
@@ -2544,29 +2842,7 @@ class SourcesChangedEvent {
   /**
    * Return `true` if any sources were removed or deleted.
    */
-  bool get wereSourcesRemovedOrDeleted =>
+  bool get wereSourcesRemoved =>
       _changeSet.removedSources.length > 0 ||
-      _changeSet.removedContainers.length > 0 ||
-      _changeSet.deletedSources.length > 0;
-}
-
-/**
- * Analysis data for which we have a modification time.
- */
-class TimestampedData<E> {
-  /**
-   * The modification time of the source from which the data was created.
-   */
-  final int modificationTime;
-
-  /**
-   * The data that was created from the source.
-   */
-  final E data;
-
-  /**
-   * Initialize a newly created holder to associate the given [data] with the
-   * given [modificationTime].
-   */
-  TimestampedData(this.modificationTime, this.data);
+      _changeSet.removedContainers.length > 0;
 }

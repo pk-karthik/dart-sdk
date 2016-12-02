@@ -14,7 +14,7 @@ string_from_environment2_test: Skip
 string_from_environment3_test: Skip
 string_from_environment_test: Skip
 
-[ ($compiler == none || $compiler == precompiler || $compiler == dart2app || $compiler == dart2appjit) ]
+[ $compiler == none || $compiler == precompiler || $compiler == app_jit ]
 unicode_test: Fail        # Bug 6706
 compare_to2_test: Fail    # Bug 4018
 
@@ -30,7 +30,7 @@ symbol_operator_test/03: Fail # bug 11669
 string_case_test/01: Fail # Bug 18061
 
 # #void should be a valid symbol.
-[ $compiler == none || $compiler == precompiler || $compiler == dart2app || $compiler == dart2appjit || $compiler == dart2js ]
+[ $compiler == none || $compiler == precompiler || $compiler == app_jit || $compiler == dart2js ]
 symbol_reserved_word_test/02: CompileTimeError # bug 20191
 symbol_reserved_word_test/05: CompileTimeError # bug 20191
 
@@ -41,6 +41,7 @@ symbol_reserved_word_test/07: MissingCompileTimeError # bug 11669, 19972
 symbol_reserved_word_test/10: MissingCompileTimeError # bug 11669, 19972
 
 [ $compiler == none && ($runtime == drt || $runtime == dartium) ]
+package_resource_test: RuntimeError # Issue 26842
 symbol_reserved_word_test/02: RuntimeError # bug 20191 / dartium/drt cannot detect CompileTimeErrors
 symbol_reserved_word_test/05: RuntimeError # bug 20191 / dartium/drt cannot detect CompileTimeErrors
 symbol_reserved_word_test/04: Fail # bug 11669, 19972 / dartium/drt cannot detect CompileTimeErrors
@@ -57,7 +58,10 @@ integer_to_radix_string_test: RuntimeError # issue 22045
 int_modulo_arith_test/bignum: RuntimeError # No bigints.
 int_modulo_arith_test/modPow: RuntimeError # No bigints.
 
-[ ($compiler == none || $compiler == precompiler || $compiler == dart2app || $compiler == dart2appjit) && $runtime != dartium && $runtime != drt ]
+[ $compiler == dart2js && $fast_startup ]
+apply3_test: Fail # mirrors not supported
+
+[ ($compiler == none || $compiler == precompiler || $compiler == app_jit) && $runtime != dartium && $runtime != drt ]
 symbol_test/02: MissingCompileTimeError # bug 11669
 symbol_test/03: MissingCompileTimeError # bug 11669
 
@@ -77,11 +81,11 @@ double_round_to_double2_test: Fail, OK # Runtime rounds 0.49999999999999994 to 1
 [ $runtime == ff ]
 double_round3_test: Pass, Fail, OK # Fails on ff 34, passes on ff 35. Runtime rounds 0.49999999999999994 to 1.
 double_round_to_double2_test: Pass, Fail, OK # Fails on ff 34, passes on ff 35. Runtime rounds 0.49999999999999994 to 1.
+list_test/none: RuntimeError # Issue 27871
+list_test/01: RuntimeError # Issue 27871
 
-[ $runtime == opera ]
-core_runtime_types_test: Fail
-null_nosuchmethod_test: Fail # Issue: 7413
-unicode_test: Fail # Issue 14694
+[ $compiler == dart2js && $runtime == drt && $csp && $minified ]
+core_runtime_types_test: Pass, Fail # Issue 27913
 
 [ $compiler == dart2js ]
 error_stack_trace1_test: RuntimeError # Issue 12399
@@ -138,8 +142,6 @@ from_environment_const_type_undefined_test/16: CompileTimeError
 
 [ $compiler == dart2analyzer ]
 int_parse_radix_bad_handler_test: fail
-list_insert_test: fail
-list_removeat_test: fail
 hash_set_type_check_test: StaticWarning, OK # Tests failing type tests.
 error_stack_trace_test: StaticWarning, OK # Test generates errors on purpose.
 iterable_element_at_test: StaticWarning, OK # Test generates errors on purpose.
@@ -154,26 +156,25 @@ stopwatch_test: Skip  # Flaky test due to expected performance behaviour.
 # The regexp tests are not verified to work on non d8/vm platforms yet.
 regexp/*: Skip
 
-[ ($runtime == vm || $runtime == dart_precompiled || $runtime == dart_app) ]
+[ $runtime == vm || $runtime == dart_precompiled ]
 regexp/global_test: Skip # Timeout. Issue 21709 and 21708
 
-[ $runtime != vm && $runtime != dart_precompiled && $runtime != dart_app && $compiler != dart2analyzer]
+[ $runtime != vm && $runtime != dart_precompiled && $compiler != dart2analyzer]
 data_resource_test: RuntimeError # Issue 23825 (not implemented yet).
 file_resource_test: Skip, OK # VM specific test, uses dart:io.
 http_resource_test: Skip, OK # VM specific test, uses dart:io.
 
-[ $runtime != vm && $runtime != dart_precompiled && $compiler != dart2analyzer && $cps_ir == false ]
-package_resource_test: RuntimeError # Issue 23825 (not implemented yet).
+[ $compiler == dart2js && $browser == false ]
+package_resource_test: RuntimeError # Issue 26842
 
 [ $mode == debug ]
 regexp/pcre_test: Pass, Slow # Timeout. Issue 22008
 
-[ ($runtime == vm || $runtime == dart_precompiled || $runtime == dart_app) && $arch == simarmv5te ]
+[ ($runtime == vm || $runtime == dart_precompiled) && $arch == simarmv5te ]
 int_parse_radix_test/*: Pass, Slow
 big_integer_parsed_mul_div_vm_test: Pass, Slow
 
 [ $compiler == dart2js && $cps_ir ]
-package_resource_test: Crash # Surprisingly null object in type propagation.
 regexp/pcre_test: Crash # Stack Overflow in LoopHierarchy.
 core_runtime_types_test: Pass, RuntimeError # Issue 25795.
 
@@ -183,9 +184,6 @@ core_runtime_types_test: Pass, RuntimeError # Issue 25795.
 [ $compiler == dart2js && $cps_ir && $host_checked ]
 regexp/pcre_test: Crash # Stack Overflow
 collection_removes_test: Crash # Issue 25911
-
-[ $compiler == dart2js && $host_checked ]
-package_resource_test: Crash # Issue 25911
 
 [ $noopt || $compiler == precompiler ]
 # Stacktraces in precompilation omit inlined frames.
@@ -201,7 +199,7 @@ big_integer_huge_mul_vm_test: Pass, Timeout # --no_intrinsify
 big_integer_parsed_mul_div_vm_test: Pass, Timeout # --no_intrinsify
 int_parse_radix_test: Pass, Timeout # --no_intrinsify
 
-[ $compiler == precompiler || $runtime == dart_app ]
+[ $compiler == precompiler || $compiler == app_jit ]
 data_resource_test: Skip # Resolve URI not supported yet in product mode.
 package_resource_test: Skip # Resolve URI not supported yet in product mode.
 file_resource_test: Skip # Resolve URI not supported yet in product mode.
@@ -209,3 +207,7 @@ http_resource_test: Skip # Resolve URI not supported yet in product mode.
 
 [ $arch == simdbc || $arch == simdbc64 ]
 regexp/stack-overflow_test: RuntimeError, OK # Smaller limit with irregex interpreter
+
+[ $hot_reload || $hot_reload_rollback ]
+big_integer_parsed_mul_div_vm_test: Pass, Slow # Slow.
+

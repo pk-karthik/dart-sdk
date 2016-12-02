@@ -20,6 +20,7 @@ import '../dart_types.dart';
 import '../diagnostics/messages.dart' show Message, MessageTemplate;
 import '../dump_info.dart' show InfoReporter;
 import '../elements/elements.dart';
+import '../elements/entities.dart';
 import '../elements/modelx.dart' show ConstructorBodyElementX;
 import '../io/source_information.dart';
 import '../js/js.dart' as js;
@@ -35,57 +36,19 @@ import '../types/types.dart';
 import '../universe/call_structure.dart' show CallStructure;
 import '../universe/selector.dart' show Selector;
 import '../universe/side_effects.dart' show SideEffects;
-import '../universe/use.dart' show DynamicUse, StaticUse, TypeUse;
+import '../universe/use.dart' show DynamicUse, StaticUse;
 import '../util/util.dart';
-import '../world.dart' show ClassWorld;
-import 'codegen.dart';
+import '../world.dart' show ClosedWorld;
+
+import 'graph_builder.dart';
+import 'jump_handler.dart';
+import 'locals_handler.dart';
+import 'loop_handler.dart';
 import 'nodes.dart';
 import 'optimize.dart';
+import 'ssa_branch_builder.dart';
+import 'type_builder.dart';
 import 'types.dart';
-
-class SsaFunctionCompiler implements FunctionCompiler {
-  final SsaCodeGeneratorTask generator;
-  final SsaBuilderTask builder;
-  final SsaOptimizerTask optimizer;
-  final JavaScriptBackend backend;
-
-  SsaFunctionCompiler(JavaScriptBackend backend,
-      SourceInformationStrategy sourceInformationFactory)
-      : generator = new SsaCodeGeneratorTask(backend, sourceInformationFactory),
-        builder = new SsaBuilderTask(backend, sourceInformationFactory),
-        optimizer = new SsaOptimizerTask(backend),
-        backend = backend;
-
-  /// Generates JavaScript code for `work.element`.
-  /// Using the ssa builder, optimizer and codegenerator.
-  js.Fun compile(CodegenWorkItem work) {
-    HGraph graph = builder.build(work);
-    optimizer.optimize(work, graph);
-    Element element = work.element;
-    js.Expression result = generator.generateCode(work, graph);
-    if (element is FunctionElement) {
-      result = backend.rewriteAsync(element, result);
-    }
-    return result;
-  }
-
-  Iterable<CompilerTask> get tasks {
-    return <CompilerTask>[builder, optimizer, generator];
-  }
-}
-
-/// A synthetic local variable only used with the SSA graph.
-///
-/// For instance used for holding return value of function or the exception of a
-/// try-catch statement.
-class SyntheticLocal extends Local {
-  final String name;
-  final ExecutableElement executableContext;
-
-  SyntheticLocal(this.name, this.executableContext);
-
-  toString() => 'SyntheticLocal($name)';
-}
 
 class SsaBuilderTask extends CompilerTask {
   final CodeEmitterTask emitter;
@@ -110,7 +73,6 @@ class SsaBuilderTask extends CompilerTask {
         SsaBuilder builder = new SsaBuilder(
             work.element.implementation,
             work.resolvedAst,
-            work.compilationContext,
             work.registry,
             backend,
             emitter.nativeEmitter,
@@ -141,858 +103,12 @@ class SsaBuilderTask extends CompilerTask {
           } else {
             name = "${element.name}";
           }
-          compiler.tracer.traceCompilation(name, work.compilationContext);
+          compiler.tracer.traceCompilation(name);
           compiler.tracer.traceGraph('builder', graph);
         }
         return graph;
       });
     });
-  }
-}
-
-/**
- * Keeps track of locals (including parameters and phis) when building. The
- * 'this' reference is treated as parameter and hence handled by this class,
- * too.
- */
-class LocalsHandler {
-  /**
-   * The values of locals that can be directly accessed (without redirections
-   * to boxes or closure-fields).
-   *
-   * [directLocals] is iterated, so it is "insertion ordered" to make the
-   * iteration order a function only of insertions and not a function of
-   * e.g. Element hash codes.  I'd prefer to use a SortedMap but some elements
-   * don't have source locations for [Elements.compareByPosition].
-   */
-  Map<Local, HInstruction> directLocals = new Map<Local, HInstruction>();
-  Map<Local, CapturedVariable> redirectionMapping =
-      new Map<Local, CapturedVariable>();
-  SsaBuilder builder;
-  ClosureClassMap closureData;
-  Map<TypeVariableType, TypeVariableLocal> typeVariableLocals =
-      new Map<TypeVariableType, TypeVariableLocal>();
-  final ExecutableElement executableContext;
-
-  /// The class that defines the current type environment or null if no type
-  /// variables are in scope.
-  ClassElement get contextClass => executableContext.contextClass;
-
-  /// The type of the current instance, if concrete.
-  ///
-  /// This allows for handling fixed type argument in case of inlining. For
-  /// instance, checking `'foo'` against `String` instead of `T` in `main`:
-  ///
-  ///     class Foo<T> {
-  ///       T field;
-  ///       Foo(this.field);
-  ///     }
-  ///     main() {
-  ///       new Foo<String>('foo');
-  ///     }
-  ///
-  /// [instanceType] is not used if it contains type variables, since these
-  /// might not be in scope or from the current instance.
-  ///
-  final InterfaceType instanceType;
-
-  SourceInformationBuilder get sourceInformationBuilder {
-    return builder.sourceInformationBuilder;
-  }
-
-  LocalsHandler(
-      this.builder, this.executableContext, InterfaceType instanceType)
-      : this.instanceType = instanceType == null ||
-            instanceType.containsTypeVariables ? null : instanceType;
-
-  /// Substituted type variables occurring in [type] into the context of
-  /// [contextClass].
-  DartType substInContext(DartType type) {
-    if (contextClass != null) {
-      ClassElement typeContext = Types.getClassContext(type);
-      if (typeContext != null) {
-        type = type.substByContext(contextClass.asInstanceOf(typeContext));
-      }
-    }
-    if (instanceType != null) {
-      type = type.substByContext(instanceType);
-    }
-    return type;
-  }
-
-  get typesTask => builder.compiler.typesTask;
-
-  /**
-   * Creates a new [LocalsHandler] based on [other]. We only need to
-   * copy the [directLocals], since the other fields can be shared
-   * throughout the AST visit.
-   */
-  LocalsHandler.from(LocalsHandler other)
-      : directLocals = new Map<Local, HInstruction>.from(other.directLocals),
-        redirectionMapping = other.redirectionMapping,
-        executableContext = other.executableContext,
-        instanceType = other.instanceType,
-        builder = other.builder,
-        closureData = other.closureData;
-
-  /**
-   * Redirects accesses from element [from] to element [to]. The [to] element
-   * must be a boxed variable or a variable that is stored in a closure-field.
-   */
-  void redirectElement(Local from, CapturedVariable to) {
-    assert(redirectionMapping[from] == null);
-    redirectionMapping[from] = to;
-    assert(isStoredInClosureField(from) || isBoxed(from));
-  }
-
-  HInstruction createBox() {
-    // TODO(floitsch): Clean up this hack. Should we create a box-object by
-    // just creating an empty object literal?
-    JavaScriptBackend backend = builder.backend;
-    HInstruction box = new HForeignCode(
-        js.js.parseForeignJS('{}'), backend.nonNullType, <HInstruction>[],
-        nativeBehavior: native.NativeBehavior.PURE_ALLOCATION);
-    builder.add(box);
-    return box;
-  }
-
-  /**
-   * If the scope (function or loop) [node] has captured variables then this
-   * method creates a box and sets up the redirections.
-   */
-  void enterScope(ast.Node node, Element element) {
-    // See if any variable in the top-scope of the function is captured. If yes
-    // we need to create a box-object.
-    ClosureScope scopeData = closureData.capturingScopes[node];
-    if (scopeData == null) return;
-    HInstruction box;
-    // The scope has captured variables.
-    if (element != null && element.isGenerativeConstructorBody) {
-      // The box is passed as a parameter to a generative
-      // constructor body.
-      JavaScriptBackend backend = builder.backend;
-      box = builder.addParameter(scopeData.boxElement, backend.nonNullType);
-    } else {
-      box = createBox();
-    }
-    // Add the box to the known locals.
-    directLocals[scopeData.boxElement] = box;
-    // Make sure that accesses to the boxed locals go into the box. We also
-    // need to make sure that parameters are copied into the box if necessary.
-    scopeData.forEachCapturedVariable(
-        (LocalVariableElement from, BoxFieldElement to) {
-      // The [from] can only be a parameter for function-scopes and not
-      // loop scopes.
-      if (from.isParameter && !element.isGenerativeConstructorBody) {
-        // Now that the redirection is set up, the update to the local will
-        // write the parameter value into the box.
-        // Store the captured parameter in the box. Get the current value
-        // before we put the redirection in place.
-        // We don't need to update the local for a generative
-        // constructor body, because it receives a box that already
-        // contains the updates as the last parameter.
-        HInstruction instruction = readLocal(from);
-        redirectElement(from, to);
-        updateLocal(from, instruction);
-      } else {
-        redirectElement(from, to);
-      }
-    });
-  }
-
-  /**
-   * Replaces the current box with a new box and copies over the given list
-   * of elements from the old box into the new box.
-   */
-  void updateCaptureBox(
-      BoxLocal boxElement, List<LocalVariableElement> toBeCopiedElements) {
-    // Create a new box and copy over the values from the old box into the
-    // new one.
-    HInstruction oldBox = readLocal(boxElement);
-    HInstruction newBox = createBox();
-    for (LocalVariableElement boxedVariable in toBeCopiedElements) {
-      // [readLocal] uses the [boxElement] to find its box. By replacing it
-      // behind its back we can still get to the old values.
-      updateLocal(boxElement, oldBox);
-      HInstruction oldValue = readLocal(boxedVariable);
-      updateLocal(boxElement, newBox);
-      updateLocal(boxedVariable, oldValue);
-    }
-    updateLocal(boxElement, newBox);
-  }
-
-  /**
-   * Documentation wanted -- johnniwinther
-   *
-   * Invariant: [function] must be an implementation element.
-   */
-  void startFunction(AstElement element, ast.Node node) {
-    assert(invariant(element, element.isImplementation));
-    Compiler compiler = builder.compiler;
-    closureData = compiler.closureToClassMapper
-        .computeClosureToClassMapping(element.resolvedAst);
-
-    if (element is FunctionElement) {
-      FunctionElement functionElement = element;
-      FunctionSignature params = functionElement.functionSignature;
-      ClosureScope scopeData = closureData.capturingScopes[node];
-      params.orderedForEachParameter((ParameterElement parameterElement) {
-        if (element.isGenerativeConstructorBody) {
-          if (scopeData != null &&
-              scopeData.isCapturedVariable(parameterElement)) {
-            // The parameter will be a field in the box passed as the
-            // last parameter. So no need to have it.
-            return;
-          }
-        }
-        HInstruction parameter = builder.addParameter(parameterElement,
-            TypeMaskFactory.inferredTypeForElement(parameterElement, compiler));
-        builder.parameters[parameterElement] = parameter;
-        directLocals[parameterElement] = parameter;
-      });
-    }
-
-    enterScope(node, element);
-
-    // If the freeVariableMapping is not empty, then this function was a
-    // nested closure that captures variables. Redirect the captured
-    // variables to fields in the closure.
-    closureData.forEachFreeVariable((Local from, CapturedVariable to) {
-      redirectElement(from, to);
-    });
-    JavaScriptBackend backend = compiler.backend;
-    if (closureData.isClosure) {
-      // Inside closure redirect references to itself to [:this:].
-      HThis thisInstruction =
-          new HThis(closureData.thisLocal, backend.nonNullType);
-      builder.graph.thisInstruction = thisInstruction;
-      builder.graph.entry.addAtEntry(thisInstruction);
-      updateLocal(closureData.closureElement, thisInstruction);
-    } else if (element.isInstanceMember) {
-      // Once closures have been mapped to classes their instance members might
-      // not have any thisElement if the closure was created inside a static
-      // context.
-      HThis thisInstruction =
-          new HThis(closureData.thisLocal, builder.getTypeOfThis());
-      builder.graph.thisInstruction = thisInstruction;
-      builder.graph.entry.addAtEntry(thisInstruction);
-      directLocals[closureData.thisLocal] = thisInstruction;
-    }
-
-    // If this method is an intercepted method, add the extra
-    // parameter to it, that is the actual receiver for intercepted
-    // classes, or the same as [:this:] for non-intercepted classes.
-    ClassElement cls = element.enclosingClass;
-
-    // When the class extends a native class, the instance is pre-constructed
-    // and passed to the generative constructor factory function as a parameter.
-    // Instead of allocating and initializing the object, the constructor
-    // 'upgrades' the native subclass object by initializing the Dart fields.
-    bool isNativeUpgradeFactory =
-        element.isGenerativeConstructor && backend.isNativeOrExtendsNative(cls);
-    if (backend.isInterceptedMethod(element)) {
-      bool isInterceptorClass = backend.isInterceptorClass(cls.declaration);
-      String name = isInterceptorClass ? 'receiver' : '_';
-      SyntheticLocal parameter = new SyntheticLocal(name, executableContext);
-      HParameterValue value =
-          new HParameterValue(parameter, builder.getTypeOfThis());
-      builder.graph.explicitReceiverParameter = value;
-      builder.graph.entry.addAfter(directLocals[closureData.thisLocal], value);
-      if (builder.lastAddedParameter == null) {
-        // If this is the first parameter inserted, make sure it stays first.
-        builder.lastAddedParameter = value;
-      }
-      if (isInterceptorClass) {
-        // Only use the extra parameter in intercepted classes.
-        directLocals[closureData.thisLocal] = value;
-      }
-    } else if (isNativeUpgradeFactory) {
-      SyntheticLocal parameter =
-          new SyntheticLocal('receiver', executableContext);
-      // Unlike `this`, receiver is nullable since direct calls to generative
-      // constructor call the constructor with `null`.
-      ClassWorld classWorld = compiler.world;
-      HParameterValue value =
-          new HParameterValue(parameter, new TypeMask.exact(cls, classWorld));
-      builder.graph.explicitReceiverParameter = value;
-      builder.graph.entry.addAtEntry(value);
-    }
-  }
-
-  /**
-   * Returns true if the local can be accessed directly. Boxed variables or
-   * captured variables that are stored in the closure-field return [:false:].
-   */
-  bool isAccessedDirectly(Local local) {
-    assert(local != null);
-    return !redirectionMapping.containsKey(local) &&
-        !closureData.variablesUsedInTryOrGenerator.contains(local);
-  }
-
-  bool isStoredInClosureField(Local local) {
-    assert(local != null);
-    if (isAccessedDirectly(local)) return false;
-    CapturedVariable redirectTarget = redirectionMapping[local];
-    if (redirectTarget == null) return false;
-    return redirectTarget is ClosureFieldElement;
-  }
-
-  bool isBoxed(Local local) {
-    if (isAccessedDirectly(local)) return false;
-    if (isStoredInClosureField(local)) return false;
-    return redirectionMapping.containsKey(local);
-  }
-
-  bool isUsedInTryOrGenerator(Local local) {
-    return closureData.variablesUsedInTryOrGenerator.contains(local);
-  }
-
-  /**
-   * Returns an [HInstruction] for the given element. If the element is
-   * boxed or stored in a closure then the method generates code to retrieve
-   * the value.
-   */
-  HInstruction readLocal(Local local, {SourceInformation sourceInformation}) {
-    if (isAccessedDirectly(local)) {
-      if (directLocals[local] == null) {
-        if (local is TypeVariableElement) {
-          builder.reporter.internalError(builder.compiler.currentElement,
-              "Runtime type information not available for $local.");
-        } else {
-          builder.reporter.internalError(
-              local, "Cannot find value $local in ${directLocals.keys}.");
-        }
-      }
-      HInstruction value = directLocals[local];
-      if (sourceInformation != null) {
-        value = new HRef(value, sourceInformation);
-        builder.add(value);
-      }
-      return value;
-    } else if (isStoredInClosureField(local)) {
-      ClosureFieldElement redirect = redirectionMapping[local];
-      HInstruction receiver = readLocal(closureData.closureElement);
-      TypeMask type = local is BoxLocal
-          ? builder.backend.nonNullType
-          : builder.getTypeOfCapturedVariable(redirect);
-      HInstruction fieldGet = new HFieldGet(redirect, receiver, type);
-      builder.add(fieldGet);
-      return fieldGet..sourceInformation = sourceInformation;
-    } else if (isBoxed(local)) {
-      BoxFieldElement redirect = redirectionMapping[local];
-      // In the function that declares the captured variable the box is
-      // accessed as direct local. Inside the nested closure the box is
-      // accessed through a closure-field.
-      // Calling [readLocal] makes sure we generate the correct code to get
-      // the box.
-      HInstruction box = readLocal(redirect.box);
-      HInstruction lookup = new HFieldGet(
-          redirect, box, builder.getTypeOfCapturedVariable(redirect));
-      builder.add(lookup);
-      return lookup..sourceInformation = sourceInformation;
-    } else {
-      assert(isUsedInTryOrGenerator(local));
-      HLocalValue localValue = getLocal(local);
-      HInstruction instruction = new HLocalGet(
-          local, localValue, builder.backend.dynamicType, sourceInformation);
-      builder.add(instruction);
-      return instruction;
-    }
-  }
-
-  HInstruction readThis() {
-    HInstruction res = readLocal(closureData.thisLocal);
-    if (res.instructionType == null) {
-      res.instructionType = builder.getTypeOfThis();
-    }
-    return res;
-  }
-
-  HLocalValue getLocal(Local local, {SourceInformation sourceInformation}) {
-    // If the element is a parameter, we already have a
-    // HParameterValue for it. We cannot create another one because
-    // it could then have another name than the real parameter. And
-    // the other one would not know it is just a copy of the real
-    // parameter.
-    if (local is ParameterElement) {
-      assert(invariant(local, builder.parameters.containsKey(local),
-          message: "No local value for parameter $local in "
-              "${builder.parameters}."));
-      return builder.parameters[local];
-    }
-
-    return builder.activationVariables.putIfAbsent(local, () {
-      JavaScriptBackend backend = builder.backend;
-      HLocalValue localValue = new HLocalValue(local, backend.nonNullType)
-        ..sourceInformation = sourceInformation;
-      builder.graph.entry.addAtExit(localValue);
-      return localValue;
-    });
-  }
-
-  Local getTypeVariableAsLocal(TypeVariableType type) {
-    return typeVariableLocals.putIfAbsent(type, () {
-      return new TypeVariableLocal(type, executableContext);
-    });
-  }
-
-  /**
-   * Sets the [element] to [value]. If the element is boxed or stored in a
-   * closure then the method generates code to set the value.
-   */
-  void updateLocal(Local local, HInstruction value,
-      {SourceInformation sourceInformation}) {
-    if (value is HRef) {
-      HRef ref = value;
-      value = ref.value;
-    }
-    assert(!isStoredInClosureField(local));
-    if (isAccessedDirectly(local)) {
-      directLocals[local] = value;
-    } else if (isBoxed(local)) {
-      BoxFieldElement redirect = redirectionMapping[local];
-      // The box itself could be captured, or be local. A local variable that
-      // is captured will be boxed, but the box itself will be a local.
-      // Inside the closure the box is stored in a closure-field and cannot
-      // be accessed directly.
-      HInstruction box = readLocal(redirect.box);
-      builder.add(new HFieldSet(redirect, box, value)
-        ..sourceInformation = sourceInformation);
-    } else {
-      assert(isUsedInTryOrGenerator(local));
-      HLocalValue localValue = getLocal(local);
-      builder.add(new HLocalSet(local, localValue, value)
-        ..sourceInformation = sourceInformation);
-    }
-  }
-
-  /**
-   * This function, startLoop, must be called before visiting any children of
-   * the loop. In particular it needs to be called before executing the
-   * initializers.
-   *
-   * The [LocalsHandler] will make the boxes and updates at the right moment.
-   * The builder just needs to call [enterLoopBody] and [enterLoopUpdates]
-   * (for [ast.For] loops) at the correct places. For phi-handling
-   * [beginLoopHeader] and [endLoop] must also be called.
-   *
-   * The correct place for the box depends on the given loop. In most cases
-   * the box will be created when entering the loop-body: while, do-while, and
-   * for-in (assuming the call to [:next:] is inside the body) can always be
-   * constructed this way.
-   *
-   * Things are slightly more complicated for [ast.For] loops. If no declared
-   * loop variable is boxed then the loop-body approach works here too. If a
-   * loop-variable is boxed we need to introduce a new box for the
-   * loop-variable before we enter the initializer so that the initializer
-   * writes the values into the box. In any case we need to create the box
-   * before the condition since the condition could box the variable.
-   * Since the first box is created outside the actual loop we have a second
-   * location where a box is created: just before the updates. This is
-   * necessary since updates are considered to be part of the next iteration
-   * (and can again capture variables).
-   *
-   * For example the following Dart code prints 1 3 -- 3 4.
-   *
-   *     var fs = [];
-   *     for (var i = 0; i < 3; (f() { fs.add(f); print(i); i++; })()) {
-   *       i++;
-   *     }
-   *     print("--");
-   *     for (var i = 0; i < 2; i++) fs[i]();
-   *
-   * We solve this by emitting the following code (only for [ast.For] loops):
-   *  <Create box>    <== move the first box creation outside the loop.
-   *  <initializer>;
-   *  loop-entry:
-   *    if (!<condition>) goto loop-exit;
-   *    <body>
-   *    <update box>  // create a new box and copy the captured loop-variables.
-   *    <updates>
-   *    goto loop-entry;
-   *  loop-exit:
-   */
-  void startLoop(ast.Node node) {
-    ClosureScope scopeData = closureData.capturingScopes[node];
-    if (scopeData == null) return;
-    if (scopeData.hasBoxedLoopVariables()) {
-      // If there are boxed loop variables then we set up the box and
-      // redirections already now. This way the initializer can write its
-      // values into the box.
-      // For other loops the box will be created when entering the body.
-      enterScope(node, null);
-    }
-  }
-
-  /**
-   * Create phis at the loop entry for local variables (ready for the values
-   * from the back edge).  Populate the phis with the current values.
-   */
-  void beginLoopHeader(HBasicBlock loopEntry) {
-    // Create a copy because we modify the map while iterating over it.
-    Map<Local, HInstruction> savedDirectLocals =
-        new Map<Local, HInstruction>.from(directLocals);
-
-    JavaScriptBackend backend = builder.backend;
-    // Create phis for all elements in the definitions environment.
-    savedDirectLocals.forEach((Local local, HInstruction instruction) {
-      if (isAccessedDirectly(local)) {
-        // We know 'this' cannot be modified.
-        if (local != closureData.thisLocal) {
-          HPhi phi =
-              new HPhi.singleInput(local, instruction, backend.dynamicType);
-          loopEntry.addPhi(phi);
-          directLocals[local] = phi;
-        } else {
-          directLocals[local] = instruction;
-        }
-      }
-    });
-  }
-
-  void enterLoopBody(ast.Node node) {
-    ClosureScope scopeData = closureData.capturingScopes[node];
-    if (scopeData == null) return;
-    // If there are no declared boxed loop variables then we did not create the
-    // box before the initializer and we have to create the box now.
-    if (!scopeData.hasBoxedLoopVariables()) {
-      enterScope(node, null);
-    }
-  }
-
-  void enterLoopUpdates(ast.Node node) {
-    // If there are declared boxed loop variables then the updates might have
-    // access to the box and we must switch to a new box before executing the
-    // updates.
-    // In all other cases a new box will be created when entering the body of
-    // the next iteration.
-    ClosureScope scopeData = closureData.capturingScopes[node];
-    if (scopeData == null) return;
-    if (scopeData.hasBoxedLoopVariables()) {
-      updateCaptureBox(scopeData.boxElement, scopeData.boxedLoopVariables);
-    }
-  }
-
-  /**
-   * Goes through the phis created in beginLoopHeader entry and adds the
-   * input from the back edge (from the current value of directLocals) to them.
-   */
-  void endLoop(HBasicBlock loopEntry) {
-    // If the loop has an aborting body, we don't update the loop
-    // phis.
-    if (loopEntry.predecessors.length == 1) return;
-    loopEntry.forEachPhi((HPhi phi) {
-      Local element = phi.sourceElement;
-      HInstruction postLoopDefinition = directLocals[element];
-      phi.addInput(postLoopDefinition);
-    });
-  }
-
-  /**
-   * Merge [otherLocals] into this locals handler, creating phi-nodes when
-   * there is a conflict.
-   * If a phi node is necessary, it will use this handler's instruction as the
-   * first input, and the otherLocals instruction as the second.
-   */
-  void mergeWith(LocalsHandler otherLocals, HBasicBlock joinBlock) {
-    // If an element is in one map but not the other we can safely
-    // ignore it. It means that a variable was declared in the
-    // block. Since variable declarations are scoped the declared
-    // variable cannot be alive outside the block. Note: this is only
-    // true for nodes where we do joins.
-    Map<Local, HInstruction> joinedLocals = new Map<Local, HInstruction>();
-    JavaScriptBackend backend = builder.backend;
-    otherLocals.directLocals.forEach((Local local, HInstruction instruction) {
-      // We know 'this' cannot be modified.
-      if (local == closureData.thisLocal) {
-        assert(directLocals[local] == instruction);
-        joinedLocals[local] = instruction;
-      } else {
-        HInstruction mine = directLocals[local];
-        if (mine == null) return;
-        if (identical(instruction, mine)) {
-          joinedLocals[local] = instruction;
-        } else {
-          HInstruction phi = new HPhi.manyInputs(
-              local, <HInstruction>[mine, instruction], backend.dynamicType);
-          joinBlock.addPhi(phi);
-          joinedLocals[local] = phi;
-        }
-      }
-    });
-    directLocals = joinedLocals;
-  }
-
-  /**
-   * When control flow merges, this method can be used to merge several
-   * localsHandlers into a new one using phis.  The new localsHandler is
-   * returned.  Unless it is also in the list, the current localsHandler is not
-   * used for its values, only for its declared variables. This is a way to
-   * exclude local values from the result when they are no longer in scope.
-   */
-  LocalsHandler mergeMultiple(
-      List<LocalsHandler> localsHandlers, HBasicBlock joinBlock) {
-    assert(localsHandlers.length > 0);
-    if (localsHandlers.length == 1) return localsHandlers[0];
-    Map<Local, HInstruction> joinedLocals = new Map<Local, HInstruction>();
-    HInstruction thisValue = null;
-    JavaScriptBackend backend = builder.backend;
-    directLocals.forEach((Local local, HInstruction instruction) {
-      if (local != closureData.thisLocal) {
-        HPhi phi = new HPhi.noInputs(local, backend.dynamicType);
-        joinedLocals[local] = phi;
-        joinBlock.addPhi(phi);
-      } else {
-        // We know that "this" never changes, if it's there.
-        // Save it for later. While merging, there is no phi for "this",
-        // so we don't have to special case it in the merge loop.
-        thisValue = instruction;
-      }
-    });
-    for (LocalsHandler handler in localsHandlers) {
-      handler.directLocals.forEach((Local local, HInstruction instruction) {
-        HPhi phi = joinedLocals[local];
-        if (phi != null) {
-          phi.addInput(instruction);
-        }
-      });
-    }
-    if (thisValue != null) {
-      // If there was a "this" for the scope, add it to the new locals.
-      joinedLocals[closureData.thisLocal] = thisValue;
-    }
-
-    // Remove locals that are not in all handlers.
-    directLocals = new Map<Local, HInstruction>();
-    joinedLocals.forEach((Local local, HInstruction instruction) {
-      if (local != closureData.thisLocal &&
-          instruction.inputs.length != localsHandlers.length) {
-        joinBlock.removePhi(instruction);
-      } else {
-        directLocals[local] = instruction;
-      }
-    });
-    return this;
-  }
-}
-
-// Represents a single break/continue instruction.
-class JumpHandlerEntry {
-  final HJump jumpInstruction;
-  final LocalsHandler locals;
-  bool isBreak() => jumpInstruction is HBreak;
-  bool isContinue() => jumpInstruction is HContinue;
-  JumpHandlerEntry(this.jumpInstruction, this.locals);
-}
-
-abstract class JumpHandler {
-  factory JumpHandler(SsaBuilder builder, JumpTarget target) {
-    return new TargetJumpHandler(builder, target);
-  }
-  void generateBreak([LabelDefinition label]);
-  void generateContinue([LabelDefinition label]);
-  void forEachBreak(void action(HBreak instruction, LocalsHandler locals));
-  void forEachContinue(
-      void action(HContinue instruction, LocalsHandler locals));
-  bool hasAnyContinue();
-  bool hasAnyBreak();
-  void close();
-  final JumpTarget target;
-  List<LabelDefinition> labels();
-}
-
-// Insert break handler used to avoid null checks when a target isn't
-// used as the target of a break, and therefore doesn't need a break
-// handler associated with it.
-class NullJumpHandler implements JumpHandler {
-  final DiagnosticReporter reporter;
-
-  NullJumpHandler(this.reporter);
-
-  void generateBreak([LabelDefinition label]) {
-    reporter.internalError(CURRENT_ELEMENT_SPANNABLE,
-        'NullJumpHandler.generateBreak should not be called.');
-  }
-
-  void generateContinue([LabelDefinition label]) {
-    reporter.internalError(CURRENT_ELEMENT_SPANNABLE,
-        'NullJumpHandler.generateContinue should not be called.');
-  }
-
-  void forEachBreak(Function ignored) {}
-  void forEachContinue(Function ignored) {}
-  void close() {}
-  bool hasAnyContinue() => false;
-  bool hasAnyBreak() => false;
-
-  List<LabelDefinition> labels() => const <LabelDefinition>[];
-  JumpTarget get target => null;
-}
-
-// Records breaks until a target block is available.
-// Breaks are always forward jumps.
-// Continues in loops are implemented as breaks of the body.
-// Continues in switches is currently not handled.
-class TargetJumpHandler implements JumpHandler {
-  final SsaBuilder builder;
-  final JumpTarget target;
-  final List<JumpHandlerEntry> jumps;
-
-  TargetJumpHandler(SsaBuilder builder, this.target)
-      : this.builder = builder,
-        jumps = <JumpHandlerEntry>[] {
-    assert(builder.jumpTargets[target] == null);
-    builder.jumpTargets[target] = this;
-  }
-
-  void generateBreak([LabelDefinition label]) {
-    HInstruction breakInstruction;
-    if (label == null) {
-      breakInstruction = new HBreak(target);
-    } else {
-      breakInstruction = new HBreak.toLabel(label);
-    }
-    LocalsHandler locals = new LocalsHandler.from(builder.localsHandler);
-    builder.close(breakInstruction);
-    jumps.add(new JumpHandlerEntry(breakInstruction, locals));
-  }
-
-  void generateContinue([LabelDefinition label]) {
-    HInstruction continueInstruction;
-    if (label == null) {
-      continueInstruction = new HContinue(target);
-    } else {
-      continueInstruction = new HContinue.toLabel(label);
-      // Switch case continue statements must be handled by the
-      // [SwitchCaseJumpHandler].
-      assert(label.target.statement is! ast.SwitchCase);
-    }
-    LocalsHandler locals = new LocalsHandler.from(builder.localsHandler);
-    builder.close(continueInstruction);
-    jumps.add(new JumpHandlerEntry(continueInstruction, locals));
-  }
-
-  void forEachBreak(Function action) {
-    for (JumpHandlerEntry entry in jumps) {
-      if (entry.isBreak()) action(entry.jumpInstruction, entry.locals);
-    }
-  }
-
-  void forEachContinue(Function action) {
-    for (JumpHandlerEntry entry in jumps) {
-      if (entry.isContinue()) action(entry.jumpInstruction, entry.locals);
-    }
-  }
-
-  bool hasAnyContinue() {
-    for (JumpHandlerEntry entry in jumps) {
-      if (entry.isContinue()) return true;
-    }
-    return false;
-  }
-
-  bool hasAnyBreak() {
-    for (JumpHandlerEntry entry in jumps) {
-      if (entry.isBreak()) return true;
-    }
-    return false;
-  }
-
-  void close() {
-    // The mapping from TargetElement to JumpHandler is no longer needed.
-    builder.jumpTargets.remove(target);
-  }
-
-  List<LabelDefinition> labels() {
-    List<LabelDefinition> result = null;
-    for (LabelDefinition element in target.labels) {
-      if (result == null) result = <LabelDefinition>[];
-      result.add(element);
-    }
-    return (result == null) ? const <LabelDefinition>[] : result;
-  }
-}
-
-/// Special [JumpHandler] implementation used to handle continue statements
-/// targeting switch cases.
-class SwitchCaseJumpHandler extends TargetJumpHandler {
-  /// Map from switch case targets to indices used to encode the flow of the
-  /// switch case loop.
-  final Map<JumpTarget, int> targetIndexMap = new Map<JumpTarget, int>();
-
-  SwitchCaseJumpHandler(
-      SsaBuilder builder, JumpTarget target, ast.SwitchStatement node)
-      : super(builder, target) {
-    // The switch case indices must match those computed in
-    // [SsaFromAstMixin.buildSwitchCaseConstants].
-    // Switch indices are 1-based so we can bypass the synthetic loop when no
-    // cases match simply by branching on the index (which defaults to null).
-    int switchIndex = 1;
-    for (ast.SwitchCase switchCase in node.cases) {
-      for (ast.Node labelOrCase in switchCase.labelsAndCases) {
-        ast.Node label = labelOrCase.asLabel();
-        if (label != null) {
-          LabelDefinition labelElement =
-              builder.elements.getLabelDefinition(label);
-          if (labelElement != null && labelElement.isContinueTarget) {
-            JumpTarget continueTarget = labelElement.target;
-            targetIndexMap[continueTarget] = switchIndex;
-            assert(builder.jumpTargets[continueTarget] == null);
-            builder.jumpTargets[continueTarget] = this;
-          }
-        }
-      }
-      switchIndex++;
-    }
-  }
-
-  void generateBreak([LabelDefinition label]) {
-    if (label == null) {
-      // Creates a special break instruction for the synthetic loop generated
-      // for a switch statement with continue statements. See
-      // [SsaFromAstMixin.buildComplexSwitchStatement] for detail.
-
-      HInstruction breakInstruction =
-          new HBreak(target, breakSwitchContinueLoop: true);
-      LocalsHandler locals = new LocalsHandler.from(builder.localsHandler);
-      builder.close(breakInstruction);
-      jumps.add(new JumpHandlerEntry(breakInstruction, locals));
-    } else {
-      super.generateBreak(label);
-    }
-  }
-
-  bool isContinueToSwitchCase(LabelDefinition label) {
-    return label != null && targetIndexMap.containsKey(label.target);
-  }
-
-  void generateContinue([LabelDefinition label]) {
-    if (isContinueToSwitchCase(label)) {
-      // Creates the special instructions 'label = i; continue l;' used in
-      // switch statements with continue statements. See
-      // [SsaFromAstMixin.buildComplexSwitchStatement] for detail.
-
-      assert(label != null);
-      HInstruction value = builder.graph
-          .addConstantInt(targetIndexMap[label.target], builder.compiler);
-      builder.localsHandler.updateLocal(target, value);
-
-      assert(label.target.labels.contains(label));
-      HInstruction continueInstruction = new HContinue(target);
-      LocalsHandler locals = new LocalsHandler.from(builder.localsHandler);
-      builder.close(continueInstruction);
-      jumps.add(new JumpHandlerEntry(continueInstruction, locals));
-    } else {
-      super.generateContinue(label);
-    }
-  }
-
-  void close() {
-    // The mapping from TargetElement to JumpHandler is no longer needed.
-    for (JumpTarget target in targetIndexMap.keys) {
-      builder.jumpTargets.remove(target);
-    }
-    super.close();
   }
 }
 
@@ -1006,7 +122,8 @@ class SsaBuilder extends ast.Visitor
         BaseImplementationOfSuperIndexSetIfNullMixin,
         SemanticSendResolvedMixin,
         NewBulkMixin,
-        ErrorBulkMixin
+        ErrorBulkMixin,
+        GraphBuilder
     implements SemanticSendVisitor {
   /// The element for which this SSA builder is being used.
   final Element target;
@@ -1017,10 +134,6 @@ class SsaBuilder extends ast.Visitor
   /// SSA graph), when dump-info is enabled.
   final InfoReporter infoReporter;
 
-  /// If not null, the builder will store in [context] data that is used later
-  /// during the optimization phases.
-  final JavaScriptItemCompilationContext context;
-
   /// Registry used to enqueue work during codegen, may be null to avoid
   /// enqueing any work.
   // TODO(sigmund,johnniwinther): get rid of registry entirely. We should be
@@ -1030,7 +143,16 @@ class SsaBuilder extends ast.Visitor
   // used only for codegen, but currently we want to experiment using it for
   // code-analysis too.
   final CodegenRegistry registry;
-  final Compiler compiler;
+
+  /// All results from the global type-inference analysis.
+  final GlobalTypeInferenceResults inferenceResults;
+
+  /// Results from the global type-inference analysis corresponding to the
+  /// current element being visited.
+  ///
+  /// Invariant: this property is updated together with [resolvedAst].
+  GlobalTypeInferenceElementResult elementInferenceResults;
+
   final JavaScriptBackend backend;
   final ConstantSystem constantSystem;
   final RuntimeTypes rti;
@@ -1043,38 +165,6 @@ class SsaBuilder extends ast.Visitor
   /* This field is used by the native handler. */
   final NativeEmitter nativeEmitter;
 
-  /// Holds the resulting SSA graph.
-  final HGraph graph = new HGraph();
-
-  /**
-   * The current block to add instructions to. Might be null, if we are
-   * visiting dead code, but see [isReachable].
-   */
-  HBasicBlock _current;
-
-  HBasicBlock get current => _current;
-
-  void set current(c) {
-    isReachable = c != null;
-    _current = c;
-  }
-
-  /**
-   * The most recently opened block. Has the same value as [current] while
-   * the block is open, but unlike [current], it isn't cleared when the
-   * current block is closed.
-   */
-  HBasicBlock lastOpenedBlock;
-
-  /**
-   * Indicates whether the current block is dead (because it has a throw or a
-   * return further up). If this is false, then [current] may be null. If the
-   * block is dead then it may also be aborted, but for simplicity we only
-   * abort on statement boundaries, not in the middle of expressions. See
-   * isAborted.
-   */
-  bool isReachable = true;
-
   /**
    * True if we are visiting the expression of a throw statement; we assume this
    * is a slow path.
@@ -1082,38 +172,12 @@ class SsaBuilder extends ast.Visitor
   bool inExpressionOfThrow = false;
 
   /**
-   * The loop nesting is consulted when inlining a function invocation in
-   * [tryInlineMethod]. The inlining heuristics take this information into
-   * account.
-   */
-  int loopNesting = 0;
-
-  /**
    * This stack contains declaration elements of the functions being built
    * or inlined by this builder.
    */
   final List<Element> sourceElementStack = <Element>[];
 
-  LocalsHandler localsHandler;
-
   HInstruction rethrowableException;
-
-  HParameterValue lastAddedParameter;
-
-  Map<ParameterElement, HInstruction> parameters =
-      <ParameterElement, HInstruction>{};
-
-  Map<JumpTarget, JumpHandler> jumpTargets = <JumpTarget, JumpHandler>{};
-
-  /**
-   * Variables stored in the current activation. These variables are
-   * being updated in try/catch blocks, and should be
-   * accessed indirectly through [HLocalGet] and [HLocalSet].
-   */
-  Map<Local, HLocalValue> activationVariables = <Local, HLocalValue>{};
-
-  // We build the Ssa graph by simulating a stack machine.
-  List<HInstruction> stack = <HInstruction>[];
 
   /// Returns `true` if the current element is an `async` function.
   bool get isBuildingAsyncFunction {
@@ -1122,28 +186,38 @@ class SsaBuilder extends ast.Visitor
         element.asyncMarker == AsyncMarker.ASYNC);
   }
 
+  /// Handles the building of loops.
+  LoopHandler<ast.Node> loopHandler;
+
+  /// Handles type check building.
+  TypeBuilder typeBuilder;
+
   // TODO(sigmund): make most args optional
   SsaBuilder(
       this.target,
       this.resolvedAst,
-      this.context,
       this.registry,
       JavaScriptBackend backend,
       this.nativeEmitter,
       SourceInformationStrategy sourceInformationFactory)
-      : this.compiler = backend.compiler,
-        this.infoReporter = backend.compiler.dumpInfoTask,
+      : this.infoReporter = backend.compiler.dumpInfoTask,
         this.backend = backend,
         this.constantSystem = backend.constantSystem,
-        this.rti = backend.rti {
+        this.rti = backend.rti,
+        this.inferenceResults = backend.compiler.globalInference.results {
     assert(target.isImplementation);
+    compiler = backend.compiler;
+    elementInferenceResults = _resultOf(target);
+    assert(elementInferenceResults != null);
     graph.element = target;
-    localsHandler = new LocalsHandler(this, target, null);
     sourceElementStack.add(target);
     sourceInformationBuilder =
         sourceInformationFactory.createBuilderForContext(resolvedAst);
     graph.sourceInformation =
         sourceInformationBuilder.buildVariableDeclaration();
+    localsHandler = new LocalsHandler(this, target, null, compiler);
+    loopHandler = new SsaLoopHandler(this);
+    typeBuilder = new TypeBuilder(this);
   }
 
   BackendHelpers get helpers => backend.helpers;
@@ -1153,6 +227,8 @@ class SsaBuilder extends ast.Visitor
   DiagnosticReporter get reporter => compiler.reporter;
 
   CoreClasses get coreClasses => compiler.coreClasses;
+
+  Element get targetElement => target;
 
   /// Reference to resolved elements in [target]'s AST.
   TreeElements get elements => resolvedAst.elements;
@@ -1175,11 +251,19 @@ class SsaBuilder extends ast.Visitor
   /// The returned element is a declaration element.
   // TODO(johnniwinther): Check that all usages of sourceElement agree on
   // implementation/declaration distinction.
+  @override
   Element get sourceElement => sourceElementStack.last;
 
-  bool get _checkOrTrustTypes =>
-      compiler.options.enableTypeAssertions ||
-      compiler.options.trustTypeAnnotations;
+  /// Helper to retrieve global inference results for [element] with special
+  /// care for `ConstructorBodyElement`s which don't exist at the time the
+  /// global analysis run.
+  ///
+  /// Note: this helper is used selectively. When we know that we are in a
+  /// context were we don't expect to see a constructor body element, we
+  /// directly fetch the data from the global inference results.
+  GlobalTypeInferenceElementResult _resultOf(AstElement element) =>
+      inferenceResults.resultOf(
+          element is ConstructorBodyElementX ? element.constructor : element);
 
   /// Build the graph for [target].
   HGraph build() {
@@ -1210,60 +294,15 @@ class SsaBuilder extends ast.Visitor
     return result;
   }
 
-  HBasicBlock addNewBlock() {
-    HBasicBlock block = graph.addNewBlock();
-    // If adding a new block during building of an expression, it is due to
-    // conditional expressions or short-circuit logical operators.
-    return block;
-  }
-
-  void open(HBasicBlock block) {
-    block.open();
-    current = block;
-    lastOpenedBlock = block;
-  }
-
-  HBasicBlock close(HControlFlow end) {
-    HBasicBlock result = current;
-    current.close(end);
-    current = null;
-    return result;
-  }
-
-  HBasicBlock closeAndGotoExit(HControlFlow end) {
-    HBasicBlock result = current;
-    current.close(end);
-    current = null;
-    result.addSuccessor(graph.exit);
-    return result;
-  }
-
-  void goto(HBasicBlock from, HBasicBlock to) {
-    from.close(new HGoto());
-    from.addSuccessor(to);
-  }
-
-  bool isAborted() {
-    return current == null;
-  }
-
-  /**
-   * Creates a new block, transitions to it from any current block, and
-   * opens the new block.
-   */
-  HBasicBlock openNewBlock() {
-    HBasicBlock newBlock = addNewBlock();
-    if (!isAborted()) goto(current, newBlock);
-    open(newBlock);
-    return newBlock;
-  }
-
-  void add(HInstruction instruction) {
-    current.add(instruction);
-  }
-
   void addWithPosition(HInstruction instruction, ast.Node node) {
     add(attachPosition(instruction, node));
+  }
+
+  HTypeConversion buildFunctionTypeConversion(
+      HInstruction original, DartType type, int kind) {
+    HInstruction reifiedType = buildFunctionType(type);
+    return new HTypeConversion.viaMethodOnType(
+        type, kind, original.instructionType, reifiedType, original);
   }
 
   /**
@@ -1281,8 +320,7 @@ class SsaBuilder extends ast.Visitor
     // For static calls, [providedArguments] is complete, default arguments
     // have been included if necessary, see [makeStaticArgumentList].
     if (!isInstanceMember ||
-        currentNode == null // In erroneous code, currentNode can be null.
-        ||
+        currentNode == null || // In erroneous code, currentNode can be null.
         providedArgumentsKnownToBeComplete(currentNode) ||
         function.isGenerativeConstructorBody ||
         selector.isGetter) {
@@ -1310,7 +348,7 @@ class SsaBuilder extends ast.Visitor
    */
   List<HInstruction> completeDynamicSendArgumentsList(Selector selector,
       FunctionElement function, List<HInstruction> providedArguments) {
-    assert(selector.applies(function, compiler.world));
+    assert(selector.applies(function));
     FunctionSignature signature = function.functionSignature;
     List<HInstruction> compiledArguments = new List<HInstruction>(
         signature.parameterCount + 1); // Plus one for receiver.
@@ -1363,16 +401,14 @@ class SsaBuilder extends ast.Visitor
   }
 
   /**
-   * Try to inline [element] within the currect context of the builder. The
+   * Try to inline [element] within the correct context of the builder. The
    * insertion point is the state of the builder.
    */
   bool tryInlineMethod(Element element, Selector selector, TypeMask mask,
       List<HInstruction> providedArguments, ast.Node currentNode,
       {InterfaceType instanceType}) {
-    // TODO(johnniwinther): Register this on the [registry]. Currently the
-    // [CodegenRegistry] calls the enqueuer, but [element] should _not_ be
-    // enqueued.
-    backend.registerStaticUse(element, compiler.enqueuer.codegen);
+    registry
+        .addImpact(backend.registerStaticUse(element, forResolution: false));
 
     if (backend.isJsInterop(element) && !element.isFactoryConstructor) {
       // We only inline factory JavaScript interop constructors.
@@ -1386,7 +422,7 @@ class SsaBuilder extends ast.Visitor
 
     FunctionElement function = element;
     ResolvedAst functionResolvedAst = function.resolvedAst;
-    bool insideLoop = loopNesting > 0 || graph.calledInLoop;
+    bool insideLoop = loopDepth > 0 || graph.calledInLoop;
 
     // Bail out early if the inlining decision is in the cache and we can't
     // inline (no need to check the hard constraints).
@@ -1404,8 +440,9 @@ class SsaBuilder extends ast.Visitor
               element.isGenerativeConstructorBody,
           message: "Missing selector for inlining of $element."));
       if (selector != null) {
-        if (!selector.applies(function, compiler.world)) return false;
-        if (mask != null && !mask.canHit(function, selector, compiler.world)) {
+        if (!selector.applies(function)) return false;
+        if (mask != null &&
+            !mask.canHit(function, selector, compiler.closedWorld)) {
           return false;
         }
       }
@@ -1430,11 +467,7 @@ class SsaBuilder extends ast.Visitor
       // A generative constructor body is not seen by global analysis,
       // so we should not query for its type.
       if (!element.isGenerativeConstructorBody) {
-        // Don't inline if the return type was inferred to be non-null empty.
-        // This means that the function always throws an exception.
-        TypeMask returnType =
-            compiler.typesTask.getGuaranteedReturnTypeOfElement(element);
-        if (returnType != null && returnType.isEmpty) {
+        if (inferenceResults.resultOf(element).throwsAlways) {
           isReachable = false;
           return false;
         }
@@ -1566,13 +599,10 @@ class SsaBuilder extends ast.Visitor
     return inliningStack.isEmpty || inliningStack.last.allFunctionsCalledOnce;
   }
 
-  bool isFunctionCalledOnce(Element element) {
-    if (element is ConstructorBodyElement) {
-      // ConstructorBodyElements are not in the type inference graph.
-      return false;
-    }
-    TypesInferrer inferrer = compiler.typesTask.typesInferrer;
-    return inferrer.isCalledOnce(element);
+  bool isFunctionCalledOnce(element) {
+    // ConstructorBodyElements are not in the type inference graph.
+    if (element is ConstructorBodyElement) return false;
+    return inferenceResults.resultOf(element).isCalledOnce;
   }
 
   bool isCalledOnce(Element element) {
@@ -1598,7 +628,7 @@ class SsaBuilder extends ast.Visitor
 
   /**
    * Return null so it is simple to remove the optional parameters completely
-   * from interop methods to match JavaScript semantics for ommitted arguments.
+   * from interop methods to match JavaScript semantics for omitted arguments.
    */
   HInstruction handleConstantForOptionalParameterJsInterop(Element parameter) =>
       null;
@@ -1611,7 +641,7 @@ class SsaBuilder extends ast.Visitor
     return graph.addConstant(constantValue, compiler);
   }
 
-  Element get currentNonClosureClass {
+  ClassElement get currentNonClosureClass {
     ClassElement cls = sourceElement.enclosingClass;
     if (cls != null && cls.isClosure) {
       var closureClass = cls;
@@ -1621,12 +651,12 @@ class SsaBuilder extends ast.Visitor
     }
   }
 
-  /// A stack of [DartType]s the have been seen during inlining of factory
+  /// A stack of [DartType]s that have been seen during inlining of factory
   /// constructors.  These types are preserved in [HInvokeStatic]s and
-  /// [HForeignNew]s inside the inline code and registered during code
-  /// generation for these nodes.
-  // TODO(karlklose): consider removing this and keeping the (substituted)
-  // types of the type variables in an environment (like the [LocalsHandler]).
+  /// [HCreate]s inside the inline code and registered during code generation
+  /// for these nodes.
+  // TODO(karlklose): consider removing this and keeping the (substituted) types
+  // of the type variables in an environment (like the [LocalsHandler]).
   final List<DartType> currentInlinedInstantiations = <DartType>[];
 
   final List<AstInliningState> inliningStack = <AstInliningState>[];
@@ -1648,38 +678,6 @@ class SsaBuilder extends ast.Visitor
     return graph.addConstant(getConstantForNode(node), compiler);
   }
 
-  TypeMask cachedTypeOfThis;
-
-  TypeMask getTypeOfThis() {
-    TypeMask result = cachedTypeOfThis;
-    if (result == null) {
-      ThisLocal local = localsHandler.closureData.thisLocal;
-      ClassElement cls = local.enclosingClass;
-      ClassWorld classWorld = compiler.world;
-      if (classWorld.isUsedAsMixin(cls)) {
-        // If the enclosing class is used as a mixin, [:this:] can be
-        // of the class that mixins the enclosing class. These two
-        // classes do not have a subclass relationship, so, for
-        // simplicity, we mark the type as an interface type.
-        result = new TypeMask.nonNullSubtype(cls.declaration, compiler.world);
-      } else {
-        result = new TypeMask.nonNullSubclass(cls.declaration, compiler.world);
-      }
-      cachedTypeOfThis = result;
-    }
-    return result;
-  }
-
-  Map<Element, TypeMask> cachedTypesOfCapturedVariables =
-      new Map<Element, TypeMask>();
-
-  TypeMask getTypeOfCapturedVariable(Element element) {
-    assert(element.isField);
-    return cachedTypesOfCapturedVariables.putIfAbsent(element, () {
-      return TypeMaskFactory.inferredTypeForElement(element, compiler);
-    });
-  }
-
   /**
    * Documentation wanted -- johnniwinther
    *
@@ -1687,7 +685,7 @@ class SsaBuilder extends ast.Visitor
    */
   HGraph buildMethod(FunctionElement functionElement) {
     assert(invariant(functionElement, functionElement.isImplementation));
-    graph.calledInLoop = compiler.world.isCalledInLoop(functionElement);
+    graph.calledInLoop = compiler.closedWorld.isCalledInLoop(functionElement);
     ast.FunctionExpression function = resolvedAst.node;
     assert(function != null);
     assert(elements.getFunctionDefinition(function) != null);
@@ -1703,24 +701,29 @@ class SsaBuilder extends ast.Visitor
     }
     assert(invariant(functionElement, !function.modifiers.isExternal));
 
-    // If [functionElement] is `operator==` we explicitely add a null check at
+    // If [functionElement] is `operator==` we explicitly add a null check at
     // the beginning of the method. This is to avoid having call sites do the
     // null check.
     if (name == '==') {
       if (!backend.operatorEqHandlesNullArgument(functionElement)) {
-        handleIf(function, visitCondition: () {
-          HParameterValue parameter = parameters.values.first;
-          push(new HIdentity(parameter, graph.addConstantNull(compiler), null,
-              backend.boolType));
-        }, visitThen: () {
-          closeAndGotoExit(new HReturn(graph.addConstantBool(false, compiler),
-              sourceInformationBuilder.buildImplicitReturn(functionElement)));
-        },
+        handleIf(
+            node: function,
+            visitCondition: () {
+              HParameterValue parameter = parameters.values.first;
+              push(new HIdentity(parameter, graph.addConstantNull(compiler),
+                  null, backend.boolType));
+            },
+            visitThen: () {
+              closeAndGotoExit(new HReturn(
+                  graph.addConstantBool(false, compiler),
+                  sourceInformationBuilder
+                      .buildImplicitReturn(functionElement)));
+            },
             visitElse: null,
             sourceInformation: sourceInformationBuilder.buildIf(function.body));
       }
     }
-    if (const bool.fromEnvironment('unreachable-throw') == true) {
+    if (const bool.fromEnvironment('unreachable-throw')) {
       var emptyParameters =
           parameters.values.where((p) => p.instructionType.isEmpty);
       if (emptyParameters.length > 0) {
@@ -1745,8 +748,9 @@ class SsaBuilder extends ast.Visitor
         isStatement: true));
   }
 
-  HGraph buildCheckedSetter(VariableElement field) {
-    openFunction(field, field.node);
+  HGraph buildCheckedSetter(FieldElement field) {
+    ResolvedAst resolvedAst = field.resolvedAst;
+    openFunction(field, resolvedAst.node);
     HInstruction thisInstruction = localsHandler.readThis();
     // Use dynamic type because the type computed by the inferrer is
     // narrowed to the type annotation.
@@ -1755,7 +759,8 @@ class SsaBuilder extends ast.Visitor
     // If the method is intercepted, we want the actual receiver
     // to be the first parameter.
     graph.entry.addBefore(graph.entry.last, parameter);
-    HInstruction value = potentiallyCheckOrTrustType(parameter, field.type);
+    HInstruction value =
+        typeBuilder.potentiallyCheckOrTrustType(parameter, field.type);
     add(new HFieldSet(field, thisInstruction, value));
     return closeFunction();
   }
@@ -1771,10 +776,21 @@ class SsaBuilder extends ast.Visitor
     openFunction(variable, node);
     visit(initializer);
     HInstruction value = pop();
-    value = potentiallyCheckOrTrustType(value, variable.type);
-    ast.SendSet sendSet = node.definitions.nodes.head;
-    closeAndGotoExit(new HReturn(value,
-        sourceInformationBuilder.buildReturn(sendSet.assignmentOperator)));
+    value = typeBuilder.potentiallyCheckOrTrustType(value, variable.type);
+    // In the case of multiple declarations (and some definitions) on the same
+    // line, the source pointer needs to point to the right initialized
+    // variable. So find the specific initialized variable we are referring to.
+    ast.Node sourceInfoNode = initializer;
+    for (var definition in node.definitions) {
+      if (definition is ast.SendSet &&
+          definition.selector.asIdentifier().source == variable.name) {
+        sourceInfoNode = definition.assignmentOperator;
+        break;
+      }
+    }
+
+    closeAndGotoExit(new HReturn(
+        value, sourceInformationBuilder.buildReturn(sourceInfoNode)));
     return closeFunction();
   }
 
@@ -1825,18 +841,6 @@ class SsaBuilder extends ast.Visitor
     return bodyElement;
   }
 
-  HParameterValue addParameter(Entity parameter, TypeMask type) {
-    assert(inliningStack.isEmpty);
-    HParameterValue result = new HParameterValue(parameter, type);
-    if (lastAddedParameter == null) {
-      graph.entry.addBefore(graph.entry.first, result);
-    } else {
-      graph.entry.addAfter(lastAddedParameter, result);
-    }
-    lastAddedParameter = result;
-    return result;
-  }
-
   /**
    * This method sets up the local state of the builder for inlining [function].
    * The arguments of the function are inserted into the [localsHandler].
@@ -1851,9 +855,9 @@ class SsaBuilder extends ast.Visitor
       {InterfaceType instanceType}) {
     ResolvedAst resolvedAst = function.resolvedAst;
     assert(resolvedAst != null);
-    localsHandler = new LocalsHandler(this, function, instanceType);
+    localsHandler = new LocalsHandler(this, function, instanceType, compiler);
     localsHandler.closureData =
-        compiler.closureToClassMapper.computeClosureToClassMapping(resolvedAst);
+        compiler.closureToClassMapper.getClosureToClassMapping(resolvedAst);
     returnLocal = new SyntheticLocal("result", function);
     localsHandler.updateLocal(returnLocal, graph.addConstantNull(compiler));
 
@@ -1894,6 +898,7 @@ class SsaBuilder extends ast.Visitor
     returnLocal = state.oldReturnLocal;
     inTryStatement = state.inTryStatement;
     resolvedAst = state.oldResolvedAst;
+    elementInferenceResults = state.oldElementInferenceResults;
     returnType = state.oldReturnType;
     assert(stack.isEmpty);
     stack = state.oldStack;
@@ -1903,7 +908,8 @@ class SsaBuilder extends ast.Visitor
    * Run this builder on the body of the [function] to be inlined.
    */
   void visitInlinedFunction(ResolvedAst resolvedAst) {
-    potentiallyCheckInlinedParameterTypes(resolvedAst.element.implementation);
+    typeBuilder.potentiallyCheckInlinedParameterTypes(
+        resolvedAst.element.implementation);
 
     if (resolvedAst.element.isGenerativeConstructor) {
       buildFactory(resolvedAst);
@@ -1936,33 +942,19 @@ class SsaBuilder extends ast.Visitor
   }
 
   /**
-   * In checked mode, generate type tests for the parameters of the inlined
-   * function.
-   */
-  void potentiallyCheckInlinedParameterTypes(FunctionElement function) {
-    if (!_checkOrTrustTypes) return;
-
-    FunctionSignature signature = function.functionSignature;
-    signature.orderedForEachParameter((ParameterElement parameter) {
-      HInstruction argument = localsHandler.readLocal(parameter);
-      potentiallyCheckOrTrustType(argument, parameter.type);
-    });
-  }
-
-  /**
    * Documentation wanted -- johnniwinther
    *
    * Invariant: [constructors] must contain only implementation elements.
    */
   void inlineSuperOrRedirect(
-      ResolvedAst constructorRecolvedAst,
+      ResolvedAst constructorResolvedAst,
       List<HInstruction> compiledArguments,
       List<ResolvedAst> constructorResolvedAsts,
       Map<Element, HInstruction> fieldValues,
       FunctionElement caller) {
-    ConstructorElement callee = constructorRecolvedAst.element.implementation;
+    ConstructorElement callee = constructorResolvedAst.element.implementation;
     reporter.withCurrentElement(callee, () {
-      constructorResolvedAsts.add(constructorRecolvedAst);
+      constructorResolvedAsts.add(constructorResolvedAst);
       ClassElement enclosingClass = callee.enclosingClass;
       if (backend.classNeedsRti(enclosingClass)) {
         // If [enclosingClass] needs RTI, we have to give a value to its
@@ -1984,7 +976,7 @@ class SsaBuilder extends ast.Visitor
             TypeVariableType typeVariable = variables.current;
             localsHandler.updateLocal(
                 localsHandler.getTypeVariableAsLocal(typeVariable),
-                analyzeTypeArgument(argument));
+                typeBuilder.analyzeTypeArgument(argument, sourceElement));
           });
         } else {
           // If the supertype is a raw type, we need to set to null the
@@ -2000,7 +992,7 @@ class SsaBuilder extends ast.Visitor
       // For redirecting constructors, the fields will be initialized later
       // by the effective target.
       if (!callee.isRedirectingGenerative) {
-        inlinedFrom(constructorRecolvedAst, () {
+        inlinedFrom(constructorResolvedAst, () {
           buildFieldInitializers(
               callee.enclosingClass.implementation, fieldValues);
         });
@@ -2026,9 +1018,11 @@ class SsaBuilder extends ast.Visitor
       // Build the initializers in the context of the new constructor.
       ResolvedAst oldResolvedAst = resolvedAst;
       resolvedAst = callee.resolvedAst;
+      final oldElementInferenceResults = elementInferenceResults;
+      elementInferenceResults = inferenceResults.resultOf(callee);
       ClosureClassMap oldClosureData = localsHandler.closureData;
-      ClosureClassMap newClosureData = compiler.closureToClassMapper
-          .computeClosureToClassMapping(resolvedAst);
+      ClosureClassMap newClosureData =
+          compiler.closureToClassMapper.getClosureToClassMapping(resolvedAst);
       localsHandler.closureData = newClosureData;
       if (resolvedAst.kind == ResolvedAstKind.PARSED) {
         localsHandler.enterScope(resolvedAst.node, callee);
@@ -2036,6 +1030,7 @@ class SsaBuilder extends ast.Visitor
       buildInitializers(callee, constructorResolvedAsts, fieldValues);
       localsHandler.closureData = oldClosureData;
       resolvedAst = oldResolvedAst;
+      elementInferenceResults = oldElementInferenceResults;
     });
   }
 
@@ -2198,12 +1193,14 @@ class SsaBuilder extends ast.Visitor
           ast.Node right = initializer;
           ResolvedAst savedResolvedAst = resolvedAst;
           resolvedAst = fieldResolvedAst;
+          final oldElementInferenceResults = elementInferenceResults;
+          elementInferenceResults = inferenceResults.resultOf(member);
           // In case the field initializer uses closures, run the
           // closure to class mapper.
-          compiler.closureToClassMapper
-              .computeClosureToClassMapping(resolvedAst);
+          compiler.closureToClassMapper.getClosureToClassMapping(resolvedAst);
           inlinedFrom(fieldResolvedAst, () => right.accept(this));
           resolvedAst = savedResolvedAst;
+          elementInferenceResults = oldElementInferenceResults;
           fieldValues[member] = pop();
         }
       });
@@ -2268,10 +1265,10 @@ class SsaBuilder extends ast.Visitor
 
     // Call the JavaScript constructor with the fields as argument.
     List<HInstruction> constructorArguments = <HInstruction>[];
-    List<Element> fields = <Element>[];
+    List<FieldEntity> fields = <FieldEntity>[];
 
     classElement.forEachInstanceField(
-        (ClassElement enclosingClass, VariableElement member) {
+        (ClassElement enclosingClass, FieldElement member) {
       HInstruction value = fieldValues[member];
       if (value == null) {
         // Uninitialized native fields are pre-initialized by the native
@@ -2281,13 +1278,14 @@ class SsaBuilder extends ast.Visitor
       } else {
         fields.add(member);
         DartType type = localsHandler.substInContext(member.type);
-        constructorArguments.add(potentiallyCheckOrTrustType(value, type));
+        constructorArguments
+            .add(typeBuilder.potentiallyCheckOrTrustType(value, type));
       }
     }, includeSuperAndInjectedMembers: true);
 
     InterfaceType type = classElement.thisType;
-    TypeMask ssaType =
-        new TypeMask.nonNullExact(classElement.declaration, compiler.world);
+    TypeMask ssaType = new TypeMask.nonNullExact(
+        classElement.declaration, compiler.closedWorld);
     List<DartType> instantiatedTypes;
     addInlinedInstantiation(type);
     if (!currentInlinedInstantiations.isEmpty) {
@@ -2296,11 +1294,33 @@ class SsaBuilder extends ast.Visitor
 
     HInstruction newObject;
     if (!isNativeUpgradeFactory) {
-      newObject = new HForeignNew(
-          classElement, ssaType, constructorArguments, instantiatedTypes);
+      // Create the runtime type information, if needed.
+      bool hasRtiInput = false;
+      if (backend.classNeedsRtiField(classElement)) {
+        // Read the values of the type arguments and create a
+        // HTypeInfoExpression to set on the newly create object.
+        hasRtiInput = true;
+        List<HInstruction> typeArguments = <HInstruction>[];
+        classElement.typeVariables.forEach((TypeVariableType typeVariable) {
+          HInstruction argument = localsHandler
+              .readLocal(localsHandler.getTypeVariableAsLocal(typeVariable));
+          typeArguments.add(argument);
+        });
+
+        HInstruction typeInfo = new HTypeInfoExpression(
+            TypeInfoExpressionKind.INSTANCE,
+            classElement.thisType,
+            typeArguments,
+            backend.dynamicType);
+        add(typeInfo);
+        constructorArguments.add(typeInfo);
+      }
+
+      newObject = new HCreate(classElement, constructorArguments, ssaType,
+          instantiatedTypes: instantiatedTypes, hasRtiInput: hasRtiInput);
       if (function != null) {
-        // TODO(johnniwinther): Provide source information for creation
-        // through synthetic constructors.
+        // TODO(johnniwinther): Provide source information for creation through
+        // synthetic constructors.
         newObject.sourceInformation =
             sourceInformationBuilder.buildCreate(function);
       }
@@ -2318,78 +1338,6 @@ class SsaBuilder extends ast.Visitor
       }
     }
     removeInlinedInstantiation(type);
-    // Create the runtime type information, if needed.
-    if (backend.classNeedsRti(classElement)) {
-      // Read the values of the type arguments and create a list to set on the
-      // newly create object.  We can identify the case where the new list
-      // would be of the form:
-      //  [getTypeArgumentByIndex(this, 0), .., getTypeArgumentByIndex(this, k)]
-      // and k is the number of type arguments of this.  If this is the case,
-      // we can simply copy the list from this.
-
-      // These locals are modified by [isIndexedTypeArgumentGet].
-      HThis source; // The source of the type arguments.
-      bool allIndexed = true;
-      int expectedIndex = 0;
-      ClassElement contextClass; // The class of `this`.
-      int remainingTypeVariables; // The number of 'remaining type variables'
-      // of `this`.
-
-      /// Helper to identify instructions that read a type variable without
-      /// substitution (that is, directly use the index). These instructions
-      /// are of the form:
-      ///   HInvokeStatic(getTypeArgumentByIndex, this, index)
-      ///
-      /// Return `true` if [instruction] is of that form and the index is the
-      /// next index in the sequence (held in [expectedIndex]).
-      bool isIndexedTypeArgumentGet(HInstruction instruction) {
-        if (instruction is! HInvokeStatic) return false;
-        HInvokeStatic invoke = instruction;
-        if (invoke.element != helpers.getTypeArgumentByIndex) {
-          return false;
-        }
-        HConstant index = invoke.inputs[1];
-        HInstruction newSource = invoke.inputs[0];
-        if (newSource is! HThis) {
-          return false;
-        }
-        if (source == null) {
-          // This is the first match. Extract the context class for the type
-          // variables and get the list of type variables to keep track of how
-          // many arguments we need to process.
-          source = newSource;
-          contextClass = source.sourceElement.enclosingClass;
-          remainingTypeVariables = contextClass.typeVariables.length;
-        } else {
-          assert(source == newSource);
-        }
-        // If there are no more type variables, then there are more type
-        // arguments for the new object than the source has, and it can't be
-        // a copy.  Otherwise remove one argument.
-        if (remainingTypeVariables == 0) return false;
-        remainingTypeVariables--;
-        // Check that the index is the one we expect.
-        IntConstantValue constant = index.constant;
-        return constant.primitiveValue == expectedIndex++;
-      }
-
-      List<HInstruction> typeArguments = <HInstruction>[];
-      classElement.typeVariables.forEach((TypeVariableType typeVariable) {
-        HInstruction argument = localsHandler
-            .readLocal(localsHandler.getTypeVariableAsLocal(typeVariable));
-        if (allIndexed && !isIndexedTypeArgumentGet(argument)) {
-          allIndexed = false;
-        }
-        typeArguments.add(argument);
-      });
-
-      if (source != null && allIndexed && remainingTypeVariables == 0) {
-        copyRuntimeTypeInfo(source, newObject);
-      } else {
-        newObject =
-            callSetRuntimeTypeInfo(classElement, typeArguments, newObject);
-      }
-    }
 
     // Generate calls to the constructor bodies.
     HInstruction interceptor = null;
@@ -2409,8 +1357,8 @@ class SsaBuilder extends ast.Visitor
       }
       bodyCallInputs.add(newObject);
       ast.Node node = constructorResolvedAst.node;
-      ClosureClassMap parameterClosureData =
-          compiler.closureToClassMapper.getMappingForNestedFunction(node);
+      ClosureClassMap parameterClosureData = compiler.closureToClassMapper
+          .getClosureToClassMapping(constructorResolvedAst);
 
       FunctionSignature functionSignature = body.functionSignature;
       // Provide the parameters to the generative constructor body.
@@ -2452,7 +1400,7 @@ class SsaBuilder extends ast.Visitor
         HInvokeConstructorBody invoke = new HInvokeConstructorBody(
             body.declaration, bodyCallInputs, backend.nonNullType);
         invoke.sideEffects =
-            compiler.world.getSideEffectsOfElement(constructor);
+            compiler.closedWorld.getSideEffectsOfElement(constructor);
         add(invoke);
       }
     }
@@ -2529,8 +1477,8 @@ class SsaBuilder extends ast.Visitor
           //       new A("foo");  // invalid in checked mode.
           //
           // Only the final target is allowed to check for the argument types.
-          newParameter =
-              potentiallyCheckOrTrustType(newParameter, parameterElement.type);
+          newParameter = typeBuilder.potentiallyCheckOrTrustType(
+              newParameter, parameterElement.type);
         }
         localsHandler.directLocals[parameterElement] = newParameter;
       });
@@ -2547,130 +1495,36 @@ class SsaBuilder extends ast.Visitor
 
   insertTraceCall(Element element) {
     if (JavaScriptBackend.TRACE_METHOD == 'console') {
-      if (element == backend.traceHelper) return;
+      if (element == backend.helpers.traceHelper) return;
       n(e) => e == null ? '' : e.name;
       String name = "${n(element.library)}:${n(element.enclosingClass)}."
           "${n(element)}";
       HConstant nameConstant = addConstantString(name);
-      add(new HInvokeStatic(backend.traceHelper, <HInstruction>[nameConstant],
-          backend.dynamicType));
+      add(new HInvokeStatic(backend.helpers.traceHelper,
+          <HInstruction>[nameConstant], backend.dynamicType));
     }
   }
 
   insertCoverageCall(Element element) {
     if (JavaScriptBackend.TRACE_METHOD == 'post') {
-      if (element == backend.traceHelper) return;
+      if (element == backend.helpers.traceHelper) return;
       // TODO(sigmund): create a better uuid for elements.
       HConstant idConstant = graph.addConstantInt(element.hashCode, compiler);
       HConstant nameConstant = addConstantString(element.name);
-      add(new HInvokeStatic(backend.traceHelper,
+      add(new HInvokeStatic(backend.helpers.traceHelper,
           <HInstruction>[idConstant, nameConstant], backend.dynamicType));
     }
   }
 
-  /// Check that [type] is valid in the context of `localsHandler.contextClass`.
-  /// This should only be called in assertions.
-  bool assertTypeInContext(DartType type, [Spannable spannable]) {
-    return invariant(spannable == null ? CURRENT_ELEMENT_SPANNABLE : spannable,
-        () {
-      ClassElement contextClass = Types.getClassContext(type);
-      return contextClass == null || contextClass == localsHandler.contextClass;
-    },
-        message: "Type '$type' is not valid context of "
-            "${localsHandler.contextClass}.");
-  }
-
-  /// Build a [HTypeConversion] for converting [original] to type [type].
-  ///
-  /// Invariant: [type] must be valid in the context.
-  /// See [LocalsHandler.substInContext].
-  HInstruction buildTypeConversion(
-      HInstruction original, DartType type, int kind) {
-    if (type == null) return original;
-    // GENERIC_METHODS: The following statement was added for parsing and
-    // ignoring method type variables; must be generalized for full support of
-    // generic methods.
-    type = type.dynamifyMethodTypeVariableType;
-    type = type.unaliased;
-    assert(assertTypeInContext(type, original));
-    if (type.isInterfaceType && !type.treatAsRaw) {
-      TypeMask subtype = new TypeMask.subtype(type.element, compiler.world);
-      HInstruction representations = buildTypeArgumentRepresentations(type);
-      add(representations);
-      return new HTypeConversion.withTypeRepresentation(
-          type, kind, subtype, original, representations);
-    } else if (type.isTypeVariable) {
-      TypeMask subtype = original.instructionType;
-      HInstruction typeVariable = addTypeVariableReference(type);
-      return new HTypeConversion.withTypeRepresentation(
-          type, kind, subtype, original, typeVariable);
-    } else if (type.isFunctionType) {
-      String name =
-          kind == HTypeConversion.CAST_TYPE_CHECK ? '_asCheck' : '_assertCheck';
-
-      List<HInstruction> arguments = <HInstruction>[
-        buildFunctionType(type),
-        original
-      ];
-      pushInvokeDynamic(
-          null,
-          new Selector.call(
-              new Name(name, helpers.jsHelperLibrary), CallStructure.ONE_ARG),
-          null,
-          arguments);
-
-      return new HTypeConversion(type, kind, original.instructionType, pop());
-    } else {
-      return original.convertType(compiler, type, kind);
-    }
-  }
-
-  HInstruction _trustType(HInstruction original, DartType type) {
-    assert(compiler.options.trustTypeAnnotations);
-    assert(type != null);
-    type = localsHandler.substInContext(type);
-    type = type.unaliased;
-    if (type.isDynamic) return original;
-    if (!type.isInterfaceType) return original;
-    if (type.isObject) return original;
-    // The type element is either a class or the void element.
-    Element element = type.element;
-    TypeMask mask = new TypeMask.subtype(element, compiler.world);
-    return new HTypeKnown.pinned(mask, original);
-  }
-
-  HInstruction _checkType(HInstruction original, DartType type, int kind) {
-    assert(compiler.options.enableTypeAssertions);
-    assert(type != null);
-    type = localsHandler.substInContext(type);
-    HInstruction other = buildTypeConversion(original, type, kind);
-    registry?.registerTypeUse(new TypeUse.isCheck(type));
-    return other;
-  }
-
-  HInstruction potentiallyCheckOrTrustType(HInstruction original, DartType type,
-      {int kind: HTypeConversion.CHECKED_MODE_CHECK}) {
-    if (type == null) return original;
-    HInstruction checkedOrTrusted = original;
-    if (compiler.options.trustTypeAnnotations) {
-      checkedOrTrusted = _trustType(original, type);
-    } else if (compiler.options.enableTypeAssertions) {
-      checkedOrTrusted = _checkType(original, type, kind);
-    }
-    if (checkedOrTrusted == original) return original;
-    add(checkedOrTrusted);
-    return checkedOrTrusted;
-  }
-
   void assertIsSubtype(
       ast.Node node, DartType subtype, DartType supertype, String message) {
-    HInstruction subtypeInstruction =
-        analyzeTypeArgument(localsHandler.substInContext(subtype));
-    HInstruction supertypeInstruction =
-        analyzeTypeArgument(localsHandler.substInContext(supertype));
+    HInstruction subtypeInstruction = typeBuilder.analyzeTypeArgument(
+        localsHandler.substInContext(subtype), sourceElement);
+    HInstruction supertypeInstruction = typeBuilder.analyzeTypeArgument(
+        localsHandler.substInContext(supertype), sourceElement);
     HInstruction messageInstruction =
         graph.addConstantString(new ast.DartString.literal(message), compiler);
-    Element element = helpers.assertIsSubtype;
+    MethodElement element = helpers.assertIsSubtype;
     var inputs = <HInstruction>[
       subtypeInstruction,
       supertypeInstruction,
@@ -2689,27 +1543,19 @@ class SsaBuilder extends ast.Visitor
     return graph;
   }
 
-  void push(HInstruction instruction) {
-    add(instruction);
-    stack.add(instruction);
-  }
-
   void pushWithPosition(HInstruction instruction, ast.Node node) {
     push(attachPosition(instruction, node));
   }
 
-  HInstruction pop() {
-    return stack.removeLast();
-  }
-
-  void dup() {
-    stack.add(stack.last);
-  }
-
+  /// Pops the most recent instruction from the stack and 'boolifies' it.
+  ///
+  /// Boolification is checking if the value is '=== true'.
+  @override
   HInstruction popBoolified() {
     HInstruction value = pop();
-    if (_checkOrTrustTypes) {
-      return potentiallyCheckOrTrustType(value, compiler.coreTypes.boolType,
+    if (typeBuilder.checkOrTrustTypes) {
+      return typeBuilder.potentiallyCheckOrTrustType(
+          value, compiler.coreTypes.boolType,
           kind: HTypeConversion.BOOLEAN_CONVERSION_CHECK);
     }
     HInstruction result = new HBoolify(value, backend.boolType);
@@ -2755,12 +1601,14 @@ class SsaBuilder extends ast.Visitor
       visit(node.condition);
       pushInvokeStatic(node, helpers.assertTest, [pop()]);
     }
+
     void fail() {
       visit(node.message);
       pushInvokeStatic(node, helpers.assertThrow, [pop()]);
       pop();
     }
-    handleIf(node, visitCondition: buildCondition, visitThen: fail);
+
+    handleIf(node: node, visitCondition: buildCondition, visitThen: fail);
   }
 
   visitBlock(ast.Block node) {
@@ -2813,275 +1661,6 @@ class SsaBuilder extends ast.Visitor
     }
   }
 
-  /**
-   * Creates a new loop-header block. The previous [current] block
-   * is closed with an [HGoto] and replaced by the newly created block.
-   * Also notifies the locals handler that we're entering a loop.
-   */
-  JumpHandler beginLoopHeader(ast.Node node) {
-    assert(!isAborted());
-    HBasicBlock previousBlock = close(new HGoto());
-
-    JumpHandler jumpHandler = createJumpHandler(node, isLoopJump: true);
-    HBasicBlock loopEntry =
-        graph.addNewLoopHeaderBlock(jumpHandler.target, jumpHandler.labels());
-    previousBlock.addSuccessor(loopEntry);
-    open(loopEntry);
-
-    localsHandler.beginLoopHeader(loopEntry);
-    return jumpHandler;
-  }
-
-  /**
-   * Ends the loop:
-   * - creates a new block and adds it as successor to the [branchExitBlock] and
-   *   any blocks that end in break.
-   * - opens the new block (setting as [current]).
-   * - notifies the locals handler that we're exiting a loop.
-   * [savedLocals] are the locals from the end of the loop condition.
-   * [branchExitBlock] is the exit (branching) block of the condition. Generally
-   * this is not the top of the loop, since this would lead to critical edges.
-   * It is null for degenerate do-while loops that have
-   * no back edge because they abort (throw/return/break in the body and have
-   * no continues).
-   */
-  void endLoop(HBasicBlock loopEntry, HBasicBlock branchExitBlock,
-      JumpHandler jumpHandler, LocalsHandler savedLocals) {
-    HBasicBlock loopExitBlock = addNewBlock();
-
-    List<LocalsHandler> breakHandlers = <LocalsHandler>[];
-    // Collect data for the successors and the phis at each break.
-    jumpHandler.forEachBreak((HBreak breakInstruction, LocalsHandler locals) {
-      breakInstruction.block.addSuccessor(loopExitBlock);
-      breakHandlers.add(locals);
-    });
-
-    // The exit block is a successor of the loop condition if it is reached.
-    // We don't add the successor in the case of a while/for loop that aborts
-    // because the caller of endLoop will be wiring up a special empty else
-    // block instead.
-    if (branchExitBlock != null) {
-      branchExitBlock.addSuccessor(loopExitBlock);
-    }
-    // Update the phis at the loop entry with the current values of locals.
-    localsHandler.endLoop(loopEntry);
-
-    // Start generating code for the exit block.
-    open(loopExitBlock);
-
-    // Create a new localsHandler for the loopExitBlock with the correct phis.
-    if (!breakHandlers.isEmpty) {
-      if (branchExitBlock != null) {
-        // Add the values of the locals at the end of the condition block to
-        // the phis.  These are the values that flow to the exit if the
-        // condition fails.
-        breakHandlers.add(savedLocals);
-      }
-      localsHandler = savedLocals.mergeMultiple(breakHandlers, loopExitBlock);
-    } else {
-      localsHandler = savedLocals;
-    }
-  }
-
-  HSubGraphBlockInformation wrapStatementGraph(SubGraph statements) {
-    if (statements == null) return null;
-    return new HSubGraphBlockInformation(statements);
-  }
-
-  HSubExpressionBlockInformation wrapExpressionGraph(SubExpression expression) {
-    if (expression == null) return null;
-    return new HSubExpressionBlockInformation(expression);
-  }
-
-  // For while loops, initializer and update are null.
-  // The condition function must return a boolean result.
-  // None of the functions must leave anything on the stack.
-  void handleLoop(ast.Node loop, void initialize(), HInstruction condition(),
-      void update(), void body()) {
-    // Generate:
-    //  <initializer>
-    //  loop-entry:
-    //    if (!<condition>) goto loop-exit;
-    //    <body>
-    //    <updates>
-    //    goto loop-entry;
-    //  loop-exit:
-
-    localsHandler.startLoop(loop);
-
-    // The initializer.
-    SubExpression initializerGraph = null;
-    HBasicBlock startBlock;
-    if (initialize != null) {
-      HBasicBlock initializerBlock = openNewBlock();
-      startBlock = initializerBlock;
-      initialize();
-      assert(!isAborted());
-      initializerGraph = new SubExpression(initializerBlock, current);
-    }
-
-    loopNesting++;
-    JumpHandler jumpHandler = beginLoopHeader(loop);
-    HLoopInformation loopInfo = current.loopInformation;
-    HBasicBlock conditionBlock = current;
-    if (startBlock == null) startBlock = conditionBlock;
-
-    HInstruction conditionInstruction = condition();
-    HBasicBlock conditionEndBlock =
-        close(new HLoopBranch(conditionInstruction));
-    SubExpression conditionExpression =
-        new SubExpression(conditionBlock, conditionEndBlock);
-
-    // Save the values of the local variables at the end of the condition
-    // block.  These are the values that will flow to the loop exit if the
-    // condition fails.
-    LocalsHandler savedLocals = new LocalsHandler.from(localsHandler);
-
-    // The body.
-    HBasicBlock beginBodyBlock = addNewBlock();
-    conditionEndBlock.addSuccessor(beginBodyBlock);
-    open(beginBodyBlock);
-
-    localsHandler.enterLoopBody(loop);
-    body();
-
-    SubGraph bodyGraph = new SubGraph(beginBodyBlock, lastOpenedBlock);
-    HBasicBlock bodyBlock = current;
-    if (current != null) close(new HGoto());
-
-    SubExpression updateGraph;
-
-    bool loopIsDegenerate = !jumpHandler.hasAnyContinue() && bodyBlock == null;
-    if (!loopIsDegenerate) {
-      // Update.
-      // We create an update block, even when we are in a while loop. There the
-      // update block is the jump-target for continue statements. We could avoid
-      // the creation if there is no continue, but for now we always create it.
-      HBasicBlock updateBlock = addNewBlock();
-
-      List<LocalsHandler> continueHandlers = <LocalsHandler>[];
-      jumpHandler
-          .forEachContinue((HContinue instruction, LocalsHandler locals) {
-        instruction.block.addSuccessor(updateBlock);
-        continueHandlers.add(locals);
-      });
-
-      if (bodyBlock != null) {
-        continueHandlers.add(localsHandler);
-        bodyBlock.addSuccessor(updateBlock);
-      }
-
-      open(updateBlock);
-      localsHandler =
-          continueHandlers[0].mergeMultiple(continueHandlers, updateBlock);
-
-      List<LabelDefinition> labels = jumpHandler.labels();
-      JumpTarget target = elements.getTargetDefinition(loop);
-      if (!labels.isEmpty) {
-        beginBodyBlock.setBlockFlow(
-            new HLabeledBlockInformation(
-                new HSubGraphBlockInformation(bodyGraph), jumpHandler.labels(),
-                isContinue: true),
-            updateBlock);
-      } else if (target != null && target.isContinueTarget) {
-        beginBodyBlock.setBlockFlow(
-            new HLabeledBlockInformation.implicit(
-                new HSubGraphBlockInformation(bodyGraph), target,
-                isContinue: true),
-            updateBlock);
-      }
-
-      localsHandler.enterLoopUpdates(loop);
-
-      update();
-
-      HBasicBlock updateEndBlock = close(new HGoto());
-      // The back-edge completing the cycle.
-      updateEndBlock.addSuccessor(conditionBlock);
-      updateGraph = new SubExpression(updateBlock, updateEndBlock);
-
-      // Avoid a critical edge from the condition to the loop-exit body.
-      HBasicBlock conditionExitBlock = addNewBlock();
-      open(conditionExitBlock);
-      close(new HGoto());
-      conditionEndBlock.addSuccessor(conditionExitBlock);
-
-      endLoop(conditionBlock, conditionExitBlock, jumpHandler, savedLocals);
-
-      conditionBlock.postProcessLoopHeader();
-      HLoopBlockInformation info = new HLoopBlockInformation(
-          _loopKind(loop),
-          wrapExpressionGraph(initializerGraph),
-          wrapExpressionGraph(conditionExpression),
-          wrapStatementGraph(bodyGraph),
-          wrapExpressionGraph(updateGraph),
-          conditionBlock.loopInformation.target,
-          conditionBlock.loopInformation.labels,
-          sourceInformationBuilder.buildLoop(loop));
-
-      startBlock.setBlockFlow(info, current);
-      loopInfo.loopBlockInformation = info;
-    } else {
-      // The body of the for/while loop always aborts, so there is no back edge.
-      // We turn the code into:
-      // if (condition) {
-      //   body;
-      // } else {
-      //   // We always create an empty else block to avoid critical edges.
-      // }
-      //
-      // If there is any break in the body, we attach a synthetic
-      // label to the if.
-      HBasicBlock elseBlock = addNewBlock();
-      open(elseBlock);
-      close(new HGoto());
-      // Pass the elseBlock as the branchBlock, because that's the block we go
-      // to just before leaving the 'loop'.
-      endLoop(conditionBlock, elseBlock, jumpHandler, savedLocals);
-
-      SubGraph elseGraph = new SubGraph(elseBlock, elseBlock);
-      // Remove the loop information attached to the header.
-      conditionBlock.loopInformation = null;
-
-      // Remove the [HLoopBranch] instruction and replace it with
-      // [HIf].
-      HInstruction condition = conditionEndBlock.last.inputs[0];
-      conditionEndBlock.addAtExit(new HIf(condition));
-      conditionEndBlock.addSuccessor(elseBlock);
-      conditionEndBlock.remove(conditionEndBlock.last);
-      HIfBlockInformation info = new HIfBlockInformation(
-          wrapExpressionGraph(conditionExpression),
-          wrapStatementGraph(bodyGraph),
-          wrapStatementGraph(elseGraph));
-
-      conditionEndBlock.setBlockFlow(info, current);
-      HIf ifBlock = conditionEndBlock.last;
-      ifBlock.blockInformation = conditionEndBlock.blockFlow;
-
-      // If the body has any break, attach a synthesized label to the
-      // if block.
-      if (jumpHandler.hasAnyBreak()) {
-        JumpTarget target = elements.getTargetDefinition(loop);
-        LabelDefinition label = target.addLabel(null, 'loop');
-        label.setBreakTarget();
-        SubGraph labelGraph = new SubGraph(conditionBlock, current);
-        HLabeledBlockInformation labelInfo = new HLabeledBlockInformation(
-            new HSubGraphBlockInformation(labelGraph),
-            <LabelDefinition>[label]);
-
-        conditionBlock.setBlockFlow(labelInfo, current);
-
-        jumpHandler.forEachBreak((HBreak breakInstruction, _) {
-          HBasicBlock block = breakInstruction.block;
-          block.addAtExit(new HBreak.toLabel(label));
-          block.remove(breakInstruction);
-        });
-      }
-    }
-    jumpHandler.close();
-    loopNesting--;
-  }
-
   visitFor(ast.For node) {
     assert(isReachable);
     assert(node.body != null);
@@ -3093,6 +1672,7 @@ class SsaBuilder extends ast.Visitor
         pop();
       }
     }
+
     HInstruction buildCondition() {
       if (node.condition == null) {
         return graph.addConstantBool(true, compiler);
@@ -3100,6 +1680,7 @@ class SsaBuilder extends ast.Visitor
       visit(node.condition);
       return popBoolified();
     }
+
     void buildUpdate() {
       for (ast.Expression expression in node.update) {
         visit(expression);
@@ -3109,10 +1690,13 @@ class SsaBuilder extends ast.Visitor
         pop();
       }
     }
+
     void buildBody() {
       visit(node.body);
     }
-    handleLoop(node, buildInitializer, buildCondition, buildUpdate, buildBody);
+
+    loopHandler.handleLoop(
+        node, buildInitializer, buildCondition, buildUpdate, buildBody);
   }
 
   visitWhile(ast.While node) {
@@ -3121,7 +1705,8 @@ class SsaBuilder extends ast.Visitor
       visit(node.condition);
       return popBoolified();
     }
-    handleLoop(node, () {}, buildCondition, () {}, () {
+
+    loopHandler.handleLoop(node, () {}, buildCondition, () {}, () {
       visit(node.body);
     });
   }
@@ -3130,8 +1715,8 @@ class SsaBuilder extends ast.Visitor
     assert(isReachable);
     LocalsHandler savedLocals = new LocalsHandler.from(localsHandler);
     localsHandler.startLoop(node);
-    loopNesting++;
-    JumpHandler jumpHandler = beginLoopHeader(node);
+    loopDepth++;
+    JumpHandler jumpHandler = loopHandler.beginLoopHeader(node);
     HLoopInformation loopInfo = current.loopInformation;
     HBasicBlock loopEntryBlock = current;
     HBasicBlock bodyEntryBlock = current;
@@ -3218,7 +1803,8 @@ class SsaBuilder extends ast.Visitor
       close(new HGoto());
       conditionEndBlock.addSuccessor(conditionExitBlock);
 
-      endLoop(loopEntryBlock, conditionExitBlock, jumpHandler, localsHandler);
+      loopHandler.endLoop(
+          loopEntryBlock, conditionExitBlock, jumpHandler, localsHandler);
 
       loopEntryBlock.postProcessLoopHeader();
       SubGraph bodyGraph = new SubGraph(loopEntryBlock, bodyExitBlock);
@@ -3241,7 +1827,7 @@ class SsaBuilder extends ast.Visitor
       if (jumpHandler.hasAnyBreak()) {
         // Null branchBlock because the body of the do-while loop always aborts,
         // so we never get to the condition.
-        endLoop(loopEntryBlock, null, jumpHandler, localsHandler);
+        loopHandler.endLoop(loopEntryBlock, null, jumpHandler, localsHandler);
 
         // Since the body of the loop has a break, we attach a synthesized label
         // to the body.
@@ -3260,12 +1846,13 @@ class SsaBuilder extends ast.Visitor
       }
     }
     jumpHandler.close();
-    loopNesting--;
+    loopDepth--;
   }
 
   visitFunctionExpression(ast.FunctionExpression node) {
-    ClosureClassMap nestedClosureData =
-        compiler.closureToClassMapper.getMappingForNestedFunction(node);
+    LocalFunctionElement methodElement = elements[node];
+    ClosureClassMap nestedClosureData = compiler.closureToClassMapper
+        .getClosureToClassMapping(methodElement.resolvedAst);
     assert(nestedClosureData != null);
     assert(nestedClosureData.closureClassElement != null);
     ClosureClassElement closureClassElement =
@@ -3285,11 +1872,10 @@ class SsaBuilder extends ast.Visitor
     });
 
     TypeMask type =
-        new TypeMask.nonNullExact(closureClassElement, compiler.world);
-    push(new HForeignNew(closureClassElement, type, capturedVariables)
+        new TypeMask.nonNullExact(closureClassElement, compiler.closedWorld);
+    push(new HCreate(closureClassElement, capturedVariables, type)
       ..sourceInformation = sourceInformationBuilder.buildCreate(node));
 
-    Element methodElement = nestedClosureData.closureElement;
     registry?.registerInstantiatedClosure(methodElement);
   }
 
@@ -3317,43 +1903,71 @@ class SsaBuilder extends ast.Visitor
 
   visitIf(ast.If node) {
     assert(isReachable);
-    handleIf(node,
+    handleIf(
+        node: node,
         visitCondition: () => visit(node.condition),
         visitThen: () => visit(node.thenPart),
         visitElse: node.elsePart != null ? () => visit(node.elsePart) : null,
         sourceInformation: sourceInformationBuilder.buildIf(node));
   }
 
-  void handleIf(ast.Node diagnosticNode,
-      {void visitCondition(),
-      void visitThen(),
-      void visitElse(),
-      SourceInformation sourceInformation}) {
-    SsaBranchBuilder branchBuilder = new SsaBranchBuilder(this, diagnosticNode);
-    branchBuilder.handleIf(visitCondition, visitThen, visitElse,
-        sourceInformation: sourceInformation);
-  }
-
   @override
   void visitIfNull(ast.Send node, ast.Node left, ast.Node right, _) {
-    SsaBranchBuilder brancher = new SsaBranchBuilder(this, node);
+    SsaBranchBuilder brancher = new SsaBranchBuilder(this, compiler, node);
     brancher.handleIfNull(() => visit(left), () => visit(right));
+  }
+
+  /// Optimizes logical binary where the left is also a logical binary.
+  ///
+  /// This method transforms the operator by optimizing the case where [left] is
+  /// a logical "and" or logical "or". Then it uses [branchBuilder] to build the
+  /// graph for the optimized expression.
+  ///
+  /// For example, `(x && y) && z` is transformed into `x && (y && z)`:
+  ///
+  ///     t0 = boolify(x);
+  ///     if (t0) {
+  ///       t1 = boolify(y);
+  ///       if (t1) {
+  ///         t2 = boolify(z);
+  ///       }
+  ///       t3 = phi(t2, false);
+  ///     }
+  ///     result = phi(t3, false);
+  void handleLogicalBinaryWithLeftNode(
+      ast.Node left, void visitRight(), SsaBranchBuilder branchBuilder,
+      {bool isAnd}) {
+    ast.Send send = left.asSend();
+    if (send != null && (isAnd ? send.isLogicalAnd : send.isLogicalOr)) {
+      ast.Node newLeft = send.receiver;
+      Link<ast.Node> link = send.argumentsNode.nodes;
+      assert(link.tail.isEmpty);
+      ast.Node middle = link.head;
+      handleLogicalBinaryWithLeftNode(
+          newLeft,
+          () => handleLogicalBinaryWithLeftNode(
+              middle, visitRight, branchBuilder,
+              isAnd: isAnd),
+          branchBuilder,
+          isAnd: isAnd);
+    } else {
+      branchBuilder.handleLogicalBinary(() => visit(left), visitRight,
+          isAnd: isAnd);
+    }
   }
 
   @override
   void visitLogicalAnd(ast.Send node, ast.Node left, ast.Node right, _) {
-    SsaBranchBuilder branchBuilder = new SsaBranchBuilder(this, node);
-    branchBuilder.handleLogicalAndOrWithLeftNode(left, () {
-      visit(right);
-    }, isAnd: true);
+    SsaBranchBuilder branchBuilder = new SsaBranchBuilder(this, compiler, node);
+    handleLogicalBinaryWithLeftNode(left, () => visit(right), branchBuilder,
+        isAnd: true);
   }
 
   @override
   void visitLogicalOr(ast.Send node, ast.Node left, ast.Node right, _) {
-    SsaBranchBuilder branchBuilder = new SsaBranchBuilder(this, node);
-    branchBuilder.handleLogicalAndOrWithLeftNode(left, () {
-      visit(right);
-    }, isAnd: false);
+    SsaBranchBuilder branchBuilder = new SsaBranchBuilder(this, compiler, node);
+    handleLogicalBinaryWithLeftNode(left, () => visit(right), branchBuilder,
+        isAnd: false);
   }
 
   @override
@@ -3383,8 +1997,8 @@ class SsaBuilder extends ast.Visitor
       }
     }
 
-    pushInvokeDynamic(
-        node, elements.getSelector(node), elements.getTypeMask(node), [operand],
+    pushInvokeDynamic(node, elements.getSelector(node),
+        elementInferenceResults.typeOfSend(node), [operand],
         sourceInformation: sourceInformationBuilder.buildGeneric(node));
   }
 
@@ -3411,8 +2025,12 @@ class SsaBuilder extends ast.Visitor
   }
 
   void handleBinary(ast.Send node, ast.Node left, ast.Node right) {
-    visitBinarySend(visitAndPop(left), visitAndPop(right),
-        elements.getSelector(node), elements.getTypeMask(node), node,
+    visitBinarySend(
+        visitAndPop(left),
+        visitAndPop(right),
+        elements.getSelector(node),
+        elementInferenceResults.typeOfSend(node),
+        node,
         sourceInformation:
             sourceInformationBuilder.buildGeneric(node.selector));
   }
@@ -3519,7 +2137,8 @@ class SsaBuilder extends ast.Visitor
     // handler in the case of lists, because the constant handler
     // does not look at elements in the list.
     TypeMask type = TypeMaskFactory.inferredTypeForElement(field, compiler);
-    if (!type.containsAll(compiler.world) && !instruction.isConstantNull()) {
+    if (!type.containsAll(compiler.closedWorld) &&
+        !instruction.isConstantNull()) {
       // TODO(13429): The inferrer should know that an element
       // cannot be null.
       instruction.instructionType = type.nonNullable();
@@ -3544,8 +2163,8 @@ class SsaBuilder extends ast.Visitor
       } else {
         // TODO(5346): Try to avoid the need for calling [declaration] before
         // creating an [HStatic].
-        HInstruction instruction = new HStatic(field.declaration,
-            TypeMaskFactory.inferredTypeForElement(field, compiler))
+        HInstruction instruction = new HStatic(
+            field, TypeMaskFactory.inferredTypeForElement(field, compiler))
           ..sourceInformation = sourceInformation;
         push(instruction);
       }
@@ -3572,17 +2191,18 @@ class SsaBuilder extends ast.Visitor
   /// Generate a dynamic getter invocation.
   void generateDynamicGet(ast.Send node) {
     HInstruction receiver = generateInstanceSendReceiver(node);
-    generateInstanceGetterWithCompiledReceiver(
-        node, elements.getSelector(node), elements.getTypeMask(node), receiver);
+    generateInstanceGetterWithCompiledReceiver(node, elements.getSelector(node),
+        elementInferenceResults.typeOfSend(node), receiver);
   }
 
-  /// Generate a closurization of the static or top level [function].
-  void generateStaticFunctionGet(ast.Send node, MethodElement function) {
+  /// Generate a closurization of the static or top level [method].
+  void generateStaticFunctionGet(ast.Send node, MethodElement method) {
+    assert(method.isDeclaration);
     // TODO(5346): Try to avoid the need for calling [declaration] before
     // creating an [HStatic].
     SourceInformation sourceInformation =
         sourceInformationBuilder.buildGet(node);
-    push(new HStatic(function.declaration, backend.nonNullType)
+    push(new HStatic(method, backend.nonNullType)
       ..sourceInformation = sourceInformation);
   }
 
@@ -3611,7 +2231,7 @@ class SsaBuilder extends ast.Visitor
     // we will be able to later compress it as:
     //   t1 || t1.x
     HInstruction expression;
-    SsaBranchBuilder brancher = new SsaBranchBuilder(this, node);
+    SsaBranchBuilder brancher = new SsaBranchBuilder(this, compiler, node);
     brancher.handleConditional(
         () {
           expression = visitAndPop(receiver);
@@ -3622,15 +2242,9 @@ class SsaBuilder extends ast.Visitor
           generateInstanceGetterWithCompiledReceiver(
               node,
               elements.getSelector(node),
-              elements.getTypeMask(node),
+              elementInferenceResults.typeOfSend(node),
               expression);
         });
-  }
-
-  /// Pushes a boolean checking [expression] against null.
-  pushCheckNull(HInstruction expression) {
-    push(new HIdentity(
-        expression, graph.addConstantNull(compiler), null, backend.boolType));
   }
 
   @override
@@ -3693,9 +2307,7 @@ class SsaBuilder extends ast.Visitor
     if (selector == null) {
       assert(send != null);
       selector = elements.getSelector(send);
-      if (mask == null) {
-        mask = elements.getTypeMask(send);
-      }
+      mask ??= elementInferenceResults.typeOfSend(send);
     }
     if (location == null) {
       assert(send != null);
@@ -3733,9 +2345,9 @@ class SsaBuilder extends ast.Visitor
         pushInvokeStatic(location, element, <HInstruction>[value]);
         pop();
       } else {
-        VariableElement field = element;
-        value = potentiallyCheckOrTrustType(value, field.type);
-        addWithPosition(new HStaticStore(element, value), location);
+        FieldElement field = element;
+        value = typeBuilder.potentiallyCheckOrTrustType(value, field.type);
+        addWithPosition(new HStaticStore(field, value), location);
       }
       stack.add(value);
     } else if (Elements.isError(element)) {
@@ -3751,7 +2363,7 @@ class SsaBuilder extends ast.Visitor
         value.sourceElement = local;
       }
       HInstruction checkedOrTrusted =
-          potentiallyCheckOrTrustType(value, local.type);
+          typeBuilder.potentiallyCheckOrTrustType(value, local.type);
       if (!identical(checkedOrTrusted, value)) {
         pop();
         stack.add(checkedOrTrusted);
@@ -3773,56 +2385,22 @@ class SsaBuilder extends ast.Visitor
     return new HLiteralList(inputs, backend.extendableArrayType);
   }
 
-  // TODO(karlklose): change construction of the representations to be GVN'able
-  // (dartbug.com/7182).
-  HInstruction buildTypeArgumentRepresentations(DartType type) {
-    // Compute the representation of the type arguments, including access
-    // to the runtime type information for type variables as instructions.
-    if (type.isTypeVariable) {
-      return buildLiteralList(<HInstruction>[addTypeVariableReference(type)]);
-    } else {
-      assert(type.element.isClass);
-      InterfaceType interface = type;
-      List<HInstruction> inputs = <HInstruction>[];
-      List<js.Expression> templates = <js.Expression>[];
-      for (DartType argument in interface.typeArguments) {
-        // As we construct the template in stages, we have to make sure that for
-        // each part the generated sub-template's holes match the index of the
-        // inputs that are later used to instantiate it. We do this by starting
-        // the indexing with the number of inputs from previous sub-templates.
-        templates.add(rtiEncoder.getTypeRepresentationWithPlaceholders(argument,
-            (variable) {
-          HInstruction runtimeType = addTypeVariableReference(variable);
-          inputs.add(runtimeType);
-        }, firstPlaceholderIndex: inputs.length));
-      }
-      // TODO(sra): This is a fresh template each time.  We can't let the
-      // template manager build them.
-      js.Template code =
-          new js.Template(null, new js.ArrayInitializer(templates));
-      HInstruction representation = new HForeignCode(
-          code, backend.readableArrayType, inputs,
-          nativeBehavior: native.NativeBehavior.PURE_ALLOCATION);
-      return representation;
-    }
-  }
-
   @override
   void visitAs(ast.Send node, ast.Node expression, DartType type, _) {
     HInstruction expressionInstruction = visitAndPop(expression);
     if (type.isMalformed) {
-      String message;
       if (type is MalformedType) {
         ErroneousElement element = type.element;
-        message = element.message;
+        generateTypeError(node, element.message);
       } else {
         assert(type is MethodTypeVariableType);
-        message = "Method type variables are not reified.";
+        stack.add(expressionInstruction);
       }
-      generateTypeError(node, message);
     } else {
-      HInstruction converted = buildTypeConversion(expressionInstruction,
-          localsHandler.substInContext(type), HTypeConversion.CAST_TYPE_CHECK);
+      HInstruction converted = typeBuilder.buildTypeConversion(
+          expressionInstruction,
+          localsHandler.substInContext(type),
+          HTypeConversion.CAST_TYPE_CHECK);
       if (converted != expressionInstruction) add(converted);
       stack.add(converted);
     }
@@ -3868,7 +2446,8 @@ class SsaBuilder extends ast.Visitor
           arguments);
       return new HIs.compound(type, expression, pop(), backend.boolType);
     } else if (type.isTypeVariable) {
-      HInstruction runtimeType = addTypeVariableReference(type);
+      HInstruction runtimeType =
+          typeBuilder.addTypeVariableReference(type, sourceElement);
       Element helper = helpers.checkSubtypeOfRuntimeType;
       List<HInstruction> inputs = <HInstruction>[expression, runtimeType];
       pushInvokeStatic(null, helper, inputs, typeMask: backend.boolType);
@@ -3877,11 +2456,13 @@ class SsaBuilder extends ast.Visitor
     } else if (RuntimeTypes.hasTypeArguments(type)) {
       ClassElement element = type.element;
       Element helper = helpers.checkSubtype;
-      HInstruction representations = buildTypeArgumentRepresentations(type);
+      HInstruction representations =
+          typeBuilder.buildTypeArgumentRepresentations(type, sourceElement);
       add(representations);
       js.Name operator = backend.namer.operatorIs(element);
       HInstruction isFieldName = addConstantStringFromName(operator);
-      HInstruction asFieldName = compiler.world.hasAnyStrictSubtype(element)
+      HInstruction asFieldName = compiler.closedWorld
+              .hasAnyStrictSubtype(element)
           ? addConstantStringFromName(backend.namer.substitutionName(element))
           : graph.addConstantNull(compiler);
       List<HInstruction> inputs = <HInstruction>[
@@ -3902,11 +2483,6 @@ class SsaBuilder extends ast.Visitor
       return new HIs.raw(
           type, expression, invokeInterceptor(expression), backend.boolType);
     }
-  }
-
-  HInstruction buildFunctionType(FunctionType type) {
-    type.accept(new TypeBuilder(compiler.world), this);
-    return pop();
   }
 
   void addDynamicSendArgumentsToList(ast.Send node, List<HInstruction> list) {
@@ -3983,7 +2559,7 @@ class SsaBuilder extends ast.Visitor
 
   void _generateDynamicSend(ast.Send node, HInstruction receiver) {
     Selector selector = elements.getSelector(node);
-    TypeMask mask = elements.getTypeMask(node);
+    TypeMask mask = elementInferenceResults.typeOfSend(node);
     SourceInformation sourceInformation =
         sourceInformationBuilder.buildCall(node, node.selector);
 
@@ -4010,7 +2586,7 @@ class SsaBuilder extends ast.Visitor
       ast.NodeList arguments, Selector selector, _) {
     /// Desugar `exp?.m()` to `(t1 = exp) == null ? t1 : t1.m()`
     HInstruction receiver;
-    SsaBranchBuilder brancher = new SsaBranchBuilder(this, node);
+    SsaBranchBuilder brancher = new SsaBranchBuilder(this, compiler, node);
     brancher.handleConditional(() {
       receiver = generateInstanceSendReceiver(node);
       pushCheckNull(receiver);
@@ -4410,7 +2986,7 @@ class SsaBuilder extends ast.Visitor
 
   void handleForeignSend(ast.Send node, FunctionElement element) {
     String name = element.name;
-    if (name == 'JS') {
+    if (name == BackendHelpers.JS) {
       handleForeignJs(node);
     } else if (name == 'JS_CURRENT_ISOLATE_CONTEXT') {
       handleForeignJsCurrentIsolateContext(node);
@@ -4426,15 +3002,15 @@ class SsaBuilder extends ast.Visitor
       handleForeignJsGetStaticState(node);
     } else if (name == 'JS_GET_NAME') {
       handleForeignJsGetName(node);
-    } else if (name == 'JS_EMBEDDED_GLOBAL') {
+    } else if (name == BackendHelpers.JS_EMBEDDED_GLOBAL) {
       handleForeignJsEmbeddedGlobal(node);
-    } else if (name == 'JS_BUILTIN') {
+    } else if (name == BackendHelpers.JS_BUILTIN) {
       handleForeignJsBuiltin(node);
     } else if (name == 'JS_GET_FLAG') {
       handleForeignJsGetFlag(node);
     } else if (name == 'JS_EFFECT') {
       stack.add(graph.addConstantNull(compiler));
-    } else if (name == 'JS_INTERCEPTOR_CONSTANT') {
+    } else if (name == BackendHelpers.JS_INTERCEPTOR_CONSTANT) {
       handleJsInterceptorConstant(node);
     } else if (name == 'JS_STRING_CONCAT') {
       handleJsStringConcat(node);
@@ -4447,7 +3023,7 @@ class SsaBuilder extends ast.Visitor
       SourceInformation sourceInformation) {
     // Until now we only handle these as getters.
     invariant(node, deferredLoader.isDeferredLoaderGetter);
-    Element loadFunction = compiler.loadLibraryFunction;
+    FunctionEntity loadFunction = helpers.loadLibraryWrapper;
     PrefixElement prefixElement = deferredLoader.enclosingElement;
     String loadId =
         compiler.deferredLoadTask.getImportDeferName(node, prefixElement);
@@ -4467,7 +3043,7 @@ class SsaBuilder extends ast.Visitor
     if (!Selectors.noSuchMethod_.signatureApplies(element)) {
       element = coreClasses.objectClass.lookupMember(Identifiers.noSuchMethod_);
     }
-    if (compiler.enabledInvokeOn && !element.enclosingClass.isObject) {
+    if (backend.hasInvokeOnSupport && !element.enclosingClass.isObject) {
       // Register the call as dynamic if [noSuchMethod] on the super
       // class is _not_ the default implementation from [Object], in
       // case the [noSuchMethod] implementation calls
@@ -4516,17 +3092,16 @@ class SsaBuilder extends ast.Visitor
   }
 
   /// Generate a call to a super method or constructor.
-  void generateSuperInvoke(ast.Send node, FunctionElement function,
+  void generateSuperInvoke(ast.Send node, MethodElement method,
       SourceInformation sourceInformation) {
     // TODO(5347): Try to avoid the need for calling [implementation] before
     // calling [makeStaticArgumentList].
     Selector selector = elements.getSelector(node);
-    assert(invariant(
-        node, selector.applies(function.implementation, compiler.world),
-        message: "$selector does not apply to ${function.implementation}"));
+    assert(invariant(node, selector.applies(method.implementation),
+        message: "$selector does not apply to ${method.implementation}"));
     List<HInstruction> inputs = makeStaticArgumentList(
-        selector.callStructure, node.arguments, function.implementation);
-    push(buildInvokeSuper(selector, function, inputs, sourceInformation));
+        selector.callStructure, node.arguments, method.implementation);
+    push(buildInvokeSuper(selector, method, inputs, sourceInformation));
   }
 
   /// Access the value from the super [element].
@@ -4687,135 +3262,13 @@ class SsaBuilder extends ast.Visitor
   }
 
   bool needsSubstitutionForTypeVariableAccess(ClassElement cls) {
-    ClassWorld classWorld = compiler.world;
-    if (classWorld.isUsedAsMixin(cls)) return true;
+    ClosedWorld closedWorld = compiler.closedWorld;
+    if (closedWorld.isUsedAsMixin(cls)) return true;
 
-    return compiler.world.anyStrictSubclassOf(cls, (ClassElement subclass) {
+    return compiler.closedWorld.anyStrictSubclassOf(cls,
+        (ClassElement subclass) {
       return !rti.isTrivialSubstitution(subclass, cls);
     });
-  }
-
-  /**
-   * Generate code to extract the type arguments from the object, substitute
-   * them as an instance of the type we are testing against (if necessary), and
-   * extract the type argument by the index of the variable in the list of type
-   * variables for that class.
-   */
-  HInstruction readTypeVariable(ClassElement cls, TypeVariableElement variable,
-      {SourceInformation sourceInformation}) {
-    assert(sourceElement.isInstanceMember);
-
-    HInstruction target = localsHandler.readThis();
-    HConstant index = graph.addConstantInt(variable.index, compiler);
-
-    if (needsSubstitutionForTypeVariableAccess(cls)) {
-      // TODO(ahe): Creating a string here is unfortunate. It is slow (due to
-      // string concatenation in the implementation), and may prevent
-      // segmentation of '$'.
-      js.Name substitutionName = backend.namer.runtimeTypeName(cls);
-      HInstruction substitutionNameInstr =
-          graph.addConstantStringFromName(substitutionName, compiler);
-      pushInvokeStatic(null, helpers.getRuntimeTypeArgument,
-          [target, substitutionNameInstr, index],
-          typeMask: backend.dynamicType, sourceInformation: sourceInformation);
-    } else {
-      pushInvokeStatic(null, helpers.getTypeArgumentByIndex, [target, index],
-          typeMask: backend.dynamicType, sourceInformation: sourceInformation);
-    }
-    return pop();
-  }
-
-  // TODO(karlklose): this is needed to avoid a bug where the resolved type is
-  // not stored on a type annotation in the closure translator. Remove when
-  // fixed.
-  bool hasDirectLocal(Local local) {
-    return !localsHandler.isAccessedDirectly(local) ||
-        localsHandler.directLocals[local] != null;
-  }
-
-  /**
-   * Helper to create an instruction that gets the value of a type variable.
-   */
-  HInstruction addTypeVariableReference(TypeVariableType type,
-      {SourceInformation sourceInformation}) {
-    assert(assertTypeInContext(type));
-    Element member = sourceElement;
-    bool isClosure = member.enclosingElement.isClosure;
-    if (isClosure) {
-      ClosureClassElement closureClass = member.enclosingElement;
-      member = closureClass.methodElement;
-      member = member.outermostEnclosingMemberOrTopLevel;
-    }
-    bool isInConstructorContext =
-        member.isConstructor || member.isGenerativeConstructorBody;
-    Local typeVariableLocal = localsHandler.getTypeVariableAsLocal(type);
-    if (isClosure) {
-      if (member.isFactoryConstructor ||
-          (isInConstructorContext && hasDirectLocal(typeVariableLocal))) {
-        // The type variable is used from a closure in a factory constructor.
-        // The value of the type argument is stored as a local on the closure
-        // itself.
-        return localsHandler.readLocal(typeVariableLocal,
-            sourceInformation: sourceInformation);
-      } else if (member.isFunction ||
-          member.isGetter ||
-          member.isSetter ||
-          isInConstructorContext) {
-        // The type variable is stored on the "enclosing object" and needs to be
-        // accessed using the this-reference in the closure.
-        return readTypeVariable(member.enclosingClass, type.element,
-            sourceInformation: sourceInformation);
-      } else {
-        assert(member.isField);
-        // The type variable is stored in a parameter of the method.
-        return localsHandler.readLocal(typeVariableLocal);
-      }
-    } else if (isInConstructorContext ||
-        // When [member] is a field, we can be either
-        // generating a checked setter or inlining its
-        // initializer in a constructor. An initializer is
-        // never built standalone, so in that case [target] is not
-        // the [member] itself.
-        (member.isField && member != target)) {
-      // The type variable is stored in a parameter of the method.
-      return localsHandler.readLocal(typeVariableLocal,
-          sourceInformation: sourceInformation);
-    } else if (member.isInstanceMember) {
-      // The type variable is stored on the object.
-      return readTypeVariable(member.enclosingClass, type.element,
-          sourceInformation: sourceInformation);
-    } else {
-      reporter.internalError(
-          type.element, 'Unexpected type variable in static context.');
-      return null;
-    }
-  }
-
-  HInstruction analyzeTypeArgument(DartType argument,
-      {SourceInformation sourceInformation}) {
-    assert(assertTypeInContext(argument));
-    if (argument.treatAsDynamic) {
-      // Represent [dynamic] as [null].
-      return graph.addConstantNull(compiler);
-    }
-
-    if (argument.isTypeVariable) {
-      return addTypeVariableReference(argument,
-          sourceInformation: sourceInformation);
-    }
-
-    List<HInstruction> inputs = <HInstruction>[];
-
-    js.Expression template =
-        rtiEncoder.getTypeRepresentationWithPlaceholders(argument, (variable) {
-      inputs.add(addTypeVariableReference(variable));
-    });
-
-    js.Template code = new js.Template(null, template);
-    HInstruction result = new HForeignCode(code, backend.stringType, inputs,
-        nativeBehavior: native.NativeBehavior.PURE);
-    add(result);
-    return result;
   }
 
   HInstruction handleListConstructor(
@@ -4826,29 +3279,15 @@ class SsaBuilder extends ast.Visitor
     List<HInstruction> inputs = <HInstruction>[];
     type = localsHandler.substInContext(type);
     type.typeArguments.forEach((DartType argument) {
-      inputs.add(analyzeTypeArgument(argument));
+      inputs.add(typeBuilder.analyzeTypeArgument(argument, sourceElement));
     });
     // TODO(15489): Register at codegen.
     registry?.registerInstantiation(type);
-    return callSetRuntimeTypeInfo(type.element, inputs, newObject);
+    return callSetRuntimeTypeInfoWithTypeArguments(type, inputs, newObject);
   }
 
-  void copyRuntimeTypeInfo(HInstruction source, HInstruction target) {
-    Element copyHelper = helpers.copyTypeArguments;
-    pushInvokeStatic(null, copyHelper, [source, target],
-        sourceInformation: target.sourceInformation);
-    pop();
-  }
-
-  HInstruction callSetRuntimeTypeInfo(ClassElement element,
-      List<HInstruction> rtiInputs, HInstruction newObject) {
-    if (!backend.classNeedsRti(element) || element.typeVariables.isEmpty) {
-      return newObject;
-    }
-
-    HInstruction typeInfo = buildLiteralList(rtiInputs);
-    add(typeInfo);
-
+  HInstruction callSetRuntimeTypeInfo(
+      HInstruction typeInfo, HInstruction newObject) {
     // Set the runtime type information on the object.
     Element typeInfoSetterElement = helpers.setRuntimeTypeInfo;
     pushInvokeStatic(
@@ -4863,7 +3302,7 @@ class SsaBuilder extends ast.Visitor
         stack.last is HInvokeStatic || stack.last == newObject,
         message: "Unexpected `stack.last`: Found ${stack.last}, "
             "expected ${newObject} or an HInvokeStatic. "
-            "State: element=$element, rtiInputs=$rtiInputs, stack=$stack."));
+            "State: typeInfo=$typeInfo, stack=$stack."));
     stack.last.instructionType = newObject.instructionType;
     return pop();
   }
@@ -4884,26 +3323,24 @@ class SsaBuilder extends ast.Visitor
           Elements.isFilledListConstructorCall(
               originalElement, send, compiler)) {
         isFixedList = true;
-        TypeMask inferred =
-            TypeMaskFactory.inferredForNode(sourceElement, send, compiler);
-        return inferred.containsAll(compiler.world)
+        TypeMask inferred = _inferredTypeOfNewList(send);
+        return inferred.containsAll(compiler.closedWorld)
             ? backend.fixedArrayType
             : inferred;
       } else if (isGrowableListConstructorCall) {
-        TypeMask inferred =
-            TypeMaskFactory.inferredForNode(sourceElement, send, compiler);
-        return inferred.containsAll(compiler.world)
+        TypeMask inferred = _inferredTypeOfNewList(send);
+        return inferred.containsAll(compiler.closedWorld)
             ? backend.extendableArrayType
             : inferred;
       } else if (Elements.isConstructorOfTypedArraySubclass(
           originalElement, compiler)) {
         isFixedList = true;
-        TypeMask inferred =
-            TypeMaskFactory.inferredForNode(sourceElement, send, compiler);
+        TypeMask inferred = _inferredTypeOfNewList(send);
         ClassElement cls = element.enclosingClass;
         assert(backend.isNative(cls.thisType.element));
-        return inferred.containsAll(compiler.world)
-            ? new TypeMask.nonNullExact(cls.thisType.element, compiler.world)
+        return inferred.containsAll(compiler.closedWorld)
+            ? new TypeMask.nonNullExact(
+                cls.thisType.element, compiler.closedWorld)
             : inferred;
       } else if (element.isGenerativeConstructor) {
         ClassElement cls = element.enclosingClass;
@@ -4912,7 +3349,7 @@ class SsaBuilder extends ast.Visitor
           return new TypeMask.nonNullEmpty();
         } else {
           return new TypeMask.nonNullExact(
-              cls.thisType.element, compiler.world);
+              cls.thisType.element, compiler.closedWorld);
         }
       } else {
         return TypeMaskFactory.inferredReturnTypeForElement(
@@ -4927,7 +3364,7 @@ class SsaBuilder extends ast.Visitor
     constructor = constructorImplementation.effectiveTarget;
 
     final bool isSymbolConstructor =
-        constructorDeclaration == compiler.symbolConstructor;
+        compiler.commonElements.isSymbolConstructor(constructorDeclaration);
     final bool isJSArrayTypedConstructor =
         constructorDeclaration == helpers.jsArrayTypedConstructor;
 
@@ -5003,12 +3440,8 @@ class SsaBuilder extends ast.Visitor
     TypeMask elementType = computeType(constructor);
     if (isFixedListConstructorCall) {
       if (!inputs[0].isNumber(compiler)) {
-        HTypeConversion conversion = new HTypeConversion(
-            null,
-            HTypeConversion.ARGUMENT_TYPE_CHECK,
-            backend.numType,
-            inputs[0],
-            null);
+        HTypeConversion conversion = new HTypeConversion(null,
+            HTypeConversion.ARGUMENT_TYPE_CHECK, backend.numType, inputs[0]);
         add(conversion);
         inputs[0] = conversion;
       }
@@ -5031,8 +3464,7 @@ class SsaBuilder extends ast.Visitor
               ? native.NativeThrowBehavior.MAY
               : native.NativeThrowBehavior.NEVER);
       push(foreign);
-      TypesInferrer inferrer = compiler.typesTask.typesInferrer;
-      if (inferrer.isFixedArrayCheckedForGrowable(send)) {
+      if (inferenceResults.isFixedArrayCheckedForGrowable(send)) {
         js.Template code = js.js.parseForeignJS(r'#.fixed$length = Array');
         // We set the instruction as [canThrow] to avoid it being dead code.
         // We need a finer grained side effect.
@@ -5047,7 +3479,7 @@ class SsaBuilder extends ast.Visitor
           sourceInformationBuilder.buildNew(send);
       potentiallyAddTypeArguments(inputs, cls, expectedType);
       addInlinedInstantiation(expectedType);
-      pushInvokeStatic(node, constructor, inputs,
+      pushInvokeStatic(node, constructor.declaration, inputs,
           typeMask: elementType,
           instanceType: expectedType,
           sourceInformation: sourceInformation);
@@ -5058,9 +3490,7 @@ class SsaBuilder extends ast.Visitor
       // Overwrite the element type, in case the allocation site has
       // been inlined.
       newInstance.instructionType = elementType;
-      if (context != null) {
-        context.allocatedFixedLists.add(newInstance);
-      }
+      graph.allocatedFixedLists?.add(newInstance);
     }
 
     // The List constructor forwards to a Dart static method that does
@@ -5077,7 +3507,8 @@ class SsaBuilder extends ast.Visitor
 
     // Finally, if we called a redirecting factory constructor, check the type.
     if (isRedirected) {
-      HInstruction checked = potentiallyCheckOrTrustType(newInstance, type);
+      HInstruction checked =
+          typeBuilder.potentiallyCheckOrTrustType(newInstance, type);
       if (checked != newInstance) {
         pop();
         stack.add(checked);
@@ -5089,11 +3520,10 @@ class SsaBuilder extends ast.Visitor
       List<HInstruction> inputs, ClassElement cls, InterfaceType expectedType,
       {SourceInformation sourceInformation}) {
     if (!backend.classNeedsRti(cls)) return;
-    assert(expectedType.typeArguments.isEmpty ||
-        cls.typeVariables.length == expectedType.typeArguments.length);
+    assert(cls.typeVariables.length == expectedType.typeArguments.length);
     expectedType.typeArguments.forEach((DartType argument) {
-      inputs.add(
-          analyzeTypeArgument(argument, sourceInformation: sourceInformation));
+      inputs.add(typeBuilder.analyzeTypeArgument(argument, sourceElement,
+          sourceInformation: sourceInformation));
     });
   }
 
@@ -5106,7 +3536,7 @@ class SsaBuilder extends ast.Visitor
         new Map<DartType, Set<DartType>>();
     bool definitelyFails = false;
 
-    addTypeVariableBoundCheck(GenericType instance, DartType typeArgument,
+    void addTypeVariableBoundCheck(GenericType instance, DartType typeArgument,
         TypeVariableType typeVariable, DartType bound) {
       if (definitelyFails) return;
 
@@ -5161,7 +3591,7 @@ class SsaBuilder extends ast.Visitor
     List<HInstruction> inputs = makeStaticArgumentList(
         callStructure, node.arguments, function.implementation);
 
-    if (function == compiler.identicalFunction) {
+    if (function == compiler.commonElements.identicalFunction) {
       pushWithPosition(
           new HIdentity(inputs[0], inputs[1], null, backend.boolType), node);
       return;
@@ -5365,7 +3795,7 @@ class SsaBuilder extends ast.Visitor
       generateTypeError(node, "Method type variables are not reified");
     } else {
       DartType type = localsHandler.substInContext(typeVariable);
-      HInstruction value = analyzeTypeArgument(type,
+      HInstruction value = typeBuilder.analyzeTypeArgument(type, sourceElement,
           sourceInformation: sourceInformationBuilder.buildGet(node));
       pushInvokeStatic(node, helpers.runtimeTypeToString, [value],
           typeMask: backend.stringType);
@@ -5485,7 +3915,8 @@ class SsaBuilder extends ast.Visitor
   @override
   void bulkHandleNew(ast.NewExpression node, [_]) {
     Element element = elements[node.send];
-    final bool isSymbolConstructor = element == compiler.symbolConstructor;
+    final bool isSymbolConstructor =
+        element == compiler.commonElements.symbolConstructor;
     if (!Elements.isMalformed(element)) {
       ConstructorElement function = element;
       element = function.effectiveTarget;
@@ -5539,10 +3970,11 @@ class SsaBuilder extends ast.Visitor
     bool isOptimizableOperationOnIndexable(Selector selector, Element element) {
       bool isLength = selector.isGetter && selector.name == "length";
       if (isLength || selector.isIndex) {
-        return compiler.world.isSubtypeOf(
+        return compiler.closedWorld.isSubtypeOf(
             element.enclosingClass.declaration, helpers.jsIndexableClass);
       } else if (selector.isIndexSet) {
-        return compiler.world.isSubtypeOf(element.enclosingClass.declaration,
+        return compiler.closedWorld.isSubtypeOf(
+            element.enclosingClass.declaration,
             helpers.jsMutableIndexableClass);
       } else {
         return false;
@@ -5565,7 +3997,7 @@ class SsaBuilder extends ast.Visitor
       return false;
     }
 
-    Element element = compiler.world.locateSingleElement(selector, mask);
+    Element element = compiler.closedWorld.locateSingleElement(selector, mask);
     if (element != null &&
         !element.isField &&
         !(element.isGetter && selector.isCall) &&
@@ -5614,14 +4046,15 @@ class SsaBuilder extends ast.Visitor
       var filteredArguments = <HInstruction>[];
       var parameterNameMap = new Map<String, js.Expression>();
       params.orderedForEachParameter((ParameterElement parameter) {
-        // TODO(jacobr): throw if parameter names do not match names of property
-        // names in the class.
+        // TODO(jacobr): consider throwing if parameter names do not match
+        // names of properties in the class.
         assert(parameter.isNamed);
         HInstruction argument = arguments[i];
         if (argument != null) {
           filteredArguments.add(argument);
-          parameterNameMap[parameter.name] =
-              new js.InterpolatedExpression(positions++);
+          var jsName =
+              backend.nativeData.getUnescapedJSInteropName(parameter.name);
+          parameterNameMap[jsName] = new js.InterpolatedExpression(positions++);
         }
         i++;
       });
@@ -5660,8 +4093,10 @@ class SsaBuilder extends ast.Visitor
     // Native behavior effects here are similar to native/behavior.dart.
     // The return type is dynamic if we don't trust js-interop type
     // declarations.
-    nativeBehavior.typesReturned.add(compiler
-        .options.trustJSInteropTypeAnnotations ? type : const DynamicType());
+    nativeBehavior.typesReturned.add(
+        compiler.options.trustJSInteropTypeAnnotations
+            ? type
+            : const DynamicType());
 
     // The allocation effects include the declared type if it is native (which
     // includes js interop types).
@@ -5695,10 +4130,11 @@ class SsaBuilder extends ast.Visitor
   }
 
   void pushInvokeStatic(
-      ast.Node location, Element element, List<HInstruction> arguments,
+      ast.Node location, MethodElement element, List<HInstruction> arguments,
       {TypeMask typeMask,
       InterfaceType instanceType,
       SourceInformation sourceInformation}) {
+    assert(element.isDeclaration);
     // TODO(johnniwinther): Use [sourceInformation] instead of [location].
     if (tryInlineMethod(element, null, null, arguments, location,
         instanceType: instanceType)) {
@@ -5709,7 +4145,7 @@ class SsaBuilder extends ast.Visitor
       typeMask =
           TypeMaskFactory.inferredReturnTypeForElement(element, compiler);
     }
-    bool targetCanThrow = !compiler.world.getCannotThrow(element);
+    bool targetCanThrow = !compiler.closedWorld.getCannotThrow(element);
     // TODO(5346): Try to avoid the need for calling [declaration] before
     var instruction;
     if (backend.isJsInterop(element)) {
@@ -5717,14 +4153,15 @@ class SsaBuilder extends ast.Visitor
           invokeJsInteropFunction(element, arguments, sourceInformation);
     } else {
       // creating an [HInvokeStatic].
-      instruction = new HInvokeStatic(element.declaration, arguments, typeMask,
+      instruction = new HInvokeStatic(element, arguments, typeMask,
           targetCanThrow: targetCanThrow)
         ..sourceInformation = sourceInformation;
-      if (!currentInlinedInstantiations.isEmpty) {
+      if (currentInlinedInstantiations.isNotEmpty) {
         instruction.instantiatedTypes =
             new List<DartType>.from(currentInlinedInstantiations);
       }
-      instruction.sideEffects = compiler.world.getSideEffectsOfElement(element);
+      instruction.sideEffects =
+          compiler.closedWorld.getSideEffectsOfElement(element);
     }
     if (location == null) {
       push(instruction);
@@ -5734,7 +4171,7 @@ class SsaBuilder extends ast.Visitor
   }
 
   HInstruction buildInvokeSuper(
-      Selector selector, Element element, List<HInstruction> arguments,
+      Selector selector, MemberElement element, List<HInstruction> arguments,
       [SourceInformation sourceInformation]) {
     HInstruction receiver = localsHandler.readThis();
     // TODO(5346): Try to avoid the need for calling [declaration] before
@@ -5758,7 +4195,7 @@ class SsaBuilder extends ast.Visitor
         selector, inputs, type, sourceInformation,
         isSetter: selector.isSetter || selector.isIndexSet);
     instruction.sideEffects =
-        compiler.world.getSideEffectsOfSelector(selector, null);
+        compiler.closedWorld.getSideEffectsOfSelector(selector, null);
     return instruction;
   }
 
@@ -5776,7 +4213,7 @@ class SsaBuilder extends ast.Visitor
         receiver,
         rhs,
         elements.getOperatorSelectorInComplexSendSet(node),
-        elements.getOperatorTypeMaskInComplexSendSet(node),
+        elementInferenceResults.typeOfOperator(node),
         node,
         sourceInformation:
             sourceInformationBuilder.buildGeneric(node.assignmentOperator));
@@ -5787,14 +4224,14 @@ class SsaBuilder extends ast.Visitor
     List<HInstruction> setterInputs = <HInstruction>[];
     void generateSuperSendSet() {
       Selector setterSelector = elements.getSelector(node);
-      if (Elements.isUnresolved(element) ||
-          !setterSelector.applies(element, compiler.world)) {
+      if (Elements.isUnresolved(element) || !setterSelector.applies(element)) {
         generateSuperNoSuchMethodSend(node, setterSelector, setterInputs);
         pop();
       } else {
         add(buildInvokeSuper(setterSelector, element, setterInputs));
       }
     }
+
     if (identical(node.assignmentOperator.source, '=')) {
       addDynamicSendArgumentsToList(node, setterInputs);
       generateSuperSendSet();
@@ -5827,7 +4264,7 @@ class SsaBuilder extends ast.Visitor
       }
 
       if (node.isIfNullAssignment) {
-        SsaBranchBuilder brancher = new SsaBranchBuilder(this, node);
+        SsaBranchBuilder brancher = new SsaBranchBuilder(this, compiler, node);
         brancher.handleIfNull(() => stack.add(getterInstruction), () {
           addDynamicSendArgumentsToList(node, setterInputs);
           generateSuperSendSet();
@@ -6139,7 +4576,7 @@ class SsaBuilder extends ast.Visitor
       }
 
       pushInvokeDynamic(node, elements.getGetterSelectorInComplexSendSet(node),
-          elements.getGetterTypeMaskInComplexSendSet(node), [receiver, index]);
+          elementInferenceResults.typeOfGetter(node), [receiver, index]);
       HInstruction getterInstruction = pop();
       if (node.isIfNullAssignment) {
         // Compile x[i] ??= e as:
@@ -6147,12 +4584,15 @@ class SsaBuilder extends ast.Visitor
         //   if (t1 == null)
         //      t1 = x[i] = e;
         //   result = t1
-        SsaBranchBuilder brancher = new SsaBranchBuilder(this, node);
+        SsaBranchBuilder brancher = new SsaBranchBuilder(this, compiler, node);
         brancher.handleIfNull(() => stack.add(getterInstruction), () {
           visit(arguments.head);
           HInstruction value = pop();
-          pushInvokeDynamic(node, elements.getSelector(node),
-              elements.getTypeMask(node), [receiver, index, value]);
+          pushInvokeDynamic(
+              node,
+              elements.getSelector(node),
+              elementInferenceResults.typeOfSend(node),
+              [receiver, index, value]);
           pop();
           stack.add(value);
         });
@@ -6160,7 +4600,7 @@ class SsaBuilder extends ast.Visitor
         handleComplexOperatorSend(node, getterInstruction, arguments);
         HInstruction value = pop();
         pushInvokeDynamic(node, elements.getSelector(node),
-            elements.getTypeMask(node), [receiver, index, value]);
+            elementInferenceResults.typeOfSend(node), [receiver, index, value]);
         pop();
         if (node.isPostfix) {
           stack.add(getterInstruction);
@@ -6195,7 +4635,7 @@ class SsaBuilder extends ast.Visitor
     // else
     //   result = e.x = e2
     HInstruction receiverInstruction;
-    SsaBranchBuilder brancher = new SsaBranchBuilder(this, node);
+    SsaBranchBuilder brancher = new SsaBranchBuilder(this, compiler, node);
     brancher.handleConditional(
         () {
           receiverInstruction = generateInstanceSendReceiver(node);
@@ -6364,11 +4804,12 @@ class SsaBuilder extends ast.Visitor
         generateInstanceGetterWithCompiledReceiver(
             node,
             elements.getGetterSelectorInComplexSendSet(node),
-            elements.getGetterTypeMaskInComplexSendSet(node),
+            elementInferenceResults.typeOfGetter(node),
             receiver);
         HInstruction getterInstruction = pop();
         if (node.isIfNullAssignment) {
-          SsaBranchBuilder brancher = new SsaBranchBuilder(this, node);
+          SsaBranchBuilder brancher =
+              new SsaBranchBuilder(this, compiler, node);
           brancher.handleIfNull(() => stack.add(getterInstruction), () {
             visit(node.arguments.head);
             generateInstanceSetterWithCompiledReceiver(node, receiver, pop());
@@ -6383,12 +4824,13 @@ class SsaBuilder extends ast.Visitor
           stack.add(getterInstruction);
         }
       }
+
       if (node.isConditional) {
         // generate `e?.x op= e2` as:
         //   t1 = e
         //   t1 == null ? t1 : (t1.x = t1.x op e2);
         HInstruction receiver;
-        SsaBranchBuilder brancher = new SsaBranchBuilder(this, node);
+        SsaBranchBuilder brancher = new SsaBranchBuilder(this, compiler, node);
         brancher.handleConditional(() {
           receiver = generateInstanceSendReceiver(node);
           pushCheckNull(receiver);
@@ -6414,7 +4856,7 @@ class SsaBuilder extends ast.Visitor
     }
     HInstruction getterInstruction = pop();
     if (node.isIfNullAssignment) {
-      SsaBranchBuilder brancher = new SsaBranchBuilder(this, node);
+      SsaBranchBuilder brancher = new SsaBranchBuilder(this, compiler, node);
       brancher.handleIfNull(() => stack.add(getterInstruction), () {
         visit(node.arguments.head);
         generateNonInstanceSetter(node, element, pop());
@@ -6633,6 +5075,7 @@ class SsaBuilder extends ast.Visitor
     void loadLocal(ParameterElement parameter) {
       inputs.add(localsHandler.readLocal(parameter));
     }
+
     void loadPosition(int position, ParameterElement optionalParameter) {
       if (position < redirectingRequireds.length) {
         loadLocal(redirectingRequireds[position]);
@@ -6678,10 +5121,10 @@ class SsaBuilder extends ast.Visitor
           redirectingConstructor.computeEffectiveTargetType(cls.thisType);
       targetType = localsHandler.substInContext(targetType);
       targetType.typeArguments.forEach((DartType argument) {
-        inputs.add(analyzeTypeArgument(argument));
+        inputs.add(typeBuilder.analyzeTypeArgument(argument, sourceElement));
       });
     }
-    pushInvokeStatic(node, targetConstructor, inputs);
+    pushInvokeStatic(node, targetConstructor.declaration, inputs);
     HInstruction value = pop();
     emitReturn(value, node);
   }
@@ -6728,7 +5171,7 @@ class SsaBuilder extends ast.Visitor
           return;
         }
       } else {
-        value = potentiallyCheckOrTrustType(value, returnType);
+        value = typeBuilder.potentiallyCheckOrTrustType(value, returnType);
       }
     }
 
@@ -6757,7 +5200,7 @@ class SsaBuilder extends ast.Visitor
     HInstruction awaited = pop();
     // TODO(herhut): Improve this type.
     push(new HAwait(awaited,
-        new TypeMask.subclass(coreClasses.objectClass, compiler.world)));
+        new TypeMask.subclass(coreClasses.objectClass, compiler.closedWorld)));
   }
 
   visitTypeAnnotation(ast.TypeAnnotation node) {
@@ -6790,11 +5233,11 @@ class SsaBuilder extends ast.Visitor
     }
     List<HInstruction> arguments = <HInstruction>[];
     for (DartType argument in type.typeArguments) {
-      arguments.add(analyzeTypeArgument(argument));
+      arguments.add(typeBuilder.analyzeTypeArgument(argument, sourceElement));
     }
     // TODO(15489): Register at codegen.
     registry?.registerInstantiation(type);
-    return callSetRuntimeTypeInfo(type.element, arguments, object);
+    return callSetRuntimeTypeInfoWithTypeArguments(type, arguments, object);
   }
 
   visitLiteralList(ast.LiteralList node) {
@@ -6815,14 +5258,19 @@ class SsaBuilder extends ast.Visitor
       instruction = setRtiIfNeeded(instruction, node);
     }
 
-    TypeMask type =
-        TypeMaskFactory.inferredForNode(sourceElement, node, compiler);
-    if (!type.containsAll(compiler.world)) instruction.instructionType = type;
+    TypeMask type = _inferredTypeOfNewList(node);
+    if (!type.containsAll(compiler.closedWorld)) {
+      instruction.instructionType = type;
+    }
     stack.add(instruction);
   }
 
+  _inferredTypeOfNewList(ast.Node node) =>
+      _resultOf(sourceElement).typeOfNewList(node) ??
+      compiler.closedWorld.commonMasks.dynamicType;
+
   visitConditional(ast.Conditional node) {
-    SsaBranchBuilder brancher = new SsaBranchBuilder(this, node);
+    SsaBranchBuilder brancher = new SsaBranchBuilder(this, compiler, node);
     brancher.handleConditional(() => visit(node.condition),
         () => visit(node.thenExpression), () => visit(node.elseExpression));
   }
@@ -6883,7 +5331,7 @@ class SsaBuilder extends ast.Visitor
    * a special "null handler" is returned.
    *
    * [isLoopJump] is [:true:] when the jump handler is for a loop. This is used
-   * to distinguish the synthetized loop created for a switch statement with
+   * to distinguish the synthesized loop created for a switch statement with
    * continue statements from simple switch statements.
    */
   JumpHandler createJumpHandler(ast.Statement node, {bool isLoopJump}) {
@@ -6914,26 +5362,28 @@ class SsaBuilder extends ast.Visitor
 
     HInstruction buildCondition() {
       Selector selector = Selectors.moveNext;
-      TypeMask mask = elements.getMoveNextTypeMask(node);
+      TypeMask mask = elementInferenceResults.typeOfIteratorMoveNext(node);
       pushInvokeDynamic(node, selector, mask, [streamIterator]);
       HInstruction future = pop();
-      push(new HAwait(future,
-          new TypeMask.subclass(coreClasses.objectClass, compiler.world)));
+      push(new HAwait(
+          future,
+          new TypeMask.subclass(
+              coreClasses.objectClass, compiler.closedWorld)));
       return popBoolified();
     }
+
     void buildBody() {
       Selector call = Selectors.current;
-      TypeMask callMask = elements.getCurrentTypeMask(node);
+      TypeMask callMask = elementInferenceResults.typeOfIteratorCurrent(node);
       pushInvokeDynamic(node, call, callMask, [streamIterator]);
 
       ast.Node identifier = node.declaredIdentifier;
       Element variable = elements.getForInVariable(node);
       Selector selector = elements.getSelector(identifier);
-      TypeMask mask = elements.getTypeMask(identifier);
-
       HInstruction value = pop();
       if (identifier.asSend() != null &&
           Elements.isInstanceSend(identifier, elements)) {
+        TypeMask mask = elementInferenceResults.typeOfSend(identifier);
         HInstruction receiver = generateInstanceSendReceiver(identifier);
         assert(receiver != null);
         generateInstanceSetterWithCompiledReceiver(null, receiver, value,
@@ -6947,15 +5397,16 @@ class SsaBuilder extends ast.Visitor
     }
 
     void buildUpdate() {}
-    ;
 
     buildProtectedByFinally(() {
-      handleLoop(
+      loopHandler.handleLoop(
           node, buildInitializer, buildCondition, buildUpdate, buildBody);
     }, () {
       pushInvokeDynamic(node, Selectors.cancel, null, [streamIterator]);
-      push(new HAwait(pop(),
-          new TypeMask.subclass(coreClasses.objectClass, compiler.world)));
+      push(new HAwait(
+          pop(),
+          new TypeMask.subclass(
+              coreClasses.objectClass, compiler.closedWorld)));
       pop();
     });
   }
@@ -6967,17 +5418,17 @@ class SsaBuilder extends ast.Visitor
 
     // This scheme recognizes for-in on direct lists.  It does not recognize all
     // uses of ArrayIterator.  They still occur when the receiver is an Iterable
-    // with a `get iterator` method that delegate to another Iterable and the
+    // with a `get iterator` method that delegates to another Iterable and the
     // method is inlined.  We would require full scalar replacement in that
     // case.
 
-    TypeMask mask = elements.getIteratorTypeMask(node);
+    TypeMask mask = elementInferenceResults.typeOfIterator(node);
 
-    ClassWorld classWorld = compiler.world;
+    ClosedWorld closedWorld = compiler.closedWorld;
     if (mask != null &&
-        mask.satisfies(helpers.jsIndexableClass, classWorld) &&
+        mask.satisfies(helpers.jsIndexableClass, closedWorld) &&
         // String is indexable but not iterable.
-        !mask.satisfies(helpers.jsStringClass, classWorld)) {
+        !mask.satisfies(helpers.jsStringClass, closedWorld)) {
       return buildSyncForInIndexable(node, mask);
     }
     buildSyncForInIterator(node);
@@ -6996,7 +5447,7 @@ class SsaBuilder extends ast.Visitor
 
     void buildInitializer() {
       Selector selector = Selectors.iterator;
-      TypeMask mask = elements.getIteratorTypeMask(node);
+      TypeMask mask = elementInferenceResults.typeOfIterator(node);
       visit(node.expression);
       HInstruction receiver = pop();
       pushInvokeDynamic(node, selector, mask, [receiver]);
@@ -7005,30 +5456,31 @@ class SsaBuilder extends ast.Visitor
 
     HInstruction buildCondition() {
       Selector selector = Selectors.moveNext;
-      TypeMask mask = elements.getMoveNextTypeMask(node);
+      TypeMask mask = elementInferenceResults.typeOfIteratorMoveNext(node);
       pushInvokeDynamic(node, selector, mask, [iterator]);
       return popBoolified();
     }
 
     void buildBody() {
       Selector call = Selectors.current;
-      TypeMask mask = elements.getCurrentTypeMask(node);
+      TypeMask mask = elementInferenceResults.typeOfIteratorCurrent(node);
       pushInvokeDynamic(node, call, mask, [iterator]);
       buildAssignLoopVariable(node, pop());
       visit(node.body);
     }
 
-    handleLoop(node, buildInitializer, buildCondition, () {}, buildBody);
+    loopHandler.handleLoop(
+        node, buildInitializer, buildCondition, () {}, buildBody);
   }
 
   buildAssignLoopVariable(ast.ForIn node, HInstruction value) {
     ast.Node identifier = node.declaredIdentifier;
     Element variable = elements.getForInVariable(node);
     Selector selector = elements.getSelector(identifier);
-    TypeMask mask = elements.getTypeMask(identifier);
 
     if (identifier.asSend() != null &&
         Elements.isInstanceSend(identifier, elements)) {
+      TypeMask mask = elementInferenceResults.typeOfSend(identifier);
       HInstruction receiver = generateInstanceSendReceiver(identifier);
       assert(receiver != null);
       generateInstanceSetterWithCompiledReceiver(null, receiver, value,
@@ -7059,7 +5511,7 @@ class SsaBuilder extends ast.Visitor
     HInstruction originalLength = null; // Set for growable lists.
 
     HInstruction buildGetLength() {
-      Element lengthElement = helpers.jsIndexableLength;
+      MemberElement lengthElement = helpers.jsIndexableLength;
       HFieldGet result = new HFieldGet(
           lengthElement, array, backend.positiveIntType,
           isAssignable: !isFixed);
@@ -7137,7 +5589,8 @@ class SsaBuilder extends ast.Visitor
       localsHandler.updateLocal(indexVariable, addInstruction);
     }
 
-    handleLoop(node, buildInitializer, buildCondition, buildUpdate, buildBody);
+    loopHandler.handleLoop(
+        node, buildInitializer, buildCondition, buildUpdate, buildBody);
   }
 
   visitLabel(ast.Label node) {
@@ -7227,7 +5680,8 @@ class SsaBuilder extends ast.Visitor
     if (backend.classNeedsRti(cls)) {
       List<HInstruction> typeInputs = <HInstruction>[];
       expectedType.typeArguments.forEach((DartType argument) {
-        typeInputs.add(analyzeTypeArgument(argument));
+        typeInputs
+            .add(typeBuilder.analyzeTypeArgument(argument, sourceElement));
       });
 
       // We lift this common call pattern into a helper function to save space
@@ -7251,12 +5705,12 @@ class SsaBuilder extends ast.Visitor
     // The instruction type will always be a subtype of the mapLiteralClass, but
     // type inference might discover a more specific type, or find nothing (in
     // dart2js unit tests).
-    TypeMask mapType =
-        new TypeMask.nonNullSubtype(helpers.mapLiteralClass, compiler.world);
+    TypeMask mapType = new TypeMask.nonNullSubtype(
+        helpers.mapLiteralClass, compiler.closedWorld);
     TypeMask returnTypeMask =
         TypeMaskFactory.inferredReturnTypeForElement(constructor, compiler);
     TypeMask instructionType =
-        mapType.intersection(returnTypeMask, compiler.world);
+        mapType.intersection(returnTypeMask, compiler.closedWorld);
 
     addInlinedInstantiation(expectedType);
     pushInvokeStatic(node, constructor, inputs,
@@ -7335,6 +5789,7 @@ class SsaBuilder extends ast.Visitor
       visit(node.expression);
       return pop();
     }
+
     Iterable<ConstantValue> getConstants(ast.SwitchCase switchCase) {
       List<ConstantValue> constantList = <ConstantValue>[];
       for (ast.Node labelOrCase in switchCase.labelsAndCases) {
@@ -7344,12 +5799,15 @@ class SsaBuilder extends ast.Visitor
       }
       return constantList;
     }
+
     bool isDefaultCase(ast.SwitchCase switchCase) {
       return switchCase.isDefaultCase;
     }
+
     void buildSwitchCase(ast.SwitchCase node) {
       visit(node.statements);
     }
+
     handleSwitch(node, jumpHandler, buildExpression, node.cases, getConstants,
         isDefaultCase, buildSwitchCase);
     jumpHandler.close();
@@ -7408,6 +5866,7 @@ class SsaBuilder extends ast.Visitor
       visit(node.expression);
       return pop();
     }
+
     Iterable<ConstantValue> getConstants(ast.SwitchCase switchCase) {
       List<ConstantValue> constantList = <ConstantValue>[];
       if (switchCase != null) {
@@ -7419,9 +5878,11 @@ class SsaBuilder extends ast.Visitor
       }
       return constantList;
     }
+
     bool isDefaultCase(ast.SwitchCase switchCase) {
       return switchCase == null || switchCase.isDefaultCase;
     }
+
     void buildSwitchCase(ast.SwitchCase switchCase) {
       if (switchCase != null) {
         // Generate 'target = i; break;' for switch case i.
@@ -7435,6 +5896,7 @@ class SsaBuilder extends ast.Visitor
       }
       jumpTargets[switchTarget].generateBreak();
     }
+
     handleSwitch(node, jumpHandler, buildExpression, switchCases, getConstants,
         isDefaultCase, buildSwitchCase);
     jumpHandler.close();
@@ -7445,9 +5907,11 @@ class SsaBuilder extends ast.Visitor
       HInstruction buildExpression() {
         return localsHandler.readLocal(switchTarget);
       }
+
       Iterable<ConstantValue> getConstants(ast.SwitchCase switchCase) {
         return <ConstantValue>[constantSystem.createInt(caseIndex[switchCase])];
       }
+
       void buildSwitchCase(ast.SwitchCase switchCase) {
         visit(switchCase.statements);
         if (!isAborted()) {
@@ -7456,6 +5920,7 @@ class SsaBuilder extends ast.Visitor
           jumpTargets[switchTarget].generateBreak();
         }
       }
+
       // Pass a [NullJumpHandler] because the target for the contained break
       // is not the generated switch statement but instead the loop generated
       // in the call to [handleLoop] below.
@@ -7470,7 +5935,7 @@ class SsaBuilder extends ast.Visitor
     }
 
     void buildLoop() {
-      handleLoop(node, () {}, buildCondition, () {}, buildSwitch);
+      loopHandler.handleLoop(node, () {}, buildCondition, () {}, buildSwitch);
     }
 
     if (hasDefault) {
@@ -7484,7 +5949,9 @@ class SsaBuilder extends ast.Visitor
             code, backend.boolType, [localsHandler.readLocal(switchTarget)],
             nativeBehavior: native.NativeBehavior.PURE));
       }
-      handleIf(node,
+
+      handleIf(
+          node: node,
           visitCondition: buildCondition,
           visitThen: buildLoop,
           visitElse: () => {});
@@ -7523,7 +5990,6 @@ class SsaBuilder extends ast.Visitor
 
     List<HStatementInformation> statements = <HStatementInformation>[];
     bool hasDefault = false;
-    Element getFallThroughErrorElement = helpers.fallThroughError;
     HasNextIterator<ast.Node> caseIterator =
         new HasNextIterator<ast.Node>(switchCases.iterator);
     while (caseIterator.hasNext) {
@@ -7546,8 +6012,8 @@ class SsaBuilder extends ast.Visitor
       localsHandler = new LocalsHandler.from(savedLocals);
       buildSwitchCase(switchCase);
       if (!isAborted()) {
-        if (caseIterator.hasNext) {
-          pushInvokeStatic(switchCase, getFallThroughErrorElement, []);
+        if (caseIterator.hasNext && isReachable) {
+          pushInvokeStatic(switchCase, helpers.fallThroughError, []);
           HInstruction error = pop();
           closeAndGotoExit(new HThrow(error, error.sourceInformation));
         } else if (!isDefaultCase(switchCase)) {
@@ -7826,16 +6292,24 @@ class SsaBuilder extends ast.Visitor
               isRethrow: true));
         } else {
           ast.CatchBlock newBlock = link.head;
-          handleIf(node, visitCondition: () {
-            pushCondition(newBlock);
-          }, visitThen: visitThen, visitElse: visitElse);
+          handleIf(
+              node: node,
+              visitCondition: () {
+                pushCondition(newBlock);
+              },
+              visitThen: visitThen,
+              visitElse: visitElse);
         }
       }
 
       ast.CatchBlock firstBlock = link.head;
-      handleIf(node, visitCondition: () {
-        pushCondition(firstBlock);
-      }, visitThen: visitThen, visitElse: visitElse);
+      handleIf(
+          node: node,
+          visitCondition: () {
+            pushCondition(firstBlock);
+          },
+          visitThen: visitThen,
+          visitElse: visitElse);
       if (!isAborted()) endCatchBlock = close(new HGoto());
 
       rethrowableException = oldRethrowableException;
@@ -7859,6 +6333,7 @@ class SsaBuilder extends ast.Visitor
     addOptionalSuccessor(b1, b2) {
       if (b2 != null) b1.addSuccessor(b2);
     }
+
     addExitTrySuccessor(successor) {
       if (successor == null) return;
       // Iterate over all blocks created inside this try/catch, and
@@ -7945,8 +6420,10 @@ class SsaBuilder extends ast.Visitor
         stack,
         localsHandler,
         inTryStatement,
-        allInlinedFunctionsCalledOnce && isFunctionCalledOnce(function));
+        isCalledOnce(function),
+        elementInferenceResults);
     resolvedAst = functionResolvedAst;
+    elementInferenceResults = _resultOf(function);
     inliningStack.add(state);
 
     // Setting up the state of the (AST) builder is performed even when the
@@ -8071,7 +6548,7 @@ class StringBuilderVisitor extends ast.Visitor {
     Selector selector = Selectors.toString_;
     TypeMask type = TypeMaskFactory.inferredTypeForSelector(
         selector, expression.instructionType, compiler);
-    if (type.containsOnlyString(compiler.world)) {
+    if (type.containsOnlyString(compiler.closedWorld)) {
       builder.pushInvokeDynamic(node, selector, expression.instructionType,
           <HInstruction>[expression]);
       append(builder.pop());
@@ -8267,6 +6744,7 @@ class AstInliningState extends InliningState {
   final LocalsHandler oldLocalsHandler;
   final bool inTryStatement;
   final bool allFunctionsCalledOnce;
+  final GlobalTypeInferenceElementResult oldElementInferenceResults;
 
   AstInliningState(
       FunctionElement function,
@@ -8276,359 +6754,7 @@ class AstInliningState extends InliningState {
       this.oldStack,
       this.oldLocalsHandler,
       this.inTryStatement,
-      this.allFunctionsCalledOnce)
+      this.allFunctionsCalledOnce,
+      this.oldElementInferenceResults)
       : super(function);
-}
-
-class SsaBranch {
-  final SsaBranchBuilder branchBuilder;
-  final HBasicBlock block;
-  LocalsHandler startLocals;
-  LocalsHandler exitLocals;
-  SubGraph graph;
-
-  SsaBranch(this.branchBuilder) : block = new HBasicBlock();
-}
-
-class SsaBranchBuilder {
-  final SsaBuilder builder;
-  final ast.Node diagnosticNode;
-
-  SsaBranchBuilder(this.builder, [this.diagnosticNode]);
-
-  Compiler get compiler => builder.compiler;
-
-  void checkNotAborted() {
-    if (builder.isAborted()) {
-      compiler.unimplemented(diagnosticNode, "aborted control flow");
-    }
-  }
-
-  void buildCondition(
-      void visitCondition(),
-      SsaBranch conditionBranch,
-      SsaBranch thenBranch,
-      SsaBranch elseBranch,
-      SourceInformation sourceInformation) {
-    startBranch(conditionBranch);
-    visitCondition();
-    checkNotAborted();
-    assert(identical(builder.current, builder.lastOpenedBlock));
-    HInstruction conditionValue = builder.popBoolified();
-    HIf branch = new HIf(conditionValue)..sourceInformation = sourceInformation;
-    HBasicBlock conditionExitBlock = builder.current;
-    builder.close(branch);
-    conditionBranch.exitLocals = builder.localsHandler;
-    conditionExitBlock.addSuccessor(thenBranch.block);
-    conditionExitBlock.addSuccessor(elseBranch.block);
-    bool conditionBranchLocalsCanBeReused =
-        mergeLocals(conditionBranch, thenBranch, mayReuseFromLocals: true);
-    mergeLocals(conditionBranch, elseBranch,
-        mayReuseFromLocals: conditionBranchLocalsCanBeReused);
-
-    conditionBranch.graph =
-        new SubExpression(conditionBranch.block, conditionExitBlock);
-  }
-
-  /**
-   * Returns true if the locals of the [fromBranch] may be reused. A [:true:]
-   * return value implies that [mayReuseFromLocals] was set to [:true:].
-   */
-  bool mergeLocals(SsaBranch fromBranch, SsaBranch toBranch,
-      {bool mayReuseFromLocals}) {
-    LocalsHandler fromLocals = fromBranch.exitLocals;
-    if (toBranch.startLocals == null) {
-      if (mayReuseFromLocals) {
-        toBranch.startLocals = fromLocals;
-        return false;
-      } else {
-        toBranch.startLocals = new LocalsHandler.from(fromLocals);
-        return true;
-      }
-    } else {
-      toBranch.startLocals.mergeWith(fromLocals, toBranch.block);
-      return true;
-    }
-  }
-
-  void startBranch(SsaBranch branch) {
-    builder.graph.addBlock(branch.block);
-    builder.localsHandler = branch.startLocals;
-    builder.open(branch.block);
-  }
-
-  HInstruction buildBranch(SsaBranch branch, void visitBranch(),
-      SsaBranch joinBranch, bool isExpression) {
-    startBranch(branch);
-    visitBranch();
-    branch.graph = new SubGraph(branch.block, builder.lastOpenedBlock);
-    branch.exitLocals = builder.localsHandler;
-    if (!builder.isAborted()) {
-      builder.goto(builder.current, joinBranch.block);
-      mergeLocals(branch, joinBranch, mayReuseFromLocals: true);
-    }
-    if (isExpression) {
-      checkNotAborted();
-      return builder.pop();
-    }
-    return null;
-  }
-
-  handleIf(void visitCondition(), void visitThen(), void visitElse(),
-      {SourceInformation sourceInformation}) {
-    if (visitElse == null) {
-      // Make sure to have an else part to avoid a critical edge. A
-      // critical edge is an edge that connects a block with multiple
-      // successors to a block with multiple predecessors. We avoid
-      // such edges because they prevent inserting copies during code
-      // generation of phi instructions.
-      visitElse = () {};
-    }
-
-    _handleDiamondBranch(visitCondition, visitThen, visitElse,
-        isExpression: false, sourceInformation: sourceInformation);
-  }
-
-  handleConditional(void visitCondition(), void visitThen(), void visitElse()) {
-    assert(visitElse != null);
-    _handleDiamondBranch(visitCondition, visitThen, visitElse,
-        isExpression: true);
-  }
-
-  handleIfNull(void left(), void right()) {
-    // x ?? y is transformed into: x == null ? y : x
-    HInstruction leftExpression;
-    handleConditional(() {
-      left();
-      leftExpression = builder.pop();
-      builder.pushCheckNull(leftExpression);
-    }, right, () => builder.stack.add(leftExpression));
-  }
-
-  void handleLogicalAndOr(void left(), void right(), {bool isAnd}) {
-    // x && y is transformed into:
-    //   t0 = boolify(x);
-    //   if (t0) {
-    //     t1 = boolify(y);
-    //   }
-    //   result = phi(t1, false);
-    //
-    // x || y is transformed into:
-    //   t0 = boolify(x);
-    //   if (not(t0)) {
-    //     t1 = boolify(y);
-    //   }
-    //   result = phi(t1, true);
-    HInstruction boolifiedLeft;
-    HInstruction boolifiedRight;
-
-    void visitCondition() {
-      left();
-      boolifiedLeft = builder.popBoolified();
-      builder.stack.add(boolifiedLeft);
-      if (!isAnd) {
-        builder.push(new HNot(builder.pop(), builder.backend.boolType));
-      }
-    }
-
-    void visitThen() {
-      right();
-      boolifiedRight = builder.popBoolified();
-    }
-
-    handleIf(visitCondition, visitThen, null);
-    HConstant notIsAnd =
-        builder.graph.addConstantBool(!isAnd, builder.compiler);
-    JavaScriptBackend backend = builder.backend;
-    HPhi result = new HPhi.manyInputs(
-        null, <HInstruction>[boolifiedRight, notIsAnd], backend.dynamicType);
-    builder.current.addPhi(result);
-    builder.stack.add(result);
-  }
-
-  void handleLogicalAndOrWithLeftNode(ast.Node left, void visitRight(),
-      {bool isAnd}) {
-    // This method is similar to [handleLogicalAndOr] but optimizes the case
-    // where left is a logical "and" or logical "or".
-    //
-    // For example (x && y) && z is transformed into x && (y && z):
-    //   t0 = boolify(x);
-    //   if (t0) {
-    //     t1 = boolify(y);
-    //     if (t1) {
-    //       t2 = boolify(z);
-    //     }
-    //     t3 = phi(t2, false);
-    //   }
-    //   result = phi(t3, false);
-
-    ast.Send send = left.asSend();
-    if (send != null && (isAnd ? send.isLogicalAnd : send.isLogicalOr)) {
-      ast.Node newLeft = send.receiver;
-      Link<ast.Node> link = send.argumentsNode.nodes;
-      assert(link.tail.isEmpty);
-      ast.Node middle = link.head;
-      handleLogicalAndOrWithLeftNode(
-          newLeft,
-          () =>
-              handleLogicalAndOrWithLeftNode(middle, visitRight, isAnd: isAnd),
-          isAnd: isAnd);
-    } else {
-      handleLogicalAndOr(() => builder.visit(left), visitRight, isAnd: isAnd);
-    }
-  }
-
-  void _handleDiamondBranch(
-      void visitCondition(), void visitThen(), void visitElse(),
-      {bool isExpression, SourceInformation sourceInformation}) {
-    SsaBranch conditionBranch = new SsaBranch(this);
-    SsaBranch thenBranch = new SsaBranch(this);
-    SsaBranch elseBranch = new SsaBranch(this);
-    SsaBranch joinBranch = new SsaBranch(this);
-
-    conditionBranch.startLocals = builder.localsHandler;
-    builder.goto(builder.current, conditionBranch.block);
-
-    buildCondition(visitCondition, conditionBranch, thenBranch, elseBranch,
-        sourceInformation);
-    HInstruction thenValue =
-        buildBranch(thenBranch, visitThen, joinBranch, isExpression);
-    HInstruction elseValue =
-        buildBranch(elseBranch, visitElse, joinBranch, isExpression);
-
-    if (isExpression) {
-      assert(thenValue != null && elseValue != null);
-      JavaScriptBackend backend = builder.backend;
-      HPhi phi = new HPhi.manyInputs(
-          null, <HInstruction>[thenValue, elseValue], backend.dynamicType);
-      joinBranch.block.addPhi(phi);
-      builder.stack.add(phi);
-    }
-
-    HBasicBlock joinBlock;
-    // If at least one branch did not abort, open the joinBranch.
-    if (!joinBranch.block.predecessors.isEmpty) {
-      startBranch(joinBranch);
-      joinBlock = joinBranch.block;
-    }
-
-    HIfBlockInformation info = new HIfBlockInformation(
-        new HSubExpressionBlockInformation(conditionBranch.graph),
-        new HSubGraphBlockInformation(thenBranch.graph),
-        new HSubGraphBlockInformation(elseBranch.graph));
-
-    HBasicBlock conditionStartBlock = conditionBranch.block;
-    conditionStartBlock.setBlockFlow(info, joinBlock);
-    SubGraph conditionGraph = conditionBranch.graph;
-    HIf branch = conditionGraph.end.last;
-    assert(branch is HIf);
-    branch.blockInformation = conditionStartBlock.blockFlow;
-  }
-}
-
-class TypeBuilder implements DartTypeVisitor<dynamic, SsaBuilder> {
-  final ClassWorld classWorld;
-
-  TypeBuilder(this.classWorld);
-
-  void visit(DartType type, SsaBuilder builder) => type.accept(this, builder);
-
-  void visitVoidType(VoidType type, SsaBuilder builder) {
-    ClassElement cls = builder.backend.helpers.VoidRuntimeType;
-    builder.push(new HVoidType(type, new TypeMask.exact(cls, classWorld)));
-  }
-
-  void visitTypeVariableType(TypeVariableType type, SsaBuilder builder) {
-    ClassElement cls = builder.backend.helpers.RuntimeType;
-    TypeMask instructionType = new TypeMask.subclass(cls, classWorld);
-    if (!builder.sourceElement.enclosingElement.isClosure &&
-        builder.sourceElement.isInstanceMember) {
-      HInstruction receiver = builder.localsHandler.readThis();
-      builder.push(new HReadTypeVariable(type, receiver, instructionType));
-    } else {
-      builder.push(new HReadTypeVariable.noReceiver(
-          type, builder.addTypeVariableReference(type), instructionType));
-    }
-  }
-
-  void visitFunctionType(FunctionType type, SsaBuilder builder) {
-    type.returnType.accept(this, builder);
-    HInstruction returnType = builder.pop();
-    List<HInstruction> inputs = <HInstruction>[returnType];
-
-    for (DartType parameter in type.parameterTypes) {
-      parameter.accept(this, builder);
-      inputs.add(builder.pop());
-    }
-
-    for (DartType parameter in type.optionalParameterTypes) {
-      parameter.accept(this, builder);
-      inputs.add(builder.pop());
-    }
-
-    List<DartType> namedParameterTypes = type.namedParameterTypes;
-    List<String> names = type.namedParameters;
-    for (int index = 0; index < names.length; index++) {
-      ast.DartString dartString = new ast.DartString.literal(names[index]);
-      inputs.add(builder.graph.addConstantString(dartString, builder.compiler));
-      namedParameterTypes[index].accept(this, builder);
-      inputs.add(builder.pop());
-    }
-
-    ClassElement cls = builder.backend.helpers.RuntimeFunctionType;
-    builder.push(
-        new HFunctionType(inputs, type, new TypeMask.exact(cls, classWorld)));
-  }
-
-  void visitMalformedType(MalformedType type, SsaBuilder builder) {
-    visitDynamicType(const DynamicType(), builder);
-  }
-
-  void visitStatementType(StatementType type, SsaBuilder builder) {
-    throw 'not implemented visitStatementType($type)';
-  }
-
-  void visitInterfaceType(InterfaceType type, SsaBuilder builder) {
-    List<HInstruction> inputs = <HInstruction>[];
-    for (DartType typeArgument in type.typeArguments) {
-      typeArgument.accept(this, builder);
-      inputs.add(builder.pop());
-    }
-    ClassElement cls;
-    if (type.typeArguments.isEmpty) {
-      cls = builder.backend.helpers.RuntimeTypePlain;
-    } else {
-      cls = builder.backend.helpers.RuntimeTypeGeneric;
-    }
-    builder.push(
-        new HInterfaceType(inputs, type, new TypeMask.exact(cls, classWorld)));
-  }
-
-  void visitTypedefType(TypedefType type, SsaBuilder builder) {
-    DartType unaliased = type.unaliased;
-    if (unaliased is TypedefType) throw 'unable to unalias $type';
-    unaliased.accept(this, builder);
-  }
-
-  void visitDynamicType(DynamicType type, SsaBuilder builder) {
-    JavaScriptBackend backend = builder.compiler.backend;
-    ClassElement cls = backend.helpers.DynamicRuntimeType;
-    builder.push(new HDynamicType(type, new TypeMask.exact(cls, classWorld)));
-  }
-}
-
-/// Determine what kind of loop [node] represents. The result is one of the
-/// kinds defined in [HLoopBlockInformation].
-int _loopKind(ast.Node node) => node.accept(const _LoopTypeVisitor());
-
-class _LoopTypeVisitor extends ast.Visitor {
-  const _LoopTypeVisitor();
-  int visitNode(ast.Node node) => HLoopBlockInformation.NOT_A_LOOP;
-  int visitWhile(ast.While node) => HLoopBlockInformation.WHILE_LOOP;
-  int visitFor(ast.For node) => HLoopBlockInformation.FOR_LOOP;
-  int visitDoWhile(ast.DoWhile node) => HLoopBlockInformation.DO_WHILE_LOOP;
-  int visitAsyncForIn(ast.AsyncForIn node) => HLoopBlockInformation.FOR_IN_LOOP;
-  int visitSyncForIn(ast.SyncForIn node) => HLoopBlockInformation.FOR_IN_LOOP;
-  int visitSwitchStatement(ast.SwitchStatement node) =>
-      HLoopBlockInformation.SWITCH_CONTINUE_LOOP;
 }

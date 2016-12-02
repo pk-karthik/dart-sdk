@@ -16,7 +16,6 @@ import '../resolution/send_structure.dart';
 import '../resolution/tree_elements.dart' show TreeElements;
 import '../tree/tree.dart';
 import '../universe/call_structure.dart' show CallStructure;
-
 import 'constructors.dart';
 import 'expressions.dart';
 
@@ -87,6 +86,11 @@ class ConstantConstructorComputer extends SemanticVisitor
     applyParameters(parameters, _);
     ConstructedConstantExpression constructorInvocation =
         applyInitializers(node, _);
+    constructor.enclosingClass.forEachInstanceField((_, FieldElement field) {
+      if (!fieldMap.containsKey(field)) {
+        fieldMap[field] = field.constant;
+      }
+    });
     return new GenerativeConstantConstructor(
         currentClass.thisType, defaultValues, fieldMap, constructorInvocation);
   }
@@ -264,6 +268,18 @@ class ConstantConstructorComputer extends SemanticVisitor
   }
 
   @override
+  ConstantExpression visitEquals(Send node, Node left, Node right, _) {
+    return new BinaryConstantExpression(
+        apply(left), BinaryOperator.EQ, apply(right));
+  }
+
+  @override
+  ConstantExpression visitNotEquals(Send node, Node left, Node right, _) {
+    return new BinaryConstantExpression(
+        apply(left), BinaryOperator.NOT_EQ, apply(right));
+  }
+
+  @override
   ConstantExpression visitUnary(
       Send node, UnaryOperator operator, Node expression, _) {
     return new UnaryConstantExpression(operator, apply(expression));
@@ -282,6 +298,11 @@ class ConstantConstructorComputer extends SemanticVisitor
   @override
   ConstantExpression visitLiteralInt(LiteralInt node) {
     return new IntConstantExpression(node.value);
+  }
+
+  @override
+  ConstantExpression visitLiteralDouble(LiteralDouble node) {
+    return new DoubleConstantExpression(node.value);
   }
 
   @override
@@ -328,5 +349,11 @@ class ConstantConstructorComputer extends SemanticVisitor
   @override
   ConstantExpression visitNamedArgument(NamedArgument node) {
     return apply(node.expression);
+  }
+
+  @override
+  ConstantExpression visitIfNull(Send node, Node left, Node right, _) {
+    return new BinaryConstantExpression(
+        apply(left), BinaryOperator.IF_NULL, apply(right));
   }
 }

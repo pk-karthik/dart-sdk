@@ -41,6 +41,8 @@ class RuntimeTypeGenerator {
 
   Iterable<ClassElement> get classesUsingTypeVariableTests =>
       typeTestRegistry.classesUsingTypeVariableTests;
+  Iterable<ClassElement> get classesUsingTypeVariableExpression =>
+      backend.rti.classesUsingTypeVariableExpression;
 
   Set<FunctionType> get checkedFunctionTypes =>
       typeTestRegistry.checkedFunctionTypes;
@@ -76,14 +78,16 @@ class RuntimeTypeGenerator {
         FunctionElement method, FunctionType type) {
       assert(method.isImplementation);
       jsAst.Expression thisAccess = new jsAst.This();
-      ClosureClassMap closureData =
-          compiler.closureToClassMapper.closureMappingCache[method.node];
-      if (closureData != null) {
-        ClosureFieldElement thisLocal =
-            closureData.freeVariableMap[closureData.thisLocal];
-        if (thisLocal != null) {
-          jsAst.Name thisName = namer.instanceFieldPropertyName(thisLocal);
-          thisAccess = js('this.#', thisName);
+      if (!method.isAbstract) {
+        ClosureClassMap closureData = compiler.closureToClassMapper
+            .getClosureToClassMapping(method.resolvedAst);
+        if (closureData != null) {
+          ClosureFieldElement thisLocal =
+              closureData.freeVariableMap[closureData.thisLocal];
+          if (thisLocal != null) {
+            jsAst.Name thisName = namer.instanceFieldPropertyName(thisLocal);
+            thisAccess = js('this.#', thisName);
+          }
         }
       }
 
@@ -132,6 +136,17 @@ class RuntimeTypeGenerator {
     _generateIsTestsOn(classElement, generateIsTest,
         generateFunctionTypeSignature, generateSubstitution, generateTypeCheck);
 
+    if (classElement == backend.helpers.jsJavaScriptFunctionClass) {
+      var type = backend.jsInteropAnalysis.buildJsFunctionType();
+      if (type != null) {
+        jsAst.Expression thisAccess = new jsAst.This();
+        RuntimeTypesEncoder rtiEncoder = backend.rtiEncoder;
+        jsAst.Expression encoding =
+            rtiEncoder.getSignatureEncoding(type, thisAccess);
+        jsAst.Name operatorSignature = namer.asName(namer.operatorSignature);
+        result.properties[operatorSignature] = encoding;
+      }
+    }
     return result;
   }
 
@@ -175,6 +190,8 @@ class RuntimeTypeGenerator {
       return backend.rti.isTrivialSubstitution(a, b);
     }
 
+    bool supertypesNeedSubstitutions = false;
+
     if (superclass != null &&
         superclass != coreClasses.objectClass &&
         !haveSameTypeVariables(cls, superclass)) {
@@ -192,11 +209,20 @@ class RuntimeTypeGenerator {
         }
         superclass = superclass.superclass;
       }
+      supertypesNeedSubstitutions = true;
+    }
+
+    if (cls is MixinApplicationElement) {
+      supertypesNeedSubstitutions = true;
+    }
+
+    if (supertypesNeedSubstitutions) {
       for (DartType supertype in cls.allSupertypes) {
         ClassElement superclass = supertype.element;
         if (generated.contains(superclass)) continue;
 
         if (classesUsingTypeVariableTests.contains(superclass) ||
+            classesUsingTypeVariableExpression.contains(superclass) ||
             checkedClasses.contains(superclass)) {
           // Generate substitution.  If no substitution is necessary, emit
           // `null` to overwrite a (possibly) existing substitution from the
@@ -206,7 +232,6 @@ class RuntimeTypeGenerator {
       }
 
       void emitNothing(_, {emitNull}) {}
-      ;
 
       generateSubstitution = emitNothing;
     }
@@ -254,7 +279,6 @@ class RuntimeTypeGenerator {
         generateSubstitution(check);
       }
     }
-    ;
 
     tryEmitTest(cls);
 
@@ -298,16 +322,16 @@ class RuntimeTypeGenerator {
 
     Substitution substitution =
         backend.rti.getSubstitution(cls, element.typeDeclaration);
+    jsAst.Name rtiFieldName = backend.namer.rtiFieldName;
     if (substitution != null) {
-      computeTypeVariable = js(
-          r'#.apply(null, this.$builtinTypeInfo)',
-          backend.rtiEncoder
-              .getSubstitutionCodeForVariable(substitution, index));
+      computeTypeVariable = js(r'#.apply(null, this.#)', [
+        backend.rtiEncoder.getSubstitutionCodeForVariable(substitution, index),
+        rtiFieldName
+      ]);
     } else {
       // TODO(ahe): These can be generated dynamically.
-      computeTypeVariable = js(
-          r'this.$builtinTypeInfo && this.$builtinTypeInfo[#]',
-          js.number(index));
+      computeTypeVariable = js(r'this.# && this.#[#]',
+          [rtiFieldName, rtiFieldName, js.number(index)]);
     }
     jsAst.Expression convertRtiToRuntimeType = backend.emitter
         .staticFunctionAccess(backend.helpers.convertRtiToRuntimeType);

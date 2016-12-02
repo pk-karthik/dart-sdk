@@ -5,14 +5,11 @@
 library dart2js.parser.classes;
 
 import '../tokens/token.dart' show Token;
-
 import 'listener.dart' show Listener;
-import '../options.dart' show ParserOptions;
 import 'partial_parser.dart' show PartialParser;
 
 class ClassElementParser extends PartialParser {
-  ClassElementParser(Listener listener, ParserOptions options)
-      : super(listener, options);
+  ClassElementParser(Listener listener) : super(listener);
 
   Token parseClassBody(Token token) => fullParseClassBody(token);
 }

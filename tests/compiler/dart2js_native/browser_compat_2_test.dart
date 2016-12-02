@@ -2,8 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
 // Test for dartNativeDispatchHooksTransformer
 //  - uncached, instance, leaf and interior caching modes.
@@ -11,31 +10,31 @@ import "package:expect/expect.dart";
 
 @Native("T1A")
 class T1A {
-  foo() native;
+  foo() native ;
 }
 
 @Native("T1B")
 class T1B {
-  foo() native;
+  foo() native ;
 }
 
 @Native("T1C")
 class T1C {
-  foo() native;
+  foo() native ;
 }
 
 @Native("T1D")
 class T1D {
-  foo() native;
+  foo() native ;
 }
 
-makeT1A() native;
-makeT1B() native;
-makeT1C() native;
-makeT1D() native;
+makeT1A() native ;
+makeT1B() native ;
+makeT1C() native ;
+makeT1D() native ;
 
-int getTagCallCount() native;
-void clearTagCallCount() native;
+int getTagCallCount() native ;
+void clearTagCallCount() native ;
 
 void setup() native r'''
 function T1A() { this.v = "a"; }
@@ -62,6 +61,11 @@ makeT1A = function(){return new T1A;};
 makeT1B = function(){return new T1B;};
 makeT1C = function(){return new T1C;};
 makeT1D = function(){return new T1D;};
+
+self.nativeConstructor(T1A);
+self.nativeConstructor(T1B);
+self.nativeConstructor(T1C);
+self.nativeConstructor(T1D);
 
 var getTagCount = 0;
 getTagCallCount = function() { return getTagCount; }
@@ -99,11 +103,9 @@ function transformer2(hooks) {
 dartNativeDispatchHooksTransformer = [transformer1, transformer2];
 ''';
 
-var inscrutable;
-
 main() {
+  nativeTesting();
   setup();
-  inscrutable = (x) => x;
 
   var t1a = makeT1A();
   var t1b = makeT1B();
@@ -111,17 +113,17 @@ main() {
   var t1d = makeT1D();
 
   clearTagCallCount();
-  Expect.equals("aA", inscrutable(t1a).foo(), 't1a is T1A');
-  Expect.equals("bB", inscrutable(t1b).foo(), 't1b is T1B');
-  Expect.equals("cC", inscrutable(t1c).foo(), 't1c is T1C');
-  Expect.equals("dD", inscrutable(t1d).foo(), 't1d is T1D');
+  Expect.equals("aA", confuse(t1a).foo(), 't1a is T1A');
+  Expect.equals("bB", confuse(t1b).foo(), 't1b is T1B');
+  Expect.equals("cC", confuse(t1c).foo(), 't1c is T1C');
+  Expect.equals("dD", confuse(t1d).foo(), 't1d is T1D');
   Expect.equals(4, getTagCallCount(), '4 fresh instances / types');
 
   clearTagCallCount();
-  Expect.equals("aA", inscrutable(t1a).foo(), 't1a is T1A');
-  Expect.equals("bB", inscrutable(t1b).foo(), 't1b is T1B');
-  Expect.equals("cC", inscrutable(t1c).foo(), 't1c is T1C');
-  Expect.equals("dD", inscrutable(t1d).foo(), 't1d is T1D');
+  Expect.equals("aA", confuse(t1a).foo(), 't1a is T1A');
+  Expect.equals("bB", confuse(t1b).foo(), 't1b is T1B');
+  Expect.equals("cC", confuse(t1c).foo(), 't1c is T1C');
+  Expect.equals("dD", confuse(t1d).foo(), 't1d is T1D');
   Expect.equals(1, getTagCallCount(), '1 = 1 uncached + (3 cached)');
 
   t1a = makeT1A();
@@ -130,18 +132,18 @@ main() {
   t1d = makeT1D();
 
   clearTagCallCount();
-  Expect.equals("aA", inscrutable(t1a).foo(), 't1a is T1A');
-  Expect.equals("bB", inscrutable(t1b).foo(), 't1b is T1B');
-  Expect.equals("cC", inscrutable(t1c).foo(), 't1c is T1C');
-  Expect.equals("dD", inscrutable(t1d).foo(), 't1d is T1D');
+  Expect.equals("aA", confuse(t1a).foo(), 't1a is T1A');
+  Expect.equals("bB", confuse(t1b).foo(), 't1b is T1B');
+  Expect.equals("cC", confuse(t1c).foo(), 't1c is T1C');
+  Expect.equals("dD", confuse(t1d).foo(), 't1d is T1D');
   Expect.equals(2, getTagCallCount(),
       '2 = 1 fresh instance + 1 uncached (+ 2 proto cached)');
 
   clearTagCallCount();
-  Expect.equals("aA", inscrutable(t1a).foo(), 't1a is T1A');
-  Expect.equals("bB", inscrutable(t1b).foo(), 't1b is T1B');
-  Expect.equals("cC", inscrutable(t1c).foo(), 't1c is T1C');
-  Expect.equals("dD", inscrutable(t1d).foo(), 't1d is T1D');
+  Expect.equals("aA", confuse(t1a).foo(), 't1a is T1A');
+  Expect.equals("bB", confuse(t1b).foo(), 't1b is T1B');
+  Expect.equals("cC", confuse(t1c).foo(), 't1c is T1C');
+  Expect.equals("dD", confuse(t1d).foo(), 't1d is T1D');
   Expect.equals(1, getTagCallCount(),
       '1 = 2 proto cached + 1 instance cached + 1 uncached');
 }

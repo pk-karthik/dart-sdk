@@ -144,8 +144,8 @@ DEFINE_NATIVE_ENTRY(Double_greaterThan, 2) {
   GET_NON_NULL_NATIVE_ARGUMENT(Double, right, arguments->NativeArgAt(1));
   bool result = right.IsNull() ? false : (left.value() > right.value());
   if (FLAG_trace_intrinsified_natives) {
-    OS::Print("Double_greaterThan %s > %s\n",
-        left.ToCString(), right.ToCString());
+    OS::Print("Double_greaterThan %s > %s\n", left.ToCString(),
+              right.ToCString());
   }
   return Bool::Get(result).raw();
 }
@@ -163,8 +163,7 @@ DEFINE_NATIVE_ENTRY(Double_equal, 2) {
   GET_NON_NULL_NATIVE_ARGUMENT(Double, right, arguments->NativeArgAt(1));
   bool result = right.IsNull() ? false : (left.value() == right.value());
   if (FLAG_trace_intrinsified_natives) {
-    OS::Print("Double_equal %s == %s\n",
-        left.ToCString(), right.ToCString());
+    OS::Print("Double_equal %s == %s\n", left.ToCString(), right.ToCString());
   }
   return Bool::Get(result).raw();
 }
@@ -232,9 +231,7 @@ DEFINE_NATIVE_ENTRY(Double_parse, 3) {
 
 DEFINE_NATIVE_ENTRY(Double_toString, 1) {
   const Number& number = Number::CheckedHandle(arguments->NativeArgAt(0));
-  Heap::Space space = isolate->heap()->ShouldPretenure(kOneByteStringCid) ?
-      Heap::kPretenured : Heap::kNew;
-  return number.ToString(space);
+  return number.ToString(Heap::kNew);
 }
 
 
@@ -247,8 +244,8 @@ DEFINE_NATIVE_ENTRY(Double_toStringAsFixed, 2) {
   GET_NON_NULL_NATIVE_ARGUMENT(Smi, fraction_digits, arguments->NativeArgAt(1));
   double d = arg.value();
   intptr_t fraction_digits_value = fraction_digits.Value();
-  if (0 <= fraction_digits_value && fraction_digits_value <= 20
-      && kLowerBoundary < d && d < kUpperBoundary) {
+  if (0 <= fraction_digits_value && fraction_digits_value <= 20 &&
+      kLowerBoundary < d && d < kUpperBoundary) {
     return DoubleToStringAsFixed(d, static_cast<int>(fraction_digits_value));
   } else {
     Exceptions::ThrowArgumentError(String::Handle(
@@ -264,8 +261,8 @@ DEFINE_NATIVE_ENTRY(Double_toStringAsExponential, 2) {
   double d = arg.value();
   intptr_t fraction_digits_value = fraction_digits.Value();
   if (-1 <= fraction_digits_value && fraction_digits_value <= 20) {
-    return DoubleToStringAsExponential(
-        d, static_cast<int>(fraction_digits_value));
+    return DoubleToStringAsExponential(d,
+                                       static_cast<int>(fraction_digits_value));
   } else {
     Exceptions::ThrowArgumentError(String::Handle(
         String::New("Illegal arguments to double.toStringAsExponential")));

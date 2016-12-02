@@ -11,18 +11,15 @@ import 'package:analysis_server/src/domain_server.dart';
 import 'package:analysis_server/src/plugin/server_plugin.dart';
 import 'package:analyzer/file_system/memory_file_system.dart';
 import 'package:analyzer/instrumentation/instrumentation.dart';
+import 'package:analyzer/src/generated/sdk.dart';
 import 'package:plugin/manager.dart';
-import 'package:unittest/unittest.dart';
+import 'package:test/test.dart';
 
-import 'mock_sdk.dart';
 import 'mocks.dart';
-import 'utils.dart';
 
 main() {
   AnalysisServer server;
   ServerDomainHandler handler;
-
-  initializeTestEnvironment();
 
   setUp(() {
     var serverChannel = new MockServerChannel();
@@ -37,7 +34,7 @@ main() {
         null,
         serverPlugin,
         new AnalysisServerOptions(),
-        (_) => new MockSdk(),
+        new DartSdkManager('', false),
         InstrumentationService.NULL_SERVICE);
     handler = new ServerDomainHandler(server);
   });

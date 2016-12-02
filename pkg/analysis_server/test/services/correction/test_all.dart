@@ -4,9 +4,8 @@
 
 library test.services.correction;
 
-import 'package:unittest/unittest.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 
-import '../../utils.dart';
 import 'assist_test.dart' as assist_test;
 import 'change_test.dart' as change_test;
 import 'fix_test.dart' as fix_test;
@@ -17,11 +16,11 @@ import 'sort_members_test.dart' as sort_members_test;
 import 'source_range_test.dart' as source_range_test;
 import 'status_test.dart' as status_test;
 import 'strings_test.dart' as strings_test;
+import 'util_test.dart' as util_test;
 
 /// Utility for manually running all tests.
 main() {
-  initializeTestEnvironment();
-  group('correction', () {
+  defineReflectiveSuite(() {
     assist_test.main();
     change_test.main();
     fix_test.main();
@@ -32,5 +31,6 @@ main() {
     source_range_test.main();
     status_test.main();
     strings_test.main();
-  });
+    util_test.main();
+  }, name: 'correction');
 }

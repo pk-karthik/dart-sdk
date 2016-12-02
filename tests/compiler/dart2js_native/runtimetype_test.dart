@@ -2,23 +2,19 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "package:expect/expect.dart";
-import "dart:_js_helper";
-import 'dart:_foreign_helper' show JS;
+import 'native_testing.dart';
 
 // Test to see runtimeType works on native classes and does not use the native
 // constructor name.
 
 @Native("TAGX")
-class A {
-}
+class A {}
 
 @Native("TAGY")
-class B extends A {
-}
+class B extends A {}
 
-makeA() native;
-makeB() native;
+makeA() native ;
+makeB() native ;
 
 void setup() native """
 // This code is all inside 'setup' and so not accesible from the global scope.
@@ -35,8 +31,10 @@ inherits(TAGY, TAGX);
 
 makeA = function(){return new TAGX};
 makeB = function(){return new TAGY};
-""";
 
+self.nativeConstructor(TAGX);
+self.nativeConstructor(TAGY);
+""";
 
 testDynamicContext() {
   var a = makeA();
@@ -50,7 +48,7 @@ testDynamicContext() {
 }
 
 testStaticContext() {
-  var a = JS('A', '#', makeA());  // Force compiler to know type.
+  var a = JS('A', '#', makeA()); // Force compiler to know type.
   var b = JS('B', '#', makeB());
 
   var aT = a.runtimeType;
@@ -61,6 +59,7 @@ testStaticContext() {
 }
 
 main() {
+  nativeTesting();
   setup();
 
   testDynamicContext();

@@ -2,8 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
 // Test that native classes can use ordinary Dart classes with fields
 // as mixins.
@@ -19,7 +18,7 @@ class B extends A with M1, M2 {
 }
 
 class M1 {
-  var baz;  // This field is not a native field, even when mixed in.
+  var baz; // This field is not a native field, even when mixed in.
 }
 
 class M2 {
@@ -27,17 +26,22 @@ class M2 {
   var buz;
 }
 
-A makeA() native;
-B makeB() native;
+A makeA() native ;
+B makeB() native ;
 
 void setup() native """
 function A() {this.foo='A-foo';}
 function B() {A.call(this);this.bar='B-bar';this.baz='M1-baz';}
 makeA = function(){return new A;};
 makeB = function(){return new B;};
+
+self.nativeConstructor(A);
+self.nativeConstructor(B);
 """;
 
+
 main() {
+  nativeTesting();
   setup();
   A a = makeA();
   Expect.equals("A-foo", a.foo);
@@ -49,7 +53,7 @@ main() {
   Expect.equals("A-foo", b.foo);
   Expect.equals("B-bar", b.bar);
   // Expect.equals("M1-baz", b.baz);  // not true, see M1.
-  Expect.isNull(b.baz);  // native b.baz is not the same as dart b.baz.
+  Expect.isNull(b.baz); // native b.baz is not the same as dart b.baz.
   Expect.isNull(b.buz);
 
   M1 m1 = new M1();

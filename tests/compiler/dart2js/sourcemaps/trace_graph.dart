@@ -20,7 +20,7 @@ class TraceGraph {
 
   void addStep(TraceStep step) {
     steps.add(step);
-    int offset = step.offset.subexpressionOffset;
+    int offset = step.offset.value;
     TraceStep existingStep = offsetMap[offset];
     if (existingStep != null) {
       // TODO(johnniwinther): Fix problems with reuse of JS nodes from
@@ -59,14 +59,8 @@ class TraceStep {
 
   List stack;
 
-  TraceStep(
-      this.kind,
-      this.id,
-      this.node,
-      this.offset,
-      this.text,
+  TraceStep(this.kind, this.id, this.node, this.offset, this.text,
       [this.sourceLocation]);
 
   String toString() => '<span style="background:${toColorCss(id)}">$id</span>';
 }
-

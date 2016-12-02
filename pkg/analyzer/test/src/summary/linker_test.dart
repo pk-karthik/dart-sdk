@@ -7,14 +7,15 @@ import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/summary/format.dart';
 import 'package:analyzer/src/summary/idl.dart';
 import 'package:analyzer/src/summary/link.dart';
-import 'package:unittest/unittest.dart';
+import 'package:test/test.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 
-import '../../reflective_tests.dart';
 import 'summarize_ast_test.dart';
 
 main() {
-  groupSep = ' | ';
-  runReflectiveTests(LinkerUnitTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(LinkerUnitTest);
+  });
 }
 
 @reflectiveTest
@@ -33,14 +34,70 @@ class LinkerUnitTest extends SummaryLinkerTest {
 
   void createLinker(String text, {String path: '/test.dart'}) {
     linkerInputs = createLinkerInputs(text, path: path);
-    Map<String, LinkedLibraryBuilder> linkedLibraries =
-        setupForLink(linkerInputs.linkedLibraries, linkerInputs.getUnit);
+    Map<String, LinkedLibraryBuilder> linkedLibraries = setupForLink(
+        linkerInputs.linkedLibraries,
+        linkerInputs.getUnit,
+        linkerInputs.getDeclaredVariable);
     linker = new Linker(linkedLibraries, linkerInputs.getDependency,
         linkerInputs.getUnit, true);
   }
 
   LibraryElementForLink getLibrary(String uri) {
     return linker.getLibrary(Uri.parse(uri));
+  }
+
+  void test_apiSignature_apiChanges() {
+    var bundle0 =
+        createPackageBundle('f(int i) { print(i); }', path: '/test.dart');
+    var bundle1 =
+        createPackageBundle('f(String s) { print(s); }', path: '/test.dart');
+    expect(bundle0.apiSignature, isNotEmpty);
+    expect(bundle1.apiSignature, isNotEmpty);
+    expect(bundle0.apiSignature, isNot(bundle1.apiSignature));
+  }
+
+  void test_apiSignature_localChanges() {
+    var bundle0 = createPackageBundle('f() { print(0); }', path: '/test.dart');
+    var bundle1 = createPackageBundle('f() { print(1); }', path: '/test.dart');
+    expect(bundle0.apiSignature, isNotEmpty);
+    expect(bundle1.apiSignature, isNotEmpty);
+    expect(bundle0.apiSignature, bundle1.apiSignature);
+  }
+
+  void test_apiSignature_orderChange() {
+    // A change to the order in which files are processed should not affect the
+    // API signature.
+    addNamedSource('/a.dart', 'class A {}');
+    var bundle0 = createPackageBundle('class B {}', path: '/b.dart');
+    addNamedSource('/b.dart', 'class B {}');
+    var bundle1 = createPackageBundle('class A {}', path: '/a.dart');
+    expect(bundle0.apiSignature, isNotEmpty);
+    expect(bundle1.apiSignature, isNotEmpty);
+    expect(bundle0.apiSignature, bundle1.apiSignature);
+  }
+
+  void test_apiSignature_unlinkedOnly() {
+    // The API signature of a package bundle should only contain unlinked
+    // information.  In this test, the linked information for bundle2 and
+    // bundle3 refer to class C as existing in different files.  But the
+    // unlinked information for bundle2 and bundle3 should be the same, so their
+    // API signatures should be the same.
+    addNamedSource('/a.dart', 'class C {}');
+    var bundle0 = createPackageBundle('', path: '/b.dart');
+    addNamedSource('/a.dart', '');
+    var bundle1 = createPackageBundle('class C {}', path: '/b.dart');
+    var text = '''
+import 'a.dart';
+import 'b.dart';
+class D extends C {}
+''';
+    addBundle('/bundle0.ds', bundle0);
+    var bundle2 = createPackageBundle(text, path: '/c.dart');
+    addBundle('/bundle1.ds', bundle1);
+    var bundle3 = createPackageBundle(text, path: '/c.dart');
+    expect(bundle2.apiSignature, isNotEmpty);
+    expect(bundle3.apiSignature, isNotEmpty);
+    expect(bundle2.apiSignature, bundle3.apiSignature);
   }
 
   void test_baseClass_genericWithAccessor() {
@@ -141,6 +198,33 @@ class C extends B {
     // No assertions--just make sure it doesn't crash.
   }
 
+  void test_bundle_refers_to_bundle() {
+    var bundle1 = createPackageBundle(
+        '''
+var x = 0;
+''',
+        path: '/a.dart');
+    addBundle('/a.ds', bundle1);
+    var bundle2 = createPackageBundle(
+        '''
+import "a.dart";
+var y = x;
+''',
+        path: '/b.dart');
+    expect(bundle2.dependencies, hasLength(1));
+    expect(bundle2.dependencies[0].summaryPath, '/a.ds');
+    expect(bundle2.dependencies[0].apiSignature, bundle1.apiSignature);
+    addBundle('/a.ds', bundle1);
+    addBundle('/b.ds', bundle2);
+    createLinker('''
+import "b.dart";
+var z = y;
+''');
+    LibraryElementForLink library = linker.getLibrary(linkerInputs.testDartUri);
+    expect(_getVariable(library.getContainedName('z')).inferredType.toString(),
+        'int');
+  }
+
   void test_constCycle_viaLength() {
     createLinker('''
 class C {
@@ -152,6 +236,53 @@ const x = [const C()];
     testLibrary.libraryCycleForLink.ensureLinked();
     ClassElementForLink classC = testLibrary.getContainedName('C');
     expect(classC.unnamedConstructor.isCycleFree, false);
+  }
+
+  void test_covariance() {
+    // Note: due to dartbug.com/27393, the keyword "checked" is identified by
+    // its presence in a library called "meta".  If that bug is fixed, this test
+    // may need to be changed.
+    createLinker('''
+library meta;
+const checked = null;
+class A<T> {
+  void f(@checked T t) {}
+}
+class B<T> extends A<T> {
+  void f(T t) {}
+}
+''');
+    testLibrary.libraryCycleForLink.ensureLinked();
+    ClassElementForLink classA = testLibrary.getContainedName('A');
+    MethodElementForLink methodAF = classA.getContainedName('f');
+    ParameterElementForLink parameterAFT = methodAF.parameters[0];
+    expect(parameterAFT.isCovariant, isTrue);
+    expect(parameterAFT.inheritsCovariant, isFalse);
+    ClassElementForLink classB = testLibrary.getContainedName('B');
+    MethodElementForLink methodBF = classB.getContainedName('f');
+    ParameterElementForLink parameterBFT = methodBF.parameters[0];
+    expect(parameterAFT.isCovariant, isTrue);
+    expect(parameterBFT.inheritsCovariant, isTrue);
+  }
+
+  void test_createPackageBundle_withPackageUri() {
+    PackageBundle bundle = createPackageBundle(
+        '''
+class B {
+  void f(int i) {}
+}
+class C extends B {
+  f(i) {} // Inferred param type: int
+}
+''',
+        uri: 'package:foo/bar.dart');
+    UnlinkedExecutable cf = bundle.unlinkedUnits[0].classes[1].executables[0];
+    UnlinkedParam cfi = cf.parameters[0];
+    expect(cfi.inferredTypeSlot, isNot(0));
+    EntityRef typeRef = _lookupInferredType(
+        bundle.linkedLibraries[0].units[0], cfi.inferredTypeSlot);
+    expect(typeRef, isNotNull);
+    expect(bundle.unlinkedUnits[0].references[typeRef.reference].name, 'int');
   }
 
   void test_getContainedName_nonStaticField() {
@@ -188,7 +319,7 @@ const x = [const C()];
 var x = () {};
 ''',
         path: '/a.dart');
-    addBundle(bundle);
+    addBundle('/a.ds', bundle);
     createLinker('''
 import 'a.dart';
 var y = x;
@@ -210,7 +341,7 @@ class D {
 class E {}
 ''',
         path: '/a.dart');
-    addBundle(bundle);
+    addBundle('/a.ds', bundle);
     createLinker('''
 import 'a.dart';
 var y = C.x;
@@ -218,6 +349,20 @@ var y = C.x;
     LibraryElementForLink library = linker.getLibrary(linkerInputs.testDartUri);
     expect(_getVariable(library.getContainedName('y')).inferredType.toString(),
         '(D) → E');
+  }
+
+  void test_inferredType_instanceField_conditional_genericFunctions() {
+    createLinker('''
+class C {
+  final f = true ? <T>(T t) => 0 : <T>(T t) => 1;
+}
+''');
+    LibraryElementForLink library = linker.getLibrary(linkerInputs.testDartUri);
+    library.libraryCycleForLink.ensureLinked();
+    ClassElementForLink_Class cls = library.getContainedName('C');
+    expect(cls.fields, hasLength(1));
+    var field = cls.fields[0];
+    expect(field.type.toString(), '(<bottom>) → dynamic');
   }
 
   void test_inferredType_instanceField_dynamic() {
@@ -323,7 +468,7 @@ var x;
 var y = x; // Inferred type: dynamic
 ''',
         path: '/a.dart');
-    addBundle(bundle);
+    addBundle('/a.ds', bundle);
     createLinker('''
 import 'a.dart';
 var z = y; // Inferred type: dynamic
@@ -341,7 +486,7 @@ class C {
 }
 ''',
         path: '/a.dart');
-    addBundle(bundle);
+    addBundle('/a.ds', bundle);
     createLinker('''
 import 'a.dart';
 var x = new C().f; // Inferred type: int
@@ -359,7 +504,7 @@ class C {
 }
 ''',
         path: '/a.dart');
-    addBundle(bundle);
+    addBundle('/a.ds', bundle);
     createLinker('''
 import 'a.dart';
 class D {
@@ -382,7 +527,7 @@ class C extends B {
 }
 ''',
         path: '/a.dart');
-    addBundle(bundle);
+    addBundle('/a.ds', bundle);
     createLinker('''
 import 'a.dart';
 var x = new C().f(0); // Inferred type: int
@@ -403,7 +548,7 @@ class C extends B {
 }
 ''',
         path: '/a.dart');
-    addBundle(bundle);
+    addBundle('/a.ds', bundle);
     createLinker('''
 import 'a.dart';
 class D extends C {
@@ -430,7 +575,7 @@ class C extends B {
 }
 ''',
         path: '/a.dart');
-    addBundle(bundle);
+    addBundle('/a.ds', bundle);
     createLinker('''
 import 'a.dart';
 var x = new C().f(); // Inferred type: int
@@ -451,7 +596,7 @@ class C extends B {
 }
 ''',
         path: '/a.dart');
-    addBundle(bundle);
+    addBundle('/a.ds', bundle);
     createLinker('''
 import 'a.dart';
 class D extends C {
@@ -468,7 +613,7 @@ class D extends C {
   void test_inferredTypeFromOutsideBuildUnit_staticField() {
     var bundle =
         createPackageBundle('class C { static var f = 0; }', path: '/a.dart');
-    addBundle(bundle);
+    addBundle('/a.ds', bundle);
     createLinker('import "a.dart"; var x = C.f;', path: '/b.dart');
     expect(
         _getVariable(linker
@@ -481,7 +626,7 @@ class D extends C {
 
   void test_inferredTypeFromOutsideBuildUnit_topLevelVariable() {
     var bundle = createPackageBundle('var a = 0;', path: '/a.dart');
-    addBundle(bundle);
+    addBundle('/a.ds', bundle);
     createLinker('import "a.dart"; var b = a;', path: '/b.dart');
     expect(
         _getVariable(linker
@@ -652,7 +797,7 @@ var x = {
         ref.localIndex = 1234;
       }
     }
-    addBundle(bundle);
+    addBundle('/a.ds', bundle);
     createLinker('''
 import 'a.dart';
 var y = x;
@@ -813,5 +958,17 @@ var v = 0;
 
   VariableElementForLink _getVariable(ReferenceableElementForLink element) {
     return (element as PropertyAccessorElementForLink_Variable).variable;
+  }
+
+  /**
+   * Finds the first inferred type stored in [unit] whose slot matches [slot].
+   */
+  EntityRef _lookupInferredType(LinkedUnit unit, int slot) {
+    for (EntityRef ref in unit.types) {
+      if (ref.slot == slot) {
+        return ref;
+      }
+    }
+    return null;
   }
 }

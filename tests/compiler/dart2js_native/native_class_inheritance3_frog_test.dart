@@ -2,38 +2,33 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
 // Test to see if resolving a hidden native class's method to noSuchMethod
 // interferes with subsequent resolving of the method.  This might happen if the
 // noSuchMethod is cached on Object.prototype.
 
 @Native("A1")
-class A1 {
-}
+class A1 {}
 
 @Native("B1")
-class B1 extends A1 {
-}
+class B1 extends A1 {}
 
-makeA1() native;
-makeB1() native;
-
+makeA1() native ;
+makeB1() native ;
 
 @Native("A2")
 class A2 {
-  foo([a=99]) native;
+  foo([a = 99]) native ;
 }
 
 @Native("B2")
-class B2 extends A2 {
-}
+class B2 extends A2 {}
 
-makeA2() native;
-makeB2() native;
+makeA2() native ;
+makeB2() native ;
 
-makeObject() native;
+makeObject() native ;
 
 void setup() native """
 // This code is all inside 'setup' and so not accesible from the global scope.
@@ -63,10 +58,15 @@ makeA2 = function(){return new A2};
 makeB2 = function(){return new B2};
 
 makeObject = function(){return new Object};
+
+self.nativeConstructor(A1);
+self.nativeConstructor(A2);
+self.nativeConstructor(B1);
+self.nativeConstructor(B2);
 """;
 
-
 main() {
+  nativeTesting();
   setup();
 
   var a1 = makeA1();
@@ -86,7 +86,6 @@ main() {
   Expect.equals('A2.foo(99)', b2.foo());
   Expect.equals('A2.foo(1)', a2.foo(1));
   Expect.equals('A2.foo(2)', b2.foo(2));
-
 
   expectNoSuchMethod(() => b1.foo(3), 'b1.foo(3)');
   expectNoSuchMethod(() => a1.foo(4), 'a1.foo(4)');

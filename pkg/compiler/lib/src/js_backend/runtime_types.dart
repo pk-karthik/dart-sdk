@@ -2,7 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-part of js_backend;
+part of js_backend.backend;
 
 /// For each class, stores the possible class subtype tests that could succeed.
 abstract class TypeChecks {
@@ -46,7 +46,7 @@ abstract class RuntimeTypes {
   ///
   /// This function must be called after all is-checks have been registered.
   void addImplicitChecks(
-      Universe universe, Iterable<ClassElement> classesUsingChecks);
+      WorldBuilder universe, Iterable<ClassElement> classesUsingChecks);
 
   /// Return all classes that are referenced in the type of the function, i.e.,
   /// in the return type or the argument types.
@@ -88,20 +88,11 @@ abstract class RuntimeTypesEncoder {
   jsAst.Template get templateForCreateFunctionType;
   jsAst.Name get getFunctionThatReturnsNullName;
 
+  /// Returns a [jsAst.Expression] representing the given [type]. Type variables
+  /// are replaced by the [jsAst.Expression] returned by [onVariable].
   jsAst.Expression getTypeRepresentation(
       DartType type, OnVariableCallback onVariable,
       [ShouldEncodeTypedefCallback shouldEncodeTypedef]);
-  /**
-   * Returns a [jsAst.Expression] representing the given [type]. Type
-   * variables are replaced by placeholders in the ast.
-   *
-   * [firstPlaceholderIndex] is the index to use for the first placeholder.
-   * This is useful if the returned [jsAst.Expression] is only part of a
-   * larger template. By default, indexing starts with 0.
-   */
-  jsAst.Expression getTypeRepresentationWithPlaceholders(
-      DartType type, OnVariableCallback onVariable,
-      {int firstPlaceholderIndex: 0});
 
   String getTypeRepresentationForTypeConstant(DartType type);
 }
@@ -150,7 +141,7 @@ class _RuntimeTypes implements RuntimeTypes {
   @override
   void registerRtiDependency(Element element, Element dependency) {
     // We're not dealing with typedef for now.
-    if (!element.isClass || !dependency.isClass) return;
+    if (element == null || !element.isClass || !dependency.isClass) return;
     Set<ClassElement> classes =
         rtiDependencies.putIfAbsent(element, () => new Set<ClassElement>());
     classes.add(dependency);
@@ -179,7 +170,7 @@ class _RuntimeTypes implements RuntimeTypes {
    */
   @override
   void addImplicitChecks(
-      Universe universe, Iterable<ClassElement> classesUsingChecks) {
+      WorldBuilder universe, Iterable<ClassElement> classesUsingChecks) {
     // If there are no classes that use their variables in checks, there is
     // nothing to do.
     if (classesUsingChecks.isEmpty) return;
@@ -190,7 +181,7 @@ class _RuntimeTypes implements RuntimeTypes {
         InterfaceType interface = type;
         do {
           for (DartType argument in interface.typeArguments) {
-            universe.registerIsCheck(argument, compiler);
+            universe.registerIsCheck(argument, compiler.resolution);
           }
           interface = interface.element.supertype;
         } while (interface != null && !instantiatedTypes.contains(interface));
@@ -213,7 +204,7 @@ class _RuntimeTypes implements RuntimeTypes {
             InterfaceType instance = current.asInstanceOf(cls);
             if (instance == null) break;
             for (DartType argument in instance.typeArguments) {
-              universe.registerIsCheck(argument, compiler);
+              universe.registerIsCheck(argument, compiler.resolution);
             }
             current = current.element.supertype;
           } while (current != null && !instantiatedTypes.contains(current));
@@ -236,7 +227,7 @@ class _RuntimeTypes implements RuntimeTypes {
       classesNeedingRti.add(cls);
 
       // TODO(ngeoffray): This should use subclasses, not subtypes.
-      compiler.world.forEachStrictSubtypeOf(cls, (ClassElement sub) {
+      compiler.closedWorld.forEachStrictSubtypeOf(cls, (ClassElement sub) {
         potentiallyAddForRti(sub);
       });
 
@@ -298,6 +289,7 @@ class _RuntimeTypes implements RuntimeTypes {
               methodsNeedingRti.add(method);
             }
           }
+
           compiler.resolverWorld.closuresWithFreeTypeVariables
               .forEach(analyzeMethod);
           compiler.resolverWorld.callMethodsWithFreeTypeVariables
@@ -314,6 +306,7 @@ class _RuntimeTypes implements RuntimeTypes {
           methodsNeedingRti.add(method);
         }
       }
+
       compiler.resolverWorld.closuresWithFreeTypeVariables
           .forEach(analyzeMethod);
       compiler.resolverWorld.callMethodsWithFreeTypeVariables
@@ -371,7 +364,8 @@ class _RuntimeTypes implements RuntimeTypes {
         computeChecks(allInstantiatedArguments, checkedArguments);
   }
 
-  Set<DartType> computeInstantiatedTypesAndClosures(Universe universe) {
+  Set<DartType> computeInstantiatedTypesAndClosures(
+      CodegenWorldBuilder universe) {
     Set<DartType> instantiatedTypes =
         new Set<DartType>.from(universe.instantiatedTypes);
     for (DartType instantiatedType in universe.instantiatedTypes) {
@@ -417,6 +411,7 @@ class _RuntimeTypes implements RuntimeTypes {
         functionArgumentCollector.collect(type);
       }
     }
+
     collectFunctionTypeArguments(isChecks);
     collectFunctionTypeArguments(checkedBounds);
 
@@ -432,6 +427,7 @@ class _RuntimeTypes implements RuntimeTypes {
         }
       }
     }
+
     collectTypeArguments(instantiatedTypes);
     collectTypeArguments(checkedTypeArguments, isTypeArgument: true);
 
@@ -462,6 +458,7 @@ class _RuntimeTypes implements RuntimeTypes {
         functionArgumentCollector.collect(type);
       }
     }
+
     collectFunctionTypeArguments(instantiatedTypes);
     collectFunctionTypeArguments(checkedTypeArguments);
 
@@ -471,6 +468,7 @@ class _RuntimeTypes implements RuntimeTypes {
         collector.collect(type, isTypeArgument: isTypeArgument);
       }
     }
+
     collectTypeArguments(isChecks);
     collectTypeArguments(checkedBounds, isTypeArgument: true);
 
@@ -493,6 +491,9 @@ class _RuntimeTypes implements RuntimeTypes {
       }
     }
     return instantiated..addAll(collector.classes);
+
+    // TODO(sra): This computation misses substitutions for reading type
+    // parameters.
   }
 
   @override
@@ -613,20 +614,6 @@ class _RuntimeTypesEncoder implements RuntimeTypesEncoder {
   }
 
   @override
-  jsAst.Expression getTypeRepresentationWithPlaceholders(
-      DartType type, OnVariableCallback onVariable,
-      {int firstPlaceholderIndex: 0}) {
-    // Create a type representation.  For type variables call the original
-    // callback for side effects and return a template placeholder.
-    int positions = firstPlaceholderIndex;
-    jsAst.Expression representation = getTypeRepresentation(type, (variable) {
-      onVariable(variable);
-      return new jsAst.InterpolatedExpression(positions++);
-    });
-    return representation;
-  }
-
-  @override
   jsAst.Expression getSubstitutionRepresentation(
       List<DartType> types, OnVariableCallback onVariable) {
     List<jsAst.Expression> elements = types
@@ -641,7 +628,7 @@ class _RuntimeTypesEncoder implements RuntimeTypesEncoder {
     jsAst.Expression onVariable(TypeVariableType v) {
       return new jsAst.VariableUse(v.name);
     }
-    ;
+
     jsAst.Expression encoding = getTypeRepresentation(type, onVariable);
     if (contextClass == null && !alwaysGenerateFunction) {
       return encoding;
@@ -1049,8 +1036,8 @@ class Substitution {
 class TypeCheck {
   final ClassElement cls;
   final Substitution substitution;
-  final int hashCode = (nextHash++) & 0x3fffffff;
-  static int nextHash = 49;
+  final int hashCode = _nextHash = (_nextHash + 100003).toUnsigned(30);
+  static int _nextHash = 0;
 
   TypeCheck(this.cls, this.substitution);
 }

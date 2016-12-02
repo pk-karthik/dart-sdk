@@ -53,7 +53,6 @@ main() {
   print(aFunction<Set>(null));
 }
 ''',
-
   'cannot_new_method_type_variable.dart': '''
 class C {
   X aMethod<X>() => new X();
@@ -63,7 +62,6 @@ main() {
   new C().aMethod<Set>();
 }
 ''',
-
   'cannot_new_function_type_variable.dart': '''
 X aFunction<X>() => new X(42);
 
@@ -71,8 +69,19 @@ main() {
   aFunction<Set>();
 }
 ''',
+  'dynamic_as_type_argument.dart': '''
+main() {
+  method<dynamic>();
+}
+method<T>() {}
+''',
+  'malformed_type_argument.dart': '''
+main() {
+  method<Unresolved>();
+}
+method<T>() {}
+''',
 };
-
 
 Future runTest(Uri main, {MessageKind warning, MessageKind info}) async {
   print("----\nentry-point: $main\n");
@@ -87,7 +96,7 @@ Future runTest(Uri main, {MessageKind warning, MessageKind info}) async {
       outputProvider: output);
 
   Expect.isFalse(output.hasExtraOutput);
-  Expect.equals(0, diagnostics.errors.length);
+  Expect.equals(0, diagnostics.errors.length, "Unexpected errors.");
   Expect.equals(warning != null ? 1 : 0, diagnostics.warnings.length);
   if (warning != null) {
     Expect.equals(warning, diagnostics.warnings.first.message.kind);
@@ -101,15 +110,17 @@ Future runTest(Uri main, {MessageKind warning, MessageKind info}) async {
 
 void main() {
   asyncTest(() async {
-    await runTest(
-        Uri.parse('memory:type_variable_is_dynamic.dart'));
+    await runTest(Uri.parse('memory:type_variable_is_dynamic.dart'));
 
-    await runTest(
-        Uri.parse('memory:cannot_new_method_type_variable.dart'),
+    await runTest(Uri.parse('memory:cannot_new_method_type_variable.dart'),
         warning: MessageKind.CANNOT_INSTANTIATE_TYPE_VARIABLE);
 
-    await runTest(
-        Uri.parse('memory:cannot_new_function_type_variable.dart'),
+    await runTest(Uri.parse('memory:cannot_new_function_type_variable.dart'),
         warning: MessageKind.CANNOT_INSTANTIATE_TYPE_VARIABLE);
+
+    await runTest(Uri.parse('memory:dynamic_as_type_argument.dart'));
+
+    await runTest(Uri.parse('memory:malformed_type_argument.dart'),
+        warning: MessageKind.CANNOT_RESOLVE_TYPE);
   });
 }

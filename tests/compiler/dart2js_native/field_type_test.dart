@@ -6,15 +6,13 @@
 // This regression test verifies that compiler accounts for hidden constructor
 // when analysing field values.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
 @Native("Node")
 class Node {
-
   final Node parentNode;
 
-  ModelSource _modelSource;  // If null, inherited from parent.
+  ModelSource _modelSource; // If null, inherited from parent.
 
   ModelSource get modelSource {
     for (Node node = this; node != null; node = node.parentNode) {
@@ -26,7 +24,7 @@ class Node {
 
   // Copy of above code renamed with suffix '2'.
 
-  ModelSource _modelSource2;  // If null, inherited from parent.
+  ModelSource _modelSource2; // If null, inherited from parent.
 
   ModelSource get modelSource2 {
     for (Node node = this; node != null; node = node.parentNode) {
@@ -37,7 +35,7 @@ class Node {
   }
 }
 
-makeNode(parent) native;
+makeNode(parent) native ;
 
 class ModelSource {
   var name;
@@ -49,10 +47,11 @@ void setup() native """
 // This code is all inside 'setup' and so not accesible from the global scope.
 function Node(parent){ this.parentNode = parent; }
 makeNode = function(p){return new Node(p);};
+self.nativeConstructor(Node);
 """;
 
-
 main() {
+  nativeTesting();
   setup();
 
   var n1 = makeNode(null);
@@ -60,13 +59,13 @@ main() {
   var n3 = makeNode(n2);
 
   var m1 = new ModelSource('1');
-  n2._modelSource = null;        // null write.
-  n2._modelSource = m1;          // Non-null write.
+  n2._modelSource = null; // null write.
+  n2._modelSource = m1; // Non-null write.
   var x1 = n3.modelSource;
   Expect.identical(m1, x1);
 
   var m2 = new ModelSource('2');
-  n2._modelSource2 = m2;         // The only write is non-null.
+  n2._modelSource2 = m2; // The only write is non-null.
   var x2 = n3.modelSource2;
   Expect.identical(m2, x2);
 }

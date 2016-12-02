@@ -7,28 +7,31 @@
 
 #include "vm/os_thread.h"
 
-#include <sys/errno.h>  // NOLINT
-#include <sys/types.h>  // NOLINT
-#include <sys/sysctl.h>  // NOLINT
-#include <mach/mach_init.h>  // NOLINT
-#include <mach/mach_host.h>  // NOLINT
-#include <mach/mach_port.h>  // NOLINT
-#include <mach/mach_traps.h>  // NOLINT
-#include <mach/task_info.h>  // NOLINT
+#include <sys/errno.h>         // NOLINT
+#include <sys/types.h>         // NOLINT
+#include <sys/sysctl.h>        // NOLINT
+#include <mach/mach_init.h>    // NOLINT
+#include <mach/mach_host.h>    // NOLINT
+#include <mach/mach_port.h>    // NOLINT
+#include <mach/mach_traps.h>   // NOLINT
+#include <mach/task_info.h>    // NOLINT
 #include <mach/thread_info.h>  // NOLINT
-#include <mach/thread_act.h>  // NOLINT
+#include <mach/thread_act.h>   // NOLINT
 
 #include "platform/assert.h"
 #include "platform/utils.h"
 
+#include "vm/profiler.h"
+
 namespace dart {
 
-#define VALIDATE_PTHREAD_RESULT(result)         \
-  if (result != 0) { \
-    const int kBufferSize = 1024; \
-    char error_message[kBufferSize]; \
-    Utils::StrError(result, error_message, kBufferSize); \
-    FATAL2("pthread error: %d (%s)", result, error_message); \
+#define VALIDATE_PTHREAD_RESULT(result)                                        \
+  if (result != 0) {                                                           \
+    const int kBufferSize = 1024;                                              \
+    char error_message[kBufferSize];                                           \
+    NOT_IN_PRODUCT(Profiler::DumpStackTrace());                                \
+    Utils::StrError(result, error_message, kBufferSize);                       \
+    FATAL2("pthread error: %d (%s)", result, error_message);                   \
   }
 
 
@@ -41,17 +44,17 @@ namespace dart {
 
 
 #ifdef DEBUG
-#define RETURN_ON_PTHREAD_FAILURE(result) \
-  if (result != 0) { \
-    const int kBufferSize = 1024; \
-    char error_message[kBufferSize]; \
-    Utils::StrError(result, error_message, kBufferSize); \
-    fprintf(stderr, "%s:%d: pthread error: %d (%s)\n", \
-            __FILE__, __LINE__, result, error_message); \
-    return result; \
+#define RETURN_ON_PTHREAD_FAILURE(result)                                      \
+  if (result != 0) {                                                           \
+    const int kBufferSize = 1024;                                              \
+    char error_message[kBufferSize];                                           \
+    Utils::StrError(result, error_message, kBufferSize);                       \
+    fprintf(stderr, "%s:%d: pthread error: %d (%s)\n", __FILE__, __LINE__,     \
+            result, error_message);                                            \
+    return result;                                                             \
   }
 #else
-#define RETURN_ON_PTHREAD_FAILURE(result) \
+#define RETURN_ON_PTHREAD_FAILURE(result)                                      \
   if (result != 0) return result;
 #endif
 
@@ -163,9 +166,11 @@ ThreadId OSThread::GetCurrentThreadId() {
 }
 
 
+#ifndef PRODUCT
 ThreadId OSThread::GetCurrentThreadTraceId() {
   return ThreadIdFromIntPtr(pthread_mach_thread_np(pthread_self()));
 }
+#endif  // PRODUCT
 
 
 ThreadJoinId OSThread::GetCurrentThreadJoinId(OSThread* thread) {
@@ -389,9 +394,8 @@ Monitor::WaitResult Monitor::WaitMicros(int64_t micros) {
         (micros - (secs * kMicrosecondsPerSecond)) * kNanosecondsPerMicrosecond;
     ts.tv_sec = static_cast<int32_t>(secs);
     ts.tv_nsec = static_cast<long>(nanos);  // NOLINT (long used in timespec).
-    int result = pthread_cond_timedwait_relative_np(data_.cond(),
-                                                    data_.mutex(),
-                                                    &ts);
+    int result =
+        pthread_cond_timedwait_relative_np(data_.cond(), data_.mutex(), &ts);
     ASSERT((result == 0) || (result == ETIMEDOUT));
     if (result == ETIMEDOUT) {
       retval = kTimedOut;

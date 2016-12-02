@@ -135,15 +135,15 @@ Future runTest(String test, checker) {
   var compiler = compilerFor(test, uri);
 
   checkTypeOf(String name, TypeMask type) {
-    var typesTask = compiler.typesTask;
-    var typesInferrer = typesTask.typesInferrer;
+    var commonMasks = compiler.closedWorld.commonMasks;
+    var typesInferrer = compiler.globalInference.typesInferrerInternal;
     var element = findElement(compiler, name);
     var mask = typesInferrer.getReturnTypeOfElement(element);
     Expect.equals(type, simplify(mask, compiler));
   }
 
   return compiler.run(uri).then((_) {
-    checker(compiler.typesTask, checkTypeOf);
+    checker(compiler.closedWorld.commonMasks, checkTypeOf);
   });
 }
 

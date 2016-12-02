@@ -4,13 +4,12 @@
 
 #include "vm/freelist.h"
 
-#include <map>
-
 #include "vm/bit_set.h"
+#include "vm/hash_map.h"
 #include "vm/lockers.h"
 #include "vm/object.h"
-#include "vm/raw_object.h"
 #include "vm/os_thread.h"
+#include "vm/raw_object.h"
 
 namespace dart {
 
@@ -26,8 +25,7 @@ FreeListElement* FreeListElement::AsElement(uword addr, intptr_t size) {
   uword tags = 0;
   tags = RawObject::SizeTag::update(size, tags);
   tags = RawObject::ClassIdTag::update(kFreeListElement, tags);
-  // All words in a freelist element header must look like smis; see
-  // TryAllocateSmiInitializedLocked.
+  // All words in a freelist element header should look like Smis.
   ASSERT(!reinterpret_cast<RawObject*>(tags)->IsHeapObject());
 
   result->tags_ = tags;
@@ -79,10 +77,8 @@ uword FreeList::TryAllocateLocked(intptr_t size, bool is_protected) {
   if ((index != kNumLists) && free_map_.Test(index)) {
     FreeListElement* element = DequeueElement(index);
     if (is_protected) {
-      bool status =
-          VirtualMemory::Protect(reinterpret_cast<void*>(element),
-                                 size,
-                                 VirtualMemory::kReadWrite);
+      bool status = VirtualMemory::Protect(reinterpret_cast<void*>(element),
+                                           size, VirtualMemory::kReadWrite);
       ASSERT(status);
     }
     return reinterpret_cast<uword>(element);
@@ -105,8 +101,7 @@ uword FreeList::TryAllocateLocked(intptr_t size, bool is_protected) {
             size + FreeListElement::HeaderSizeFor(remainder_size);
         bool status =
             VirtualMemory::Protect(reinterpret_cast<void*>(element),
-                                   region_size,
-                                   VirtualMemory::kReadWrite);
+                                   region_size, VirtualMemory::kReadWrite);
         ASSERT(status);
       }
       SplitElementAfterAndEnqueue(element, size, is_protected);
@@ -129,8 +124,7 @@ uword FreeList::TryAllocateLocked(intptr_t size, bool is_protected) {
         // the call to SplitElementAfterAndEnqueue.
         bool status =
             VirtualMemory::Protect(reinterpret_cast<void*>(current),
-                                   region_size,
-                                   VirtualMemory::kReadWrite);
+                                   region_size, VirtualMemory::kReadWrite);
         ASSERT(status);
       }
 
@@ -153,16 +147,14 @@ uword FreeList::TryAllocateLocked(intptr_t size, bool is_protected) {
         if (target_is_protected) {
           bool status =
               VirtualMemory::Protect(reinterpret_cast<void*>(target_address),
-                                     kWordSize,
-                                     VirtualMemory::kReadWrite);
+                                     kWordSize, VirtualMemory::kReadWrite);
           ASSERT(status);
         }
         previous->set_next(current->next());
         if (target_is_protected) {
           bool status =
               VirtualMemory::Protect(reinterpret_cast<void*>(target_address),
-                                     kWordSize,
-                                     VirtualMemory::kReadExecute);
+                                     kWordSize, VirtualMemory::kReadExecute);
           ASSERT(status);
         }
       }
@@ -222,8 +214,8 @@ void FreeList::EnqueueElement(FreeListElement* element, intptr_t index) {
   FreeListElement* next = free_lists_[index];
   if (next == NULL && index != kNumLists) {
     free_map_.Set(index, true);
-    last_free_small_size_ = Utils::Maximum(last_free_small_size_,
-                                           index << kObjectAlignmentLog2);
+    last_free_small_size_ =
+        Utils::Maximum(last_free_small_size_, index << kObjectAlignmentLog2);
   }
   element->set_next(next);
   free_lists_[index] = element;
@@ -275,44 +267,69 @@ void FreeList::PrintSmall() const {
     small_objects += list_length;
     intptr_t list_bytes = list_length * i * kObjectAlignment;
     small_bytes += list_bytes;
-    OS::Print("small %3d [%8d bytes] : "
-              "%8" Pd " objs; %8.1f KB; %8.1f cum KB\n",
-              i,
-              i * kObjectAlignment,
-              list_length,
-              list_bytes / static_cast<double>(KB),
-              small_bytes / static_cast<double>(KB));
+    OS::Print(
+        "small %3d [%8d bytes] : "
+        "%8" Pd " objs; %8.1f KB; %8.1f cum KB\n",
+        i, i * kObjectAlignment, list_length,
+        list_bytes / static_cast<double>(KB),
+        small_bytes / static_cast<double>(KB));
   }
 }
+
+
+class IntptrPair {
+ public:
+  IntptrPair() : first_(-1), second_(-1) {}
+  IntptrPair(intptr_t first, intptr_t second)
+      : first_(first), second_(second) {}
+
+  intptr_t first() const { return first_; }
+  intptr_t second() const { return second_; }
+  void set_second(intptr_t s) { second_ = s; }
+
+  bool operator==(const IntptrPair& other) {
+    return (first_ == other.first_) && (second_ == other.second_);
+  }
+
+  bool operator!=(const IntptrPair& other) {
+    return (first_ != other.first_) || (second_ != other.second_);
+  }
+
+ private:
+  intptr_t first_;
+  intptr_t second_;
+};
 
 
 void FreeList::PrintLarge() const {
   int large_sizes = 0;
   int large_objects = 0;
   intptr_t large_bytes = 0;
-  std::map<intptr_t, intptr_t> sorted;
-  std::map<intptr_t, intptr_t>::iterator it;
+  MallocDirectChainedHashMap<NumbersKeyValueTrait<IntptrPair> > map;
   FreeListElement* node;
   for (node = free_lists_[kNumLists]; node != NULL; node = node->next()) {
-    it = sorted.find(node->Size());
-    if (it != sorted.end()) {
-      it->second += 1;
-    } else {
+    IntptrPair* pair = map.Lookup(node->Size());
+    if (pair == NULL) {
       large_sizes += 1;
-      sorted.insert(std::make_pair(node->Size(), 1));
+      map.Insert(IntptrPair(node->Size(), 1));
+    } else {
+      pair->set_second(pair->second() + 1);
     }
     large_objects += 1;
   }
-  for (it = sorted.begin(); it != sorted.end(); ++it) {
-    intptr_t size = it->first;
-    intptr_t list_length = it->second;
+
+  MallocDirectChainedHashMap<NumbersKeyValueTrait<IntptrPair> >::Iterator it =
+      map.GetIterator();
+  IntptrPair* pair;
+  while ((pair = it.Next()) != NULL) {
+    intptr_t size = pair->first();
+    intptr_t list_length = pair->second();
     intptr_t list_bytes = list_length * size;
     large_bytes += list_bytes;
-    OS::Print("large %3" Pd " [%8" Pd " bytes] : "
+    OS::Print("large %3" Pd " [%8" Pd
+              " bytes] : "
               "%8" Pd " objs; %8.1f KB; %8.1f cum KB\n",
-              size / kObjectAlignment,
-              size,
-              list_length,
+              size / kObjectAlignment, size, list_length,
               list_bytes / static_cast<double>(KB),
               large_bytes / static_cast<double>(KB));
   }
@@ -348,8 +365,7 @@ void FreeList::SplitElementAfterAndEnqueue(FreeListElement* element,
       !VirtualMemory::InSamePage(remainder_address - 1, remainder_address)) {
     bool status =
         VirtualMemory::Protect(reinterpret_cast<void*>(remainder_address),
-                               remainder_size,
-                               VirtualMemory::kReadExecute);
+                               remainder_size, VirtualMemory::kReadExecute);
     ASSERT(status);
   }
 }

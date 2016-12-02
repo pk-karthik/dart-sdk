@@ -7,14 +7,14 @@
 library dart2js.serialization.equivalence;
 
 import '../closure.dart';
-import '../common.dart';
 import '../common/resolution.dart';
 import '../constants/expressions.dart';
+import '../constants/values.dart';
 import '../dart_types.dart';
 import '../elements/elements.dart';
 import '../elements/visitor.dart';
 import '../js_backend/backend_serialization.dart'
-    show JavaScriptBackendSerializer;
+    show NativeBehaviorSerialization;
 import '../native/native.dart' show NativeBehavior;
 import '../resolution/access_semantics.dart';
 import '../resolution/send_structure.dart';
@@ -22,6 +22,7 @@ import '../resolution/tree_elements.dart';
 import '../tokens/token.dart';
 import '../tree/nodes.dart';
 import '../universe/selector.dart';
+import '../universe/feature.dart';
 import '../universe/use.dart';
 import '../util/util.dart';
 import 'resolved_ast_serialization.dart';
@@ -63,6 +64,31 @@ bool areSetsEquivalent(Iterable set1, Iterable set2,
   return remaining.isEmpty;
 }
 
+/// Returns `true` if the content of [map1] and [map2] is equivalent using
+/// [keyEquivalence] and [valueEquivalence] to determine key/value equivalence.
+bool areMapsEquivalent(Map map1, Map map2,
+    [bool keyEquivalence(a, b) = equality,
+    bool valueEquivalence(a, b) = equality]) {
+  Set remaining = map2.keys.toSet();
+  for (var key1 in map1.keys) {
+    bool found = false;
+    for (var key2 in map2.keys) {
+      if (keyEquivalence(key2, key2)) {
+        found = true;
+        remaining.remove(key2);
+        if (!valueEquivalence(map1[key1], map2[key2])) {
+          return false;
+        }
+        break;
+      }
+    }
+    if (!found) {
+      return false;
+    }
+  }
+  return remaining.isEmpty;
+}
+
 /// Returns `true` if elements [a] and [b] are equivalent.
 bool areElementsEquivalent(Element a, Element b) {
   if (identical(a, b)) return true;
@@ -77,11 +103,18 @@ bool areTypesEquivalent(DartType a, DartType b) {
   return const TypeEquivalence().visit(a, b);
 }
 
-/// Returns `true` if constants [a] and [b] are equivalent.
+/// Returns `true` if constants [exp1] and [exp2] are equivalent.
 bool areConstantsEquivalent(ConstantExpression exp1, ConstantExpression exp2) {
   if (identical(exp1, exp2)) return true;
   if (exp1 == null || exp2 == null) return false;
   return const ConstantEquivalence().visit(exp1, exp2);
+}
+
+/// Returns `true` if constant values [value1] and [value2] are equivalent.
+bool areConstantValuesEquivalent(ConstantValue value1, ConstantValue value2) {
+  if (identical(value1, value2)) return true;
+  if (value1 == null || value2 == null) return false;
+  return const ConstantValueEquivalence().visit(value1, value2);
 }
 
 /// Returns `true` if the lists of elements, [a] and [b], are equivalent.
@@ -98,6 +131,12 @@ bool areTypeListsEquivalent(List<DartType> a, List<DartType> b) {
 bool areConstantListsEquivalent(
     List<ConstantExpression> a, List<ConstantExpression> b) {
   return areListsEquivalent(a, b, areConstantsEquivalent);
+}
+
+/// Returns `true` if the lists of constant values, [a] and [b], are equivalent.
+bool areConstantValueListsEquivalent(
+    List<ConstantValue> a, List<ConstantValue> b) {
+  return areListsEquivalent(a, b, areConstantValuesEquivalent);
 }
 
 /// Returns `true` if the selectors [a] and [b] are equivalent.
@@ -242,7 +281,8 @@ bool areSendStructuresEquivalent(SendStructure a, SendStructure b) {
       return areElementsEquivalent(ad.prefix, bd.prefix) &&
           areSendStructuresEquivalent(ad.sendStructure, bd.sendStructure);
 
-    semantics: case SendStructureKind.GET:
+    semantics:
+    case SendStructureKind.GET:
     case SendStructureKind.SET:
     case SendStructureKind.INDEX:
     case SendStructureKind.INDEX_SET:
@@ -307,6 +347,12 @@ class TestStrategy {
     return areSetsEquivalent(set1, set2, elementEquivalence);
   }
 
+  bool testMaps(var object1, var object2, String property, Map map1, Map map2,
+      [bool keyEquivalence(a, b) = equality,
+      bool valueEquivalence(a, b) = equality]) {
+    return areMapsEquivalent(map1, map2, keyEquivalence, valueEquivalence);
+  }
+
   bool testElements(Object object1, Object object2, String property,
       Element element1, Element element2) {
     return areElementsEquivalent(element1, element2);
@@ -322,6 +368,11 @@ class TestStrategy {
     return areConstantsEquivalent(exp1, exp2);
   }
 
+  bool testConstantValues(Object object1, Object object2, String property,
+      ConstantValue value1, ConstantValue value2) {
+    return areConstantValuesEquivalent(value1, value2);
+  }
+
   bool testTypeLists(Object object1, Object object2, String property,
       List<DartType> list1, List<DartType> list2) {
     return areTypeListsEquivalent(list1, list2);
@@ -330,6 +381,11 @@ class TestStrategy {
   bool testConstantLists(Object object1, Object object2, String property,
       List<ConstantExpression> list1, List<ConstantExpression> list2) {
     return areConstantListsEquivalent(list1, list2);
+  }
+
+  bool testConstantValueLists(Object object1, Object object2, String property,
+      List<ConstantValue> list1, List<ConstantValue> list2) {
+    return areConstantValueListsEquivalent(list1, list2);
   }
 
   bool testNodes(
@@ -383,9 +439,31 @@ class ElementIdentityEquivalence extends BaseElementVisitor<bool, Element> {
 
   @override
   bool visitClassElement(ClassElement element1, ClassElement element2) {
-    return strategy.test(
-            element1, element2, 'name', element1.name, element2.name) &&
-        visit(element1.library, element2.library);
+    if (!strategy.test(
+        element1,
+        element2,
+        'isUnnamedMixinApplication',
+        element1.isUnnamedMixinApplication,
+        element2.isUnnamedMixinApplication)) {
+      return false;
+    }
+    if (element1.isUnnamedMixinApplication) {
+      MixinApplicationElement mixin1 = element1;
+      MixinApplicationElement mixin2 = element2;
+      return strategy.testElements(
+              mixin1, mixin2, 'subclass', mixin1.subclass, mixin2.subclass) &&
+          // Using the [mixinType] is more precise but requires the test to
+          // handle self references: The identity of a type variable is based on
+          // its type declaration and if [mixin1] is generic the [mixinType]
+          // will contain the type variables declared by [mixin1], i.e.
+          // `abstract class Mixin<T> implements MixinType<T> {}`
+          strategy.testElements(
+              mixin1, mixin2, 'mixin', mixin1.mixin, mixin2.mixin);
+    } else {
+      return strategy.test(
+              element1, element2, 'name', element1.name, element2.name) &&
+          visit(element1.library, element2.library);
+    }
   }
 
   bool checkMembers(Element element1, Element element2) {
@@ -438,14 +516,18 @@ class ElementIdentityEquivalence extends BaseElementVisitor<bool, Element> {
   bool visitLocalFunctionElement(
       LocalFunctionElement element1, LocalFunctionElement element2) {
     // TODO(johnniwinther): Define an equivalence on locals.
-    return checkMembers(element1.memberContext, element2.memberContext);
+    return strategy.test(
+            element1, element2, 'name', element1.name, element2.name) &&
+        checkMembers(element1.memberContext, element2.memberContext);
   }
 
   @override
   bool visitLocalVariableElement(
       LocalVariableElement element1, LocalVariableElement element2) {
     // TODO(johnniwinther): Define an equivalence on locals.
-    return checkMembers(element1.memberContext, element2.memberContext);
+    return strategy.test(
+            element1, element2, 'name', element1.name, element2.name) &&
+        checkMembers(element1.memberContext, element2.memberContext);
   }
 
   bool visitAbstractFieldElement(
@@ -494,6 +576,20 @@ class ElementIdentityEquivalence extends BaseElementVisitor<bool, Element> {
             element1, element2, 'name', element1.name, element2.name) &&
         visit(element1.library, element2.library);
   }
+
+  @override
+  bool visitErroneousElement(
+      ErroneousElement element1, ErroneousElement element2) {
+    return strategy.test(element1, element2, 'messageKind',
+        element1.messageKind, element2.messageKind);
+  }
+
+  @override
+  bool visitWarnOnUseElement(
+      WarnOnUseElement element1, WarnOnUseElement element2) {
+    return strategy.testElements(element1, element2, 'wrappedElement',
+        element1.wrappedElement, element2.wrappedElement);
+  }
 }
 
 /// Visitor that checks for equivalence of [DartType]s.
@@ -540,7 +636,9 @@ class TypeEquivalence implements DartTypeVisitor<bool, DartType> {
   @override
   bool visitTypeVariableType(TypeVariableType type, TypeVariableType other) {
     return strategy.testElements(
-        type, other, 'element', type.element, other.element);
+            type, other, 'element', type.element, other.element) &&
+        strategy.test(type, other, 'is MethodTypeVariableType',
+            type is MethodTypeVariableType, other is MethodTypeVariableType);
   }
 
   @override
@@ -742,8 +840,129 @@ class ConstantEquivalence
   @override
   bool visitDeferred(
       DeferredConstantExpression exp1, DeferredConstantExpression exp2) {
-    // TODO(johnniwinther): Implement this.
+    return strategy.testElements(
+            exp1, exp2, 'prefix', exp1.prefix, exp2.prefix) &&
+        strategy.testConstants(
+            exp1, exp2, 'expression', exp1.expression, exp2.expression);
+  }
+}
+
+/// Visitor that checks for structural equivalence of [ConstantValue]s.
+class ConstantValueEquivalence
+    implements ConstantValueVisitor<bool, ConstantValue> {
+  final TestStrategy strategy;
+
+  const ConstantValueEquivalence([this.strategy = const TestStrategy()]);
+
+  bool visit(ConstantValue value1, ConstantValue value2) {
+    if (identical(value1, value2)) return true;
+    return strategy.test(value1, value2, 'kind', value1.kind, value2.kind) &&
+        value1.accept(this, value2);
+  }
+
+  @override
+  bool visitConstructed(
+      ConstructedConstantValue value1, ConstructedConstantValue value2) {
+    return strategy.testTypes(
+            value1, value2, 'type', value1.type, value2.type) &&
+        strategy.testMaps(
+            value1,
+            value2,
+            'fields',
+            value1.fields,
+            value2.fields,
+            areElementsEquivalent,
+            (a, b) => strategy.testConstantValues(
+                value1, value2, 'fields.values', a, b));
+  }
+
+  @override
+  bool visitFunction(
+      FunctionConstantValue value1, FunctionConstantValue value2) {
+    return strategy.testElements(
+        value1, value2, 'element', value1.element, value2.element);
+  }
+
+  @override
+  bool visitList(ListConstantValue value1, ListConstantValue value2) {
+    return strategy.testTypes(
+            value1, value2, 'type', value1.type, value2.type) &&
+        strategy.testConstantValueLists(
+            value1, value2, 'entries', value1.entries, value2.entries);
+  }
+
+  @override
+  bool visitMap(MapConstantValue value1, MapConstantValue value2) {
+    return strategy.testTypes(
+            value1, value2, 'type', value1.type, value2.type) &&
+        strategy.testConstantValueLists(
+            value1, value2, 'keys', value1.keys, value2.keys) &&
+        strategy.testConstantValueLists(
+            value1, value2, 'values', value1.values, value2.values);
+  }
+
+  @override
+  bool visitType(TypeConstantValue value1, TypeConstantValue value2) {
+    return strategy.testTypes(value1, value2, 'type', value1.type, value2.type);
+  }
+
+  @override
+  bool visitBool(BoolConstantValue value1, BoolConstantValue value2) {
+    return strategy.test(value1, value2, 'primitiveValue',
+        value1.primitiveValue, value2.primitiveValue);
+  }
+
+  @override
+  bool visitDouble(DoubleConstantValue value1, DoubleConstantValue value2) {
+    return strategy.test(value1, value2, 'primitiveValue',
+        value1.primitiveValue, value2.primitiveValue);
+  }
+
+  @override
+  bool visitInt(IntConstantValue value1, IntConstantValue value2) {
+    return strategy.test(value1, value2, 'primitiveValue',
+        value1.primitiveValue, value2.primitiveValue);
+  }
+
+  @override
+  bool visitNull(NullConstantValue value1, NullConstantValue value2) {
     return true;
+  }
+
+  @override
+  bool visitString(StringConstantValue value1, StringConstantValue value2) {
+    return strategy.test(value1, value2, 'primitiveValue',
+        value1.primitiveValue, value2.primitiveValue);
+  }
+
+  @override
+  bool visitDeferred(
+      DeferredConstantValue value1, DeferredConstantValue value2) {
+    return strategy.testElements(
+            value1, value2, 'prefix', value1.prefix, value2.prefix) &&
+        strategy.testConstantValues(
+            value1, value2, 'referenced', value1.referenced, value2.referenced);
+  }
+
+  @override
+  bool visitNonConstant(NonConstantValue value1, NonConstantValue value2) {
+    return true;
+  }
+
+  @override
+  bool visitSynthetic(
+      SyntheticConstantValue value1, SyntheticConstantValue value2) {
+    return strategy.test(
+            value1, value2, 'payload', value1.payload, value2.payload) &&
+        strategy.test(
+            value1, value2, 'valueKind', value1.valueKind, value2.valueKind);
+  }
+
+  @override
+  bool visitInterceptor(
+      InterceptorConstantValue value1, InterceptorConstantValue value2) {
+    return strategy.testTypes(value1, value2, 'dispatchedType',
+        value1.dispatchedType, value2.dispatchedType);
   }
 }
 
@@ -771,7 +990,9 @@ bool testResolutionImpactEquivalence(
       strategy.testSets(impact1, impact2, 'staticUses', impact1.staticUses,
           impact2.staticUses, areStaticUsesEquivalent) &&
       strategy.testSets(impact1, impact2, 'typeUses', impact1.typeUses,
-          impact2.typeUses, areTypeUsesEquivalent);
+          impact2.typeUses, areTypeUsesEquivalent) &&
+      strategy.testSets(impact1, impact2, 'nativeData', impact1.nativeData,
+          impact2.nativeData, testNativeBehavior);
 }
 
 /// Tests the equivalence of [resolvedAst1] and [resolvedAst2] using [strategy].
@@ -838,6 +1059,43 @@ bool testTreeElementsEquivalence(
   return false;
 }
 
+bool testNativeBehavior(NativeBehavior a, NativeBehavior b,
+    [TestStrategy strategy = const TestStrategy()]) {
+  if (identical(a, b)) return true;
+  if (a == null || b == null) return false;
+  return strategy.test(
+          a, b, 'codeTemplateText', a.codeTemplateText, b.codeTemplateText) &&
+      strategy.test(a, b, 'isAllocation', a.isAllocation, b.isAllocation) &&
+      strategy.test(a, b, 'sideEffects', a.sideEffects, b.sideEffects) &&
+      strategy.test(a, b, 'throwBehavior', a.throwBehavior, b.throwBehavior) &&
+      strategy.testTypeLists(
+          a,
+          b,
+          'dartTypesReturned',
+          NativeBehaviorSerialization.filterDartTypes(a.typesReturned),
+          NativeBehaviorSerialization.filterDartTypes(b.typesReturned)) &&
+      strategy.testLists(
+          a,
+          b,
+          'specialTypesReturned',
+          NativeBehaviorSerialization.filterSpecialTypes(a.typesReturned),
+          NativeBehaviorSerialization.filterSpecialTypes(b.typesReturned)) &&
+      strategy.testTypeLists(
+          a,
+          b,
+          'dartTypesInstantiated',
+          NativeBehaviorSerialization.filterDartTypes(a.typesInstantiated),
+          NativeBehaviorSerialization.filterDartTypes(b.typesInstantiated)) &&
+      strategy.testLists(
+          a,
+          b,
+          'specialTypesInstantiated',
+          NativeBehaviorSerialization.filterSpecialTypes(a.typesInstantiated),
+          NativeBehaviorSerialization
+              .filterSpecialTypes(b.typesInstantiated)) &&
+      strategy.test(a, b, 'useGvn', a.useGvn, b.useGvn);
+}
+
 /// Visitor that checks the equivalence of [TreeElements] data.
 class TreeElementsEquivalenceVisitor extends Visitor {
   final TestStrategy strategy;
@@ -889,41 +1147,7 @@ class TreeElementsEquivalenceVisitor extends Visitor {
     if (identical(a, b)) return true;
     if (a == null || b == null) return false;
     if (a is NativeBehavior && b is NativeBehavior) {
-      return strategy.test(a, b, 'codeTemplateText', a.codeTemplateText,
-              b.codeTemplateText) &&
-          strategy.test(a, b, 'isAllocation', a.isAllocation, b.isAllocation) &&
-          strategy.test(a, b, 'sideEffects', a.sideEffects, b.sideEffects) &&
-          strategy.test(
-              a, b, 'throwBehavior', a.throwBehavior, b.throwBehavior) &&
-          strategy.testTypeLists(
-              a,
-              b,
-              'dartTypesReturned',
-              JavaScriptBackendSerializer.filterDartTypes(a.typesReturned),
-              JavaScriptBackendSerializer.filterDartTypes(b.typesReturned)) &&
-          strategy.testLists(
-              a,
-              b,
-              'specialTypesReturned',
-              JavaScriptBackendSerializer.filterSpecialTypes(a.typesReturned),
-              JavaScriptBackendSerializer
-                  .filterSpecialTypes(b.typesReturned)) &&
-          strategy.testTypeLists(
-              a,
-              b,
-              'dartTypesInstantiated',
-              JavaScriptBackendSerializer.filterDartTypes(a.typesInstantiated),
-              JavaScriptBackendSerializer
-                  .filterDartTypes(b.typesInstantiated)) &&
-          strategy.testLists(
-              a,
-              b,
-              'specialTypesInstantiated',
-              JavaScriptBackendSerializer
-                  .filterSpecialTypes(a.typesInstantiated),
-              JavaScriptBackendSerializer
-                  .filterSpecialTypes(b.typesInstantiated)) &&
-          strategy.test(a, b, 'useGvn', a.useGvn, b.useGvn);
+      return testNativeBehavior(a, b, strategy);
     }
     return true;
   }
@@ -1806,4 +2030,13 @@ class NodeEquivalenceVisitor implements Visitor1<bool, Node> {
   bool visitStringNode(StringNode node1, StringNode node2) {
     throw new UnsupportedError('Unexpected nodes: $node1 <> $node2');
   }
+}
+
+bool areMetadataAnnotationsEquivalent(
+    MetadataAnnotation metadata1, MetadataAnnotation metadata2) {
+  if (metadata1 == metadata2) return true;
+  if (metadata1 == null || metadata2 == null) return false;
+  return areElementsEquivalent(
+          metadata1.annotatedElement, metadata2.annotatedElement) &&
+      areConstantsEquivalent(metadata1.constant, metadata2.constant);
 }

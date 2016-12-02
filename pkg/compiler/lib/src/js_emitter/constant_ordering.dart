@@ -5,11 +5,10 @@
 library dart2js.js_emitter.constant_ordering;
 
 import '../constants/values.dart';
-
 import '../dart_types.dart';
 import '../elements/elements.dart' show Element, Elements, FieldElement;
-import '../tree/tree.dart' show DartString;
 import '../js_backend/js_backend.dart' show SyntheticConstantKind;
+import '../tree/dartstring.dart' show DartString;
 
 /// A canonical but arbrary ordering of constants. The ordering is 'stable'
 /// under perturbation of the source.
@@ -73,6 +72,10 @@ class _CompareVisitor implements ConstantValueVisitor<int, ConstantValue> {
   }
 
   int visitNull(NullConstantValue a, NullConstantValue b) {
+    return 0;
+  }
+
+  int visitNonConstant(NonConstantValue a, NonConstantValue b) {
     return 0;
   }
 
@@ -144,11 +147,11 @@ class _CompareVisitor implements ConstantValueVisitor<int, ConstantValue> {
     // as elements of a few constants.  If this becomes a source of instability,
     // we will need to add a total ordering on JavaScript ASTs including
     // deferred elements.
-    SyntheticConstantKind aKind = a.kind;
-    SyntheticConstantKind bKind = b.kind;
+    SyntheticConstantKind aKind = a.valueKind;
+    SyntheticConstantKind bKind = b.valueKind;
     int r = aKind.index - bKind.index;
     if (r != 0) return r;
-    switch (a.kind) {
+    switch (aKind) {
       case SyntheticConstantKind.DUMMY_INTERCEPTOR:
       case SyntheticConstantKind.EMPTY_VALUE:
         // Never emitted.
@@ -189,12 +192,14 @@ class _KindVisitor implements ConstantValueVisitor<int, Null> {
   static const int INTERCEPTOR = 11;
   static const int SYNTHETIC = 12;
   static const int DEFERRED = 13;
+  static const int NONCONSTANT = 13;
 
   static int kind(ConstantValue constant) =>
       constant.accept(const _KindVisitor(), null);
 
   int visitFunction(FunctionConstantValue a, _) => FUNCTION;
   int visitNull(NullConstantValue a, _) => NULL;
+  int visitNonConstant(NonConstantValue a, _) => NONCONSTANT;
   int visitInt(IntConstantValue a, _) => INT;
   int visitDouble(DoubleConstantValue a, _) => DOUBLE;
   int visitBool(BoolConstantValue a, _) => BOOL;

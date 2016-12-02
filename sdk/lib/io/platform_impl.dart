@@ -11,6 +11,7 @@ class _Platform {
   external static _localHostname();
   external static _executable();
   external static _resolvedExecutable();
+
   /**
    * Retrieve the entries of the process environment.
    *
@@ -66,6 +67,9 @@ class _Platform {
             ? new _CaseInsensitiveStringMap<String>()
             : new Map<String, String>();
         for (var str in env) {
+          if (str == null) {
+            continue;
+          }
           // The Strings returned by [_environment()] are expected to be
           // valid environment entries, but exceptions have been seen
           // (e.g., an entry of just '=' has been seen on OS/X).

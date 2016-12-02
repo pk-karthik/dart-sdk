@@ -6,11 +6,10 @@
 
 library elements.common;
 
-import '../common/names.dart' show Names, Uris;
+import '../common/names.dart' show Identifiers, Names, Uris;
 import '../core_types.dart' show CoreClasses;
 import '../dart_types.dart' show DartType, InterfaceType, FunctionType;
 import '../util/util.dart' show Link;
-
 import 'elements.dart';
 
 abstract class ElementCommon implements Element {
@@ -67,7 +66,7 @@ abstract class ElementCommon implements Element {
   bool get isAbstractField => kind == ElementKind.ABSTRACT_FIELD;
 
   @override
-  bool get isParameter => kind == ElementKind.PARAMETER;
+  bool get isRegularParameter => kind == ElementKind.PARAMETER;
 
   @override
   bool get isInitializingFormal => kind == ElementKind.INITIALIZING_FORMAL;
@@ -183,19 +182,9 @@ abstract class LibraryElementCommon implements LibraryElement {
       return path.substring(path.lastIndexOf('/') + 1);
     }
   }
-
-  int compareTo(LibraryElement other) {
-    if (this == other) return 0;
-    return libraryOrScriptName.compareTo(other.libraryOrScriptName);
-  }
 }
 
-abstract class CompilationUnitElementCommon implements CompilationUnitElement {
-  int compareTo(CompilationUnitElement other) {
-    if (this == other) return 0;
-    return '${script.readableUri}'.compareTo('${other.script.readableUri}');
-  }
-}
+abstract class CompilationUnitElementCommon implements CompilationUnitElement {}
 
 abstract class ClassElementCommon implements ClassElement {
   @override
@@ -226,20 +215,22 @@ abstract class ClassElementCommon implements ClassElement {
    * When called on the implementation element both members declared in the
    * origin and the patch class are returned.
    */
-  Element lookupByName(Name memberName) {
-    return internalLookupByName(memberName, isSuperLookup: false);
+  Element lookupByName(Name memberName, {ClassElement stopAt}) {
+    return internalLookupByName(memberName,
+        isSuperLookup: false, stopAtSuperclass: stopAt);
   }
 
   Element lookupSuperByName(Name memberName) {
     return internalLookupByName(memberName, isSuperLookup: true);
   }
 
-  Element internalLookupByName(Name memberName, {bool isSuperLookup}) {
+  Element internalLookupByName(Name memberName,
+      {bool isSuperLookup, ClassElement stopAtSuperclass}) {
     String name = memberName.text;
     bool isPrivate = memberName.isPrivate;
     LibraryElement library = memberName.library;
     for (ClassElement current = isSuperLookup ? superclass : this;
-        current != null;
+        current != null && current != stopAtSuperclass;
         current = current.superclass) {
       Element member = current.lookupLocalMember(name);
       if (member == null && current.isPatched) {
@@ -505,6 +496,8 @@ abstract class ClassElementCommon implements ClassElement {
 }
 
 abstract class FunctionSignatureCommon implements FunctionSignature {
+  DartType get returnType => type.returnType;
+
   void forEachRequiredParameter(void function(Element parameter)) {
     requiredParameters.forEach(function);
   }
@@ -590,8 +583,8 @@ abstract class MixinApplicationElementCommon
     constructors.forEach(f);
     if (mixin != null)
       mixin.forEachLocalMember((Element mixedInElement) {
-      if (mixedInElement.isInstanceMember) f(mixedInElement);
-    });
+        if (mixedInElement.isInstanceMember) f(mixedInElement);
+      });
   }
 }
 
@@ -605,5 +598,51 @@ abstract class AbstractFieldElementCommon implements AbstractFieldElement {
   bool get isAbstract {
     return getter != null && getter.isAbstract ||
         setter != null && setter.isAbstract;
+  }
+}
+
+enum _FromEnvironmentState { NOT, BOOL, INT, STRING, }
+
+abstract class ConstructorElementCommon implements ConstructorElement {
+  _FromEnvironmentState _fromEnvironmentState;
+
+  _FromEnvironmentState get fromEnvironmentState {
+    if (_fromEnvironmentState == null) {
+      _fromEnvironmentState = _FromEnvironmentState.NOT;
+      if (name == Identifiers.fromEnvironment && library.isDartCore) {
+        switch (enclosingClass.name) {
+          case 'bool':
+            _fromEnvironmentState = _FromEnvironmentState.BOOL;
+            break;
+          case 'int':
+            _fromEnvironmentState = _FromEnvironmentState.INT;
+            break;
+          case 'String':
+            _fromEnvironmentState = _FromEnvironmentState.STRING;
+            break;
+        }
+      }
+    }
+    return _fromEnvironmentState;
+  }
+
+  @override
+  bool get isFromEnvironmentConstructor {
+    return fromEnvironmentState != _FromEnvironmentState.NOT;
+  }
+
+  @override
+  bool get isIntFromEnvironmentConstructor {
+    return fromEnvironmentState == _FromEnvironmentState.INT;
+  }
+
+  @override
+  bool get isBoolFromEnvironmentConstructor {
+    return fromEnvironmentState == _FromEnvironmentState.BOOL;
+  }
+
+  @override
+  bool get isStringFromEnvironmentConstructor {
+    return fromEnvironmentState == _FromEnvironmentState.STRING;
   }
 }

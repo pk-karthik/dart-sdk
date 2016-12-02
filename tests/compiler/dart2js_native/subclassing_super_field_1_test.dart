@@ -2,11 +2,10 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "package:expect/expect.dart";
-import 'dart:_foreign_helper' show JS;
-import 'dart:_js_helper' show Native, Creates, setNativeSubclassDispatchRecord;
-import 'dart:_interceptors' show
-    findInterceptorForType, findConstructorForNativeSubclassType;
+import "native_testing.dart";
+import 'dart:_js_helper' show setNativeSubclassDispatchRecord;
+import 'dart:_interceptors'
+    show findInterceptorForType, findConstructorForNativeSubclassType;
 
 // Test for shadowed fields in classes that extend native classes.
 
@@ -20,7 +19,7 @@ class A extends N {
   A.init() : super.init();
 }
 
-class B extends A  {
+class B extends A {
   var foo = 222;
   B.init() : super.init();
 
@@ -28,10 +27,10 @@ class B extends A  {
   Bfoo() => foo;
 }
 
-B makeB() native;
+B makeB() native ;
 
 @Creates('=Object')
-getBPrototype() native;
+getBPrototype() native ;
 
 void setup() native r"""
 function B() { }
@@ -40,11 +39,9 @@ makeB = function(){return new B;};
 getBPrototype = function(){return B.prototype;};
 """;
 
-var inscrutable;
-
 main() {
+  nativeTesting();
   setup();
-  inscrutable = (x) => x;
 
   setNativeSubclassDispatchRecord(getBPrototype(), findInterceptorForType(B));
 
@@ -56,8 +53,8 @@ main() {
 
   print(b);
 
-  Expect.equals(222, inscrutable(b).Bfoo());
-  Expect.equals(111, inscrutable(b).Afoo());
+  Expect.equals(222, confuse(b).Bfoo());
+  Expect.equals(111, confuse(b).Afoo());
 
   Expect.equals(222, b.Bfoo());
   Expect.equals(111, b.Afoo());

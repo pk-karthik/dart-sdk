@@ -4,6 +4,8 @@
 
 library runtime_configuration;
 
+import 'dart:io' show Platform;
+
 import 'compiler_configuration.dart' show CommandArtifact;
 
 // TODO(ahe): Remove this import, we can precompute all the values required
@@ -70,7 +72,7 @@ class RuntimeConfiguration {
   RuntimeConfiguration._subclass();
 
   int computeTimeoutMultiplier(
-      {String mode, bool isChecked: false, String arch}) {
+      {String mode, bool isChecked: false, bool isReload: false, String arch}) {
     return 1;
   }
 
@@ -164,7 +166,7 @@ class DartVmRuntimeConfiguration extends RuntimeConfiguration {
   DartVmRuntimeConfiguration() : super._subclass();
 
   int computeTimeoutMultiplier(
-      {String mode, bool isChecked: false, String arch}) {
+      {String mode, bool isChecked: false, bool isReload: false, String arch}) {
     int multiplier = 1;
     switch (arch) {
       case 'simarm':
@@ -183,6 +185,9 @@ class DartVmRuntimeConfiguration extends RuntimeConfiguration {
     }
     if (mode == 'debug') {
       multiplier *= 2;
+      if (isReload) {
+        multiplier *= 2;
+      }
     }
     return multiplier;
   }
@@ -192,13 +197,14 @@ class DartVmRuntimeConfiguration extends RuntimeConfiguration {
 /// program named Dump Render Tree, hence the name.
 class DrtRuntimeConfiguration extends DartVmRuntimeConfiguration {
   int computeTimeoutMultiplier(
-      {String mode, bool isChecked: false, String arch}) {
+      {String mode, bool isChecked: false, bool isReload: false, String arch}) {
     return 4 // Allow additional time for browser testing to run.
         // TODO(ahe): We might need to distinquish between DRT for running
         // JavaScript and Dart code.  I'm not convinced the inherited timeout
         // multiplier is relevant for JavaScript.
         *
-        super.computeTimeoutMultiplier(mode: mode, isChecked: isChecked);
+        super.computeTimeoutMultiplier(
+            mode: mode, isChecked: isChecked, isReload: isReload);
   }
 }
 
@@ -212,7 +218,9 @@ class StandaloneDartRuntimeConfiguration extends DartVmRuntimeConfiguration {
       Map<String, String> environmentOverrides) {
     String script = artifact.filename;
     String type = artifact.mimeType;
-    if (script != null && type != 'application/dart') {
+    if (script != null &&
+        type != 'application/dart' &&
+        type != 'application/dart-snapshot') {
       throw "Dart VM cannot run files of type '$type'.";
     }
     String executable = suite.configuration['noopt']
@@ -220,36 +228,6 @@ class StandaloneDartRuntimeConfiguration extends DartVmRuntimeConfiguration {
         : suite.dartVmBinaryFileName;
     return <Command>[
       commandBuilder.getVmCommand(executable, arguments, environmentOverrides)
-    ];
-  }
-}
-
-class DartAppRuntimeConfiguration extends DartVmRuntimeConfiguration {
-  final bool useBlobs;
-  DartAppRuntimeConfiguration({bool useBlobs}) : useBlobs = useBlobs;
-
-  List<Command> computeRuntimeCommands(
-      TestSuite suite,
-      CommandBuilder commandBuilder,
-      CommandArtifact artifact,
-      List<String> arguments,
-      Map<String, String> environmentOverrides) {
-    String script = artifact.filename;
-    String type = artifact.mimeType;
-    if (script != null && type != 'application/dart-snapshot') {
-      throw "dart_app cannot run files of type '$type'.";
-    }
-
-    var augmentedArgs = new List();
-    augmentedArgs.add("--run-app-snapshot=${artifact.filename}");
-    if (useBlobs) {
-      augmentedArgs.add("--use-blobs");
-    }
-    augmentedArgs.addAll(arguments);
-
-    return <Command>[
-      commandBuilder.getVmCommand(suite.dartVmBinaryFileName,
-          augmentedArgs, environmentOverrides)
     ];
   }
 }
@@ -270,16 +248,17 @@ class DartPrecompiledRuntimeConfiguration extends DartVmRuntimeConfiguration {
       throw "dart_precompiled cannot run files of type '$type'.";
     }
 
-    var augmentedArgs = new List();
-    augmentedArgs.add("--run-app-snapshot=${artifact.filename}");
-    if (useBlobs) {
-      augmentedArgs.add("--use-blobs");
+    var args = new List();
+    args.addAll(arguments);
+    for (var i = 0; i < args.length; i++) {
+      if (args[i].endsWith(".dart")) {
+        args[i] = "${artifact.filename}/out.aotsnapshot";
+      }
     }
-    augmentedArgs.addAll(arguments);
 
     return <Command>[
       commandBuilder.getVmCommand(suite.dartPrecompiledBinaryFileName,
-          augmentedArgs, environmentOverrides)
+          args, environmentOverrides)
     ];
   }
 }
@@ -302,8 +281,10 @@ class DartPrecompiledAdbRuntimeConfiguration
     }
 
     String precompiledRunner = suite.dartPrecompiledBinaryFileName;
+    String processTest = suite.processTestBinaryFileName;
     return <Command>[
       commandBuilder.getAdbPrecompiledCommand(precompiledRunner,
+                                              processTest,
                                               script,
                                               arguments,
                                               useBlobs)

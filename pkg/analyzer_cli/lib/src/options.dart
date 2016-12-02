@@ -48,10 +48,6 @@ class CommandLineOptions {
   /// Whether to skip analysis when creating summaries in build mode.
   final bool buildSummaryOnly;
 
-  /// Whether to create summaries using only ASTs, i.e. don't perform
-  /// resolution.
-  final bool buildSummaryOnlyAst;
-
   /// Whether to use diet parsing, i.e. skip function bodies. We don't need to
   /// analyze function bodies to use summaries during future compilation steps.
   final bool buildSummaryOnlyDiet;
@@ -62,8 +58,9 @@ class CommandLineOptions {
   /// The path to output the summary when creating summaries in build mode.
   final String buildSummaryOutput;
 
-  /// Whether to output a summary in "fallback mode".
-  final bool buildSummaryFallback;
+  /// The path to output the semantic-only summary when creating summaries in
+  /// build mode.
+  final String buildSummaryOutputSemantic;
 
   /// Whether to suppress a nonzero exit code in build mode.
   final bool buildSuppressExitCode;
@@ -76,6 +73,11 @@ class CommandLineOptions {
 
   /// A table mapping the names of defined variables to their values.
   final Map<String, String> definedVariables;
+
+  /// Whether to disable cache flushing.  This option can improve analysis
+  /// speed at the expense of memory usage.  It may also be useful for working
+  /// around bugs.
+  final bool disableCacheFlushing;
 
   /// Whether to report hints
   final bool disableHints;
@@ -143,6 +145,12 @@ class CommandLineOptions {
   /// Whether to use strong static checking.
   final bool strongMode;
 
+  /// Whether implicit casts are enabled (in strong mode)
+  final bool implicitCasts;
+
+  /// Whether implicit dynamic is enabled (mainly for strong mode users)
+  final bool implicitDynamic;
+
   /// Whether to treat lints as fatal
   final bool lintsAreFatal;
 
@@ -152,19 +160,19 @@ class CommandLineOptions {
       : buildAnalysisOutput = args['build-analysis-output'],
         buildMode = args['build-mode'],
         buildModePersistentWorker = args['persistent_worker'],
-        buildSummaryFallback = args['build-summary-fallback'],
-        buildSummaryInputs = args['build-summary-input'],
+        buildSummaryInputs = args['build-summary-input'] as List<String>,
         buildSummaryOnly = args['build-summary-only'],
-        buildSummaryOnlyAst = args['build-summary-only-ast'],
         buildSummaryOnlyDiet = args['build-summary-only-diet'],
         buildSummaryExcludeInformative =
             args['build-summary-exclude-informative'],
         buildSummaryOutput = args['build-summary-output'],
+        buildSummaryOutputSemantic = args['build-summary-output-semantic'],
         buildSuppressExitCode = args['build-suppress-exit-code'],
         dartSdkPath = args['dart-sdk'],
         dartSdkSummaryPath = args['dart-sdk-summary'],
         definedVariables = definedVariables,
         analysisOptionsFile = args['options'],
+        disableCacheFlushing = args['disable-cache-flushing'],
         disableHints = args['no-hints'],
         displayVersion = args['version'],
         enableNullAwareOperators = args['enable-null-aware-operators'],
@@ -188,6 +196,8 @@ class CommandLineOptions {
         sourceFiles = args.rest,
         warningsAreFatal = args['fatal-warnings'],
         strongMode = args['strong'],
+        implicitCasts = !args['no-implicit-casts'],
+        implicitDynamic = !args['no-implicit-dynamic'],
         lintsAreFatal = args['fatal-lints'];
 
   /// Parse [args] into [CommandLineOptions] describing the specified
@@ -305,6 +315,7 @@ class CommandLineOptions {
           help: 'Do not show hint results.',
           defaultsTo: false,
           negatable: false)
+      ..addFlag('disable-cache-flushing', defaultsTo: false, hide: true)
       ..addFlag('ignore-unrecognized-flags',
           help: 'Ignore unrecognized command line flags.',
           defaultsTo: false,
@@ -374,8 +385,12 @@ class CommandLineOptions {
           allowMultiple: true,
           hide: true)
       ..addOption('build-summary-output',
-          help: 'Specifies the path to the file where the summary information '
-              'should be written.',
+          help: 'Specifies the path to the file where the full summary '
+              'information should be written.',
+          hide: true)
+      ..addOption('build-summary-output-semantic',
+          help: 'Specifies the path to the file where the semantic summary '
+              'information should be written.',
           hide: true)
       ..addFlag('build-summary-only',
           help: 'Disable analysis (only generate summaries).',
@@ -383,7 +398,7 @@ class CommandLineOptions {
           negatable: false,
           hide: true)
       ..addFlag('build-summary-only-ast',
-          help: 'Generate summaries using ASTs.',
+          help: 'deprecated -- Generate summaries using ASTs.',
           defaultsTo: false,
           negatable: false,
           hide: true)
@@ -393,12 +408,8 @@ class CommandLineOptions {
           negatable: false,
           hide: true)
       ..addFlag('build-summary-exclude-informative',
-          help: 'Exclude @informative information (docs, offsets, etc).',
-          defaultsTo: false,
-          negatable: false,
-          hide: true)
-      ..addFlag('build-summary-fallback',
-          help: 'If outputting a summary, output it in fallback mode.',
+          help: 'Exclude @informative information (docs, offsets, etc).  '
+              'Deprecated: please use --build-summary-output-semantic instead.',
           defaultsTo: false,
           negatable: false,
           hide: true)
@@ -441,6 +452,12 @@ class CommandLineOptions {
           defaultsTo: false,
           negatable: false,
           hide: true)
+      ..addFlag('initializing-formal-access',
+          help:
+              'Enable support for allowing access to field formal parameters in a constructor\'s initializer list',
+          defaultsTo: false,
+          negatable: false,
+          hide: true)
       ..addFlag('supermixin',
           help: 'Relax restrictions on mixins (DEP 34).',
           defaultsTo: false,
@@ -457,7 +474,13 @@ class CommandLineOptions {
           negatable: false,
           hide: true)
       ..addFlag('strong',
-          help: 'Enable strong static checks (https://goo.gl/DqcBsw)');
+          help: 'Enable strong static checks (https://goo.gl/DqcBsw)')
+      ..addFlag('no-implicit-casts',
+          negatable: false,
+          help: 'Disable implicit casts in strong mode (https://goo.gl/cTLz40)')
+      ..addFlag('no-implicit-dynamic',
+          negatable: false,
+          help: 'Disable implicit dynamic (https://goo.gl/m0UgXD)');
 
     try {
       // TODO(scheglov) https://code.google.com/p/dart/issues/detail?id=11061

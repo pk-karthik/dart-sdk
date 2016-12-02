@@ -16,22 +16,22 @@ import 'package:analyzer/file_system/file_system.dart';
 import 'package:analyzer/file_system/memory_file_system.dart';
 import 'package:analyzer/instrumentation/instrumentation.dart';
 import 'package:analyzer/src/generated/engine.dart';
+import 'package:analyzer/src/generated/sdk.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart';
 import 'package:plugin/manager.dart';
+import 'package:test/test.dart';
 import 'package:test_reflective_loader/test_reflective_loader.dart';
 import 'package:typed_mock/typed_mock.dart';
-import 'package:unittest/unittest.dart';
 
 import 'analysis_abstract.dart';
-import 'mock_sdk.dart';
 import 'mocks.dart';
 import 'operation/operation_queue_test.dart';
-import 'utils.dart';
 
 main() {
-  initializeTestEnvironment();
-  defineReflectiveTests(ExecutionDomainTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(ExecutionDomainTest);
+  });
   group('ExecutionDomainHandler', () {
     MemoryResourceProvider provider = new MemoryResourceProvider();
     AnalysisServer server;
@@ -48,7 +48,7 @@ main() {
           null,
           serverPlugin,
           new AnalysisServerOptions(),
-          (_) => new MockSdk(),
+          new DartSdkManager('', false),
           InstrumentationService.NULL_SERVICE);
       handler = new ExecutionDomainHandler(server);
     });
@@ -287,8 +287,8 @@ class ExecutionDomainTest extends AbstractAnalysisTest {
 
   @override
   void tearDown() {
-    super.tearDown();
     _disposeExecutionContext();
+    super.tearDown();
   }
 
   void test_mapUri_file() {

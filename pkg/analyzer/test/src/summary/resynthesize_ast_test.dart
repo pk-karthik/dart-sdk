@@ -6,6 +6,7 @@ library analyzer.test.src.summary.resynthesize_ast_test;
 
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/error/error.dart';
 import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/generated/engine.dart'
     show AnalysisContext, AnalysisOptionsImpl;
@@ -20,29 +21,26 @@ import 'package:analyzer/src/summary/summarize_ast.dart';
 import 'package:analyzer/src/summary/summarize_elements.dart'
     show PackageBundleAssembler;
 import 'package:analyzer/task/dart.dart' show PARSED_UNIT;
-import 'package:unittest/unittest.dart';
+import 'package:analyzer/task/general.dart';
+import 'package:test/test.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 
-import '../../reflective_tests.dart';
 import '../context/abstract_context.dart';
 import '../task/strong/inferred_type_test.dart';
-import 'resynthesize_test.dart';
+import 'resynthesize_common.dart';
 import 'summary_common.dart';
 
 main() {
-  groupSep = ' | ';
-  runReflectiveTests(ResynthesizeAstTest);
-  runReflectiveTests(AstInferredTypeTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(ResynthesizeAstSpecTest);
+    defineReflectiveTests(ResynthesizeAstStrongTest);
+    defineReflectiveTests(AstInferredTypeTest);
+  });
 }
 
 @reflectiveTest
 class AstInferredTypeTest extends AbstractResynthesizeTest
     with _AstResynthesizeTestMixin, InferredTypeMixin {
-  bool get checkPropagatedTypes {
-    // AST-based summaries do not yet handle propagated types.
-    // TODO(paulberry): fix this.
-    return false;
-  }
-
   @override
   bool get mayCheckTypesOfLocals => false;
 
@@ -59,6 +57,7 @@ class AstInferredTypeTest extends AbstractResynthesizeTest
     for (Source otherSource in otherLibrarySources) {
       _checkSource(resynthesizer, otherSource);
     }
+    _reset();
     return resynthesized.definingCompilationUnit;
   }
 
@@ -73,9 +72,8 @@ class AstInferredTypeTest extends AbstractResynthesizeTest
   DartSdk createDartSdk() => AbstractContextTest.SHARED_STRONG_MOCK_SDK;
 
   @override
-  AnalysisOptionsImpl createOptions() => new AnalysisOptionsImpl()
-    ..enableGenericMethods = true
-    ..strongMode = true;
+  AnalysisOptionsImpl createOptions() =>
+      new AnalysisOptionsImpl()..strongMode = true;
 
   @override
   @failingTest
@@ -157,8 +155,47 @@ class AstInferredTypeTest extends AbstractResynthesizeTest
 
   @override
   @failingTest
-  void test_genericMethods_inferJSBuiltin() {
-    super.test_genericMethods_inferJSBuiltin();
+  void test_constructors_inferFromArguments() {
+    // TODO(jmesserly): does this need to be implemented in AST summaries?
+    // The test might need a change as well to not be based on local variable
+    // types, which don't seem to be available.
+    super.test_constructors_inferFromArguments();
+  }
+
+  @override
+  @failingTest
+  void test_constructors_inferFromArguments_const() {
+    super.test_constructors_inferFromArguments_const();
+  }
+
+  @override
+  @failingTest
+  void test_constructors_inferFromArguments_factory() {
+    super.test_constructors_inferFromArguments_factory();
+  }
+
+  @override
+  @failingTest
+  void test_constructors_inferFromArguments_named() {
+    super.test_constructors_inferFromArguments_named();
+  }
+
+  @override
+  @failingTest
+  void test_constructors_inferFromArguments_namedFactory() {
+    super.test_constructors_inferFromArguments_namedFactory();
+  }
+
+  @override
+  @failingTest
+  void test_constructors_inferFromArguments_redirecting() {
+    super.test_constructors_inferFromArguments_redirecting();
+  }
+
+  @override
+  @failingTest
+  void test_constructors_inferFromArguments_redirectingFactory() {
+    super.test_constructors_inferFromArguments_redirectingFactory();
   }
 
   void test_infer_extractIndex_custom() {
@@ -516,6 +553,12 @@ var b = a.m();
 
   @override
   @failingTest
+  void test_inferLocalFunctionReturnType() {
+    super.test_inferLocalFunctionReturnType();
+  }
+
+  @override
+  @failingTest
   void test_inferredType_opAssignToProperty_prefixedIdentifier() {
     super.test_inferredType_opAssignToProperty_prefixedIdentifier();
   }
@@ -547,6 +590,117 @@ var v = new C().m(1, b: 'bbb', c: 2.0);
     expect(unit.topLevelVariables[0].type.toString(), 'int');
   }
 
+  @override
+  @failingTest
+  void test_nullCoalescingOperator() {
+    super.test_nullCoalescingOperator();
+  }
+
+  @override
+  @failingTest
+  void test_unsafeBlockClosureInference_closureCall() {
+    super.test_unsafeBlockClosureInference_closureCall();
+  }
+
+  @override
+  @failingTest
+  void test_unsafeBlockClosureInference_constructorCall_implicitTypeParam() {
+    super.test_unsafeBlockClosureInference_constructorCall_implicitTypeParam();
+  }
+
+  @override
+  @failingTest
+  void
+      test_unsafeBlockClosureInference_functionCall_explicitDynamicParam_viaExpr2() {
+    super
+        .test_unsafeBlockClosureInference_functionCall_explicitDynamicParam_viaExpr2();
+  }
+
+  @override
+  @failingTest
+  void
+      test_unsafeBlockClosureInference_functionCall_explicitDynamicParam_viaExpr2_comment() {
+    super
+        .test_unsafeBlockClosureInference_functionCall_explicitDynamicParam_viaExpr2_comment();
+  }
+
+  @override
+  @failingTest
+  void
+      test_unsafeBlockClosureInference_functionCall_explicitTypeParam_viaExpr2() {
+    super
+        .test_unsafeBlockClosureInference_functionCall_explicitTypeParam_viaExpr2();
+  }
+
+  @override
+  @failingTest
+  void
+      test_unsafeBlockClosureInference_functionCall_explicitTypeParam_viaExpr2_comment() {
+    super
+        .test_unsafeBlockClosureInference_functionCall_explicitTypeParam_viaExpr2_comment();
+  }
+
+  @override
+  @failingTest
+  void test_unsafeBlockClosureInference_functionCall_implicitTypeParam() {
+    super.test_unsafeBlockClosureInference_functionCall_implicitTypeParam();
+  }
+
+  @override
+  @failingTest
+  void
+      test_unsafeBlockClosureInference_functionCall_implicitTypeParam_comment() {
+    super
+        .test_unsafeBlockClosureInference_functionCall_implicitTypeParam_comment();
+  }
+
+  @override
+  @failingTest
+  void
+      test_unsafeBlockClosureInference_functionCall_implicitTypeParam_viaExpr() {
+    super
+        .test_unsafeBlockClosureInference_functionCall_implicitTypeParam_viaExpr();
+  }
+
+  @override
+  @failingTest
+  void
+      test_unsafeBlockClosureInference_functionCall_implicitTypeParam_viaExpr_comment() {
+    super
+        .test_unsafeBlockClosureInference_functionCall_implicitTypeParam_viaExpr_comment();
+  }
+
+  @override
+  @failingTest
+  void test_unsafeBlockClosureInference_functionCall_noTypeParam_viaExpr() {
+    super.test_unsafeBlockClosureInference_functionCall_noTypeParam_viaExpr();
+  }
+
+  @override
+  @failingTest
+  void test_unsafeBlockClosureInference_inList_untyped() {
+    super.test_unsafeBlockClosureInference_inList_untyped();
+  }
+
+  @override
+  @failingTest
+  void test_unsafeBlockClosureInference_inMap_untyped() {
+    super.test_unsafeBlockClosureInference_inMap_untyped();
+  }
+
+  @override
+  @failingTest
+  void test_unsafeBlockClosureInference_methodCall_implicitTypeParam() {
+    super.test_unsafeBlockClosureInference_methodCall_implicitTypeParam();
+  }
+
+  @override
+  @failingTest
+  void test_unsafeBlockClosureInference_methodCall_implicitTypeParam_comment() {
+    super
+        .test_unsafeBlockClosureInference_methodCall_implicitTypeParam_comment();
+  }
+
   LibraryElementImpl _checkSource(
       SummaryResynthesizer resynthesizer, Source source) {
     LibraryElementImpl resynthesized =
@@ -558,36 +712,57 @@ var v = new C().m(1, b: 'bbb', c: 2.0);
 }
 
 @reflectiveTest
-class ResynthesizeAstTest extends ResynthesizeTest
-    with _AstResynthesizeTestMixin {
+class ResynthesizeAstSpecTest extends _ResynthesizeAstTest {
   @override
-  bool get checkPropagatedTypes => false;
+  AnalysisOptionsImpl createOptions() =>
+      super.createOptions()..strongMode = false;
+}
+
+@reflectiveTest
+class ResynthesizeAstStrongTest extends _ResynthesizeAstTest {
+  @override
+  AnalysisOptionsImpl createOptions() =>
+      super.createOptions()..strongMode = true;
 
   @override
-  LibraryElementImpl checkLibrary(String text,
-      {bool allowErrors: false, bool dumpSummaries: false}) {
-    Source source = addTestSource(text);
-    LibraryElementImpl resynthesized = _encodeDecodeLibraryElement(source);
-    LibraryElementImpl original = context.computeLibraryElement(source);
-    checkLibraryElements(original, resynthesized);
-    return resynthesized;
+  @failingTest
+  test_instantiateToBounds_boundRefersToLaterTypeArgument() {
+    // TODO(paulberry): this is failing due to dartbug.com/27072.
+    super.test_instantiateToBounds_boundRefersToLaterTypeArgument();
   }
 
   @override
-  DartSdk createDartSdk() => AbstractContextTest.SHARED_MOCK_SDK;
+  @failingTest
+  test_syntheticFunctionType_genericClosure() {
+    super.test_syntheticFunctionType_genericClosure();
+  }
 
   @override
-  TestSummaryResynthesizer encodeDecodeLibrarySource(Source source) {
-    return _encodeLibrary(source);
+  @failingTest
+  test_syntheticFunctionType_inGenericClass() {
+    super.test_syntheticFunctionType_inGenericClass();
+  }
+
+  @override
+  @failingTest
+  test_syntheticFunctionType_noArguments() {
+    super.test_syntheticFunctionType_noArguments();
+  }
+
+  @override
+  @failingTest
+  test_syntheticFunctionType_withArguments() {
+    super.test_syntheticFunctionType_withArguments();
   }
 }
 
 /**
  * Abstract mixin for serializing ASTs and resynthesizing elements from it.
  */
-abstract class _AstResynthesizeTestMixin {
+abstract class _AstResynthesizeTestMixin
+    implements _AstResynthesizeTestMixinInterface {
   final Set<Source> serializedSources = new Set<Source>();
-  final PackageBundleAssembler bundleAssembler = new PackageBundleAssembler();
+  PackageBundleAssembler bundleAssembler = new PackageBundleAssembler();
   final Map<String, UnlinkedUnitBuilder> uriToUnit =
       <String, UnlinkedUnitBuilder>{};
 
@@ -614,7 +789,7 @@ abstract class _AstResynthesizeTestMixin {
       Map<String, LinkedLibrary> sdkLibraries =
           SerializedMockSdk.instance.uriToLinkedLibrary;
       LinkedLibrary linkedLibrary = sdkLibraries[absoluteUri];
-      if (linkedLibrary == null) {
+      if (linkedLibrary == null && !allowMissingFiles) {
         fail('Linker unexpectedly requested LinkedLibrary for "$absoluteUri".'
             '  Libraries available: ${sdkLibraries.keys}');
       }
@@ -624,21 +799,25 @@ abstract class _AstResynthesizeTestMixin {
     UnlinkedUnit getUnit(String absoluteUri) {
       UnlinkedUnit unit = uriToUnit[absoluteUri] ??
           SerializedMockSdk.instance.uriToUnlinkedUnit[absoluteUri];
-      if (unit == null) {
+      if (unit == null && !allowMissingFiles) {
         fail('Linker unexpectedly requested unit for "$absoluteUri".');
       }
       return unit;
     }
 
-    Set<String> nonSdkLibraryUris = context.sources
+    Set<String> nonSdkLibraryUris = serializedSources
         .where((Source source) =>
             !source.isInSystemLibrary &&
             context.computeKindOf(source) == SourceKind.LIBRARY)
         .map((Source source) => source.uri.toString())
         .toSet();
 
-    Map<String, LinkedLibrary> linkedSummaries = link(nonSdkLibraryUris,
-        getDependency, getUnit, context.analysisOptions.strongMode);
+    Map<String, LinkedLibrary> linkedSummaries = link(
+        nonSdkLibraryUris,
+        getDependency,
+        getUnit,
+        context.declaredVariables.get,
+        context.analysisOptions.strongMode);
 
     return new TestSummaryResynthesizer(
         null,
@@ -648,7 +827,8 @@ abstract class _AstResynthesizeTestMixin {
           ..addAll(unlinkedSummaries),
         new Map<String, LinkedLibrary>()
           ..addAll(SerializedMockSdk.instance.uriToLinkedLibrary)
-          ..addAll(linkedSummaries));
+          ..addAll(linkedSummaries),
+        allowMissingFiles);
   }
 
   UnlinkedUnit _getUnlinkedUnit(Source source) {
@@ -661,11 +841,25 @@ abstract class _AstResynthesizeTestMixin {
       }
     }
     return uriToUnit.putIfAbsent(uriStr, () {
+      int modificationTime = context.computeResult(source, MODIFICATION_TIME);
+      if (modificationTime < 0) {
+        // Source does not exist.
+        if (!allowMissingFiles) {
+          fail('Unexpectedly tried to get unlinked summary for $source');
+        }
+        return null;
+      }
       CompilationUnit unit = context.computeResult(source, PARSED_UNIT);
       UnlinkedUnitBuilder unlinkedUnit = serializeAstUnlinked(unit);
       bundleAssembler.addUnlinkedUnit(source, unlinkedUnit);
       return unlinkedUnit;
     });
+  }
+
+  void _reset() {
+    serializedSources.clear();
+    bundleAssembler = new PackageBundleAssembler();
+    uriToUnit.clear();
   }
 
   void _serializeLibrary(Source librarySource) {
@@ -691,14 +885,64 @@ abstract class _AstResynthesizeTestMixin {
     }
 
     UnlinkedPublicNamespace getImport(String relativeUri) {
-      return getPart(relativeUri).publicNamespace;
+      return getPart(relativeUri)?.publicNamespace;
     }
 
     UnlinkedUnit definingUnit = _getUnlinkedUnit(librarySource);
-    LinkedLibraryBuilder linkedLibrary =
-        prelink(definingUnit, getPart, getImport);
-    linkedLibrary.dependencies.skip(1).forEach((LinkedDependency d) {
-      _serializeLibrary(resolveRelativeUri(d.uri));
-    });
+    if (definingUnit != null) {
+      LinkedLibraryBuilder linkedLibrary = prelink(
+          definingUnit, getPart, getImport, context.declaredVariables.get);
+      linkedLibrary.dependencies.skip(1).forEach((LinkedDependency d) {
+        _serializeLibrary(resolveRelativeUri(d.uri));
+      });
+    }
+  }
+}
+
+/**
+ * Interface that [_AstResynthesizeTestMixin] requires of classes it's mixed
+ * into.  We can't place the getter below into [_AstResynthesizeTestMixin]
+ * directly, because then it would be overriding a field at the site where the
+ * mixin is instantiated.
+ */
+abstract class _AstResynthesizeTestMixinInterface {
+  /**
+   * A test should return `true` to indicate that a missing file at the time of
+   * summary resynthesis shouldn't trigger an error.
+   */
+  bool get allowMissingFiles;
+}
+
+abstract class _ResynthesizeAstTest extends ResynthesizeTest
+    with _AstResynthesizeTestMixin {
+  @override
+  LibraryElementImpl checkLibrary(String text,
+      {bool allowErrors: false, bool dumpSummaries: false}) {
+    Source source = addTestSource(text);
+    LibraryElementImpl resynthesized = _encodeDecodeLibraryElement(source);
+    LibraryElementImpl original = context.computeLibraryElement(source);
+    if (!allowErrors) {
+      List<AnalysisError> errors = context.computeErrors(source);
+      if (errors.where((e) => e.message.startsWith('unused')).isNotEmpty) {
+        fail('Analysis errors: $errors');
+      }
+    }
+    checkLibraryElements(original, resynthesized);
+    return resynthesized;
+  }
+
+  @override
+  void compareLocalElementsOfExecutable(ExecutableElement resynthesized,
+      ExecutableElement original, String desc) {
+    // We don't resynthesize local elements during link.
+    // So, we should not compare them.
+  }
+
+  @override
+  DartSdk createDartSdk() => AbstractContextTest.SHARED_MOCK_SDK;
+
+  @override
+  TestSummaryResynthesizer encodeDecodeLibrarySource(Source source) {
+    return _encodeLibrary(source);
   }
 }

@@ -13,7 +13,9 @@
 
 namespace dart {
 
-DEFINE_FLAG(bool, print_metrics, false,
+DEFINE_FLAG(bool,
+            print_metrics,
+            false,
             "Print metrics when isolates (and the VM) are shutdown.");
 
 Metric* Metric::vm_list_head_ = NULL;
@@ -24,8 +26,7 @@ Metric::Metric()
       description_(NULL),
       unit_(kCounter),
       value_(0),
-      next_(NULL) {
-}
+      next_(NULL) {}
 
 
 void Metric::Init(Isolate* isolate,
@@ -67,10 +68,13 @@ Metric::~Metric() {
 }
 
 
+#ifndef PRODUCT
 static const char* UnitString(intptr_t unit) {
   switch (unit) {
-    case Metric::kCounter: return "counter";
-    case Metric::kByte: return "byte";
+    case Metric::kCounter:
+      return "counter";
+    case Metric::kByte:
+      return "byte";
     default:
       UNREACHABLE();
   }
@@ -97,6 +101,7 @@ void Metric::PrintJSON(JSONStream* stream) {
   double value_as_double = static_cast<double>(Value());
   obj.AddProperty("value", value_as_double);
 }
+#endif  // !PRODUCT
 
 
 char* Metric::ValueToString(int64_t value, Unit unit) {
@@ -120,10 +125,8 @@ char* Metric::ValueToString(int64_t value, Unit unit) {
         scaled_suffix = "gb";
         scaled_value /= GB;
       }
-      return zone->PrintToString("%.3f %s (%" Pd64 ")",
-                                 scaled_value,
-                                 scaled_suffix,
-                                 value);
+      return zone->PrintToString("%.3f %s (%" Pd64 ")", scaled_value,
+                                 scaled_suffix, value);
     }
     default:
       UNREACHABLE();
@@ -153,7 +156,6 @@ bool Metric::NameExists(Metric* head, const char* name) {
   }
   return false;
 }
-
 
 
 void Metric::RegisterWithIsolate() {
@@ -291,7 +293,7 @@ int64_t MetricIsolateCount::Value() const {
 
 #define VM_METRIC_VARIABLE(type, variable, name, unit)                         \
   static type vm_metric_##variable##_;
-  VM_METRIC_LIST(VM_METRIC_VARIABLE);
+VM_METRIC_LIST(VM_METRIC_VARIABLE);
 #undef VM_METRIC_VARIABLE
 
 
@@ -306,19 +308,18 @@ void Metric::Cleanup() {
   if (FLAG_print_metrics) {
     // Create a zone to allocate temporary strings in.
     StackZone sz(Thread::Current());
-    OS::Print("Printing metrics for VM\n");
+    OS::PrintErr("Printing metrics for VM\n");
     Metric* current = Metric::vm_head();
     while (current != NULL) {
-      OS::Print("%s\n", current->ToString());
+      OS::PrintErr("%s\n", current->ToString());
       current = current->next();
     }
-    OS::Print("\n");
+    OS::PrintErr("\n");
   }
 }
 
 
-MaxMetric::MaxMetric()
-    : Metric() {
+MaxMetric::MaxMetric() : Metric() {
   set_value(kMinInt64);
 }
 
@@ -330,8 +331,7 @@ void MaxMetric::SetValue(int64_t new_value) {
 }
 
 
-MinMetric::MinMetric()
-    : Metric() {
+MinMetric::MinMetric() : Metric() {
   set_value(kMaxInt64);
 }
 

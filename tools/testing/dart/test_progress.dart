@@ -174,6 +174,31 @@ class ExitCodeSetter extends EventListener {
   }
 }
 
+class IgnoredTestMonitor extends EventListener {
+  static final int maxIgnored = 5;
+
+  int countIgnored = 0;
+
+  void done(TestCase test) {
+    if (test.lastCommandOutput.result(test) == Expectation.IGNORE) {
+      countIgnored++;
+      if (countIgnored > maxIgnored) {
+        print("/nMore than $maxIgnored tests were ignored due to flakes in");
+        print("the test infrastructure. Notify whesse@google.com.");
+        print("Output of the last ignored test was:");
+        print(_buildFailureOutput(test));
+        exit(1);
+      }
+    }
+  }
+
+  void allDone() {
+    if (countIgnored > 0) {
+      print("Ignored $countIgnored tests due to flaky infrastructure");
+    }
+  }
+}
+
 class FlakyLogWriter extends EventListener {
   void done(TestCase test) {
     if (test.isFlaky && test.result != Expectation.PASS) {
@@ -230,6 +255,7 @@ class TestOutcomeLogWriter extends EventListener {
     'compiler',
     'runtime',
     'checked',
+    'strong',
     'host_checked',
     'minified',
     'csp',
@@ -462,7 +488,7 @@ class LeftOverTempDirPrinter extends EventListener {
     }
   }
 
-  static Stream<Directory> getLeftOverTemporaryDirectories() {
+  static Stream<FileSystemEntity> getLeftOverTemporaryDirectories() {
     var regExp = _getTemporaryDirectoryRegexp();
     return Directory.systemTemp.list().where((FileSystemEntity fse) {
       if (fse is Directory) {

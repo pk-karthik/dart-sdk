@@ -12,10 +12,13 @@ import 'package:analysis_server/src/services/search/search_engine.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/visitor.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/dart/element/visitor.dart';
+import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/member.dart';
 import 'package:analyzer/src/generated/engine.dart' show AnalysisContext;
 import 'package:analyzer/src/generated/resolver.dart' show NamespaceBuilder;
 import 'package:analyzer/src/generated/source.dart' show Source, SourceRange;
+import 'package:analyzer/src/generated/utilities_general.dart';
 import 'package:analyzer/src/summary/idl.dart';
 
 /**
@@ -35,7 +38,8 @@ class SearchEngineImpl implements SearchEngine {
   }
 
   @override
-  Future<List<SearchMatch>> searchMemberDeclarations(String pattern) {
+  Future<List<SearchMatch>> searchMemberDeclarations(String name) {
+    String pattern = '^$name\$';
     return _searchDefinedNames(pattern, IndexNameKind.classMember);
   }
 
@@ -126,7 +130,7 @@ class SearchEngineImpl implements SearchEngine {
         throw new ArgumentError('Unsupported relation kind $relationKind');
       }
     }
-    return new SearchMatch(
+    return new SearchMatchImpl(
         location.context,
         location.libraryUri,
         location.unitUri,
@@ -233,7 +237,7 @@ class SearchEngineImpl implements SearchEngine {
       for (Directive directive in unit.directives) {
         if (directive is PartOfDirective &&
             directive.element == libraryElement) {
-          matches.add(new SearchMatch(
+          matches.add(new SearchMatchImpl(
               context,
               librarySource.uri.toString(),
               unitSource.uri.toString(),
@@ -260,12 +264,10 @@ class SearchEngineImpl implements SearchEngine {
       ParameterElement parameter) async {
     List<SearchMatch> matches = <SearchMatch>[];
     matches.addAll(await _searchReferences(parameter));
-    matches.addAll(await _searchReferences_Local(
-        parameter,
-        (n) =>
-            n is ConstructorDeclaration ||
-            n is MethodDeclaration ||
-            n is FunctionExpression));
+    matches.addAll(await _searchReferences_Local(parameter, (AstNode node) {
+      AstNode parent = node.parent;
+      return parent is ClassDeclaration || parent is CompilationUnit;
+    }));
     return matches;
   }
 
@@ -285,6 +287,174 @@ class SearchEngineImpl implements SearchEngine {
       matches.addAll(visitor.matches);
     }
     return matches;
+  }
+}
+
+/**
+ * Implementation of [SearchMatch].
+ */
+class SearchMatchImpl implements SearchMatch {
+  /**
+   * The [AnalysisContext] containing the match.
+   */
+  final AnalysisContext _context;
+
+  /**
+   * The URI of the source of the library containing the match.
+   */
+  final String libraryUri;
+
+  /**
+   * The URI of the source of the unit containing the match.
+   */
+  final String unitUri;
+
+  /**
+   * The kind of the match.
+   */
+  final MatchKind kind;
+
+  /**
+   * The source range that was matched.
+   */
+  final SourceRange sourceRange;
+
+  /**
+   * Is `true` if the match is a resolved reference to some [Element].
+   */
+  final bool isResolved;
+
+  /**
+   * Is `true` if field or method access is done using qualifier.
+   */
+  final bool isQualified;
+
+  Source _librarySource;
+  Source _unitSource;
+  LibraryElement _libraryElement;
+  Element _element;
+
+  SearchMatchImpl(this._context, this.libraryUri, this.unitUri, this.kind,
+      this.sourceRange, this.isResolved, this.isQualified);
+
+  /**
+   * Return the [Element] containing the match. Can return `null` if the unit
+   * does not exist, or its element was invalidated, or the element cannot be
+   * found, etc.
+   */
+  Element get element {
+    if (_element == null) {
+      CompilationUnitElement unitElement =
+          _context.getCompilationUnitElement(unitSource, librarySource);
+      if (unitElement != null) {
+        _ContainingElementFinder finder =
+            new _ContainingElementFinder(sourceRange.offset);
+        unitElement.accept(finder);
+        _element = finder.containingElement;
+      }
+    }
+    return _element;
+  }
+
+  /**
+   * The absolute path of the file containing the match.
+   */
+  String get file => unitSource.fullName;
+
+  @override
+  int get hashCode {
+    return JenkinsSmiHash.hash4(libraryUri.hashCode, unitUri.hashCode,
+        kind.hashCode, sourceRange.hashCode);
+  }
+
+  /**
+   * Return the [LibraryElement] for the [libraryUri] in the [context].
+   */
+  LibraryElement get libraryElement {
+    _libraryElement ??= _context.getLibraryElement(librarySource);
+    return _libraryElement;
+  }
+
+  /**
+   * The library [Source] of the reference.
+   */
+  Source get librarySource {
+    _librarySource ??= _context.sourceFactory.forUri(libraryUri);
+    return _librarySource;
+  }
+
+  /**
+   * The unit [Source] of the reference.
+   */
+  Source get unitSource {
+    _unitSource ??= _context.sourceFactory.forUri(unitUri);
+    return _unitSource;
+  }
+
+  @override
+  bool operator ==(Object object) {
+    if (identical(object, this)) {
+      return true;
+    }
+    if (object is SearchMatchImpl) {
+      return kind == object.kind &&
+          libraryUri == object.libraryUri &&
+          unitUri == object.unitUri &&
+          isResolved == object.isResolved &&
+          isQualified == object.isQualified &&
+          sourceRange == object.sourceRange;
+    }
+    return false;
+  }
+
+  @override
+  String toString() {
+    StringBuffer buffer = new StringBuffer();
+    buffer.write("SearchMatch(kind=");
+    buffer.write(kind);
+    buffer.write(", libraryUri=");
+    buffer.write(libraryUri);
+    buffer.write(", unitUri=");
+    buffer.write(unitUri);
+    buffer.write(", range=");
+    buffer.write(sourceRange);
+    buffer.write(", isResolved=");
+    buffer.write(isResolved);
+    buffer.write(", isQualified=");
+    buffer.write(isQualified);
+    buffer.write(")");
+    return buffer.toString();
+  }
+
+  /**
+   * Return elements of [matches] which has not-null elements.
+   *
+   * When [SearchMatch.element] is not `null` we cache its value, so it cannot
+   * become `null` later.
+   */
+  static List<SearchMatch> withNotNullElement(List<SearchMatch> matches) {
+    return matches.where((match) => match.element != null).toList();
+  }
+}
+
+/**
+ * A visitor that finds the deep-most [Element] that contains the [offset].
+ */
+class _ContainingElementFinder extends GeneralizingElementVisitor {
+  final int offset;
+  Element containingElement;
+
+  _ContainingElementFinder(this.offset);
+
+  visitElement(Element element) {
+    if (element is ElementImpl) {
+      if (element.codeOffset != null &&
+          element.codeOffset <= offset &&
+          offset <= element.codeOffset + element.codeLength) {
+        containingElement = element;
+        super.visitElement(element);
+      }
+    }
   }
 }
 
@@ -351,7 +521,7 @@ class _ImportElementReferencesVisitor extends RecursiveAstVisitor {
   }
 
   void _addMatchForRange(SourceRange range) {
-    matches.add(new SearchMatch(
+    matches.add(new SearchMatchImpl(
         context, libraryUri, unitUri, MatchKind.REFERENCE, range, true, false));
   }
 }
@@ -407,8 +577,8 @@ class _LocalReferencesVisitor extends RecursiveAstVisitor {
   }
 
   void _addMatch(AstNode node, MatchKind kind) {
-    bool isQualified = node is SimpleIdentifier && node.isQualified;
-    matches.add(new SearchMatch(context, libraryUri, unitUri, kind,
+    bool isQualified = node.parent is Label;
+    matches.add(new SearchMatchImpl(context, libraryUri, unitUri, kind,
         rangeNode(node), true, isQualified));
   }
 }

@@ -131,7 +131,7 @@ typedef Future<Iterable<LibraryElement>> ReuseLibrariesFunction(
  * point to the 'packages' folder.
  *
  */
-abstract class LibraryLoaderTask implements CompilerTask {
+abstract class LibraryLoaderTask implements LibraryProvider, CompilerTask {
   factory LibraryLoaderTask(
       ResolvedUriTranslator uriTranslator,
       ScriptLoader scriptLoader,
@@ -144,9 +144,6 @@ abstract class LibraryLoaderTask implements CompilerTask {
 
   /// Returns all libraries that have been loaded.
   Iterable<LibraryElement> get libraries;
-
-  /// Looks up the library with the [canonicalUri].
-  LibraryElement lookupLibrary(Uri canonicalUri);
 
   /// Loads the library specified by the [resolvedUri] and returns its
   /// [LibraryElement].
@@ -174,6 +171,14 @@ abstract class LibraryLoaderTask implements CompilerTask {
   /// Similar to [resetAsync] but [reuseLibrary] maps all libraries to a list
   /// of libraries that can be reused.
   Future<Null> resetLibraries(ReuseLibrariesFunction reuseLibraries);
+}
+
+/// Interface for an entity that provide libraries. For instance from normal
+/// library loading or from deserialization.
+// TODO(johnniwinther): Use this to integrate deserialized libraries better.
+abstract class LibraryProvider {
+  /// Looks up the library with the [canonicalUri].
+  LibraryElement lookupLibrary(Uri canonicalUri);
 }
 
 /// Handle for creating synthesized/patch libraries during library loading.
@@ -422,7 +427,8 @@ class _LibraryLoaderTask extends CompilerTask implements LibraryLoaderTask {
       // TODO(johnniwinther): Ensure that currentHandler correctly encloses the
       // loading of a library cluster.
       currentHandler = new LibraryDependencyHandler(this);
-      return createLibrary(currentHandler, null, resolvedUri,
+      return createLibrary(
+              currentHandler, null, resolvedUri, NO_LOCATION_SPANNABLE,
               skipFileWithPartOfTag: skipFileWithPartOfTag)
           .then((LibraryElement library) {
         if (library == null) {
@@ -538,12 +544,12 @@ class _LibraryLoaderTask extends CompilerTask implements LibraryLoaderTask {
 
         // Import dart:core if not already imported.
         if (!importsDartCore && library.canonicalUri != Uris.dart_core) {
-          return createLibrary(handler, null, Uris.dart_core)
+          return createLibrary(handler, null, Uris.dart_core, library)
               .then((LibraryElement coreLibrary) {
             handler.registerDependency(
                 library,
                 new SyntheticImportElement(
-                    library.entryCompilationUnit, Uris.dart_core),
+                    library.entryCompilationUnit, Uris.dart_core, coreLibrary),
                 coreLibrary);
           });
         }
@@ -624,7 +630,7 @@ class _LibraryLoaderTask extends CompilerTask implements LibraryLoaderTask {
       LibraryElement library, LibraryDependencyElementX libraryDependency) {
     Uri base = library.canonicalUri;
     Uri resolvedUri = base.resolveUri(libraryDependency.uri);
-    return createLibrary(handler, library, resolvedUri, node: libraryDependency)
+    return createLibrary(handler, library, resolvedUri, libraryDependency)
         .then((LibraryElement loadedLibrary) {
       if (loadedLibrary == null) return;
       reporter.withCurrentElement(library, () {
@@ -644,10 +650,16 @@ class _LibraryLoaderTask extends CompilerTask implements LibraryLoaderTask {
     handler.registerNewLibrary(library);
     return listener.onLibraryScanned(library, handler).then((_) {
       return Future.forEach(library.imports, (ImportElement import) {
-        return createLibrary(handler, library, import.uri);
+        Uri resolvedUri = library.canonicalUri.resolveUri(import.uri);
+        return createLibrary(handler, library, resolvedUri, library);
       }).then((_) {
         return Future.forEach(library.exports, (ExportElement export) {
-          return createLibrary(handler, library, export.uri);
+          Uri resolvedUri = library.canonicalUri.resolveUri(export.uri);
+          return createLibrary(handler, library, resolvedUri, library);
+        }).then((_) {
+          // TODO(johnniwinther): Shouldn't there be an [ImportElement] for the
+          // implicit import of dart:core?
+          return createLibrary(handler, library, Uris.dart_core, library);
         }).then((_) => library);
       });
     });
@@ -669,10 +681,10 @@ class _LibraryLoaderTask extends CompilerTask implements LibraryLoaderTask {
    * If a new library is created, the [handler] is notified.
    */
   Future<LibraryElement> createLibrary(LibraryDependencyHandler handler,
-      LibraryElement importingLibrary, Uri resolvedUri,
-      {Spannable node, bool skipFileWithPartOfTag: false}) {
+      LibraryElement importingLibrary, Uri resolvedUri, Spannable spannable,
+      {bool skipFileWithPartOfTag: false}) {
     Uri readableUri =
-        uriTranslator.translate(importingLibrary, resolvedUri, node);
+        uriTranslator.translate(importingLibrary, resolvedUri, spannable);
     LibraryElement library = libraryCanonicalUriMap[resolvedUri];
     if (library != null) {
       return new Future.value(library);
@@ -682,7 +694,7 @@ class _LibraryLoaderTask extends CompilerTask implements LibraryLoaderTask {
         return loadDeserializedLibrary(handler, library);
       }
       return reporter.withCurrentElement(importingLibrary, () {
-        return _readScript(node, readableUri, resolvedUri)
+        return _readScript(spannable, readableUri, resolvedUri)
             .then((Script script) {
           if (script == null) return null;
           LibraryElement element =
@@ -710,7 +722,7 @@ class _LibraryLoaderTask extends CompilerTask implements LibraryLoaderTask {
               DiagnosticMessage info = reporter.withCurrentElement(
                   importingLibrary,
                   () => reporter.createMessage(
-                      node, MessageKind.IMPORT_PART_OF_HERE));
+                      spannable, MessageKind.IMPORT_PART_OF_HERE));
               reporter.reportError(error, [info]);
             }
           }
@@ -905,10 +917,9 @@ class ExportLink {
 class LibraryDependencyNode {
   final LibraryElementX library;
 
-  // TODO(ahe): Remove [hashCodeCounter] and [hashCode] when
-  // VM implementation of Object.hashCode is not slow.
-  final int hashCode = ++hashCodeCounter;
-  static int hashCodeCounter = 0;
+  // Stored identity based hashCode for performance.
+  final int hashCode = _nextHash = (_nextHash + 100019).toUnsigned(30);
+  static int _nextHash = 0;
 
   /**
    * A linked list of the import tags that import [library] mapped to the

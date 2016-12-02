@@ -6,8 +6,7 @@
 // fields.  However, native fields keep their name.  The implication: a getter
 // for the field must be based on the field's name, not the field's jsname.
 
-import "package:expect/expect.dart";
-import 'dart:_js_helper' show Native, JSName;
+import 'native_testing.dart';
 
 abstract class I {
   int key;
@@ -15,12 +14,12 @@ abstract class I {
 
 @Native("A")
 class A implements I {
-  int key;                    //  jsname is 'key'
+  int key; //  jsname is 'key'
   int getKey() => key;
 }
 
 class B implements I {
-  int key;                    //  jsname is not 'key'
+  int key; //  jsname is not 'key'
   B([this.key = 222]);
   int getKey() => key;
 }
@@ -28,15 +27,14 @@ class B implements I {
 @Native("X")
 class X {
   @JSName('key')
-  int native_key_method() native;
+  int native_key_method() native ;
   // This should cause B.key to be renamed, but not A.key.
   @JSName('key')
-  int key() native;
+  int key() native ;
 }
 
-A makeA() native;
-X makeX() native;
-
+A makeA() native ;
+X makeX() native ;
 
 void setup() native """
 // This code is all inside 'setup' and so not accesible from the global scope.
@@ -48,13 +46,15 @@ X.prototype.key = function(){return 666;};
 
 makeA = function(){return new A};
 makeX = function(){return new X};
+
+self.nativeConstructor(A);
+self.nativeConstructor(X);
 """;
 
 testDynamic() {
-  var things = [makeA(), new B(), makeX()];
-  var a = things[0];
-  var b = things[1];
-  var x = things[2];
+  var a = confuse(makeA());
+  var b = confuse(new B());
+  var x = confuse(makeX());
 
   Expect.equals(111, a.key);
   Expect.equals(222, b.key);
@@ -92,6 +92,7 @@ testTyped() {
 }
 
 main() {
+  nativeTesting();
   setup();
 
   testTyped();

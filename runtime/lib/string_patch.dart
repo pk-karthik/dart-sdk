@@ -7,16 +7,16 @@ const int _maxLatin1 = 0xff;
 const int _maxUtf16 = 0xffff;
 const int _maxUnicode = 0x10ffff;
 
-patch class String {
-  /* patch */ factory String.fromCharCodes(Iterable<int> charCodes,
-                                           [int start = 0, int end]) {
+@patch class String {
+  @patch factory String.fromCharCodes(Iterable<int> charCodes,
+                                      [int start = 0, int end]) {
     if (charCodes is! Iterable) throw new ArgumentError.value(charCodes, "charCodes");
     if (start is! int) throw new ArgumentError.value(start, "start");
     if (end != null && end is! int) throw new ArgumentError.value(end, "end");
     return _StringBase.createFromCharCodes(charCodes, start, end, null);
   }
 
-  /* patch */ factory String.fromCharCode(int charCode) {
+  @patch factory String.fromCharCode(int charCode) {
     if (charCode >= 0) {
       if (charCode <= 0xff) {
         return _OneByteString._allocate(1).._setAt(0, charCode);
@@ -37,8 +37,8 @@ patch class String {
     throw new RangeError.range(charCode, 0, 0x10ffff);
   }
 
-  /* patch */ const factory String.fromEnvironment(String name,
-                                                   {String defaultValue})
+  @patch const factory String.fromEnvironment(String name,
+                                              {String defaultValue})
       native "String_fromEnvironment";
 }
 
@@ -82,8 +82,6 @@ abstract class _StringBase {
     throw new UnsupportedError(
         "_StringBase can't be instaniated");
   }
-
-  Type get runtimeType => String;
 
   int get hashCode native "String_getHashCode";
 
@@ -157,7 +155,7 @@ abstract class _StringBase {
   static String _createStringFromIterable(Iterable<int> charCodes,
                                           int start, int end) {
     // Treat charCodes as Iterable.
-    if (charCodes is EfficientLength) {
+    if (charCodes is EfficientLengthIterable) {
       int length = charCodes.length;
       end = RangeError.checkValidRange(start, end, length);
       List charCodeList = new List.from(charCodes.take(end).skip(start),

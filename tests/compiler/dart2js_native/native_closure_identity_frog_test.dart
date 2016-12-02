@@ -2,19 +2,18 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import 'native_testing.dart';
 
 typedef void MyFunctionType();
 
 @Native("A")
 class A {
-  setClosure(MyFunctionType f) native;
-  check(MyFunctionType f) native;
-  invoke() native;
+  setClosure(MyFunctionType f) native ;
+  check(MyFunctionType f) native ;
+  invoke() native ;
 }
 
-makeA() native;
+makeA() native ;
 
 void setup() native """
 function A() {}
@@ -22,6 +21,8 @@ A.prototype.setClosure = function(f) { this.f = f; };
 A.prototype.check = function(f) { return this.f === f; };
 A.prototype.invoke = function() { return this.f(); };
 makeA = function(){return new A;};
+
+self.nativeConstructor(A);
 """;
 
 var staticClosure;
@@ -45,6 +46,7 @@ checkTyped(A a, MyFunctionType closure) {
 }
 
 main() {
+  nativeTesting();
   setup();
 
   staticClosure = () => 44;

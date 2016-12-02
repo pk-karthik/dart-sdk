@@ -29,7 +29,7 @@ void _cancelAndError(StreamSubscription subscription,
                      error,
                      StackTrace stackTrace) {
   var cancelFuture = subscription.cancel();
-  if (cancelFuture is Future) {
+  if (cancelFuture is Future && !identical(cancelFuture, Future._nullFuture)) {
     cancelFuture.whenComplete(() => future._completeError(error, stackTrace));
   } else {
     future._completeError(error, stackTrace);
@@ -61,7 +61,7 @@ _ErrorCallback _cancelAndErrorClosure(
   before completing with a value. */
 void _cancelAndValue(StreamSubscription subscription, _Future future, value) {
   var cancelFuture = subscription.cancel();
-  if (cancelFuture is Future) {
+  if (cancelFuture is Future && !identical(cancelFuture, Future._nullFuture)) {
     cancelFuture.whenComplete(() => future._complete(value));
   } else {
     future._complete(value);
@@ -326,6 +326,10 @@ class _TakeStream<T> extends _ForwardingStream<T, T> {
       Function onError,
       void onDone(),
       bool cancelOnError) {
+    if (_count == 0) {
+      _source.listen(null).cancel();
+      return new _DoneStreamSubscription<T>(onDone);
+    }
     return new _StateStreamSubscription<T>(
         this, onData, onError, onDone, cancelOnError, _count);
   }

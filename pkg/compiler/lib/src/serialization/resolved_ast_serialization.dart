@@ -25,7 +25,6 @@ import 'keys.dart';
 import 'modelz.dart';
 import 'serialization.dart';
 import 'serialization_util.dart';
-import 'modelz.dart';
 
 /// Visitor that computes a node-index mapping.
 class AstIndexComputer extends Visitor {
@@ -100,6 +99,7 @@ class ResolvedAstSerializer extends Visitor {
         break;
       case ResolvedAstKind.DEFAULT_CONSTRUCTOR:
       case ResolvedAstKind.FORWARDING_CONSTRUCTOR:
+      case ResolvedAstKind.DEFERRED_LOAD_LIBRARY:
         // No additional properties.
         break;
     }
@@ -108,10 +108,7 @@ class ResolvedAstSerializer extends Visitor {
   /// Serialize [ResolvedAst] that is defined in terms of an AST together with
   /// [TreeElements].
   void serializeParsed() {
-    objectEncoder.setUri(
-        Key.URI,
-        elements.analyzedElement.compilationUnit.script.resourceUri,
-        elements.analyzedElement.compilationUnit.script.resourceUri);
+    objectEncoder.setUri(Key.URI, resolvedAst.sourceUri, resolvedAst.sourceUri);
     AstKind kind;
     if (element.enclosingClass is EnumClassElement) {
       if (element.name == 'index') {
@@ -168,19 +165,23 @@ class ResolvedAstSerializer extends Visitor {
         serializeLabelDefinition(labelDefinition, list.createObject());
       }
     }
+
     if (element is FunctionElement) {
-      FunctionElement function = element;
-      function.functionSignature.forEachParameter((ParameterElement parameter) {
-        ParameterElement parameterImpl = parameter.implementation;
-        // TODO(johnniwinther): Should we support element->node mapping as well?
-        getNodeDataEncoder(parameterImpl.node)
-            .setElement(PARAMETER_NODE, parameter);
-        if (parameter.initializer != null) {
-          getNodeDataEncoder(parameterImpl.initializer)
-              .setElement(PARAMETER_INITIALIZER, parameter);
-        }
-      });
+      serializeParameterNodes(element);
     }
+  }
+
+  void serializeParameterNodes(FunctionElement function) {
+    function.functionSignature.forEachParameter((ParameterElement parameter) {
+      ParameterElement parameterImpl = parameter.implementation;
+      // TODO(johnniwinther): Should we support element->node mapping as well?
+      getNodeDataEncoder(parameterImpl.node)
+          .setElement(PARAMETER_NODE, parameter);
+      if (parameter.initializer != null) {
+        getNodeDataEncoder(parameterImpl.initializer)
+            .setElement(PARAMETER_INITIALIZER, parameter);
+      }
+    });
   }
 
   /// Serialize [target] into [encoder].
@@ -320,6 +321,7 @@ class ResolvedAstSerializer extends Visitor {
     if (function != null && function.isFunction && function.isLocal) {
       // Mark root nodes of local functions; these need their own ResolvedAst.
       getNodeDataEncoder(node).setElement(Key.FUNCTION, function);
+      serializeParameterNodes(function);
     }
   }
 }
@@ -357,6 +359,8 @@ class ResolvedAstDeserializer {
       case ResolvedAstKind.FORWARDING_CONSTRUCTOR:
         (element as AstElementMixinZ).resolvedAst =
             new SynthesizedResolvedAst(element, kind);
+        break;
+      case ResolvedAstKind.DEFERRED_LOAD_LIBRARY:
         break;
     }
   }
@@ -396,7 +400,7 @@ class ResolvedAstDeserializer {
               parsing.getScannerOptionsFor(element), reporter, null);
           listener.memberErrors = listener.memberErrors.prepend(false);
           try {
-            Parser parser = new Parser(listener, parsing.parserOptions);
+            Parser parser = new Parser(listener);
             parse(parser);
           } on ParserError catch (e) {
             reporter.internalError(element, '$e');
@@ -515,7 +519,7 @@ class ResolvedAstDeserializer {
               reporter.internalError(
                   element,
                   "No token found for $element in "
-                  "${objectDecoder.getUri(Key.URI)} @ $getOrSetOffset");
+                  "${uri} @ $getOrSetOffset");
             }
           }
           return doParse((parser) {

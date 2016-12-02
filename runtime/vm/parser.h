@@ -2,8 +2,8 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef VM_PARSER_H_
-#define VM_PARSER_H_
+#ifndef RUNTIME_VM_PARSER_H_
+#define RUNTIME_VM_PARSER_H_
 
 #include "include/dart_api.h"
 
@@ -14,6 +14,7 @@
 #include "vm/ast.h"
 #include "vm/class_finalizer.h"
 #include "vm/compiler_stats.h"
+#include "vm/kernel.h"
 #include "vm/hash_table.h"
 #include "vm/object.h"
 #include "vm/raw_object.h"
@@ -22,13 +23,21 @@
 namespace dart {
 
 // Forward declarations.
+
+namespace kernel {
+
+class ScopeBuildingResult;
+
+}  // kernel
+
 class ArgumentsDescriptor;
 class Isolate;
 class LocalScope;
 class LocalVariable;
 struct RegExpCompileData;
 class SourceLabel;
-template <typename T> class GrowableArray;
+template <typename T>
+class GrowableArray;
 class Parser;
 
 struct CatchParamDesc;
@@ -39,62 +48,41 @@ struct QualIdent;
 class TopLevel;
 class RecursionChecker;
 
-// We cache computed compile-time constants in a map so we can look them
-// up when the same code gets compiled again. The map key is a pair
-// (script url, token position) which is encoded in an array with 2
-// elements:
-// - key[0] contains the canonicalized url of the script.
-// - key[1] contains the token position of the constant in the script.
-
-// ConstantPosKey allows us to look up a constant in the map without
-// allocating a key pair (array).
-struct ConstantPosKey : ValueObject {
-  ConstantPosKey(const String& url, TokenPosition pos)
-      : script_url(url), token_pos(pos) { }
-  const String& script_url;
-  TokenPosition token_pos;
-};
-
-
+// We cache compile time constants during compilation.  This allows us
+// to look them up when the same code gets compiled again.  During
+// background compilation, we are not able to evaluate the constants
+// so this cache is necessary to support background compilation.
+//
+// We cache the constants with the script itself. This is helpful during isolate
+// reloading, as it allows us to reference the compile time constants associated
+// with a particular version of a script. The map key is simply the
+// TokenPosition where the constant is defined.
 class ConstMapKeyEqualsTraits {
  public:
   static const char* Name() { return "ConstMapKeyEqualsTraits"; }
   static bool ReportStats() { return false; }
 
   static bool IsMatch(const Object& a, const Object& b) {
-    const Array& key1 = Array::Cast(a);
-    const Array& key2 = Array::Cast(b);
-    // Compare raw strings of script url symbol and raw smi of token positon.
-    return (key1.At(0) == key2.At(0)) && (key1.At(1) == key2.At(1));
+    const Smi& key1 = Smi::Cast(a);
+    const Smi& key2 = Smi::Cast(b);
+    return (key1.Value() == key2.Value());
   }
-  static bool IsMatch(const ConstantPosKey& key1, const Object& b) {
-    const Array& key2 = Array::Cast(b);
-    // Compare raw strings of script url symbol and token positon.
-    return (key1.script_url.raw() == key2.At(0))
-        && (key1.token_pos.value() == Smi::Value(Smi::RawCast(key2.At(1))));
+  static bool IsMatch(const TokenPosition& key1, const Object& b) {
+    const Smi& key2 = Smi::Cast(b);
+    return (key1.value() == key2.Value());
   }
   static uword Hash(const Object& obj) {
-    const Array& key = Array::Cast(obj);
-    intptr_t url_hash = String::HashRawSymbol(String::RawCast(key.At(0)));
-    intptr_t pos = Smi::Value(Smi::RawCast(key.At(1)));
-    return HashValue(url_hash, pos);
+    const Smi& key = Smi::Cast(obj);
+    return HashValue(key.Value());
   }
-  static uword Hash(const ConstantPosKey& key) {
-    return HashValue(String::HashRawSymbol(key.script_url.raw()),
-                     key.token_pos.value());
-  }
-  // Used by CachConstantValue if a new constant is added to the map.
-  static RawObject* NewKey(const ConstantPosKey& key) {
-    const Array& key_obj = Array::Handle(Array::New(2));
-    key_obj.SetAt(0, key.script_url);
-    key_obj.SetAt(1, Smi::Handle(Smi::New(key.token_pos.value())));
-    return key_obj.raw();;
+  static uword Hash(const TokenPosition& key) { return HashValue(key.value()); }
+  // Used by CacheConstantValue if a new constant is added to the map.
+  static RawObject* NewKey(const TokenPosition& key) {
+    return Smi::New(key.value());
   }
 
  private:
-  static uword HashValue(intptr_t url_hash, intptr_t pos) {
-    return url_hash * pos % (Smi::kMaxValue - 13);
-  }
+  static uword HashValue(intptr_t pos) { return pos % (Smi::kMaxValue - 13); }
 };
 typedef UnorderedHashMap<ConstMapKeyEqualsTraits> ConstantsMap;
 
@@ -118,13 +106,13 @@ class ParsedFunction : public ZoneAllocated {
         first_stack_local_index_(0),
         num_copied_params_(0),
         num_stack_locals_(0),
-        have_seen_await_expr_(false) {
+        have_seen_await_expr_(false),
+        kernel_scopes_(NULL) {
     ASSERT(function.IsZoneHandle());
     // Every function has a local variable for the current context.
-    LocalVariable* temp = new(zone()) LocalVariable(
-        function.token_pos(),
-        Symbols::CurrentContextVar(),
-        Object::dynamic_type());
+    LocalVariable* temp = new (zone())
+        LocalVariable(function.token_pos(), function.token_pos(),
+                      Symbols::CurrentContextVar(), Object::dynamic_type());
     ASSERT(temp != NULL);
     current_context_var_ = temp;
   }
@@ -166,9 +154,7 @@ class ParsedFunction : public ZoneAllocated {
     return default_parameter_values_;
   }
 
-  LocalVariable* current_context_var() const {
-    return current_context_var_;
-  }
+  LocalVariable* current_context_var() const { return current_context_var_; }
 
   LocalVariable* expression_temp_var() const {
     ASSERT(has_expression_temp_var());
@@ -178,9 +164,7 @@ class ParsedFunction : public ZoneAllocated {
     ASSERT(!has_expression_temp_var());
     expression_temp_var_ = value;
   }
-  bool has_expression_temp_var() const {
-    return expression_temp_var_ != NULL;
-  }
+  bool has_expression_temp_var() const { return expression_temp_var_ != NULL; }
 
   LocalVariable* finally_return_temp_var() const {
     ASSERT(has_finally_return_temp_var());
@@ -212,8 +196,7 @@ class ParsedFunction : public ZoneAllocated {
   int num_copied_params() const { return num_copied_params_; }
   int num_stack_locals() const { return num_stack_locals_; }
   int num_non_copied_params() const {
-    return (num_copied_params_ == 0)
-        ? function().num_fixed_parameters() : 0;
+    return (num_copied_params_ == 0) ? function().num_fixed_parameters() : 0;
   }
 
   void AllocateVariables();
@@ -231,6 +214,8 @@ class ParsedFunction : public ZoneAllocated {
   void AddToGuardedFields(const Field* field) const;
 
   void Bailout(const char* origin, const char* reason) const;
+
+  kernel::ScopeBuildingResult* EnsureKernelScopes();
 
  private:
   Thread* thread_;
@@ -251,6 +236,8 @@ class ParsedFunction : public ZoneAllocated {
   int num_copied_params_;
   int num_stack_locals_;
   bool have_seen_await_expr_;
+
+  kernel::ScopeBuildingResult* kernel_scopes_;
 
   friend class Parser;
   DISALLOW_COPY_AND_ASSIGN(ParsedFunction);
@@ -278,7 +265,7 @@ class Parser : public ValueObject {
   // given static field.
   static ParsedFunction* ParseStaticFieldInitializer(const Field& field);
 
-  static void InsertCachedConstantValue(const String& url,
+  static void InsertCachedConstantValue(const Script& script,
                                         TokenPosition token_pos,
                                         const Instance& value);
 
@@ -302,10 +289,9 @@ class Parser : public ValueObject {
 
   struct Block;
   class TryStack;
+  class TokenPosScope;
 
-  Parser(const Script& script,
-         const Library& library,
-         TokenPosition token_pos);
+  Parser(const Script& script, const Library& library, TokenPosition token_pos);
   Parser(const Script& script,
          ParsedFunction* function,
          TokenPosition token_pos);
@@ -347,9 +333,7 @@ class Parser : public ValueObject {
   void set_current_class(const Class& value);
 
   // ParsedFunction accessor.
-  ParsedFunction* parsed_function() const {
-    return parsed_function_;
-  }
+  ParsedFunction* parsed_function() const { return parsed_function_; }
 
   const Script& script() const { return script_; }
   void SetScript(const Script& script, TokenPosition token_pos);
@@ -360,7 +344,7 @@ class Parser : public ValueObject {
   // Parsing a library or a regular source script.
   bool is_library_source() const {
     return (script_.kind() == RawScript::kScriptTag) ||
-        (script_.kind() == RawScript::kLibraryTag);
+           (script_.kind() == RawScript::kLibraryTag);
   }
 
   bool is_part_source() const {
@@ -372,9 +356,7 @@ class Parser : public ValueObject {
     return script_.kind() == RawScript::kPatchTag;
   }
 
-  TokenPosition TokenPos() const {
-    return tokens_iterator_.CurrentPosition();
-  }
+  TokenPosition TokenPos() const { return tokens_iterator_.CurrentPosition(); }
   TokenPosition PrevTokenPos() const { return prev_token_pos_; }
 
   Token::Kind CurrentToken() {
@@ -418,6 +400,7 @@ class Parser : public ValueObject {
   void SkipToMatchingParenthesis();
   void SkipBlock();
   TokenPosition SkipMetadata();
+  bool IsPatchAnnotation(TokenPosition pos);
   void SkipTypeArguments();
   void SkipType(bool allow_void);
   void SkipInitializers();
@@ -454,8 +437,10 @@ class Parser : public ValueObject {
 
   // Concatenate and report an already formatted error and a new error message.
   static void ReportErrors(const Error& prev_error,
-                           const Script& script, TokenPosition token_pos,
-                           const char* format, ...) PRINTF_ATTRIBUTE(4, 5);
+                           const Script& script,
+                           TokenPosition token_pos,
+                           const char* format,
+                           ...) PRINTF_ATTRIBUTE(4, 5);
 
   // Report error message at location of current token in current script.
   void ReportError(const char* msg, ...) const PRINTF_ATTRIBUTE(2, 3);
@@ -463,15 +448,15 @@ class Parser : public ValueObject {
   void ReportErrorBefore(const char* format, ...) PRINTF_ATTRIBUTE(2, 3);
 
   // Report error message at given location in current script.
-  void ReportError(TokenPosition token_pos,
-                   const char* msg, ...) const PRINTF_ATTRIBUTE(3, 4);
+  void ReportError(TokenPosition token_pos, const char* msg, ...) const
+      PRINTF_ATTRIBUTE(3, 4);
 
   // Report warning message at location of current token in current script.
   void ReportWarning(const char* msg, ...) const PRINTF_ATTRIBUTE(2, 3);
 
   // Report warning message at given location in current script.
-  void ReportWarning(TokenPosition token_pos,
-                     const char* msg, ...) const PRINTF_ATTRIBUTE(3, 4);
+  void ReportWarning(TokenPosition token_pos, const char* msg, ...) const
+      PRINTF_ATTRIBUTE(3, 4);
 
   void CheckRecursiveInvocation();
 
@@ -501,11 +486,14 @@ class Parser : public ValueObject {
                     const Object& tl_owner,
                     TokenPosition metadata_pos);
   void ParseTopLevelVariable(TopLevel* top_level,
-                             const Object& owner, TokenPosition metadata_pos);
+                             const Object& owner,
+                             TokenPosition metadata_pos);
   void ParseTopLevelFunction(TopLevel* top_level,
-                             const Object& owner, TokenPosition metadata_pos);
+                             const Object& owner,
+                             TokenPosition metadata_pos);
   void ParseTopLevelAccessor(TopLevel* top_level,
-                             const Object& owner, TokenPosition metadata_pos);
+                             const Object& owner,
+                             TokenPosition metadata_pos);
   RawArray* EvaluateMetadata();
 
   RawFunction::AsyncModifier ParseFunctionModifier();
@@ -525,19 +513,17 @@ class Parser : public ValueObject {
   void ParseLibraryImportObsoleteSyntax();
   void ParseLibraryIncludeObsoleteSyntax();
 
-  void ResolveTypeFromClass(const Class& cls,
-                            ClassFinalizer::FinalizationKind finalization,
-                            AbstractType* type);
+  void ResolveType(ClassFinalizer::FinalizationKind finalization,
+                   AbstractType* type);
   RawAbstractType* ParseType(ClassFinalizer::FinalizationKind finalization,
                              bool allow_deferred_type = false,
                              bool consume_unresolved_prefix = true);
-  RawAbstractType* ParseType(
-      ClassFinalizer::FinalizationKind finalization,
-      bool allow_deferred_type,
-      bool consume_unresolved_prefix,
-      LibraryPrefix* prefix);
+  RawAbstractType* ParseType(ClassFinalizer::FinalizationKind finalization,
+                             bool allow_deferred_type,
+                             bool consume_unresolved_prefix,
+                             LibraryPrefix* prefix);
 
-  void ParseTypeParameters(const Class& cls);
+  void ParseTypeParameters(bool parameterizing_class);
   RawTypeArguments* ParseTypeArguments(
       ClassFinalizer::FinalizationKind finalization);
   void ParseMethodOrConstructor(ClassDesc* members, MemberDesc* method);
@@ -562,20 +548,18 @@ class Parser : public ValueObject {
       const Class& cls,
       LocalVariable* receiver,
       GrowableArray<Field*>* initialized_fields);
-  AstNode* CheckDuplicateFieldInit(
-      TokenPosition init_pos,
-      GrowableArray<Field*>* initialized_fields,
-      AstNode* instance,
-      Field* field,
-      AstNode* init_value);
+  AstNode* CheckDuplicateFieldInit(TokenPosition init_pos,
+                                   GrowableArray<Field*>* initialized_fields,
+                                   AstNode* instance,
+                                   Field* field,
+                                   AstNode* init_value);
   StaticCallNode* GenerateSuperConstructorCall(
       const Class& cls,
       TokenPosition supercall_pos,
       LocalVariable* receiver,
       ArgumentListNode* forwarding_args);
-  StaticCallNode* ParseSuperInitializer(
-      const Class& cls,
-      LocalVariable* receiver);
+  StaticCallNode* ParseSuperInitializer(const Class& cls,
+                                        LocalVariable* receiver);
   AstNode* ParseInitializer(const Class& cls,
                             LocalVariable* receiver,
                             GrowableArray<Field*>* initialized_fields);
@@ -617,8 +601,7 @@ class Parser : public ValueObject {
   ClosureNode* CreateImplicitClosureNode(const Function& func,
                                          TokenPosition token_pos,
                                          AstNode* receiver);
-  static void AddFormalParamsToFunction(const ParamList* params,
-                                        const Function& func);
+  void AddFormalParamsToFunction(const ParamList* params, const Function& func);
   void AddFormalParamsToScope(const ParamList* params, LocalScope* scope);
 
   SequenceNode* ParseConstructor(const Function& func);
@@ -666,7 +649,7 @@ class Parser : public ValueObject {
 
   SequenceNode* CloseAsyncClosure(SequenceNode* body);
   SequenceNode* CloseAsyncTryBlock(SequenceNode* try_block);
-  SequenceNode* CloseAsyncGeneratorTryBlock(SequenceNode *body);
+  SequenceNode* CloseAsyncGeneratorTryBlock(SequenceNode* body);
 
   void AddAsyncClosureParameters(ParamList* params);
   void AddContinuationVariables();
@@ -677,14 +660,16 @@ class Parser : public ValueObject {
   LocalVariable* LookupTypeArgumentsParameter(LocalScope* from_scope,
                                               bool test_only);
   void CaptureInstantiator();
+  void CaptureFunctionInstantiator();
   AstNode* LoadReceiver(TokenPosition token_pos);
   AstNode* LoadFieldIfUnresolved(AstNode* node);
   AstNode* LoadClosure(PrimaryNode* primary);
+  AstNode* LoadTypeParameter(PrimaryNode* primary);
   InstanceGetterNode* CallGetter(TokenPosition token_pos,
                                  AstNode* object,
                                  const String& name);
 
-  AstNode* ParseAssertStatement();
+  AstNode* ParseAssertStatement(bool is_const = false);
   AstNode* ParseJump(String* label_name);
   AstNode* ParseIfStatement(String* label_name);
   AstNode* ParseWhileStatement(String* label_name);
@@ -735,14 +720,14 @@ class Parser : public ValueObject {
   // Pop the inner most try block from the stack.
   TryStack* PopTry();
   // Collect saved try context variables if await or yield is in try block.
-  void CheckAsyncOpInTryBlock(
-      LocalVariable** saved_try_ctx,
-      LocalVariable** async_saved_try_ctx,
-      LocalVariable** outer_saved_try_ctx,
-      LocalVariable** outer_async_saved_try_ctx) const;
+  void CheckAsyncOpInTryBlock(LocalVariable** saved_try_ctx,
+                              LocalVariable** async_saved_try_ctx,
+                              LocalVariable** outer_saved_try_ctx,
+                              LocalVariable** outer_async_saved_try_ctx) const;
   // Add specified node to try block list so that it can be patched with
   // inlined finally code if needed.
   void AddNodeForFinallyInlining(AstNode* node);
+  void RemoveNodesForFinallyInlining(SourceLabel* label);
   // Add the inlined finally clause to the specified node.
   void AddFinallyClauseToNode(bool is_async,
                               AstNode* node,
@@ -768,9 +753,14 @@ class Parser : public ValueObject {
   bool IsMixinAppAlias();
   bool TryParseQualIdent();
   bool TryParseTypeParameters();
+  bool TryParseTypeArguments();
+  bool IsTypeParameters();
+  bool IsArgumentPart();
+  bool IsParameterPart();
   bool TryParseOptionalType();
   bool TryParseReturnType();
   bool IsVariableDeclaration();
+  bool IsFunctionReturnType();
   bool IsFunctionDeclaration();
   bool IsFunctionLiteral();
   bool IsForInStatement();
@@ -835,8 +825,9 @@ class Parser : public ValueObject {
   const AbstractType* ReceiverType(const Class& cls);
   bool IsInstantiatorRequired() const;
   bool ResolveIdentInLocalScope(TokenPosition ident_pos,
-                                const String &ident,
-                                AstNode** node);
+                                const String& ident,
+                                AstNode** node,
+                                intptr_t* function_level);
   static const bool kResolveLocally = true;
   static const bool kResolveIncludingImports = false;
 
@@ -873,7 +864,6 @@ class Parser : public ValueObject {
                           const String& func_name,
                           ArgumentListNode* arguments);
   String& Interpolate(const GrowableArray<AstNode*>& values);
-  AstNode* MakeAssertCall(TokenPosition begin, TokenPosition end);
   AstNode* ThrowTypeError(TokenPosition type_pos,
                           const AbstractType& type,
                           LibraryPrefix* prefix = NULL);
@@ -897,7 +887,6 @@ class Parser : public ValueObject {
                                 const String* left_ident,
                                 TokenPosition left_pos,
                                 bool is_compound = false);
-  AstNode* InsertClosureCallNodes(AstNode* condition);
 
   ConstructorCallNode* CreateConstructorCallNode(
       TokenPosition token_pos,
@@ -920,7 +909,7 @@ class Parser : public ValueObject {
   Isolate* isolate() const { return isolate_; }
   Zone* zone() const { return thread_->zone(); }
 
-  Thread* thread_;  // Cached current thread.
+  Thread* thread_;    // Cached current thread.
   Isolate* isolate_;  // Cached current isolate.
 
   Script& script_;
@@ -991,4 +980,4 @@ class Parser : public ValueObject {
 
 }  // namespace dart
 
-#endif  // VM_PARSER_H_
+#endif  // RUNTIME_VM_PARSER_H_

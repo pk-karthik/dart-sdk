@@ -53,7 +53,10 @@ namespace dart {
 
 DEFINE_FLAG(bool, print_unique_targets, false, "Print unique dynaic targets");
 DEFINE_FLAG(bool, trace_precompiler, false, "Trace precompiler.");
-DEFINE_FLAG(int, max_speculative_inlining_attempts, 1,
+DEFINE_FLAG(
+    int,
+    max_speculative_inlining_attempts,
+    1,
     "Max number of attempts with speculative inlining (precompilation only)");
 DEFINE_FLAG(int, precompiler_rounds, 1, "Number of precompiler iterations");
 
@@ -78,13 +81,54 @@ DECLARE_FLAG(bool, trace_irregexp);
 
 class DartPrecompilationPipeline : public DartCompilationPipeline {
  public:
-  DartPrecompilationPipeline() : result_type_(CompileType::None()) { }
+  explicit DartPrecompilationPipeline(Zone* zone,
+                                      FieldTypeMap* field_map = NULL)
+      : zone_(zone), result_type_(CompileType::None()), field_map_(field_map) {}
 
   virtual void FinalizeCompilation(FlowGraph* flow_graph) {
+    if ((field_map_ != NULL) &&
+        flow_graph->function().IsGenerativeConstructor()) {
+      for (BlockIterator block_it = flow_graph->reverse_postorder_iterator();
+           !block_it.Done(); block_it.Advance()) {
+        ForwardInstructionIterator it(block_it.Current());
+        for (; !it.Done(); it.Advance()) {
+          StoreInstanceFieldInstr* store = it.Current()->AsStoreInstanceField();
+          if (store != NULL) {
+            if (!store->field().IsNull() && store->field().is_final()) {
+              if (FLAG_trace_precompiler && FLAG_support_il_printer) {
+                THR_Print("Found store to %s <- %s\n",
+                          store->field().ToCString(),
+                          store->value()->Type()->ToCString());
+              }
+              FieldTypePair* entry = field_map_->Lookup(&store->field());
+              if (entry == NULL) {
+                field_map_->Insert(FieldTypePair(
+                    &Field::Handle(zone_, store->field().raw()),  // Re-wrap.
+                    store->value()->Type()->ToCid()));
+                if (FLAG_trace_precompiler && FLAG_support_il_printer) {
+                  THR_Print(" initial type = %s\n",
+                            store->value()->Type()->ToCString());
+                }
+                continue;
+              }
+              CompileType type = CompileType::FromCid(entry->cid_);
+              if (FLAG_trace_precompiler && FLAG_support_il_printer) {
+                THR_Print(" old type = %s\n", type.ToCString());
+              }
+              type.Union(store->value()->Type());
+              if (FLAG_trace_precompiler && FLAG_support_il_printer) {
+                THR_Print(" new type = %s\n", type.ToCString());
+              }
+              entry->cid_ = type.ToCid();
+            }
+          }
+        }
+      }
+    }
+
     CompileType result_type = CompileType::None();
     for (BlockIterator block_it = flow_graph->reverse_postorder_iterator();
-         !block_it.Done();
-         block_it.Advance()) {
+         !block_it.Done(); block_it.Advance()) {
       ForwardInstructionIterator it(block_it.Current());
       for (; !it.Done(); it.Advance()) {
         ReturnInstr* return_instr = it.Current()->AsReturn();
@@ -99,18 +143,21 @@ class DartPrecompilationPipeline : public DartCompilationPipeline {
   CompileType result_type() { return result_type_; }
 
  private:
+  Zone* zone_;
   CompileType result_type_;
+  FieldTypeMap* field_map_;
 };
 
 
 class PrecompileParsedFunctionHelper : public ValueObject {
  public:
-  PrecompileParsedFunctionHelper(ParsedFunction* parsed_function,
+  PrecompileParsedFunctionHelper(Precompiler* precompiler,
+                                 ParsedFunction* parsed_function,
                                  bool optimized)
-      : parsed_function_(parsed_function),
+      : precompiler_(precompiler),
+        parsed_function_(parsed_function),
         optimized_(optimized),
-        thread_(Thread::Current()) {
-  }
+        thread_(Thread::Current()) {}
 
   bool Compile(CompilationPipeline* pipeline);
 
@@ -124,6 +171,7 @@ class PrecompileParsedFunctionHelper : public ValueObject {
                            FlowGraphCompiler* graph_compiler,
                            FlowGraph* flow_graph);
 
+  Precompiler* precompiler_;
   ParsedFunction* parsed_function_;
   const bool optimized_;
   Thread* const thread_;
@@ -154,34 +202,122 @@ RawError* Precompiler::CompileAll(
 }
 
 
-Precompiler::Precompiler(Thread* thread, bool reset_fields) :
-    thread_(thread),
-    zone_(NULL),
-    isolate_(thread->isolate()),
-    reset_fields_(reset_fields),
-    changed_(false),
-    function_count_(0),
-    class_count_(0),
-    selector_count_(0),
-    dropped_function_count_(0),
-    dropped_field_count_(0),
-    dropped_class_count_(0),
-    dropped_typearg_count_(0),
-    dropped_type_count_(0),
-    dropped_library_count_(0),
-    libraries_(GrowableObjectArray::Handle(I->object_store()->libraries())),
-    pending_functions_(
-        GrowableObjectArray::Handle(GrowableObjectArray::New())),
-    sent_selectors_(),
-    enqueued_functions_(),
-    fields_to_retain_(),
-    functions_to_retain_(),
-    classes_to_retain_(),
-    typeargs_to_retain_(),
-    types_to_retain_(),
-    consts_to_retain_(),
-    error_(Error::Handle()) {
+bool TypeRangeCache::InstanceOfHasClassRange(const AbstractType& type,
+                                             intptr_t* lower_limit,
+                                             intptr_t* upper_limit) {
+  ASSERT(type.IsFinalized() && !type.IsMalformedOrMalbounded());
+
+  if (!type.IsInstantiated()) return false;
+  if (type.IsFunctionType()) return false;
+
+  Zone* zone = thread_->zone();
+  const TypeArguments& type_arguments =
+      TypeArguments::Handle(zone, type.arguments());
+  if (!type_arguments.IsNull() &&
+      !type_arguments.IsRaw(0, type_arguments.Length()))
+    return false;
+
+
+  intptr_t type_cid = type.type_class_id();
+  if (lower_limits_[type_cid] == kNotContiguous) return false;
+  if (lower_limits_[type_cid] != kNotComputed) {
+    *lower_limit = lower_limits_[type_cid];
+    *upper_limit = upper_limits_[type_cid];
+    return true;
+  }
+
+
+  *lower_limit = -1;
+  *upper_limit = -1;
+  intptr_t last_matching_cid = -1;
+
+  ClassTable* table = thread_->isolate()->class_table();
+  Class& cls = Class::Handle(zone);
+  AbstractType& cls_type = AbstractType::Handle(zone);
+  for (intptr_t cid = kInstanceCid; cid < table->NumCids(); cid++) {
+    if (!table->HasValidClassAt(cid)) continue;
+    if (cid == kVoidCid) continue;
+    if (cid == kDynamicCid) continue;
+    cls = table->At(cid);
+    if (cls.is_abstract()) continue;
+    if (cls.is_patch()) continue;
+    if (cls.IsTopLevel()) continue;
+
+    cls_type = cls.RareType();
+    if (cls_type.IsSubtypeOf(type, NULL, NULL, Heap::kOld)) {
+      last_matching_cid = cid;
+      if (*lower_limit == -1) {
+        // Found beginning of range.
+        *lower_limit = cid;
+      } else if (*upper_limit == -1) {
+        // Expanding range.
+      } else {
+        // Found a second range.
+        lower_limits_[type_cid] = kNotContiguous;
+        return false;
+      }
+    } else {
+      if (*lower_limit == -1) {
+        // Still before range.
+      } else if (*upper_limit == -1) {
+        // Found end of range.
+        *upper_limit = last_matching_cid;
+      } else {
+        // After range.
+      }
+    }
+  }
+  if (*lower_limit == -1) {
+    // Not implemented by any concrete class.
+    *lower_limit = kIllegalCid;
+    *upper_limit = kIllegalCid;
+  }
+
+  if (*upper_limit == -1) {
+    ASSERT(last_matching_cid != -1);
+    *upper_limit = last_matching_cid;
+  }
+
+  if (FLAG_trace_precompiler) {
+    THR_Print("Type check for %s is cid range [%" Pd ", %" Pd "]\n",
+              type.ToCString(), *lower_limit, *upper_limit);
+  }
+
+  lower_limits_[type_cid] = *lower_limit;
+  upper_limits_[type_cid] = *upper_limit;
+  return true;
 }
+
+
+Precompiler::Precompiler(Thread* thread, bool reset_fields)
+    : thread_(thread),
+      zone_(NULL),
+      isolate_(thread->isolate()),
+      reset_fields_(reset_fields),
+      changed_(false),
+      function_count_(0),
+      class_count_(0),
+      selector_count_(0),
+      dropped_function_count_(0),
+      dropped_field_count_(0),
+      dropped_class_count_(0),
+      dropped_typearg_count_(0),
+      dropped_type_count_(0),
+      dropped_library_count_(0),
+      libraries_(GrowableObjectArray::Handle(I->object_store()->libraries())),
+      pending_functions_(
+          GrowableObjectArray::Handle(GrowableObjectArray::New())),
+      sent_selectors_(),
+      enqueued_functions_(),
+      fields_to_retain_(),
+      functions_to_retain_(),
+      classes_to_retain_(),
+      typeargs_to_retain_(),
+      types_to_retain_(),
+      consts_to_retain_(),
+      field_type_map_(),
+      error_(Error::Handle()),
+      get_runtime_type_is_unique_(false) {}
 
 
 void Precompiler::DoCompileAll(
@@ -192,14 +328,22 @@ void Precompiler::DoCompileAll(
     StackZone stack_zone(T);
     zone_ = stack_zone.GetZone();
 
-    { HANDLESCOPE(T);
+    {
+      HANDLESCOPE(T);
       // Make sure class hierarchy is stable before compilation so that CHA
       // can be used. Also ensures lookup of entry points won't miss functions
       // because their class hasn't been finalized yet.
       FinalizeAllClasses();
 
+      SortClasses();
+      TypeRangeCache trc(T, I->class_table()->NumCids());
+
       // Precompile static initializers to compute result type information.
       PrecompileStaticInitializers();
+
+      // Precompile constructors to compute type information for final fields.
+      ClearAllCode();
+      PrecompileConstructors();
 
       for (intptr_t round = 0; round < FLAG_precompiler_rounds; round++) {
         if (FLAG_trace_precompiler) {
@@ -240,14 +384,15 @@ void Precompiler::DoCompileAll(
       DropTypeArguments();
 
       // Clear these before dropping classes as they may hold onto otherwise
-      // dead instances of classes we will remove.
-      I->object_store()->set_compile_time_constants(Array::null_array());
+      // dead instances of classes we will remove or otherwise unused symbols.
+      DropScriptData();
       I->object_store()->set_unique_dynamic_targets(Array::null_array());
       Class& null_class = Class::Handle(Z);
       I->object_store()->set_future_class(null_class);
       I->object_store()->set_completer_class(null_class);
       I->object_store()->set_stream_iterator_class(null_class);
       I->object_store()->set_symbol_class(null_class);
+      I->object_store()->set_compiletime_error_class(null_class);
     }
     DropClasses();
     DropLibraries();
@@ -255,8 +400,9 @@ void Precompiler::DoCompileAll(
     BindStaticCalls();
     SwitchICCalls();
 
+    ShareMegamorphicBuckets();
     DedupStackmaps();
-    DedupStackmapLists();
+    DedupLists();
 
     if (FLAG_dedup_instructions) {
       // Reduces binary size but obfuscates profiler results.
@@ -307,15 +453,14 @@ void Precompiler::PrecompileStaticInitializers() {
   class StaticInitializerVisitor : public ClassVisitor {
    public:
     explicit StaticInitializerVisitor(Zone* zone)
-      : fields_(Array::Handle(zone)),
-        field_(Field::Handle(zone)),
-        function_(Function::Handle(zone)) { }
+        : fields_(Array::Handle(zone)),
+          field_(Field::Handle(zone)),
+          function_(Function::Handle(zone)) {}
     void Visit(const Class& cls) {
       fields_ = cls.fields();
       for (intptr_t j = 0; j < fields_.Length(); j++) {
         field_ ^= fields_.At(j);
-        if (field_.is_static() &&
-            field_.is_final() &&
+        if (field_.is_static() && field_.is_final() &&
             field_.has_initializer()) {
           if (FLAG_trace_precompiler) {
             THR_Print("Precompiling initializer for %s\n", field_.ToCString());
@@ -337,6 +482,49 @@ void Precompiler::PrecompileStaticInitializers() {
 }
 
 
+void Precompiler::PrecompileConstructors() {
+  class ConstructorVisitor : public FunctionVisitor {
+   public:
+    explicit ConstructorVisitor(Precompiler* precompiler, Zone* zone)
+        : precompiler_(precompiler), zone_(zone) {}
+    void Visit(const Function& function) {
+      if (!function.IsGenerativeConstructor()) return;
+      if (function.HasCode()) {
+        // Const constructors may have been visited before. Recompile them here
+        // to collect type information for final fields for them as well.
+        function.ClearCode();
+      }
+      if (FLAG_trace_precompiler) {
+        THR_Print("Precompiling constructor %s\n", function.ToCString());
+      }
+      CompileFunction(precompiler_, Thread::Current(), zone_, function,
+                      precompiler_->field_type_map());
+    }
+
+   private:
+    Precompiler* precompiler_;
+    Zone* zone_;
+  };
+
+  HANDLESCOPE(T);
+  ConstructorVisitor visitor(this, zone_);
+  VisitFunctions(&visitor);
+
+  FieldTypeMap::Iterator it(field_type_map_.GetIterator());
+  for (FieldTypePair* current = it.Next(); current != NULL;
+       current = it.Next()) {
+    const intptr_t cid = current->cid_;
+    current->field_->set_guarded_cid(cid);
+    current->field_->set_is_nullable(cid == kNullCid || cid == kDynamicCid);
+    if (FLAG_trace_precompiler) {
+      THR_Print(
+          "Field %s <- Type %s\n", current->field_->ToCString(),
+          Class::Handle(T->isolate()->class_table()->At(cid)).ToCString());
+    }
+  }
+}
+
+
 void Precompiler::ClearAllCode() {
   class ClearCodeFunctionVisitor : public FunctionVisitor {
     void Visit(const Function& function) {
@@ -344,8 +532,14 @@ void Precompiler::ClearAllCode() {
       function.ClearICDataArray();
     }
   };
-  ClearCodeFunctionVisitor visitor;
-  VisitFunctions(&visitor);
+  ClearCodeFunctionVisitor function_visitor;
+  VisitFunctions(&function_visitor);
+
+  class ClearCodeClassVisitor : public ClassVisitor {
+    void Visit(const Class& cls) { cls.DisableAllocationStub(); }
+  };
+  ClearCodeClassVisitor class_visitor;
+  VisitClasses(&class_visitor);
 }
 
 
@@ -364,9 +558,8 @@ void Precompiler::AddRoots(Dart_QualifiedFunctionName embedder_entry_points[]) {
     if (!isolate()->class_table()->HasValidClassAt(cid)) {
       continue;
     }
-    if ((cid == kDynamicCid) ||
-        (cid == kVoidCid) ||
-        (cid == kFreeListElement)) {
+    if ((cid == kDynamicCid) || (cid == kVoidCid) ||
+        (cid == kFreeListElement) || (cid == kForwardingCorpse)) {
       continue;
     }
     cls = isolate()->class_table()->At(cid);
@@ -375,48 +568,48 @@ void Precompiler::AddRoots(Dart_QualifiedFunctionName embedder_entry_points[]) {
 
   Dart_QualifiedFunctionName vm_entry_points[] = {
     // Functions
-    { "dart:async", "::", "_setScheduleImmediateClosure" },
-    { "dart:core", "::", "_completeDeferredLoads" },
-    { "dart:core", "AbstractClassInstantiationError",
-                   "AbstractClassInstantiationError._create" },
-    { "dart:core", "ArgumentError", "ArgumentError." },
-    { "dart:core", "CyclicInitializationError",
-                   "CyclicInitializationError." },
-    { "dart:core", "FallThroughError", "FallThroughError._create" },
-    { "dart:core", "FormatException", "FormatException." },
-    { "dart:core", "NoSuchMethodError", "NoSuchMethodError._withType" },
-    { "dart:core", "NullThrownError", "NullThrownError." },
-    { "dart:core", "OutOfMemoryError", "OutOfMemoryError." },
-    { "dart:core", "RangeError", "RangeError." },
-    { "dart:core", "RangeError", "RangeError.range" },
-    { "dart:core", "StackOverflowError", "StackOverflowError." },
-    { "dart:core", "UnsupportedError", "UnsupportedError." },
-    { "dart:core", "_AssertionError", "_AssertionError._create" },
-    { "dart:core", "_CastError", "_CastError._create" },
-    { "dart:core", "_InternalError", "_InternalError." },
-    { "dart:core", "_InvocationMirror", "_allocateInvocationMirror" },
-    { "dart:core", "_TypeError", "_TypeError._create" },
-    { "dart:isolate", "IsolateSpawnException", "IsolateSpawnException." },
-    { "dart:isolate", "::", "_getIsolateScheduleImmediateClosure" },
-    { "dart:isolate", "::", "_setupHooks" },
-    { "dart:isolate", "::", "_startMainIsolate" },
-    { "dart:isolate", "::", "_startIsolate" },
-    { "dart:isolate", "_RawReceivePortImpl", "_handleMessage" },
-    { "dart:isolate", "_RawReceivePortImpl", "_lookupHandler" },
-    { "dart:isolate", "_SendPortImpl", "send" },
-    { "dart:typed_data", "ByteData", "ByteData." },
-    { "dart:typed_data", "ByteData", "ByteData._view" },
-    { "dart:typed_data", "ByteBuffer", "ByteBuffer._New" },
+    {"dart:async", "::", "_setScheduleImmediateClosure"},
+    {"dart:core", "::", "_completeDeferredLoads"},
+    {"dart:core", "AbstractClassInstantiationError",
+     "AbstractClassInstantiationError._create"},
+    {"dart:core", "ArgumentError", "ArgumentError."},
+    {"dart:core", "CyclicInitializationError", "CyclicInitializationError."},
+    {"dart:core", "FallThroughError", "FallThroughError._create"},
+    {"dart:core", "FormatException", "FormatException."},
+    {"dart:core", "NoSuchMethodError", "NoSuchMethodError._withType"},
+    {"dart:core", "NullThrownError", "NullThrownError."},
+    {"dart:core", "OutOfMemoryError", "OutOfMemoryError."},
+    {"dart:core", "RangeError", "RangeError."},
+    {"dart:core", "RangeError", "RangeError.range"},
+    {"dart:core", "StackOverflowError", "StackOverflowError."},
+    {"dart:core", "UnsupportedError", "UnsupportedError."},
+    {"dart:core", "_AssertionError", "_AssertionError._create"},
+    {"dart:core", "_CastError", "_CastError._create"},
+    {"dart:core", "_InternalError", "_InternalError."},
+    {"dart:core", "_InvocationMirror", "_allocateInvocationMirror"},
+    {"dart:core", "_TypeError", "_TypeError._create"},
+    {"dart:isolate", "IsolateSpawnException", "IsolateSpawnException."},
+    {"dart:isolate", "::", "_getIsolateScheduleImmediateClosure"},
+    {"dart:isolate", "::", "_setupHooks"},
+    {"dart:isolate", "::", "_startMainIsolate"},
+    {"dart:isolate", "::", "_startIsolate"},
+    {"dart:isolate", "_RawReceivePortImpl", "_handleMessage"},
+    {"dart:isolate", "_RawReceivePortImpl", "_lookupHandler"},
+    {"dart:isolate", "_SendPortImpl", "send"},
+    {"dart:typed_data", "ByteData", "ByteData."},
+    {"dart:typed_data", "ByteData", "ByteData._view"},
+    {"dart:typed_data", "ByteBuffer", "ByteBuffer._New"},
+    {"dart:_vmservice", "::", "_registerIsolate"},
+    {"dart:_vmservice", "::", "boot"},
 #if !defined(PRODUCT)
-    { "dart:_vmservice", "::", "_registerIsolate" },
-    { "dart:_vmservice", "::", "boot" },
-    { "dart:developer", "Metrics", "_printMetrics" },
-    { "dart:developer", "::", "_runExtension" },
+    {"dart:developer", "Metrics", "_printMetrics"},
+    {"dart:developer", "::", "_runExtension"},
+    {"dart:isolate", "::", "_runPendingImmediateCallback"},
 #endif  // !PRODUCT
     // Fields
-    { "dart:core", "Error", "_stackTrace" },
-    { "dart:math", "_Random", "_state" },
-    { NULL, NULL, NULL }  // Must be terminated with NULL entries.
+    {"dart:core", "Error", "_stackTrace"},
+    {"dart:math", "_Random", "_state"},
+    {NULL, NULL, NULL}  // Must be terminated with NULL entries.
   };
 
   AddEntryPoints(vm_entry_points);
@@ -440,8 +633,9 @@ void Precompiler::AddEntryPoints(Dart_QualifiedFunctionName entry_points[]) {
 
     lib = Library::LookupLibrary(T, library_uri);
     if (lib.IsNull()) {
-      String& msg = String::Handle(Z, String::NewFormatted(
-          "Cannot find entry point %s\n", entry_points[i].library_uri));
+      String& msg =
+          String::Handle(Z, String::NewFormatted("Cannot find entry point %s\n",
+                                                 entry_points[i].library_uri));
       Jump(Error::Handle(Z, ApiError::New(msg)));
       UNREACHABLE();
     }
@@ -458,10 +652,10 @@ void Precompiler::AddEntryPoints(Dart_QualifiedFunctionName entry_points[]) {
       }
       cls = lib.LookupLocalClass(class_name);
       if (cls.IsNull()) {
-        String& msg = String::Handle(Z, String::NewFormatted(
-            "Cannot find entry point %s %s\n",
-            entry_points[i].library_uri,
-            entry_points[i].class_name));
+        String& msg = String::Handle(
+            Z, String::NewFormatted("Cannot find entry point %s %s\n",
+                                    entry_points[i].library_uri,
+                                    entry_points[i].class_name));
         Jump(Error::Handle(Z, ApiError::New(msg)));
         UNREACHABLE();
       }
@@ -472,11 +666,11 @@ void Precompiler::AddEntryPoints(Dart_QualifiedFunctionName entry_points[]) {
     }
 
     if (func.IsNull() && field.IsNull()) {
-      String& msg = String::Handle(Z, String::NewFormatted(
-          "Cannot find entry point %s %s %s\n",
-          entry_points[i].library_uri,
-          entry_points[i].class_name,
-          entry_points[i].function_name));
+      String& msg = String::Handle(
+          Z, String::NewFormatted("Cannot find entry point %s %s %s\n",
+                                  entry_points[i].library_uri,
+                                  entry_points[i].class_name,
+                                  entry_points[i].function_name));
       Jump(Error::Handle(Z, ApiError::New(msg)));
       UNREACHABLE();
     }
@@ -514,6 +708,67 @@ void Precompiler::Iterate() {
     if (!changed_) {
       TraceConstFunctions();
     }
+    CollectCallbackFields();
+  }
+}
+
+
+void Precompiler::CollectCallbackFields() {
+  Library& lib = Library::Handle(Z);
+  Class& cls = Class::Handle(Z);
+  Class& subcls = Class::Handle(Z);
+  Array& fields = Array::Handle(Z);
+  Field& field = Field::Handle(Z);
+  Function& function = Function::Handle(Z);
+  Function& dispatcher = Function::Handle(Z);
+  Array& args_desc = Array::Handle(Z);
+  AbstractType& field_type = AbstractType::Handle(Z);
+  String& field_name = String::Handle(Z);
+  GrowableArray<intptr_t> cids;
+
+  for (intptr_t i = 0; i < libraries_.Length(); i++) {
+    lib ^= libraries_.At(i);
+    ClassDictionaryIterator it(lib, ClassDictionaryIterator::kIteratePrivate);
+    while (it.HasNext()) {
+      cls = it.GetNextClass();
+
+      if (!cls.is_allocated()) continue;
+
+      fields = cls.fields();
+      for (intptr_t k = 0; k < fields.Length(); k++) {
+        field ^= fields.At(k);
+        if (field.is_static()) continue;
+        field_type = field.type();
+        if (!field_type.IsFunctionType()) continue;
+        field_name = field.name();
+        if (!IsSent(field_name)) continue;
+        // Create arguments descriptor with fixed parameters from
+        // signature of field_type.
+        function = Type::Cast(field_type).signature();
+        if (function.HasOptionalParameters()) continue;
+        if (FLAG_trace_precompiler) {
+          THR_Print("Found callback field %s\n", field_name.ToCString());
+        }
+        args_desc = ArgumentsDescriptor::New(function.num_fixed_parameters());
+        cids.Clear();
+        if (T->cha()->ConcreteSubclasses(cls, &cids)) {
+          for (intptr_t j = 0; j < cids.length(); ++j) {
+            subcls ^= I->class_table()->At(cids[j]);
+            if (subcls.is_allocated()) {
+              // Add dispatcher to cls.
+              dispatcher = subcls.GetInvocationDispatcher(
+                  field_name, args_desc, RawFunction::kInvokeFieldDispatcher,
+                  /* create_if_absent = */ true);
+              if (FLAG_trace_precompiler) {
+                THR_Print("Added invoke-field-dispatcher for %s to %s\n",
+                          field_name.ToCString(), subcls.ToCString());
+              }
+              AddFunction(dispatcher);
+            }
+          }
+        }
+      }
+    }
   }
 }
 
@@ -523,8 +778,7 @@ void Precompiler::ProcessFunction(const Function& function) {
     function_count_++;
 
     if (FLAG_trace_precompiler) {
-      THR_Print("Precompiling %" Pd " %s (%s, %s)\n",
-                function_count_,
+      THR_Print("Precompiling %" Pd " %s (%s, %s)\n", function_count_,
                 function.ToLibNamePrefixedQualifiedCString(),
                 function.token_pos().ToCString(),
                 Function::KindToCString(function.kind()));
@@ -533,7 +787,7 @@ void Precompiler::ProcessFunction(const Function& function) {
     ASSERT(!function.is_abstract());
     ASSERT(!function.IsRedirectingFactory());
 
-    error_ = CompileFunction(thread_, function);
+    error_ = CompileFunction(this, thread_, zone_, function);
     if (!error_.IsNull()) {
       Jump(error_);
     }
@@ -789,10 +1043,10 @@ void Precompiler::AddConstObject(const Instance& instance) {
 
   class ConstObjectVisitor : public ObjectPointerVisitor {
    public:
-    ConstObjectVisitor(Precompiler* precompiler, Isolate* isolate) :
-        ObjectPointerVisitor(isolate),
-        precompiler_(precompiler),
-        subinstance_(Object::Handle()) {}
+    ConstObjectVisitor(Precompiler* precompiler, Isolate* isolate)
+        : ObjectPointerVisitor(isolate),
+          precompiler_(precompiler),
+          subinstance_(Object::Handle()) {}
 
     virtual void VisitPointers(RawObject** first, RawObject** last) {
       for (RawObject** current = first; current <= last; current++) {
@@ -819,11 +1073,10 @@ void Precompiler::AddClosureCall(const ICData& call_site) {
       Array::Handle(Z, call_site.arguments_descriptor());
   const Class& cache_class =
       Class::Handle(Z, I->object_store()->closure_class());
-  const Function& dispatcher = Function::Handle(Z,
-      cache_class.GetInvocationDispatcher(Symbols::Call(),
-                                          arguments_descriptor,
-                                          RawFunction::kInvokeFieldDispatcher,
-                                          true /* create_if_absent */));
+  const Function& dispatcher = Function::Handle(
+      Z, cache_class.GetInvocationDispatcher(
+             Symbols::Call(), arguments_descriptor,
+             RawFunction::kInvokeFieldDispatcher, true /* create_if_absent */));
   AddFunction(dispatcher);
 }
 
@@ -850,8 +1103,8 @@ void Precompiler::AddField(const Field& field) {
           THR_Print("Precompiling initializer for %s\n", field.ToCString());
         }
         ASSERT(Dart::snapshot_kind() != Snapshot::kAppNoJIT);
-        const Function& initializer = Function::Handle(Z,
-            CompileStaticInitializer(field, /* compute_type = */ true));
+        const Function& initializer = Function::Handle(
+            Z, CompileStaticInitializer(field, /* compute_type = */ true));
         ASSERT(!initializer.IsNull());
         field.SetPrecompiledInitializer(initializer);
         AddCalleesOf(initializer);
@@ -865,13 +1118,22 @@ RawFunction* Precompiler::CompileStaticInitializer(const Field& field,
                                                    bool compute_type) {
   ASSERT(field.is_static());
   Thread* thread = Thread::Current();
-  StackZone zone(thread);
+  StackZone stack_zone(thread);
+  Zone* zone = stack_zone.GetZone();
 
-  ParsedFunction* parsed_function = Parser::ParseStaticFieldInitializer(field);
+  ParsedFunction* parsed_function;
+  // Check if this field is comming from the Kernel binary.
+  if (field.kernel_field() != NULL) {
+    parsed_function = kernel::ParseStaticFieldInitializer(zone, field);
+  } else {
+    parsed_function = Parser::ParseStaticFieldInitializer(field);
+    parsed_function->AllocateVariables();
+  }
 
-  parsed_function->AllocateVariables();
-  DartPrecompilationPipeline pipeline;
-  PrecompileParsedFunctionHelper helper(parsed_function,
+
+  DartPrecompilationPipeline pipeline(zone);
+  PrecompileParsedFunctionHelper helper(/* precompiler = */ NULL,
+                                        parsed_function,
                                         /* optimized = */ true);
   bool success = helper.Compile(&pipeline);
   ASSERT(success);
@@ -918,8 +1180,7 @@ RawObject* Precompiler::EvaluateStaticInitializer(const Field& field) {
   } else {
     Thread* const thread = Thread::Current();
     StackZone zone(thread);
-    const Error& error =
-        Error::Handle(thread->zone(), thread->sticky_error());
+    const Error& error = Error::Handle(thread->zone(), thread->sticky_error());
     thread->clear_sticky_error();
     return error.raw();
   }
@@ -934,7 +1195,8 @@ RawObject* Precompiler::ExecuteOnce(SequenceNode* fragment) {
     Thread* const thread = Thread::Current();
     if (FLAG_support_ast_printer && FLAG_trace_compiler) {
       THR_Print("compiling expression: ");
-      AstPrinter::PrintNode(fragment);
+      AstPrinter ast_printer;
+      ast_printer.PrintNode(fragment);
     }
 
     // Create a dummy function object for the code generator.
@@ -944,7 +1206,7 @@ RawObject* Precompiler::ExecuteOnce(SequenceNode* fragment) {
     const Function& func = Function::ZoneHandle(Function::New(
         String::Handle(Symbols::New(thread, kEvalConst)),
         RawFunction::kRegularFunction,
-        true,  // static function
+        true,   // static function
         false,  // not const function
         false,  // not abstract
         false,  // not external
@@ -965,25 +1227,24 @@ RawObject* Precompiler::ExecuteOnce(SequenceNode* fragment) {
     ParsedFunction* parsed_function = new ParsedFunction(thread, func);
     parsed_function->SetNodeSequence(fragment);
     fragment->scope()->AddVariable(parsed_function->EnsureExpressionTemp());
-    fragment->scope()->AddVariable(
-        parsed_function->current_context_var());
+    fragment->scope()->AddVariable(parsed_function->current_context_var());
     parsed_function->AllocateVariables();
 
     // Non-optimized code generator.
-    DartPrecompilationPipeline pipeline;
-    PrecompileParsedFunctionHelper helper(parsed_function,
+    DartPrecompilationPipeline pipeline(Thread::Current()->zone());
+    PrecompileParsedFunctionHelper helper(/* precompiler = */ NULL,
+                                          parsed_function,
                                           /* optimized = */ false);
     helper.Compile(&pipeline);
-    Code::Handle(func.unoptimized_code()).set_var_descriptors(
-        Object::empty_var_descriptors());
+    Code::Handle(func.unoptimized_code())
+        .set_var_descriptors(Object::empty_var_descriptors());
 
     const Object& result = PassiveObject::Handle(
         DartEntry::InvokeFunction(func, Object::empty_array()));
     return result.raw();
   } else {
     Thread* const thread = Thread::Current();
-    const Object& result =
-      PassiveObject::Handle(thread->sticky_error());
+    const Object& result = PassiveObject::Handle(thread->sticky_error());
     thread->clear_sticky_error();
     return result.raw();
   }
@@ -1018,8 +1279,7 @@ void Precompiler::AddSelector(const String& selector) {
     changed_ = true;
 
     if (FLAG_trace_precompiler) {
-      THR_Print("Enqueueing selector %" Pd " %s\n",
-                selector_count_,
+      THR_Print("Enqueueing selector %" Pd " %s\n", selector_count_,
                 selector.ToCString());
     }
   }
@@ -1091,8 +1351,8 @@ void Precompiler::CheckForNewDynamicFunctions() {
             // Function is get:foo and somewhere foo is called.
             AddFunction(function);
           }
-          selector3 = Symbols::LookupFromConcat(thread(),
-              Symbols::ClosurizePrefix(), selector2);
+          selector3 = Symbols::LookupFromConcat(
+              thread(), Symbols::ClosurizePrefix(), selector2);
           if (IsSent(selector3)) {
             // Hash-closurization.
             // Function is get:foo and somewhere get:#foo is called.
@@ -1106,8 +1366,8 @@ void Precompiler::CheckForNewDynamicFunctions() {
             AddFunction(function2);
           }
         } else if (Field::IsSetterName(selector)) {
-          selector2 = Symbols::LookupFromConcat(thread(),
-              Symbols::ClosurizePrefix(), selector);
+          selector2 = Symbols::LookupFromConcat(
+              thread(), Symbols::ClosurizePrefix(), selector);
           if (IsSent(selector2)) {
             // Hash-closurization.
             // Function is set:foo and somewhere get:#set:foo is called.
@@ -1132,8 +1392,8 @@ void Precompiler::CheckForNewDynamicFunctions() {
             function2 = function.GetMethodExtractor(selector2);
             AddFunction(function2);
           }
-          selector2 = Symbols::LookupFromConcat(thread(),
-              Symbols::ClosurizePrefix(), selector);
+          selector2 = Symbols::LookupFromConcat(
+              thread(), Symbols::ClosurizePrefix(), selector);
           if (IsSent(selector2)) {
             // Hash-closurization.
             // Function is foo and somewhere get:#foo is called.
@@ -1158,14 +1418,10 @@ class NameFunctionsTraits {
 
   static bool IsMatch(const Object& a, const Object& b) {
     return a.IsString() && b.IsString() &&
-        String::Cast(a).Equals(String::Cast(b));
+           String::Cast(a).Equals(String::Cast(b));
   }
-  static uword Hash(const Object& obj) {
-    return String::Cast(obj).Hash();
-  }
-  static RawObject* NewKey(const String& str) {
-    return str.raw();
-  }
+  static uword Hash(const Object& obj) { return String::Cast(obj).Hash(); }
+  static RawObject* NewKey(const String& str) { return str.raw(); }
 };
 
 typedef UnorderedHashMap<NameFunctionsTraits> Table;
@@ -1231,8 +1487,7 @@ void Precompiler::CollectDynamicFunctionNames() {
     }
   }
 
-  // Locate all entries with one function only, and whose owner is neither
-  // subclassed nor implemented.
+  // Locate all entries with one function only
   Table::Iterator iter(&table);
   String& key = String::Handle(Z);
   UniqueFunctionsSet functions_set(HashTables::New<UniqueFunctionsSet>(20));
@@ -1244,11 +1499,13 @@ void Precompiler::CollectDynamicFunctionNames() {
     if (farray.Length() == 1) {
       function ^= farray.At(0);
       cls = function.Owner();
-      if (!CHA::IsImplemented(cls) && !CHA::HasSubclasses(cls)) {
-        functions_set.Insert(function);
-      }
+      functions_set.Insert(function);
     }
   }
+
+  farray ^= table.GetOrNull(Symbols::GetRuntimeType());
+
+  get_runtime_type_is_unique_ = !farray.IsNull() && (farray.Length() == 1);
 
   if (FLAG_print_unique_targets) {
     UniqueFunctionsSet::Iterator unique_iter(&functions_set);
@@ -1258,7 +1515,7 @@ void Precompiler::CollectDynamicFunctionNames() {
       THR_Print("* %s\n", function.ToQualifiedCString());
     }
     THR_Print("%" Pd " of %" Pd " dynamic selectors are unique\n",
-        functions_set.NumOccupied(), table.NumOccupied());
+              functions_set.NumOccupied(), table.NumOccupied());
   }
 
   isolate()->object_store()->set_unique_dynamic_targets(
@@ -1317,7 +1574,7 @@ void Precompiler::TraceForRetainedFunctions() {
       functions = cls.functions();
       for (intptr_t j = 0; j < functions.Length(); j++) {
         function ^= functions.At(j);
-        bool retain = function.HasCode();
+        bool retain = enqueued_functions_.Lookup(&function) != NULL;
         if (!retain && function.HasImplicitClosureFunction()) {
           // It can happen that all uses of an implicit closure inline their
           // target function, leaving the target function uncompiled. Keep
@@ -1337,7 +1594,7 @@ void Precompiler::TraceForRetainedFunctions() {
   closures = isolate()->object_store()->closure_functions();
   for (intptr_t j = 0; j < closures.Length(); j++) {
     function ^= closures.At(j);
-    bool retain = function.HasCode();
+    bool retain = enqueued_functions_.Lookup(&function) != NULL;
     if (retain) {
       AddTypesOf(function);
 
@@ -1460,13 +1717,11 @@ void Precompiler::DropFields() {
           bool top_level = cls.IsTopLevel();
           if (top_level) {
             name = field.DictionaryName();
-            bool removed = lib.RemoveObject(field, name);
-            ASSERT(removed);
+            lib.RemoveObject(field, name);
           }
           dropped_field_count_++;
           if (FLAG_trace_precompiler) {
-            THR_Print("Dropping field %s\n",
-                      field.ToCString());
+            THR_Print("Dropping field %s\n", field.ToCString());
           }
         }
       }
@@ -1545,8 +1800,8 @@ void Precompiler::DropTypeArguments() {
   // Now construct a new type arguments table and save in the object store.
   const intptr_t dict_size =
       Utils::RoundUpToPowerOfTwo(retained_typeargs.Length() * 4 / 3);
-  typeargs_array = HashTables::New<CanonicalTypeArgumentsSet>(dict_size,
-                                                              Heap::kOld);
+  typeargs_array =
+      HashTables::New<CanonicalTypeArgumentsSet>(dict_size, Heap::kOld);
   CanonicalTypeArgumentsSet typeargs_table(Z, typeargs_array.raw());
   bool present;
   for (intptr_t i = 0; i < retained_typeargs.Length(); i++) {
@@ -1555,6 +1810,24 @@ void Precompiler::DropTypeArguments() {
     ASSERT(!present);
   }
   object_store->set_canonical_type_arguments(typeargs_table.Release());
+}
+
+
+void Precompiler::DropScriptData() {
+  Library& lib = Library::Handle(Z);
+  Array& scripts = Array::Handle(Z);
+  Script& script = Script::Handle(Z);
+  const TokenStream& null_tokens = TokenStream::Handle(Z);
+  for (intptr_t i = 0; i < libraries_.Length(); i++) {
+    lib ^= libraries_.At(i);
+    scripts = lib.LoadedScripts();
+    for (intptr_t j = 0; j < scripts.Length(); j++) {
+      script ^= scripts.At(j);
+      script.set_compile_time_constants(Array::null_array());
+      script.set_source(String::null_string());
+      script.set_tokens(null_tokens);
+    }
+  }
 }
 
 
@@ -1680,8 +1953,7 @@ void Precompiler::DropClasses() {
         class_table->StatsWithUpdatedSize(cid)->post_gc.old_count;
     if (instances != 0) {
       FATAL2("Want to drop class %s, but it has %" Pd " instances\n",
-             cls.ToCString(),
-             instances);
+             cls.ToCString(), instances);
     }
 #endif
 
@@ -1705,8 +1977,8 @@ void Precompiler::DropClasses() {
 void Precompiler::DropLibraries() {
   const GrowableObjectArray& retained_libraries =
       GrowableObjectArray::Handle(Z, GrowableObjectArray::New());
-  const Library& root_lib = Library::Handle(Z,
-      I->object_store()->root_library());
+  const Library& root_lib =
+      Library::Handle(Z, I->object_store()->root_library());
   Library& lib = Library::Handle(Z);
 
   for (intptr_t i = 0; i < libraries_.Length(); i++) {
@@ -1718,12 +1990,26 @@ void Precompiler::DropLibraries() {
       it.GetNext();
       entries++;
     }
-    // The root library might have no surviving members if it only exports main
-    // from another library. It will still be referenced from the object store,
-    // so retain it.
-    bool retain = (entries > 0) ||
-                  lib.is_dart_scheme() ||
-                  (lib.raw() == root_lib.raw());
+    bool retain = false;
+    if (entries > 0) {
+      retain = true;
+    } else if (lib.is_dart_scheme()) {
+      // The core libraries are referenced from the object store.
+      retain = true;
+    } else if (lib.raw() == root_lib.raw()) {
+      // The root library might have no surviving members if it only exports
+      // main from another library. It will still be referenced from the object
+      // store, so retain it.
+      retain = true;
+    } else {
+      // A type for a top-level class may be referenced from an object pool as
+      // part of an error message.
+      const Class& top = Class::Handle(Z, lib.toplevel_class());
+      if (classes_to_retain_.Lookup(&top) != NULL) {
+        retain = true;
+      }
+    }
+
     if (retain) {
       lib.set_index(retained_libraries.Length());
       retained_libraries.Add(lib);
@@ -1744,13 +2030,12 @@ void Precompiler::DropLibraries() {
 void Precompiler::BindStaticCalls() {
   class BindStaticCallsVisitor : public FunctionVisitor {
    public:
-    explicit BindStaticCallsVisitor(Zone* zone) :
-        code_(Code::Handle(zone)),
-        table_(Array::Handle(zone)),
-        pc_offset_(Smi::Handle(zone)),
-        target_(Function::Handle(zone)),
-        target_code_(Code::Handle(zone)) {
-    }
+    explicit BindStaticCallsVisitor(Zone* zone)
+        : code_(Code::Handle(zone)),
+          table_(Array::Handle(zone)),
+          pc_offset_(Smi::Handle(zone)),
+          target_(Function::Handle(zone)),
+          target_code_(Code::Handle(zone)) {}
 
     void Visit(const Function& function) {
       if (!function.HasCode()) {
@@ -1759,8 +2044,7 @@ void Precompiler::BindStaticCalls() {
       code_ = function.CurrentCode();
       table_ = code_.static_calls_target_table();
 
-      for (intptr_t i = 0;
-           i < table_.Length();
+      for (intptr_t i = 0; i < table_.Length();
            i += Code::kSCallTableEntryLength) {
         pc_offset_ ^= table_.At(i + Code::kSCallTableOffsetEntry);
         target_ ^= table_.At(i + Code::kSCallTableFunctionEntry);
@@ -1777,7 +2061,7 @@ void Precompiler::BindStaticCalls() {
           // stub.
           ASSERT(target_.HasCode());
           target_code_ ^= target_.CurrentCode();
-          uword pc = pc_offset_.Value() + code_.EntryPoint();
+          uword pc = pc_offset_.Value() + code_.PayloadStart();
           CodePatcher::PatchStaticCallAt(pc, code_, target_code_);
         }
       }
@@ -1807,19 +2091,21 @@ void Precompiler::SwitchICCalls() {
   // the ic data array instead indirectly through a Function in the ic data
   // array. Iterate all the object pools and rewrite the ic data from
   // (cid, target function, count) to (cid, target code, entry point), and
-  // replace the ICLookupThroughFunction stub with ICLookupThroughCode.
+  // replace the ICCallThroughFunction stub with ICCallThroughCode.
 
   class SwitchICCallsVisitor : public FunctionVisitor {
    public:
-    explicit SwitchICCallsVisitor(Zone* zone) :
-        code_(Code::Handle(zone)),
-        pool_(ObjectPool::Handle(zone)),
-        entry_(Object::Handle(zone)),
-        ic_(ICData::Handle(zone)),
-        target_(Function::Handle(zone)),
-        target_code_(Code::Handle(zone)),
-        entry_point_(Smi::Handle(zone)) {
-    }
+    explicit SwitchICCallsVisitor(Zone* zone)
+        : zone_(zone),
+          code_(Code::Handle(zone)),
+          pool_(ObjectPool::Handle(zone)),
+          entry_(Object::Handle(zone)),
+          ic_(ICData::Handle(zone)),
+          target_name_(String::Handle(zone)),
+          args_descriptor_(Array::Handle(zone)),
+          unlinked_(UnlinkedCall::Handle(zone)),
+          target_code_(Code::Handle(zone)),
+          canonical_unlinked_calls_() {}
 
     void Visit(const Function& function) {
       if (!function.HasCode()) {
@@ -1832,44 +2118,49 @@ void Precompiler::SwitchICCalls() {
         if (pool_.InfoAt(i) != ObjectPool::kTaggedObject) continue;
         entry_ = pool_.ObjectAt(i);
         if (entry_.IsICData()) {
+          // The only IC calls generated by precompilation are for switchable
+          // calls.
           ic_ ^= entry_.raw();
+          ic_.ResetSwitchable(zone_);
 
-          // Only single check ICs are SwitchableCalls that use the ICLookup
-          // stubs. Some operators like + have ICData that check the types of
-          // arguments in addition to the receiver and use special stubs
-          // with fast paths for Smi operations.
-          if (ic_.NumArgsTested() != 1) continue;
-
-          for (intptr_t j = 0; j < ic_.NumberOfChecks(); j++) {
-            entry_ = ic_.GetTargetOrCodeAt(j);
-            if (entry_.IsFunction()) {
-              target_ ^= entry_.raw();
-              ASSERT(target_.HasCode());
-              target_code_ = target_.CurrentCode();
-              entry_point_ = Smi::FromAlignedAddress(target_code_.EntryPoint());
-              ic_.SetCodeAt(j, target_code_);
-              ic_.SetEntryPointAt(j, entry_point_);
-            } else {
-              // We've already seen and switched this ICData.
-              ASSERT(entry_.IsCode());
-            }
-          }
+          unlinked_ = UnlinkedCall::New();
+          target_name_ = ic_.target_name();
+          unlinked_.set_target_name(target_name_);
+          args_descriptor_ = ic_.arguments_descriptor();
+          unlinked_.set_args_descriptor(args_descriptor_);
+          unlinked_ = DedupUnlinkedCall(unlinked_);
+          pool_.SetObjectAt(i, unlinked_);
         } else if (entry_.raw() ==
-                   StubCode::ICLookupThroughFunction_entry()->code()) {
-          target_code_ = StubCode::ICLookupThroughCode_entry()->code();
+                   StubCode::ICCallThroughFunction_entry()->code()) {
+          target_code_ = StubCode::UnlinkedCall_entry()->code();
           pool_.SetObjectAt(i, target_code_);
         }
       }
     }
 
+    RawUnlinkedCall* DedupUnlinkedCall(const UnlinkedCall& unlinked) {
+      const UnlinkedCall* canonical_unlinked =
+          canonical_unlinked_calls_.LookupValue(&unlinked);
+      if (canonical_unlinked == NULL) {
+        canonical_unlinked_calls_.Insert(
+            &UnlinkedCall::ZoneHandle(zone_, unlinked.raw()));
+        return unlinked.raw();
+      } else {
+        return canonical_unlinked->raw();
+      }
+    }
+
    private:
+    Zone* zone_;
     Code& code_;
     ObjectPool& pool_;
     Object& entry_;
     ICData& ic_;
-    Function& target_;
+    String& target_name_;
+    Array& args_descriptor_;
+    UnlinkedCall& unlinked_;
     Code& target_code_;
-    Smi& entry_point_;
+    UnlinkedCallSet canonical_unlinked_calls_;
   };
 
   ASSERT(!I->compilation_allowed());
@@ -1879,16 +2170,38 @@ void Precompiler::SwitchICCalls() {
 }
 
 
+void Precompiler::ShareMegamorphicBuckets() {
+  const GrowableObjectArray& table = GrowableObjectArray::Handle(
+      Z, I->object_store()->megamorphic_cache_table());
+  if (table.IsNull()) return;
+  MegamorphicCache& cache = MegamorphicCache::Handle(Z);
+
+  const intptr_t capacity = 1;
+  const Array& buckets = Array::Handle(
+      Z, Array::New(MegamorphicCache::kEntryLength * capacity, Heap::kOld));
+  const Function& handler =
+      Function::Handle(Z, MegamorphicCacheTable::miss_handler(I));
+  MegamorphicCache::SetEntry(buckets, 0, MegamorphicCache::smi_illegal_cid(),
+                             handler);
+
+  for (intptr_t i = 0; i < table.Length(); i++) {
+    cache ^= table.At(i);
+    cache.set_buckets(buckets);
+    cache.set_mask(capacity - 1);
+    cache.set_filled_entry_count(0);
+  }
+}
+
+
 void Precompiler::DedupStackmaps() {
   class DedupStackmapsVisitor : public FunctionVisitor {
    public:
-    explicit DedupStackmapsVisitor(Zone* zone) :
-      zone_(zone),
-      canonical_stackmaps_(),
-      code_(Code::Handle(zone)),
-      stackmaps_(Array::Handle(zone)),
-      stackmap_(Stackmap::Handle(zone)) {
-    }
+    explicit DedupStackmapsVisitor(Zone* zone)
+        : zone_(zone),
+          canonical_stackmaps_(),
+          code_(Code::Handle(zone)),
+          stackmaps_(Array::Handle(zone)),
+          stackmap_(Stackmap::Handle(zone)) {}
 
     void Visit(const Function& function) {
       if (!function.HasCode()) {
@@ -1906,7 +2219,7 @@ void Precompiler::DedupStackmaps() {
 
     RawStackmap* DedupStackmap(const Stackmap& stackmap) {
       const Stackmap* canonical_stackmap =
-          canonical_stackmaps_.Lookup(&stackmap);
+          canonical_stackmaps_.LookupValue(&stackmap);
       if (canonical_stackmap == NULL) {
         canonical_stackmaps_.Insert(
             &Stackmap::ZoneHandle(zone_, stackmap.raw()));
@@ -1929,50 +2242,69 @@ void Precompiler::DedupStackmaps() {
 }
 
 
-void Precompiler::DedupStackmapLists() {
-  class DedupStackmapListsVisitor : public FunctionVisitor {
+void Precompiler::DedupLists() {
+  class DedupListsVisitor : public FunctionVisitor {
    public:
-    explicit DedupStackmapListsVisitor(Zone* zone) :
-      zone_(zone),
-      canonical_stackmap_lists_(),
-      code_(Code::Handle(zone)),
-      stackmaps_(Array::Handle(zone)),
-      stackmap_(Stackmap::Handle(zone)) {
-    }
+    explicit DedupListsVisitor(Zone* zone)
+        : zone_(zone),
+          canonical_lists_(),
+          code_(Code::Handle(zone)),
+          list_(Array::Handle(zone)) {}
 
     void Visit(const Function& function) {
-      if (!function.HasCode()) {
-        return;
-      }
       code_ = function.CurrentCode();
-      stackmaps_ = code_.stackmaps();
-      if (stackmaps_.IsNull()) return;
+      if (!code_.IsNull()) {
+        list_ = code_.stackmaps();
+        if (!list_.IsNull()) {
+          list_ = DedupList(list_);
+          code_.set_stackmaps(list_);
+        }
+      }
 
-      stackmaps_ = DedupStackmapList(stackmaps_);
-      code_.set_stackmaps(stackmaps_);
+      list_ = function.parameter_types();
+      if (!list_.IsNull()) {
+        if (!function.IsSignatureFunction() && !function.IsClosureFunction() &&
+            (function.name() != Symbols::Call().raw()) && !list_.InVMHeap()) {
+          // Parameter types not needed for function type tests.
+          for (intptr_t i = 0; i < list_.Length(); i++) {
+            list_.SetAt(i, Object::dynamic_type());
+          }
+        }
+        list_ = DedupList(list_);
+        function.set_parameter_types(list_);
+      }
+
+      list_ = function.parameter_names();
+      if (!list_.IsNull()) {
+        if (!function.HasOptionalNamedParameters() && !list_.InVMHeap()) {
+          // Parameter names not needed for resolution.
+          for (intptr_t i = 0; i < list_.Length(); i++) {
+            list_.SetAt(i, Symbols::OptimizedOut());
+          }
+        }
+        list_ = DedupList(list_);
+        function.set_parameter_names(list_);
+      }
     }
 
-    RawArray* DedupStackmapList(const Array& stackmaps) {
-      const Array* canonical_stackmap_list =
-          canonical_stackmap_lists_.Lookup(&stackmaps);
-      if (canonical_stackmap_list == NULL) {
-        canonical_stackmap_lists_.Insert(
-            &Array::ZoneHandle(zone_, stackmaps.raw()));
-        return stackmaps.raw();
+    RawArray* DedupList(const Array& list) {
+      const Array* canonical_list = canonical_lists_.LookupValue(&list);
+      if (canonical_list == NULL) {
+        canonical_lists_.Insert(&Array::ZoneHandle(zone_, list.raw()));
+        return list.raw();
       } else {
-        return canonical_stackmap_list->raw();
+        return canonical_list->raw();
       }
     }
 
    private:
     Zone* zone_;
-    ArraySet canonical_stackmap_lists_;
+    ArraySet canonical_lists_;
     Code& code_;
-    Array& stackmaps_;
-    Stackmap& stackmap_;
+    Array& list_;
   };
 
-  DedupStackmapListsVisitor visitor(Z);
+  DedupListsVisitor visitor(Z);
   VisitFunctions(&visitor);
 }
 
@@ -1980,12 +2312,11 @@ void Precompiler::DedupStackmapLists() {
 void Precompiler::DedupInstructions() {
   class DedupInstructionsVisitor : public FunctionVisitor {
    public:
-    explicit DedupInstructionsVisitor(Zone* zone) :
-      zone_(zone),
-      canonical_instructions_set_(),
-      code_(Code::Handle(zone)),
-      instructions_(Instructions::Handle(zone)) {
-    }
+    explicit DedupInstructionsVisitor(Zone* zone)
+        : zone_(zone),
+          canonical_instructions_set_(),
+          code_(Code::Handle(zone)),
+          instructions_(Instructions::Handle(zone)) {}
 
     void Visit(const Function& function) {
       if (!function.HasCode()) {
@@ -1995,14 +2326,14 @@ void Precompiler::DedupInstructions() {
       code_ = function.CurrentCode();
       instructions_ = code_.instructions();
       instructions_ = DedupOneInstructions(instructions_);
-      code_.SetActiveInstructions(instructions_.raw());
-      code_.set_instructions(instructions_.raw());
+      code_.SetActiveInstructions(instructions_);
+      code_.set_instructions(instructions_);
       function.SetInstructions(code_);  // Update cached entry point.
     }
 
     RawInstructions* DedupOneInstructions(const Instructions& instructions) {
       const Instructions* canonical_instructions =
-          canonical_instructions_set_.Lookup(&instructions);
+          canonical_instructions_set_.LookupValue(&instructions);
       if (canonical_instructions == NULL) {
         canonical_instructions_set_.Insert(
             &Instructions::ZoneHandle(zone_, instructions.raw()));
@@ -2106,9 +2437,11 @@ void Precompiler::FinalizeAllClasses() {
     lib ^= libraries_.At(i);
     if (!lib.Loaded()) {
       String& uri = String::Handle(Z, lib.url());
-      String& msg = String::Handle(Z, String::NewFormatted(
-          "Library '%s' is not loaded. "
-          "Did you forget to call Dart_FinalizeLoading?", uri.ToCString()));
+      String& msg = String::Handle(
+          Z,
+          String::NewFormatted("Library '%s' is not loaded. "
+                               "Did you forget to call Dart_FinalizeLoading?",
+                               uri.ToCString()));
       Jump(Error::Handle(Z, ApiError::New(msg)));
     }
 
@@ -2125,6 +2458,147 @@ void Precompiler::FinalizeAllClasses() {
     }
   }
   I->set_all_classes_finalized(true);
+}
+
+
+void Precompiler::SortClasses() {
+  ClassTable* table = I->class_table();
+  intptr_t num_cids = table->NumCids();
+  intptr_t* old_to_new_cid = new intptr_t[num_cids];
+  for (intptr_t cid = 0; cid < kNumPredefinedCids; cid++) {
+    old_to_new_cid[cid] = cid;  // The predefined classes cannot change cids.
+  }
+  for (intptr_t cid = kNumPredefinedCids; cid < num_cids; cid++) {
+    old_to_new_cid[cid] = -1;
+  }
+
+  intptr_t next_new_cid = kNumPredefinedCids;
+  GrowableArray<intptr_t> dfs_stack;
+  Class& cls = Class::Handle(Z);
+  GrowableObjectArray& subclasses = GrowableObjectArray::Handle(Z);
+
+  // Object doesn't use its subclasses list.
+  for (intptr_t cid = kNumPredefinedCids; cid < num_cids; cid++) {
+    if (!table->HasValidClassAt(cid)) {
+      continue;
+    }
+    cls = table->At(cid);
+    if (cls.is_patch()) {
+      continue;
+    }
+    if (cls.SuperClass() == I->object_store()->object_class()) {
+      dfs_stack.Add(cid);
+    }
+  }
+
+  while (dfs_stack.length() > 0) {
+    intptr_t cid = dfs_stack.RemoveLast();
+    ASSERT(table->HasValidClassAt(cid));
+    cls = table->At(cid);
+    ASSERT(!cls.IsNull());
+    if (old_to_new_cid[cid] == -1) {
+      old_to_new_cid[cid] = next_new_cid++;
+      if (FLAG_trace_precompiler) {
+        THR_Print("%" Pd ": %s, was %" Pd "\n", old_to_new_cid[cid],
+                  cls.ToCString(), cid);
+      }
+    }
+    subclasses = cls.direct_subclasses();
+    if (!subclasses.IsNull()) {
+      for (intptr_t i = 0; i < subclasses.Length(); i++) {
+        cls ^= subclasses.At(i);
+        ASSERT(!cls.IsNull());
+        dfs_stack.Add(cls.id());
+      }
+    }
+  }
+
+  // Top-level classes, typedefs, patch classes, etc.
+  for (intptr_t cid = kNumPredefinedCids; cid < num_cids; cid++) {
+    if (old_to_new_cid[cid] == -1) {
+      old_to_new_cid[cid] = next_new_cid++;
+      if (FLAG_trace_precompiler && table->HasValidClassAt(cid)) {
+        cls = table->At(cid);
+        THR_Print("%" Pd ": %s, was %" Pd "\n", old_to_new_cid[cid],
+                  cls.ToCString(), cid);
+      }
+    }
+  }
+  ASSERT(next_new_cid == num_cids);
+
+  RemapClassIds(old_to_new_cid);
+  delete[] old_to_new_cid;
+}
+
+
+class CidRewriteVisitor : public ObjectVisitor {
+ public:
+  explicit CidRewriteVisitor(intptr_t* old_to_new_cids)
+      : old_to_new_cids_(old_to_new_cids) {}
+
+  intptr_t Map(intptr_t cid) {
+    ASSERT(cid != -1);
+    return old_to_new_cids_[cid];
+  }
+
+  void VisitObject(RawObject* obj) {
+    if (obj->IsClass()) {
+      RawClass* cls = Class::RawCast(obj);
+      cls->ptr()->id_ = Map(cls->ptr()->id_);
+    } else if (obj->IsField()) {
+      RawField* field = Field::RawCast(obj);
+      field->ptr()->guarded_cid_ = Map(field->ptr()->guarded_cid_);
+      field->ptr()->is_nullable_ = Map(field->ptr()->is_nullable_);
+    } else if (obj->IsTypeParameter()) {
+      RawTypeParameter* param = TypeParameter::RawCast(obj);
+      param->ptr()->parameterized_class_id_ =
+          Map(param->ptr()->parameterized_class_id_);
+    } else if (obj->IsType()) {
+      RawType* type = Type::RawCast(obj);
+      RawObject* id = type->ptr()->type_class_id_;
+      if (!id->IsHeapObject()) {
+        type->ptr()->type_class_id_ =
+            Smi::New(Map(Smi::Value(Smi::RawCast(id))));
+      }
+    } else {
+      intptr_t old_cid = obj->GetClassId();
+      intptr_t new_cid = Map(old_cid);
+      if (old_cid != new_cid) {
+        // Don't touch objects that are unchanged. In particular, Instructions,
+        // which are write-protected.
+        obj->SetClassId(new_cid);
+      }
+    }
+  }
+
+ private:
+  intptr_t* old_to_new_cids_;
+};
+
+
+void Precompiler::RemapClassIds(intptr_t* old_to_new_cid) {
+  // Code, ICData, allocation stubs have now-invalid cids.
+  ClearAllCode();
+
+  {
+    HeapIterationScope his;
+
+    // Update the class table. Do it before rewriting cids in headers, as the
+    // heap walkers load an object's size *after* calling the visitor.
+    I->class_table()->Remap(old_to_new_cid);
+
+    // Rewrite cids in headers and cids in Classes, Fields, Types and
+    // TypeParameters.
+    {
+      CidRewriteVisitor visitor(old_to_new_cid);
+      I->heap()->VisitObjects(&visitor);
+    }
+  }
+
+#if defined(DEBUG)
+  I->class_table()->Validate();
+  I->heap()->Verify();
+#endif
 }
 
 
@@ -2172,8 +2646,8 @@ void PrecompileParsedFunctionHelper::FinalizeCompilation(
            deopt_info_array.Length() * sizeof(uword));
   // Allocates instruction object. Since this occurs only at safepoint,
   // there can be no concurrent access to the instruction page.
-  const Code& code = Code::Handle(
-      Code::FinalizeCode(function, assembler, optimized()));
+  const Code& code =
+      Code::Handle(Code::FinalizeCode(function, assembler, optimized()));
   code.set_is_optimized(optimized());
   code.set_owner(function);
   if (!function.IsOptimizable()) {
@@ -2183,8 +2657,7 @@ void PrecompileParsedFunctionHelper::FinalizeCompilation(
   }
 
   const Array& intervals = graph_compiler->inlined_code_intervals();
-  INC_STAT(thread(), total_code_size,
-           intervals.Length() * sizeof(uword));
+  INC_STAT(thread(), total_code_size, intervals.Length() * sizeof(uword));
   code.SetInlinedIntervals(intervals);
 
   const Array& inlined_id_array =
@@ -2260,7 +2733,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
     if (val == 0) {
       FlowGraph* flow_graph = NULL;
 
-      // Class hierarchy analysis is registered with the isolate in the
+      // Class hierarchy analysis is registered with the thread in the
       // constructor and unregisters itself upon destruction.
       CHA cha(thread());
 
@@ -2269,16 +2742,13 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
       {
         CSTAT_TIMER_SCOPE(thread(), graphbuilder_timer);
         ZoneGrowableArray<const ICData*>* ic_data_array =
-            new(zone) ZoneGrowableArray<const ICData*>();
+            new (zone) ZoneGrowableArray<const ICData*>();
 #ifndef PRODUCT
-        TimelineDurationScope tds(thread(),
-                                  compiler_timeline,
+        TimelineDurationScope tds(thread(), compiler_timeline,
                                   "BuildFlowGraph");
 #endif  // !PRODUCT
-        flow_graph = pipeline->BuildFlowGraph(zone,
-                                              parsed_function(),
-                                              *ic_data_array,
-                                              Compiler::kNoOSRDeoptId);
+        flow_graph = pipeline->BuildFlowGraph(
+            zone, parsed_function(), *ic_data_array, Compiler::kNoOSRDeoptId);
       }
 
       const bool print_flow_graph =
@@ -2292,9 +2762,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
       if (optimized()) {
 #ifndef PRODUCT
-        TimelineDurationScope tds(thread(),
-                                  compiler_timeline,
-                                  "ComputeSSA");
+        TimelineDurationScope tds(thread(), compiler_timeline, "ComputeSSA");
 #endif  // !PRODUCT
         CSTAT_TIMER_SCOPE(thread(), ssa_timer);
         // Transform to SSA (virtual register 0 and no inlining arguments).
@@ -2317,8 +2785,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
       // potentially affect optimizations.
       if (optimized()) {
 #ifndef PRODUCT
-        TimelineDurationScope tds(thread(),
-                                  compiler_timeline,
+        TimelineDurationScope tds(thread(), compiler_timeline,
                                   "OptimizationPasses");
 #endif  // !PRODUCT
         inline_id_to_function.Add(&function);
@@ -2332,9 +2799,8 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
         caller_inline_id.Add(-1);
         CSTAT_TIMER_SCOPE(thread(), graphoptimizer_timer);
 
-        AotOptimizer optimizer(flow_graph,
-                               use_speculative_inlining,
-                               &inlining_black_list);
+        AotOptimizer optimizer(precompiler_, flow_graph,
+                               use_speculative_inlining, &inlining_black_list);
         optimizer.PopulateWithICData();
 
         optimizer.ApplyClassIds();
@@ -2348,7 +2814,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
         // Optimize (a << b) & c patterns, merge operations.
         // Run early in order to have more opportunity to optimize left shifts.
-        optimizer.TryOptimizePatterns();
+        flow_graph->TryOptimizePatterns();
         DEBUG_ASSERT(flow_graph->VerifyUseLists());
 
         FlowGraphInliner::SetInliningId(flow_graph, 0);
@@ -2356,9 +2822,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
         // Inlining (mutates the flow graph)
         if (FLAG_use_inlining) {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
-                                     "Inlining");
+          TimelineDurationScope tds2(thread(), compiler_timeline, "Inlining");
 #endif  // !PRODUCT
           CSTAT_TIMER_SCOPE(thread(), graphinliner_timer);
           // Propagate types to create more inlining opportunities.
@@ -2369,12 +2833,10 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
           optimizer.ApplyClassIds();
           DEBUG_ASSERT(flow_graph->VerifyUseLists());
 
-          FlowGraphInliner inliner(flow_graph,
-                                   &inline_id_to_function,
-                                   &inline_id_to_token_pos,
-                                   &caller_inline_id,
+          FlowGraphInliner inliner(flow_graph, &inline_id_to_function,
+                                   &inline_id_to_token_pos, &caller_inline_id,
                                    use_speculative_inlining,
-                                   &inlining_black_list);
+                                   &inlining_black_list, precompiler_);
           inliner.Inline();
           // Use lists are maintained and validated by the inliner.
           DEBUG_ASSERT(flow_graph->VerifyUseLists());
@@ -2386,8 +2848,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
         {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
+          TimelineDurationScope tds2(thread(), compiler_timeline,
                                      "ApplyClassIds");
 #endif  // !PRODUCT
           // Use propagated class-ids to optimize further.
@@ -2410,8 +2871,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
         {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
+          TimelineDurationScope tds2(thread(), compiler_timeline,
                                      "BranchSimplifier");
 #endif  // !PRODUCT
           BranchSimplifier::Simplify(flow_graph);
@@ -2423,8 +2883,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
         if (FLAG_constant_propagation) {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
+          TimelineDurationScope tds2(thread(), compiler_timeline,
                                      "ConstantPropagation");
 #endif  // !PRODUCT
           ConstantPropagator::Optimize(flow_graph);
@@ -2454,8 +2913,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
         {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
+          TimelineDurationScope tds2(thread(), compiler_timeline,
                                      "SelectRepresentations");
 #endif  // !PRODUCT
           // Where beneficial convert Smi operations into Int32 operations.
@@ -2471,8 +2929,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
         {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
+          TimelineDurationScope tds2(thread(), compiler_timeline,
                                      "CommonSubexpressionElinination");
 #endif  // !PRODUCT
           if (FLAG_common_subexpression_elimination ||
@@ -2508,13 +2965,12 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
         // Optimize (a << b) & c patterns, merge operations.
         // Run after CSE in order to have more opportunity to merge
         // instructions that have same inputs.
-        optimizer.TryOptimizePatterns();
+        flow_graph->TryOptimizePatterns();
         DEBUG_ASSERT(flow_graph->VerifyUseLists());
 
         {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
+          TimelineDurationScope tds2(thread(), compiler_timeline,
                                      "DeadStoreElimination");
 #endif  // !PRODUCT
           DeadStoreElimination::Optimize(flow_graph);
@@ -2522,8 +2978,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
         if (FLAG_range_analysis) {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
+          TimelineDurationScope tds2(thread(), compiler_timeline,
                                      "RangeAnalysis");
 #endif  // !PRODUCT
           // Propagate types after store-load-forwarding. Some phis may have
@@ -2541,8 +2996,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
         if (FLAG_constant_propagation) {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
+          TimelineDurationScope tds2(thread(), compiler_timeline,
                                      "ConstantPropagator::OptimizeBranches");
 #endif  // !PRODUCT
           // Constant propagation can use information from range analysis to
@@ -2559,8 +3013,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
         {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
+          TimelineDurationScope tds2(thread(), compiler_timeline,
                                      "TryCatchAnalyzer::Optimize");
 #endif  // !PRODUCT
           // Optimize try-blocks.
@@ -2574,8 +3027,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
         {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
+          TimelineDurationScope tds2(thread(), compiler_timeline,
                                      "EliminateDeadPhis");
 #endif  // !PRODUCT
           DeadCodeElimination::EliminateDeadPhis(flow_graph);
@@ -2590,10 +3042,9 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
         // the deoptimization path.
         AllocationSinking* sinking = NULL;
         if (FLAG_allocation_sinking &&
-            (flow_graph->graph_entry()->SuccessorCount()  == 1)) {
+            (flow_graph->graph_entry()->SuccessorCount() == 1)) {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
+          TimelineDurationScope tds2(thread(), compiler_timeline,
                                      "AllocationSinking::Optimize");
 #endif  // !PRODUCT
           // TODO(fschneider): Support allocation sinking with try-catch.
@@ -2610,8 +3061,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
         {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
+          TimelineDurationScope tds2(thread(), compiler_timeline,
                                      "SelectRepresentations");
 #endif  // !PRODUCT
           // Ensure that all phis inserted by optimization passes have
@@ -2632,8 +3082,7 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
         if (sinking != NULL) {
 #ifndef PRODUCT
           TimelineDurationScope tds2(
-              thread(),
-              compiler_timeline,
+              thread(), compiler_timeline,
               "AllocationSinking::DetachMaterializations");
 #endif  // !PRODUCT
           // Remove all MaterializeObject instructions inserted by allocation
@@ -2643,14 +3092,16 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
           sinking->DetachMaterializations();
         }
 
+        // Replace bounds check instruction with a generic one.
+        optimizer.ReplaceArrayBoundChecks();
+
         // Compute and store graph informations (call & instruction counts)
         // to be later used by the inliner.
         FlowGraphInliner::CollectGraphInfo(flow_graph, true);
 
         {
 #ifndef PRODUCT
-          TimelineDurationScope tds2(thread(),
-                                     compiler_timeline,
+          TimelineDurationScope tds2(thread(), compiler_timeline,
                                      "AllocateRegisters");
 #endif  // !PRODUCT
           // Perform register allocation on the SSA graph.
@@ -2665,25 +3116,20 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 
       ASSERT(inline_id_to_function.length() == caller_inline_id.length());
       Assembler assembler(use_far_branches);
-      FlowGraphCompiler graph_compiler(&assembler, flow_graph,
-                                       *parsed_function(), optimized(),
-                                       inline_id_to_function,
-                                       inline_id_to_token_pos,
-                                       caller_inline_id);
+      FlowGraphCompiler graph_compiler(
+          &assembler, flow_graph, *parsed_function(), optimized(),
+          inline_id_to_function, inline_id_to_token_pos, caller_inline_id);
       {
         CSTAT_TIMER_SCOPE(thread(), graphcompiler_timer);
 #ifndef PRODUCT
-        TimelineDurationScope tds(thread(),
-                                  compiler_timeline,
-                                  "CompileGraph");
+        TimelineDurationScope tds(thread(), compiler_timeline, "CompileGraph");
 #endif  // !PRODUCT
         graph_compiler.CompileGraph();
         pipeline->FinalizeCompilation(flow_graph);
       }
       {
 #ifndef PRODUCT
-        TimelineDurationScope tds(thread(),
-                                  compiler_timeline,
+        TimelineDurationScope tds(thread(), compiler_timeline,
                                   "FinalizeCompilation");
 #endif  // !PRODUCT
         ASSERT(thread()->IsMutatorThread());
@@ -2708,8 +3154,11 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
         // The return value of setjmp is the deopt id of the check instruction
         // that caused the bailout.
         done = false;
+        if (!use_speculative_inlining) {
+          // Assert that we don't repeatedly retry speculation.
+          UNREACHABLE();
+        }
 #if defined(DEBUG)
-        ASSERT(use_speculative_inlining);
         for (intptr_t i = 0; i < inlining_black_list.length(); ++i) {
           ASSERT(inlining_black_list[i] != val);
         }
@@ -2747,7 +3196,8 @@ bool PrecompileParsedFunctionHelper::Compile(CompilationPipeline* pipeline) {
 }
 
 
-static RawError* PrecompileFunctionHelper(CompilationPipeline* pipeline,
+static RawError* PrecompileFunctionHelper(Precompiler* precompiler,
+                                          CompilationPipeline* pipeline,
                                           const Function& function,
                                           bool optimized) {
   // Check that we optimize, except if the function is not optimizable.
@@ -2760,20 +3210,17 @@ static RawError* PrecompileFunctionHelper(CompilationPipeline* pipeline,
     StackZone stack_zone(thread);
     Zone* const zone = stack_zone.GetZone();
     const bool trace_compiler =
-        FLAG_trace_compiler ||
-        (FLAG_trace_optimizing_compiler && optimized);
+        FLAG_trace_compiler || (FLAG_trace_optimizing_compiler && optimized);
     Timer per_compile_timer(trace_compiler, "Compilation time");
     per_compile_timer.Start();
 
-    ParsedFunction* parsed_function = new(zone) ParsedFunction(
-        thread, Function::ZoneHandle(zone, function.raw()));
+    ParsedFunction* parsed_function = new (zone)
+        ParsedFunction(thread, Function::ZoneHandle(zone, function.raw()));
     if (trace_compiler) {
-      THR_Print(
-          "Precompiling %sfunction: '%s' @ token %" Pd ", size %" Pd "\n",
-          (optimized ? "optimized " : ""),
-          function.ToFullyQualifiedCString(),
-          function.token_pos().Pos(),
-          (function.end_token_pos().Pos() - function.token_pos().Pos()));
+      THR_Print("Precompiling %sfunction: '%s' @ token %" Pd ", size %" Pd "\n",
+                (optimized ? "optimized " : ""),
+                function.ToFullyQualifiedCString(), function.token_pos().Pos(),
+                (function.end_token_pos().Pos() - function.token_pos().Pos()));
     }
     INC_STAT(thread, num_functions_compiled, 1);
     if (optimized) {
@@ -2784,12 +3231,12 @@ static RawError* PrecompileFunctionHelper(CompilationPipeline* pipeline,
       const int64_t num_tokens_before = STAT_VALUE(thread, num_tokens_consumed);
       pipeline->ParseFunction(parsed_function);
       const int64_t num_tokens_after = STAT_VALUE(thread, num_tokens_consumed);
-      INC_STAT(thread,
-               num_func_tokens_compiled,
+      INC_STAT(thread, num_func_tokens_compiled,
                num_tokens_after - num_tokens_before);
     }
 
-    PrecompileParsedFunctionHelper helper(parsed_function, optimized);
+    PrecompileParsedFunctionHelper helper(precompiler, parsed_function,
+                                          optimized);
     const bool success = helper.Compile(pipeline);
     if (!success) {
       // Encountered error.
@@ -2807,15 +3254,14 @@ static RawError* PrecompileFunctionHelper(CompilationPipeline* pipeline,
     if (trace_compiler) {
       THR_Print("--> '%s' entry: %#" Px " size: %" Pd " time: %" Pd64 " us\n",
                 function.ToFullyQualifiedCString(),
-                Code::Handle(function.CurrentCode()).EntryPoint(),
+                Code::Handle(function.CurrentCode()).PayloadStart(),
                 Code::Handle(function.CurrentCode()).Size(),
                 per_compile_timer.TotalElapsedTime());
     }
 
     if (FLAG_disassemble && FlowGraphPrinter::ShouldPrint(function)) {
       Disassembler::DisassembleCode(function, optimized);
-    } else if (FLAG_disassemble_optimized &&
-               optimized &&
+    } else if (FLAG_disassemble_optimized && optimized &&
                FlowGraphPrinter::ShouldPrint(function)) {
       Disassembler::DisassembleCode(function, true);
     }
@@ -2837,17 +3283,18 @@ static RawError* PrecompileFunctionHelper(CompilationPipeline* pipeline,
 }
 
 
-RawError* Precompiler::CompileFunction(Thread* thread,
-                                       const Function& function) {
+RawError* Precompiler::CompileFunction(Precompiler* precompiler,
+                                       Thread* thread,
+                                       Zone* zone,
+                                       const Function& function,
+                                       FieldTypeMap* field_type_map) {
   VMTagScope tagScope(thread, VMTag::kCompileUnoptimizedTagId);
   TIMELINE_FUNCTION_COMPILATION_DURATION(thread, "CompileFunction", function);
 
-  CompilationPipeline* pipeline =
-      CompilationPipeline::New(thread->zone(), function);
-
   ASSERT(FLAG_precompiled_mode);
   const bool optimized = function.IsOptimizable();  // False for natives.
-  return PrecompileFunctionHelper(pipeline, function, optimized);
+  DartPrecompilationPipeline pipeline(zone, field_type_map);
+  return PrecompileFunctionHelper(precompiler, &pipeline, function, optimized);
 }
 
 #endif  // DART_PRECOMPILER

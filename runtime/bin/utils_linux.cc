@@ -5,10 +5,10 @@
 #include "platform/globals.h"
 #if defined(TARGET_OS_LINUX)
 
-#include <errno.h>  // NOLINT
-#include <netdb.h>  // NOLINT
+#include <errno.h>     // NOLINT
+#include <netdb.h>     // NOLINT
 #include <sys/time.h>  // NOLINT
-#include <time.h>  // NOLINT
+#include <time.h>      // NOLINT
 
 #include "bin/utils.h"
 #include "platform/assert.h"
@@ -41,31 +41,40 @@ void OSError::SetCodeAndMessage(SubSystem sub_system, int code) {
 }
 
 
-const char* StringUtils::ConsoleStringToUtf8(
-    const char* str, intptr_t len, intptr_t* result_len) {
+const char* StringUtils::ConsoleStringToUtf8(const char* str,
+                                             intptr_t len,
+                                             intptr_t* result_len) {
   UNIMPLEMENTED();
   return NULL;
 }
 
 
-const char* StringUtils::Utf8ToConsoleString(
-    const char* utf8, intptr_t len, intptr_t* result_len) {
+const char* StringUtils::Utf8ToConsoleString(const char* utf8,
+                                             intptr_t len,
+                                             intptr_t* result_len) {
   UNIMPLEMENTED();
   return NULL;
 }
 
 
-char* StringUtils::ConsoleStringToUtf8(
-    char* str, intptr_t len, intptr_t* result_len) {
+char* StringUtils::ConsoleStringToUtf8(char* str,
+                                       intptr_t len,
+                                       intptr_t* result_len) {
   UNIMPLEMENTED();
   return NULL;
 }
 
 
-char* StringUtils::Utf8ToConsoleString(
-    char* utf8, intptr_t len, intptr_t* result_len) {
+char* StringUtils::Utf8ToConsoleString(char* utf8,
+                                       intptr_t len,
+                                       intptr_t* result_len) {
   UNIMPLEMENTED();
   return NULL;
+}
+
+
+char* StringUtils::StrNDup(const char* s, intptr_t n) {
+  return strndup(s, n);
 }
 
 
@@ -74,8 +83,7 @@ bool ShellUtils::GetUtf8Argv(int argc, char** argv) {
 }
 
 
-void TimerUtils::InitOnce() {
-}
+void TimerUtils::InitOnce() {}
 
 
 int64_t TimerUtils::GetCurrentMonotonicMillis() {

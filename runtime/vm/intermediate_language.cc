@@ -29,12 +29,18 @@
 
 namespace dart {
 
-DEFINE_FLAG(bool, propagate_ic_data, true,
-    "Propagate IC data from unoptimized to optimized IC calls.");
-DEFINE_FLAG(bool, two_args_smi_icd, true,
-    "Generate special IC stubs for two args Smi operations");
-DEFINE_FLAG(bool, unbox_numeric_fields, !USING_DBC,
-    "Support unboxed double and float32x4 fields.");
+DEFINE_FLAG(bool,
+            propagate_ic_data,
+            true,
+            "Propagate IC data from unoptimized to optimized IC calls.");
+DEFINE_FLAG(bool,
+            two_args_smi_icd,
+            true,
+            "Generate special IC stubs for two args Smi operations");
+DEFINE_FLAG(bool,
+            unbox_numeric_fields,
+            !USING_DBC,
+            "Support unboxed double and float32x4 fields.");
 DECLARE_FLAG(bool, eliminate_type_checks);
 DECLARE_FLAG(bool, support_externalizable_strings);
 
@@ -55,8 +61,7 @@ Definition::Definition(intptr_t deopt_id)
       ssa_temp_index_(-1),
       input_use_list_(NULL),
       env_use_list_(NULL),
-      constant_value_(NULL) {
-}
+      constant_value_(NULL) {}
 
 
 // A value in the constant propagation lattice.
@@ -126,6 +131,12 @@ bool Instruction::Equals(Instruction* other) const {
 }
 
 
+void Instruction::Unsupported(FlowGraphCompiler* compiler) {
+  compiler->Bailout(ToCString());
+  UNREACHABLE();
+}
+
+
 bool Value::Equals(Value* other) const {
   return definition() == other->definition();
 }
@@ -184,8 +195,7 @@ static bool AreAllChecksImmutable(const ICData& checks) {
   const intptr_t len = checks.NumberOfChecks();
   for (intptr_t i = 0; i < len; i++) {
     if (checks.IsUsedAt(i)) {
-      if (Field::IsExternalizableCid(
-              checks.GetReceiverClassIdAt(i))) {
+      if (Field::IsExternalizableCid(checks.GetReceiverClassIdAt(i))) {
         return false;
       }
     }
@@ -196,15 +206,15 @@ static bool AreAllChecksImmutable(const ICData& checks) {
 
 EffectSet CheckClassInstr::Dependencies() const {
   // Externalization of strings via the API can change the class-id.
-  return !AreAllChecksImmutable(unary_checks()) ?
-      EffectSet::Externalization() : EffectSet::None();
+  return !AreAllChecksImmutable(unary_checks()) ? EffectSet::Externalization()
+                                                : EffectSet::None();
 }
 
 
 EffectSet CheckClassIdInstr::Dependencies() const {
   // Externalization of strings via the API can change the class-id.
-  return Field::IsExternalizableCid(cid_) ?
-      EffectSet::Externalization() : EffectSet::None();
+  return Field::IsExternalizableCid(cid_) ? EffectSet::Externalization()
+                                          : EffectSet::None();
 }
 
 
@@ -271,16 +281,14 @@ bool CheckClassInstr::IsDenseMask(intptr_t mask) {
 
 
 bool LoadFieldInstr::IsUnboxedLoad() const {
-  return FLAG_unbox_numeric_fields
-      && (field() != NULL)
-      && FlowGraphCompiler::IsUnboxedField(*field());
+  return FLAG_unbox_numeric_fields && (field() != NULL) &&
+         FlowGraphCompiler::IsUnboxedField(*field());
 }
 
 
 bool LoadFieldInstr::IsPotentialUnboxedLoad() const {
-  return FLAG_unbox_numeric_fields
-      && (field() != NULL)
-      && FlowGraphCompiler::IsPotentialUnboxedField(*field());
+  return FLAG_unbox_numeric_fields && (field() != NULL) &&
+         FlowGraphCompiler::IsPotentialUnboxedField(*field());
 }
 
 
@@ -303,21 +311,19 @@ Representation LoadFieldInstr::representation() const {
 
 
 bool StoreInstanceFieldInstr::IsUnboxedStore() const {
-  return FLAG_unbox_numeric_fields
-      && !field().IsNull()
-      && FlowGraphCompiler::IsUnboxedField(field());
+  return FLAG_unbox_numeric_fields && !field().IsNull() &&
+         FlowGraphCompiler::IsUnboxedField(field());
 }
 
 
 bool StoreInstanceFieldInstr::IsPotentialUnboxedStore() const {
-  return FLAG_unbox_numeric_fields
-      && !field().IsNull()
-      && FlowGraphCompiler::IsPotentialUnboxedField(field());
+  return FLAG_unbox_numeric_fields && !field().IsNull() &&
+         FlowGraphCompiler::IsPotentialUnboxedField(field());
 }
 
 
 Representation StoreInstanceFieldInstr::RequiredInputRepresentation(
-  intptr_t index) const {
+    intptr_t index) const {
   ASSERT((index == 0) || (index == 1));
   if ((index == 1) && IsUnboxedStore()) {
     const intptr_t cid = field().UnboxedFieldCid();
@@ -359,7 +365,7 @@ bool StrictCompareInstr::AttributesEqual(Instruction* other) const {
   StrictCompareInstr* other_op = other->AsStrictCompare();
   ASSERT(other_op != NULL);
   return ComparisonInstr::AttributesEqual(other) &&
-    (needs_number_check() == other_op->needs_number_check());
+         (needs_number_check() == other_op->needs_number_check());
 }
 
 
@@ -367,7 +373,7 @@ bool MathMinMaxInstr::AttributesEqual(Instruction* other) const {
   MathMinMaxInstr* other_op = other->AsMathMinMax();
   ASSERT(other_op != NULL);
   return (op_kind() == other_op->op_kind()) &&
-      (result_cid() == other_op->result_cid());
+         (result_cid() == other_op->result_cid());
 }
 
 
@@ -375,8 +381,8 @@ bool BinaryIntegerOpInstr::AttributesEqual(Instruction* other) const {
   ASSERT(other->tag() == tag());
   BinaryIntegerOpInstr* other_op = other->AsBinaryIntegerOp();
   return (op_kind() == other_op->op_kind()) &&
-      (can_overflow() == other_op->can_overflow()) &&
-      (is_truncating() == other_op->is_truncating());
+         (can_overflow() == other_op->can_overflow()) &&
+         (is_truncating() == other_op->is_truncating());
 }
 
 
@@ -390,10 +396,10 @@ bool LoadFieldInstr::AttributesEqual(Instruction* other) const {
   ASSERT(other_load != NULL);
   if (field() != NULL) {
     return (other_load->field() != NULL) &&
-        (field()->raw() == other_load->field()->raw());
+           (field()->raw() == other_load->field()->raw());
   }
   return (other_load->field() == NULL) &&
-      (offset_in_bytes() == other_load->offset_in_bytes());
+         (offset_in_bytes() == other_load->offset_in_bytes());
 }
 
 
@@ -411,7 +417,8 @@ Instruction* InitStaticFieldInstr::Canonicalize(FlowGraph* flow_graph) {
 
 EffectSet LoadStaticFieldInstr::Dependencies() const {
   return (StaticField().is_final() && !FLAG_fields_may_be_reset)
-      ? EffectSet::None() : EffectSet::All();
+             ? EffectSet::None()
+             : EffectSet::All();
 }
 
 
@@ -433,8 +440,7 @@ const Field& LoadStaticFieldInstr::StaticField() const {
 
 
 ConstantInstr::ConstantInstr(const Object& value, TokenPosition token_pos)
-    : value_(value),
-      token_pos_(token_pos) {
+    : value_(value), token_pos_(token_pos) {
   // Check that the value is not an incorrect Integer representation.
   ASSERT(!value.IsBigint() || !Bigint::Cast(value).FitsIntoSmi());
   ASSERT(!value.IsBigint() || !Bigint::Cast(value).FitsIntoInt64());
@@ -460,40 +466,6 @@ UnboxedConstantInstr::UnboxedConstantInstr(const Object& value,
     constant_address_ =
         FlowGraphBuilder::FindDoubleConstant(Double::Cast(value).value());
   }
-}
-
-
-bool Value::BindsTo32BitMaskConstant() const {
-  if (!definition()->IsUnboxInt64() || !definition()->IsUnboxUint32()) {
-    return false;
-  }
-  // Two cases to consider: UnboxInt64 and UnboxUint32.
-  if (definition()->IsUnboxInt64()) {
-    UnboxInt64Instr* instr = definition()->AsUnboxInt64();
-    if (!instr->value()->BindsToConstant()) {
-      return false;
-    }
-    const Object& obj = instr->value()->BoundConstant();
-    if (!obj.IsMint()) {
-      return false;
-    }
-    Mint& mint = Mint::Handle();
-    mint ^= obj.raw();
-    return mint.value() == kMaxUint32;
-  } else if (definition()->IsUnboxUint32()) {
-    UnboxUint32Instr* instr = definition()->AsUnboxUint32();
-    if (!instr->value()->BindsToConstant()) {
-      return false;
-    }
-    const Object& obj = instr->value()->BoundConstant();
-    if (!obj.IsMint()) {
-      return false;
-    }
-    Mint& mint = Mint::Handle();
-    mint ^= obj.raw();
-    return mint.value() == kMaxUint32;
-  }
-  return false;
 }
 
 
@@ -530,8 +502,7 @@ GraphEntryInstr::GraphEntryInstr(const ParsedFunction& parsed_function,
       osr_id_(osr_id),
       entry_count_(0),
       spill_slot_count_(0),
-      fixed_slot_count_(0) {
-}
+      fixed_slot_count_(0) {}
 
 
 ConstantInstr* GraphEntryInstr::constant_null() {
@@ -563,9 +534,9 @@ bool GraphEntryInstr::IsCompiledForOsr() const {
 // ==== Support for visiting flow graphs.
 
 #define DEFINE_ACCEPT(ShortName)                                               \
-void ShortName##Instr::Accept(FlowGraphVisitor* visitor) {                     \
-  visitor->Visit##ShortName(this);                                             \
-}
+  void ShortName##Instr::Accept(FlowGraphVisitor* visitor) {                   \
+    visitor->Visit##ShortName(this);                                           \
+  }
 
 FOR_EACH_INSTRUCTION(DEFINE_ACCEPT)
 
@@ -650,7 +621,8 @@ BlockEntryInstr* Instruction::GetBlock() {
   // instruction.
   ASSERT(previous() != NULL);
   Instruction* result = previous();
-  while (!result->IsBlockEntry()) result = result->previous();
+  while (!result->IsBlockEntry())
+    result = result->previous();
   return result->AsBlockEntry();
 }
 
@@ -682,8 +654,7 @@ void FlowGraphVisitor::VisitBlocks() {
 
 
 bool Value::NeedsStoreBuffer() {
-  if (Type()->IsNull() ||
-      (Type()->ToNullableCid() == kSmiCid) ||
+  if (Type()->IsNull() || (Type()->ToNullableCid() == kSmiCid) ||
       (Type()->ToNullableCid() == kBoolCid)) {
     return false;
   }
@@ -822,12 +793,10 @@ void Instruction::InheritDeoptTargetAfter(FlowGraph* flow_graph,
                                           Definition* result) {
   ASSERT(call->env() != NULL);
   deopt_id_ = Thread::ToDeoptAfter(call->deopt_id_);
-  call->env()->DeepCopyAfterTo(flow_graph->zone(),
-                               this,
-                               call->ArgumentCount(),
-                               flow_graph->constant_dead(),
-                               result != NULL ? result
-                                              : flow_graph->constant_dead());
+  call->env()->DeepCopyAfterTo(
+      flow_graph->zone(), this, call->ArgumentCount(),
+      flow_graph->constant_dead(),
+      result != NULL ? result : flow_graph->constant_dead());
   env()->set_deopt_id(deopt_id_);
 }
 
@@ -951,10 +920,9 @@ static bool IsMarked(BlockEntryInstr* block,
 
 
 // Base class implementation used for JoinEntry and TargetEntry.
-bool BlockEntryInstr::DiscoverBlock(
-    BlockEntryInstr* predecessor,
-    GrowableArray<BlockEntryInstr*>* preorder,
-    GrowableArray<intptr_t>* parent) {
+bool BlockEntryInstr::DiscoverBlock(BlockEntryInstr* predecessor,
+                                    GrowableArray<BlockEntryInstr*>* preorder,
+                                    GrowableArray<intptr_t>* parent) {
   // If this block has a predecessor (i.e., is not the graph entry) we can
   // assume the preorder array is non-empty.
   ASSERT((predecessor == NULL) || !preorder->is_empty());
@@ -1003,8 +971,7 @@ bool BlockEntryInstr::DiscoverBlock(
 }
 
 
-bool BlockEntryInstr::PruneUnreachable(FlowGraphBuilder* builder,
-                                       GraphEntryInstr* graph_entry,
+bool BlockEntryInstr::PruneUnreachable(GraphEntryInstr* graph_entry,
                                        Instruction* parent,
                                        intptr_t osr_id,
                                        BitVector* block_marks) {
@@ -1040,10 +1007,7 @@ bool BlockEntryInstr::PruneUnreachable(FlowGraphBuilder* builder,
 
   // Recursively search the successors.
   for (intptr_t i = instr->SuccessorCount() - 1; i >= 0; --i) {
-    if (instr->SuccessorAt(i)->PruneUnreachable(builder,
-                                                graph_entry,
-                                                instr,
-                                                osr_id,
+    if (instr->SuccessorAt(i)->PruneUnreachable(graph_entry, instr, osr_id,
                                                 block_marks)) {
       return true;
     }
@@ -1126,8 +1090,7 @@ void BlockEntryInstr::ReplaceAsPredecessorWith(BlockEntryInstr* new_block) {
       Value* pred_use = phi->InputAt(old_index);
       // Move uses between old and new.
       intptr_t step = (old_index < new_index) ? 1 : -1;
-      for (intptr_t use_idx = old_index;
-           use_idx != new_index;
+      for (intptr_t use_idx = old_index; use_idx != new_index;
            use_idx += step) {
         phi->SetInputAt(use_idx, phi->InputAt(use_idx + step));
       }
@@ -1146,9 +1109,7 @@ void BlockEntryInstr::ClearAllInstructions() {
     }
   }
   UnuseAllInputs();
-  for (ForwardInstructionIterator it(this);
-       !it.Done();
-       it.Advance()) {
+  for (ForwardInstructionIterator it(this); !it.Done(); it.Advance()) {
     it.Current()->UnuseAllInputs();
   }
 }
@@ -1269,24 +1230,22 @@ void Instruction::Goto(JoinEntryInstr* entry) {
 
 
 bool UnboxedIntConverterInstr::CanDeoptimize() const {
-  return (to() == kUnboxedInt32) &&
-      !is_truncating() &&
-      !RangeUtils::Fits(value()->definition()->range(),
-                        RangeBoundary::kRangeBoundaryInt32);
+  return (to() == kUnboxedInt32) && !is_truncating() &&
+         !RangeUtils::Fits(value()->definition()->range(),
+                           RangeBoundary::kRangeBoundaryInt32);
 }
 
 
 bool UnboxInt32Instr::CanDeoptimize() const {
   const intptr_t value_cid = value()->Type()->ToCid();
   if (value_cid == kSmiCid) {
-    return (kSmiBits > 32) &&
-        !is_truncating() &&
-        !RangeUtils::Fits(value()->definition()->range(),
-                          RangeBoundary::kRangeBoundaryInt32);
+    return (kSmiBits > 32) && !is_truncating() &&
+           !RangeUtils::Fits(value()->definition()->range(),
+                             RangeBoundary::kRangeBoundaryInt32);
   } else if (value_cid == kMintCid) {
     return !is_truncating() &&
-        !RangeUtils::Fits(value()->definition()->range(),
-                          RangeBoundary::kRangeBoundaryInt32);
+           !RangeUtils::Fits(value()->definition()->range(),
+                             RangeBoundary::kRangeBoundaryInt32);
   } else if (is_truncating() && value()->definition()->IsBoxInteger()) {
     return false;
   } else if ((kSmiBits < 32) && value()->Type()->IsInt()) {
@@ -1323,7 +1282,7 @@ bool BinaryInt32OpInstr::CanDeoptimize() const {
 
     case Token::kSHL:
       return can_overflow() ||
-          !RangeUtils::IsPositive(right()->definition()->range());
+             !RangeUtils::IsPositive(right()->definition()->range());
 
     case Token::kMOD: {
       UNREACHABLE();
@@ -1347,7 +1306,7 @@ bool BinarySmiOpInstr::CanDeoptimize() const {
 
     case Token::kSHL:
       return can_overflow() ||
-          !RangeUtils::IsPositive(right()->definition()->range());
+             !RangeUtils::IsPositive(right()->definition()->range());
 
     case Token::kMOD: {
       Range* right_range = this->right()->definition()->range();
@@ -1385,8 +1344,8 @@ static intptr_t RepresentationBits(Representation r) {
 
 
 static int64_t RepresentationMask(Representation r) {
-  return static_cast<int64_t>(
-      static_cast<uint64_t>(-1) >> (64 - RepresentationBits(r)));
+  return static_cast<int64_t>(static_cast<uint64_t>(-1) >>
+                              (64 - RepresentationBits(r)));
 }
 
 
@@ -1433,10 +1392,9 @@ static bool ToIntegerConstant(Value* value, int64_t* result) {
 }
 
 
-static Definition* CanonicalizeCommutativeDoubleArithmetic(
-    Token::Kind op,
-    Value* left,
-    Value* right) {
+static Definition* CanonicalizeCommutativeDoubleArithmetic(Token::Kind op,
+                                                           Value* left,
+                                                           Value* right) {
   int64_t left_value;
   if (!ToIntegerConstant(left, &left_value)) {
     return NULL;
@@ -1472,9 +1430,7 @@ Definition* DoubleToFloatInstr::Canonicalize(FlowGraph* flow_graph) {
   // Must only be used in Float32 StoreIndexedInstr or FloatToDoubleInstr or
   // Phis introduce by load forwarding.
   ASSERT(env_use_list() == NULL);
-  for (Value* use = input_use_list();
-       use != NULL;
-       use = use->next_use()) {
+  for (Value* use = input_use_list(); use != NULL; use = use->next_use()) {
     ASSERT(use->instruction()->IsPhi() ||
            use->instruction()->IsFloatToDouble() ||
            (use->instruction()->IsStoreIndexed() &&
@@ -1513,15 +1469,19 @@ Definition* BinaryDoubleOpInstr::Canonicalize(FlowGraph* flow_graph) {
 
   if ((op_kind() == Token::kMUL) &&
       (left()->definition() == right()->definition())) {
-    MathUnaryInstr* math_unary =
-        new MathUnaryInstr(MathUnaryInstr::kDoubleSquare,
-                           new Value(left()->definition()),
-                           DeoptimizationTarget());
+    MathUnaryInstr* math_unary = new MathUnaryInstr(
+        MathUnaryInstr::kDoubleSquare, new Value(left()->definition()),
+        DeoptimizationTarget());
     flow_graph->InsertBefore(this, math_unary, env(), FlowGraph::kValue);
     return math_unary;
   }
 
   return this;
+}
+
+
+Definition* DoubleTestOpInstr::Canonicalize(FlowGraph* flow_graph) {
+  return HasUses() ? this : NULL;
 }
 
 
@@ -1657,8 +1617,7 @@ RawInteger* UnaryIntegerOpInstr::Evaluate(const Integer& value) const {
 
   switch (op_kind()) {
     case Token::kNEGATE:
-      result = value.ArithmeticOp(Token::kMUL,
-                                  Smi::Handle(zone, Smi::New(-1)),
+      result = value.ArithmeticOp(Token::kMUL, Smi::Handle(zone, Smi::New(-1)),
                                   Heap::kOld);
       break;
 
@@ -1702,7 +1661,7 @@ RawInteger* BinaryIntegerOpInstr::Evaluate(const Integer& left,
       if (right.IsSmi() && right.AsInt64Value() == 0) {
         break;  // Will throw.
       }
-      // Fall through.
+    // Fall through.
     case Token::kADD:
     case Token::kSUB:
     case Token::kMUL: {
@@ -1712,9 +1671,8 @@ RawInteger* BinaryIntegerOpInstr::Evaluate(const Integer& left,
     case Token::kSHL:
     case Token::kSHR:
       if (left.IsSmi() && right.IsSmi() && (Smi::Cast(right).Value() >= 0)) {
-        result = Smi::Cast(left).ShiftOp(op_kind(),
-                                         Smi::Cast(right),
-                                         Heap::kOld);
+        result =
+            Smi::Cast(left).ShiftOp(op_kind(), Smi::Cast(right), Heap::kOld);
       }
       break;
     case Token::kBIT_AND:
@@ -1753,8 +1711,7 @@ Definition* BinaryIntegerOpInstr::CreateConstantResult(FlowGraph* flow_graph,
                                                        const Integer& result) {
   Definition* result_defn = flow_graph->GetConstant(result);
   if (representation() != kTagged) {
-    result_defn = UnboxInstr::Create(representation(),
-                                     new Value(result_defn),
+    result_defn = UnboxInstr::Create(representation(), new Value(result_defn),
                                      GetDeoptId());
     flow_graph->InsertBefore(this, result_defn, env(), FlowGraph::kValue);
   }
@@ -1762,24 +1719,77 @@ Definition* BinaryIntegerOpInstr::CreateConstantResult(FlowGraph* flow_graph,
 }
 
 
+Definition* CheckedSmiOpInstr::Canonicalize(FlowGraph* flow_graph) {
+  if ((left()->Type()->ToCid() == kSmiCid) &&
+      (right()->Type()->ToCid() == kSmiCid)) {
+    Definition* replacement = NULL;
+    // Operations that can't deoptimize are specialized here: These include
+    // bit-wise operators and comparisons. Other arithmetic operations can
+    // overflow or divide by 0 and can't be specialized unless we have extra
+    // range information.
+    switch (op_kind()) {
+      case Token::kBIT_AND:
+      case Token::kBIT_OR:
+      case Token::kBIT_XOR:
+        replacement = new BinarySmiOpInstr(
+            op_kind(), new Value(left()->definition()),
+            new Value(right()->definition()), Thread::kNoDeoptId);
+      default:
+        break;
+    }
+    if (replacement != NULL) {
+      flow_graph->InsertBefore(this, replacement, env(), FlowGraph::kValue);
+      return replacement;
+    }
+  }
+  return this;
+}
+
+
+ComparisonInstr* CheckedSmiComparisonInstr::CopyWithNewOperands(Value* left,
+                                                                Value* right) {
+  UNREACHABLE();
+  return NULL;
+}
+
+
+Definition* CheckedSmiComparisonInstr::Canonicalize(FlowGraph* flow_graph) {
+  if ((left()->Type()->ToCid() == kSmiCid) &&
+      (right()->Type()->ToCid() == kSmiCid)) {
+    Definition* replacement = NULL;
+    if (Token::IsRelationalOperator(kind())) {
+      replacement = new RelationalOpInstr(
+          token_pos(), kind(), new Value(left()->definition()),
+          new Value(right()->definition()), kSmiCid, Thread::kNoDeoptId);
+    } else if (Token::IsEqualityOperator(kind())) {
+      replacement = new EqualityCompareInstr(
+          token_pos(), kind(), new Value(left()->definition()),
+          new Value(right()->definition()), kSmiCid, Thread::kNoDeoptId);
+    }
+    if (replacement != NULL) {
+      flow_graph->InsertBefore(this, replacement, env(), FlowGraph::kValue);
+      return replacement;
+    }
+  }
+  return this;
+}
+
+
 Definition* BinaryIntegerOpInstr::Canonicalize(FlowGraph* flow_graph) {
   // If both operands are constants evaluate this expression. Might
   // occur due to load forwarding after constant propagation pass
   // have already been run.
-  if (left()->BindsToConstant() &&
-      left()->BoundConstant().IsInteger() &&
-      right()->BindsToConstant() &&
-      right()->BoundConstant().IsInteger()) {
-    const Integer& result = Integer::Handle(
-        Evaluate(Integer::Cast(left()->BoundConstant()),
-                 Integer::Cast(right()->BoundConstant())));
+  if (left()->BindsToConstant() && left()->BoundConstant().IsInteger() &&
+      right()->BindsToConstant() && right()->BoundConstant().IsInteger()) {
+    const Integer& result =
+        Integer::Handle(Evaluate(Integer::Cast(left()->BoundConstant()),
+                                 Integer::Cast(right()->BoundConstant())));
     if (!result.IsNull()) {
       return CreateConstantResult(flow_graph, result);
     }
   }
 
-  if (left()->BindsToConstant() &&
-      !right()->BindsToConstant() &&
+  if (left()->BindsToConstant() && !right()->BindsToConstant() &&
       IsCommutative(op_kind())) {
     Value* l = left();
     Value* r = right();
@@ -1817,15 +1827,10 @@ Definition* BinaryIntegerOpInstr::Canonicalize(FlowGraph* flow_graph) {
       } else if (rhs == 2) {
         ConstantInstr* constant_1 =
             flow_graph->GetConstant(Smi::Handle(Smi::New(1)));
-        BinaryIntegerOpInstr* shift =
-            BinaryIntegerOpInstr::Make(representation(),
-                                       Token::kSHL,
-                                       left()->CopyWithType(),
-                                       new Value(constant_1),
-                                       GetDeoptId(),
-                                       can_overflow(),
-                                       is_truncating(),
-                                       range());
+        BinaryIntegerOpInstr* shift = BinaryIntegerOpInstr::Make(
+            representation(), Token::kSHL, left()->CopyWithType(),
+            new Value(constant_1), GetDeoptId(), can_overflow(),
+            is_truncating(), range());
         if (shift != NULL) {
           flow_graph->InsertBefore(this, shift, env(), FlowGraph::kValue);
           return shift;
@@ -1856,12 +1861,9 @@ Definition* BinaryIntegerOpInstr::Canonicalize(FlowGraph* flow_graph) {
       if (rhs == 0) {
         return left()->definition();
       } else if (rhs == range_mask) {
-        UnaryIntegerOpInstr* bit_not =
-            UnaryIntegerOpInstr::Make(representation(),
-                                      Token::kBIT_NOT,
-                                      left()->CopyWithType(),
-                                      GetDeoptId(),
-                                      range());
+        UnaryIntegerOpInstr* bit_not = UnaryIntegerOpInstr::Make(
+            representation(), Token::kBIT_NOT, left()->CopyWithType(),
+            GetDeoptId(), range());
         if (bit_not != NULL) {
           flow_graph->InsertBefore(this, bit_not, env(), FlowGraph::kValue);
           return bit_not;
@@ -1879,12 +1881,9 @@ Definition* BinaryIntegerOpInstr::Canonicalize(FlowGraph* flow_graph) {
       if (rhs == 1) {
         return left()->definition();
       } else if (rhs == -1) {
-        UnaryIntegerOpInstr* negation =
-            UnaryIntegerOpInstr::Make(representation(),
-                                      Token::kNEGATE,
-                                      left()->CopyWithType(),
-                                      GetDeoptId(),
-                                      range());
+        UnaryIntegerOpInstr* negation = UnaryIntegerOpInstr::Make(
+            representation(), Token::kNEGATE, left()->CopyWithType(),
+            GetDeoptId(), range());
         if (negation != NULL) {
           flow_graph->InsertBefore(this, negation, env(), FlowGraph::kValue);
           return negation;
@@ -2013,9 +2012,6 @@ Definition* LoadFieldInstr::Canonicalize(FlowGraph* flow_graph) {
         IsFixedLengthArrayCid(call->Type()->ToCid())) {
       return call->ArgumentAt(1);
     }
-    if (call->is_native_list_factory()) {
-      return call->ArgumentAt(0);
-    }
   }
 
   CreateArrayInstr* create_array =
@@ -2061,14 +2057,13 @@ Definition* AssertAssignableInstr::Canonicalize(FlowGraph* flow_graph) {
 
   ConstantInstr* constant_type_args =
       instantiator_type_arguments()->definition()->AsConstant();
-  if (constant_type_args != NULL &&
-      !constant_type_args->value().IsNull() &&
+  if (constant_type_args != NULL && !constant_type_args->value().IsNull() &&
       constant_type_args->value().IsTypeArguments()) {
     const TypeArguments& instantiator_type_args =
         TypeArguments::Cast(constant_type_args->value());
     Error& bound_error = Error::Handle();
-    AbstractType& new_dst_type = AbstractType::Handle(
-        dst_type().InstantiateFrom(
+    AbstractType& new_dst_type =
+        AbstractType::Handle(dst_type().InstantiateFrom(
             instantiator_type_args, &bound_error, NULL, NULL, Heap::kOld));
     if (new_dst_type.IsMalformedOrMalbounded() || !bound_error.IsNull()) {
       return this;
@@ -2079,8 +2074,7 @@ Definition* AssertAssignableInstr::Canonicalize(FlowGraph* flow_graph) {
     new_dst_type = new_dst_type.Canonicalize();
     set_dst_type(new_dst_type);
 
-    if (new_dst_type.IsDynamicType() ||
-        new_dst_type.IsObjectType() ||
+    if (new_dst_type.IsDynamicType() || new_dst_type.IsObjectType() ||
         (FLAG_eliminate_type_checks &&
          value()->Type()->IsAssignableTo(new_dst_type))) {
       return value()->definition();
@@ -2102,8 +2096,8 @@ LocationSummary* DebugStepCheckInstr::MakeLocationSummary(Zone* zone,
                                                           bool opt) const {
   const intptr_t kNumInputs = 0;
   const intptr_t kNumTemps = 0;
-  LocationSummary* locs = new(zone) LocationSummary(
-      zone, kNumInputs, kNumTemps, LocationSummary::kCall);
+  LocationSummary* locs = new (zone)
+      LocationSummary(zone, kNumInputs, kNumTemps, LocationSummary::kCall);
   return locs;
 }
 
@@ -2184,10 +2178,7 @@ Definition* BoxInt64Instr::Canonicalize(FlowGraph* flow_graph) {
     }
 
     if (replacement != this) {
-      flow_graph->InsertBefore(this,
-                               replacement,
-                               NULL,
-                               FlowGraph::kValue);
+      flow_graph->InsertBefore(this, replacement, NULL, FlowGraph::kValue);
     }
 
     return replacement;
@@ -2212,7 +2203,8 @@ Definition* UnboxInstr::Canonicalize(FlowGraph* flow_graph) {
 
     const Object& val = value()->BoundConstant();
     if (val.IsSmi()) {
-      const Double& double_val = Double::ZoneHandle(flow_graph->zone(),
+      const Double& double_val = Double::ZoneHandle(
+          flow_graph->zone(),
           Double::NewCanonical(Smi::Cast(val).AsDoubleValue()));
       uc = new UnboxedConstantInstr(double_val, kUnboxedDouble);
     } else if (val.IsDouble()) {
@@ -2241,11 +2233,10 @@ Definition* UnboxIntegerInstr::Canonicalize(FlowGraph* flow_graph) {
       return box_defn->value()->definition();
     } else {
       UnboxedIntConverterInstr* converter = new UnboxedIntConverterInstr(
-          from_representation,
-          representation(),
+          from_representation, representation(),
           box_defn->value()->CopyWithType(),
-          (representation() == kUnboxedInt32) ?
-              GetDeoptId() : Thread::kNoDeoptId);
+          (representation() == kUnboxedInt32) ? GetDeoptId()
+                                              : Thread::kNoDeoptId);
       // TODO(vegorov): marking resulting converter as truncating when
       // unboxing can't deoptimize is a workaround for the missing
       // deoptimization environment when we insert converter after
@@ -2274,8 +2265,7 @@ Definition* UnboxInt32Instr::Canonicalize(FlowGraph* flow_graph) {
   if ((c != NULL) && c->value().IsSmi()) {
     if (!is_truncating() && (kSmiBits > 32)) {
       // Check that constant fits into 32-bit integer.
-      const int64_t value =
-          static_cast<int64_t>(Smi::Cast(c->value()).Value());
+      const int64_t value = static_cast<int64_t>(Smi::Cast(c->value()).Value());
       if (!Utils::IsInt(32, value)) {
         return this;
       }
@@ -2305,9 +2295,7 @@ Definition* UnboxedIntConverterInstr::Canonicalize(FlowGraph* flow_graph) {
     }
 
     UnboxedIntConverterInstr* converter = new UnboxedIntConverterInstr(
-        box_defn->from(),
-        representation(),
-        box_defn->value()->CopyWithType(),
+        box_defn->from(), representation(), box_defn->value()->CopyWithType(),
         (to() == kUnboxedInt32) ? GetDeoptId() : Thread::kNoDeoptId);
     if ((representation() == kUnboxedInt32) && is_truncating()) {
       converter->mark_truncating();
@@ -2317,22 +2305,16 @@ Definition* UnboxedIntConverterInstr::Canonicalize(FlowGraph* flow_graph) {
   }
 
   UnboxInt64Instr* unbox_defn = value()->definition()->AsUnboxInt64();
-  if (unbox_defn != NULL &&
-      (from() == kUnboxedMint) &&
-      (to() == kUnboxedInt32) &&
-      unbox_defn->HasOnlyInputUse(value())) {
+  if (unbox_defn != NULL && (from() == kUnboxedMint) &&
+      (to() == kUnboxedInt32) && unbox_defn->HasOnlyInputUse(value())) {
     // TODO(vegorov): there is a duplication of code between UnboxedIntCoverter
     // and code path that unboxes Mint into Int32. We should just schedule
     // these instructions close to each other instead of fusing them.
     Definition* replacement =
         new UnboxInt32Instr(is_truncating() ? UnboxInt32Instr::kTruncate
                                             : UnboxInt32Instr::kNoTruncation,
-                            unbox_defn->value()->CopyWithType(),
-                            GetDeoptId());
-    flow_graph->InsertBefore(this,
-                             replacement,
-                             env(),
-                             FlowGraph::kValue);
+                            unbox_defn->value()->CopyWithType(), GetDeoptId());
+    flow_graph->InsertBefore(this, replacement, env(), FlowGraph::kValue);
     return replacement;
   }
 
@@ -2342,9 +2324,8 @@ Definition* UnboxedIntConverterInstr::Canonicalize(FlowGraph* flow_graph) {
 
 Definition* BooleanNegateInstr::Canonicalize(FlowGraph* flow_graph) {
   Definition* defn = value()->definition();
-  if (defn->IsComparison() && defn->HasOnlyUse(value())) {
-    // Comparisons always have a bool result.
-    ASSERT(value()->definition()->Type()->ToCid() == kBoolCid);
+  if (defn->IsComparison() && defn->HasOnlyUse(value()) &&
+      defn->Type()->ToCid() == kBoolCid) {
     defn->AsComparison()->NegateComparison();
     return defn;
   }
@@ -2353,40 +2334,39 @@ Definition* BooleanNegateInstr::Canonicalize(FlowGraph* flow_graph) {
 
 
 static bool MayBeBoxableNumber(intptr_t cid) {
-  return (cid == kDynamicCid) ||
-         (cid == kMintCid) ||
-         (cid == kBigintCid) ||
+  return (cid == kDynamicCid) || (cid == kMintCid) || (cid == kBigintCid) ||
          (cid == kDoubleCid);
 }
 
 
 static bool MaybeNumber(CompileType* type) {
-  ASSERT(Type::Handle(Type::Number()).IsMoreSpecificThan(
-             Type::Handle(Type::Number()), NULL, NULL, Heap::kOld));
-  return type->ToAbstractType()->IsDynamicType()
-      || type->ToAbstractType()->IsObjectType()
-      || type->ToAbstractType()->IsTypeParameter()
-      || type->IsMoreSpecificThan(Type::Handle(Type::Number()));
+  ASSERT(Type::Handle(Type::Number())
+             .IsMoreSpecificThan(Type::Handle(Type::Number()), NULL, NULL,
+                                 Heap::kOld));
+  return type->ToAbstractType()->IsDynamicType() ||
+         type->ToAbstractType()->IsObjectType() ||
+         type->ToAbstractType()->IsTypeParameter() ||
+         type->IsMoreSpecificThan(Type::Handle(Type::Number()));
 }
 
 
 // Returns a replacement for a strict comparison and signals if the result has
 // to be negated.
 static Definition* CanonicalizeStrictCompare(StrictCompareInstr* compare,
-                                             bool* negated) {
+                                             bool* negated,
+                                             bool is_branch) {
   // Use propagated cid and type information to eliminate number checks.
   // If one of the inputs is not a boxable number (Mint, Double, Bigint), or
   // is not a subtype of num, no need for number checks.
   if (compare->needs_number_check()) {
     if (!MayBeBoxableNumber(compare->left()->Type()->ToCid()) ||
-        !MayBeBoxableNumber(compare->right()->Type()->ToCid()))  {
+        !MayBeBoxableNumber(compare->right()->Type()->ToCid())) {
       compare->set_needs_number_check(false);
     } else if (!MaybeNumber(compare->left()->Type()) ||
                !MaybeNumber(compare->right()->Type())) {
       compare->set_needs_number_check(false);
     }
   }
-
   *negated = false;
   PassiveObject& constant = PassiveObject::Handle();
   Value* other = NULL;
@@ -2400,34 +2380,29 @@ static Definition* CanonicalizeStrictCompare(StrictCompareInstr* compare,
     return compare;
   }
 
+  const bool can_merge = is_branch || (other->Type()->ToCid() == kBoolCid);
   Definition* other_defn = other->definition();
   Token::Kind kind = compare->kind();
   // Handle e === true.
-  if ((kind == Token::kEQ_STRICT) &&
-      (constant.raw() == Bool::True().raw()) &&
-      (other->Type()->ToCid() == kBoolCid)) {
+  if ((kind == Token::kEQ_STRICT) && (constant.raw() == Bool::True().raw()) &&
+      can_merge) {
     return other_defn;
   }
   // Handle e !== false.
-  if ((kind == Token::kNE_STRICT) &&
-      (constant.raw() == Bool::False().raw()) &&
-      (other->Type()->ToCid() == kBoolCid)) {
+  if ((kind == Token::kNE_STRICT) && (constant.raw() == Bool::False().raw()) &&
+      can_merge) {
     return other_defn;
   }
   // Handle e !== true.
-  if ((kind == Token::kNE_STRICT) &&
-      (constant.raw() == Bool::True().raw()) &&
-      other_defn->IsComparison() &&
-      (other->Type()->ToCid() == kBoolCid) &&
+  if ((kind == Token::kNE_STRICT) && (constant.raw() == Bool::True().raw()) &&
+      other_defn->IsComparison() && can_merge &&
       other_defn->HasOnlyUse(other)) {
     *negated = true;
     return other_defn;
   }
   // Handle e === false.
-  if ((kind == Token::kEQ_STRICT) &&
-      (constant.raw() == Bool::False().raw()) &&
-      other_defn->IsComparison() &&
-      (other->Type()->ToCid() == kBoolCid) &&
+  if ((kind == Token::kEQ_STRICT) && (constant.raw() == Bool::False().raw()) &&
+      other_defn->IsComparison() && can_merge &&
       other_defn->HasOnlyUse(other)) {
     *negated = true;
     return other_defn;
@@ -2437,9 +2412,8 @@ static Definition* CanonicalizeStrictCompare(StrictCompareInstr* compare,
 
 
 static bool BindsToGivenConstant(Value* v, intptr_t expected) {
-  return v->BindsToConstant() &&
-      v->BoundConstant().IsSmi() &&
-      (Smi::Cast(v->BoundConstant()).Value() == expected);
+  return v->BindsToConstant() && v->BoundConstant().IsSmi() &&
+         (Smi::Cast(v->BoundConstant()).Value() == expected);
 }
 
 
@@ -2456,8 +2430,7 @@ static bool RecognizeTestPattern(Value* left, Value* right, bool* negate) {
 
 
   BinarySmiOpInstr* mask_op = left->definition()->AsBinarySmiOp();
-  if ((mask_op == NULL) ||
-      (mask_op->op_kind() != Token::kBIT_AND) ||
+  if ((mask_op == NULL) || (mask_op->op_kind() != Token::kBIT_AND) ||
       !mask_op->HasOnlyUse(left)) {
     return false;
   }
@@ -2486,14 +2459,13 @@ Instruction* BranchInstr::Canonicalize(FlowGraph* flow_graph) {
   // Only handle strict-compares.
   if (comparison()->IsStrictCompare()) {
     bool negated = false;
-    Definition* replacement =
-        CanonicalizeStrictCompare(comparison()->AsStrictCompare(), &negated);
+    Definition* replacement = CanonicalizeStrictCompare(
+        comparison()->AsStrictCompare(), &negated, /* is_branch = */ true);
     if (replacement == comparison()) {
       return this;
     }
     ComparisonInstr* comp = replacement->AsComparison();
-    if ((comp == NULL) ||
-        comp->CanDeoptimize() ||
+    if ((comp == NULL) || comp->CanDeoptimize() ||
         comp->HasUnmatchedInputRepresentations()) {
       return this;
     }
@@ -2526,12 +2498,10 @@ Instruction* BranchInstr::Canonicalize(FlowGraph* flow_graph) {
              comparison()->operation_cid() == kSmiCid) {
     BinarySmiOpInstr* bit_and = NULL;
     bool negate = false;
-    if (RecognizeTestPattern(comparison()->left(),
-                             comparison()->right(),
+    if (RecognizeTestPattern(comparison()->left(), comparison()->right(),
                              &negate)) {
       bit_and = comparison()->left()->definition()->AsBinarySmiOp();
-    } else if (RecognizeTestPattern(comparison()->right(),
-                                    comparison()->left(),
+    } else if (RecognizeTestPattern(comparison()->right(), comparison()->left(),
                                     &negate)) {
       bit_and = comparison()->right()->definition()->AsBinarySmiOp();
     }
@@ -2543,8 +2513,7 @@ Instruction* BranchInstr::Canonicalize(FlowGraph* flow_graph) {
           comparison()->token_pos(),
           negate ? Token::NegateComparison(comparison()->kind())
                  : comparison()->kind(),
-          bit_and->left()->Copy(zone),
-          bit_and->right()->Copy(zone));
+          bit_and->left()->Copy(zone), bit_and->right()->Copy(zone));
       ASSERT(!CanDeoptimize());
       RemoveEnvironment();
       flow_graph->CopyDeoptTarget(this, bit_and);
@@ -2559,7 +2528,8 @@ Instruction* BranchInstr::Canonicalize(FlowGraph* flow_graph) {
 Definition* StrictCompareInstr::Canonicalize(FlowGraph* flow_graph) {
   if (!HasUses()) return NULL;
   bool negated = false;
-  Definition* replacement = CanonicalizeStrictCompare(this, &negated);
+  Definition* replacement = CanonicalizeStrictCompare(this, &negated,
+                                                      /* is_branch = */ false);
   if (negated && replacement->IsComparison()) {
     ASSERT(replacement != this);
     replacement->AsComparison()->NegateComparison();
@@ -2581,8 +2551,7 @@ Instruction* CheckClassInstr::Canonicalize(FlowGraph* flow_graph) {
 Instruction* CheckClassIdInstr::Canonicalize(FlowGraph* flow_graph) {
   if (value()->BindsToConstant()) {
     const Object& constant_value = value()->BoundConstant();
-    if (constant_value.IsSmi() &&
-        Smi::Cast(constant_value).Value() == cid_) {
+    if (constant_value.IsSmi() && Smi::Cast(constant_value).Value() == cid_) {
       return NULL;
     }
   }
@@ -2600,8 +2569,8 @@ Definition* TestCidsInstr::Canonicalize(FlowGraph* flow_graph) {
   for (intptr_t i = 0; i < data.length(); i += 2) {
     if (data[i] == cid) {
       return (data[i + 1] == true_result)
-          ? flow_graph->GetConstant(Bool::True())
-          : flow_graph->GetConstant(Bool::False());
+                 ? flow_graph->GetConstant(Bool::True())
+                 : flow_graph->GetConstant(Bool::False());
     }
   }
 
@@ -2652,11 +2621,7 @@ Instruction* GuardFieldLengthInstr::Canonicalize(FlowGraph* flow_graph) {
       LoadFieldInstr::IsFixedLengthArrayCid(call->Type()->ToCid())) {
     length = call->ArgumentAt(1)->AsConstant();
   }
-  if (call->is_native_list_factory()) {
-    length = call->ArgumentAt(0)->AsConstant();
-  }
-  if ((length != NULL) &&
-      length->value().IsSmi() &&
+  if ((length != NULL) && length->value().IsSmi() &&
       Smi::Cast(length->value()).Value() == expected_length) {
     return NULL;  // Expected length matched.
   }
@@ -2666,7 +2631,7 @@ Instruction* GuardFieldLengthInstr::Canonicalize(FlowGraph* flow_graph) {
 
 
 Instruction* CheckSmiInstr::Canonicalize(FlowGraph* flow_graph) {
-  return (value()->Type()->ToCid() == kSmiCid) ?  NULL : this;
+  return (value()->Type()->ToCid() == kSmiCid) ? NULL : this;
 }
 
 
@@ -2708,8 +2673,8 @@ UnboxInstr* UnboxInstr::Create(Representation to,
                                intptr_t deopt_id) {
   switch (to) {
     case kUnboxedInt32:
-      return new UnboxInt32Instr(
-          UnboxInt32Instr::kNoTruncation, value, deopt_id);
+      return new UnboxInt32Instr(UnboxInt32Instr::kNoTruncation, value,
+                                 deopt_id);
 
     case kUnboxedUint32:
       return new UnboxUint32Instr(value, deopt_id);
@@ -2772,8 +2737,7 @@ LocationSummary* JoinEntryInstr::MakeLocationSummary(Zone* zone,
 void JoinEntryInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   __ Bind(compiler->GetJumpLabel(this));
   if (!compiler->is_optimizing()) {
-    compiler->AddCurrentDescriptor(RawPcDescriptors::kDeopt,
-                                   GetDeoptId(),
+    compiler->AddCurrentDescriptor(RawPcDescriptors::kDeopt, GetDeoptId(),
                                    TokenPosition::kNoSource);
   }
   if (HasParallelMove()) {
@@ -2803,8 +2767,7 @@ void TargetEntryInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
     // The deoptimization descriptor points after the edge counter code for
     // uniformity with ARM and MIPS, where we can reuse pattern matching
     // code that matches backwards from the end of the pattern.
-    compiler->AddCurrentDescriptor(RawPcDescriptors::kDeopt,
-                                   GetDeoptId(),
+    compiler->AddCurrentDescriptor(RawPcDescriptors::kDeopt, GetDeoptId(),
                                    TokenPosition::kNoSource);
   }
   if (HasParallelMove()) {
@@ -2848,7 +2811,8 @@ void IndirectGotoInstr::ComputeOffsetTable() {
 
 
 LocationSummary* IndirectEntryInstr::MakeLocationSummary(
-    Zone* zone, bool optimizing) const {
+    Zone* zone,
+    bool optimizing) const {
   return JoinEntryInstr::MakeLocationSummary(zone, optimizing);
 }
 
@@ -2928,7 +2892,8 @@ void ConstraintInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
 
 
 LocationSummary* MaterializeObjectInstr::MakeLocationSummary(
-    Zone* zone, bool optimizing) const {
+    Zone* zone,
+    bool optimizing) const {
   UNREACHABLE();
   return NULL;
 }
@@ -2972,14 +2937,10 @@ void CurrentContextInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
 LocationSummary* DropTempsInstr::MakeLocationSummary(Zone* zone,
                                                      bool optimizing) const {
   return (InputCount() == 1)
-      ? LocationSummary::Make(zone,
-                              1,
-                              Location::SameAsFirstInput(),
-                              LocationSummary::kNoCall)
-      : LocationSummary::Make(zone,
-                              0,
-                              Location::NoLocation(),
-                              LocationSummary::kNoCall);
+             ? LocationSummary::Make(zone, 1, Location::SameAsFirstInput(),
+                                     LocationSummary::kNoCall)
+             : LocationSummary::Make(zone, 0, Location::NoLocation(),
+                                     LocationSummary::kNoCall);
 }
 
 
@@ -3009,13 +2970,11 @@ StrictCompareInstr::StrictCompareInstr(TokenPosition token_pos,
                                        Value* left,
                                        Value* right,
                                        bool needs_number_check)
-    : ComparisonInstr(token_pos,
-                      kind,
-                      left,
-                      right,
-                      Thread::Current()->GetNextDeoptId()),
+    : TemplateComparison(token_pos, kind, Thread::Current()->GetNextDeoptId()),
       needs_number_check_(needs_number_check) {
   ASSERT((kind == Token::kEQ_STRICT) || (kind == Token::kNE_STRICT));
+  SetInputAt(0, left);
+  SetInputAt(1, right);
 }
 
 
@@ -3032,10 +2991,55 @@ static const StubEntry* TwoArgsSmiOpInlineCacheEntry(Token::Kind kind) {
     return 0;
   }
   switch (kind) {
-    case Token::kADD: return StubCode::SmiAddInlineCache_entry();
-    case Token::kSUB: return StubCode::SmiSubInlineCache_entry();
-    case Token::kEQ:  return StubCode::SmiEqualInlineCache_entry();
-    default:          return NULL;
+    case Token::kADD:
+      return StubCode::SmiAddInlineCache_entry();
+    case Token::kSUB:
+      return StubCode::SmiSubInlineCache_entry();
+    case Token::kEQ:
+      return StubCode::SmiEqualInlineCache_entry();
+    default:
+      return NULL;
+  }
+}
+#else
+static void TryFastPathSmiOp(FlowGraphCompiler* compiler,
+                             ICData* call_ic_data,
+                             const String& name) {
+  if (!FLAG_two_args_smi_icd) {
+    return;
+  }
+  if (name.raw() == Symbols::Plus().raw()) {
+    if (call_ic_data->AddSmiSmiCheckForFastSmiStubs()) {
+      __ AddTOS();
+    }
+  } else if (name.raw() == Symbols::Minus().raw()) {
+    if (call_ic_data->AddSmiSmiCheckForFastSmiStubs()) {
+      __ SubTOS();
+    }
+  } else if (name.raw() == Symbols::EqualOperator().raw()) {
+    if (call_ic_data->AddSmiSmiCheckForFastSmiStubs()) {
+      __ EqualTOS();
+    }
+  } else if (name.raw() == Symbols::LAngleBracket().raw()) {
+    if (call_ic_data->AddSmiSmiCheckForFastSmiStubs()) {
+      __ LessThanTOS();
+    }
+  } else if (name.raw() == Symbols::RAngleBracket().raw()) {
+    if (call_ic_data->AddSmiSmiCheckForFastSmiStubs()) {
+      __ GreaterThanTOS();
+    }
+  } else if (name.raw() == Symbols::BitAnd().raw()) {
+    if (call_ic_data->AddSmiSmiCheckForFastSmiStubs()) {
+      __ BitAndTOS();
+    }
+  } else if (name.raw() == Symbols::BitOr().raw()) {
+    if (call_ic_data->AddSmiSmiCheckForFastSmiStubs()) {
+      __ BitOrTOS();
+    }
+  } else if (name.raw() == Symbols::Star().raw()) {
+    if (call_ic_data->AddSmiSmiCheckForFastSmiStubs()) {
+      __ MulTOS();
+    }
   }
 }
 #endif
@@ -3046,9 +3050,8 @@ void InstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   const ICData* call_ic_data = NULL;
   if (!FLAG_propagate_ic_data || !compiler->is_optimizing() ||
       (ic_data() == NULL)) {
-    const Array& arguments_descriptor =
-        Array::Handle(zone, ArgumentsDescriptor::New(ArgumentCount(),
-                                                     argument_names()));
+    const Array& arguments_descriptor = Array::Handle(
+        zone, ArgumentsDescriptor::New(ArgumentCount(), argument_names()));
     call_ic_data = compiler->GetOrAddInstanceCallICData(
         deopt_id(), function_name(), arguments_descriptor,
         checked_argument_count());
@@ -3062,22 +3065,18 @@ void InstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
     if (ic_data()->NumberOfUsedChecks() > 0) {
       const ICData& unary_ic_data =
           ICData::ZoneHandle(zone, ic_data()->AsUnaryClassChecks());
-      compiler->GenerateInstanceCall(deopt_id(),
-                                     token_pos(),
-                                     ArgumentCount(),
-                                     locs(),
-                                     unary_ic_data);
+      compiler->GenerateInstanceCall(deopt_id(), token_pos(), ArgumentCount(),
+                                     locs(), unary_ic_data);
     } else {
       // Call was not visited yet, use original ICData in order to populate it.
-      compiler->GenerateInstanceCall(deopt_id(),
-                                     token_pos(),
-                                     ArgumentCount(),
-                                     locs(),
-                                     *call_ic_data);
+      compiler->GenerateInstanceCall(deopt_id(), token_pos(), ArgumentCount(),
+                                     locs(), *call_ic_data);
     }
   } else {
     // Unoptimized code.
     ASSERT(!HasICData());
+    compiler->AddCurrentDescriptor(RawPcDescriptors::kRewind, deopt_id(),
+                                   token_pos());
     bool is_smi_two_args_op = false;
     const StubEntry* stub_entry = TwoArgsSmiOpInlineCacheEntry(token_kind());
     if (stub_entry != NULL) {
@@ -3089,49 +3088,23 @@ void InstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
       ASSERT(ArgumentCount() == 2);
       compiler->EmitInstanceCall(*stub_entry, *call_ic_data, ArgumentCount(),
                                  deopt_id(), token_pos(), locs());
-    } else if (FLAG_ic_range_profiling &&
-               (Token::IsBinaryArithmeticOperator(token_kind()) ||
-                Token::IsUnaryArithmeticOperator(token_kind()))) {
-      ASSERT(Token::IsUnaryArithmeticOperator(token_kind()) ==
-                 (ArgumentCount() == 1));
-      ASSERT(Token::IsBinaryArithmeticOperator(token_kind()) ==
-                 (ArgumentCount() == 2));
-      const StubEntry* stub_entry = (ArgumentCount() == 1)
-          ? StubCode::UnaryRangeCollectingInlineCache_entry()
-          : StubCode::BinaryRangeCollectingInlineCache_entry();
-      compiler->EmitInstanceCall(*stub_entry, *call_ic_data, ArgumentCount(),
-                                 deopt_id(), token_pos(), locs());
     } else {
-      compiler->GenerateInstanceCall(deopt_id(),
-                                     token_pos(),
-                                     ArgumentCount(),
-                                     locs(),
-                                     *call_ic_data);
+      compiler->GenerateInstanceCall(deopt_id(), token_pos(), ArgumentCount(),
+                                     locs(), *call_ic_data);
     }
   }
 #else
-  call_ic_data = &ICData::ZoneHandle(call_ic_data->Original());
+  ICData* original_ic_data = &ICData::ZoneHandle(call_ic_data->Original());
 
   // Emit smi fast path instruction. If fast-path succeeds it skips the next
-  // instruction otherwise it falls through.
-  if (function_name().raw() == Symbols::Plus().raw()) {
-    __ AddTOS();
-  } else if (function_name().raw() == Symbols::EqualOperator().raw()) {
-    __ EqualTOS();
-  } else if (function_name().raw() == Symbols::LAngleBracket().raw()) {
-    __ LessThanTOS();
-  } else if (function_name().raw() == Symbols::RAngleBracket().raw()) {
-    __ GreaterThanTOS();
-  } else if (function_name().raw() == Symbols::BitAnd().raw()) {
-    __ BitAndTOS();
-  } else if (function_name().raw() == Symbols::BitOr().raw()) {
-    __ BitOrTOS();
-  } else if (function_name().raw() == Symbols::Star().raw()) {
-    __ MulTOS();
+  // instruction otherwise it falls through. Only attempt in unoptimized code
+  // because TryFastPathSmiOp will update original_ic_data.
+  if (!compiler->is_optimizing()) {
+    TryFastPathSmiOp(compiler, original_ic_data, function_name());
   }
 
-  const intptr_t call_ic_data_kidx = __ AddConstant(*call_ic_data);
-  switch (call_ic_data->NumArgsTested()) {
+  const intptr_t call_ic_data_kidx = __ AddConstant(*original_ic_data);
+  switch (original_ic_data->NumArgsTested()) {
     case 1:
       if (compiler->is_optimizing()) {
         __ InstanceCall1Opt(ArgumentCount(), call_ic_data_kidx);
@@ -3150,8 +3123,7 @@ void InstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
       UNIMPLEMENTED();
       break;
   }
-  compiler->AddCurrentDescriptor(RawPcDescriptors::kIcCall,
-                                 deopt_id(),
+  compiler->AddCurrentDescriptor(RawPcDescriptors::kIcCall, deopt_id(),
                                  token_pos());
   compiler->RecordAfterCall(this);
 
@@ -3163,22 +3135,11 @@ void InstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
 
 
 bool PolymorphicInstanceCallInstr::HasSingleRecognizedTarget() const {
+  if (FLAG_precompiled_mode && with_checks()) return false;
+
   return ic_data().HasOneTarget() &&
-      (MethodRecognizer::RecognizeKind(
-          Function::Handle(ic_data().GetTargetAt(0))) !=
-       MethodRecognizer::kUnknown);
-}
-
-
-bool PolymorphicInstanceCallInstr::HasOnlyDispatcherTargets() const {
-  for (intptr_t i = 0; i < ic_data().NumberOfChecks(); ++i) {
-    const Function& target = Function::Handle(ic_data().GetTargetAt(i));
-    if (!target.IsNoSuchMethodDispatcher() &&
-        !target.IsInvokeFieldDispatcher()) {
-      return false;
-    }
-  }
-  return true;
+         (MethodRecognizer::RecognizeKind(Function::Handle(
+              ic_data().GetTargetAt(0))) != MethodRecognizer::kUnknown);
 }
 
 
@@ -3190,25 +3151,80 @@ void PolymorphicInstanceCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
   if (!with_checks()) {
     ASSERT(ic_data().HasOneTarget());
     const Function& target = Function::ZoneHandle(ic_data().GetTargetAt(0));
-    compiler->GenerateStaticCall(deopt_id(),
-                                 instance_call()->token_pos(),
-                                 target,
-                                 instance_call()->ArgumentCount(),
-                                 instance_call()->argument_names(),
-                                 locs(),
+    compiler->GenerateStaticCall(deopt_id(), instance_call()->token_pos(),
+                                 target, instance_call()->ArgumentCount(),
+                                 instance_call()->argument_names(), locs(),
                                  ICData::Handle());
     return;
   }
 
-  compiler->EmitPolymorphicInstanceCall(ic_data(),
-                                        instance_call()->ArgumentCount(),
-                                        instance_call()->argument_names(),
-                                        deopt_id(),
-                                        instance_call()->token_pos(),
-                                        locs(),
-                                        complete());
+  compiler->EmitPolymorphicInstanceCall(
+      ic_data(), instance_call()->ArgumentCount(),
+      instance_call()->argument_names(), deopt_id(),
+      instance_call()->token_pos(), locs(), complete());
 }
 #endif
+
+
+RawType* PolymorphicInstanceCallInstr::ComputeRuntimeType(
+    const ICData& ic_data) {
+  bool is_string = true;
+  bool is_integer = true;
+  bool is_double = true;
+
+  const intptr_t num_checks = ic_data.NumberOfChecks();
+  for (intptr_t i = 0; i < num_checks; i++) {
+    const intptr_t cid = ic_data.GetReceiverClassIdAt(i);
+    is_string = is_string && RawObject::IsStringClassId(cid);
+    is_integer = is_integer && RawObject::IsIntegerClassId(cid);
+    is_double = is_double && (cid == kDoubleCid);
+  }
+
+  if (is_string) {
+    return Type::StringType();
+  } else if (is_integer) {
+    return Type::IntType();
+  } else if (is_double) {
+    return Type::Double();
+  }
+
+  return Type::null();
+}
+
+
+Definition* PolymorphicInstanceCallInstr::Canonicalize(FlowGraph* flow_graph) {
+  if (!HasSingleRecognizedTarget() || with_checks()) {
+    return this;
+  }
+
+  const Function& target = Function::Handle(ic_data().GetTargetAt(0));
+  if (target.recognized_kind() == MethodRecognizer::kObjectRuntimeType) {
+    const AbstractType& type =
+        AbstractType::Handle(ComputeRuntimeType(ic_data()));
+    if (!type.IsNull()) {
+      return flow_graph->GetConstant(type);
+    }
+  }
+
+  return this;
+}
+
+
+Definition* StaticCallInstr::Canonicalize(FlowGraph* flow_graph) {
+  if (!FLAG_precompiled_mode) {
+    return this;
+  }
+
+  if (function().recognized_kind() == MethodRecognizer::kObjectRuntimeType) {
+    if (input_use_list() == NULL) {
+      // This function has only environment uses. In precompiled mode it is
+      // fine to remove it - because we will never deoptimize.
+      return flow_graph->constant_dead();
+    }
+  }
+
+  return this;
+}
 
 
 LocationSummary* StaticCallInstr::MakeLocationSummary(Zone* zone,
@@ -3218,13 +3234,11 @@ LocationSummary* StaticCallInstr::MakeLocationSummary(Zone* zone,
 
 
 void StaticCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
-#if !defined(TARGET_ARCH_DBC)
   const ICData* call_ic_data = NULL;
   if (!FLAG_propagate_ic_data || !compiler->is_optimizing() ||
       (ic_data() == NULL)) {
-    const Array& arguments_descriptor =
-        Array::Handle(ArgumentsDescriptor::New(ArgumentCount(),
-                                               argument_names()));
+    const Array& arguments_descriptor = Array::Handle(
+        ArgumentsDescriptor::New(ArgumentCount(), argument_names()));
     MethodRecognizer::Kind recognized_kind =
         MethodRecognizer::RecognizeKind(function());
     int num_args_checked = 0;
@@ -3237,68 +3251,65 @@ void StaticCallInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
       default:
         break;
     }
-    call_ic_data = compiler->GetOrAddStaticCallICData(deopt_id(),
-                                                      function(),
-                                                      arguments_descriptor,
-                                                      num_args_checked);
+    call_ic_data = compiler->GetOrAddStaticCallICData(
+        deopt_id(), function(), arguments_descriptor, num_args_checked);
   } else {
     call_ic_data = &ICData::ZoneHandle(ic_data()->raw());
   }
-  compiler->GenerateStaticCall(deopt_id(),
-                               token_pos(),
-                               function(),
-                               ArgumentCount(),
-                               argument_names(),
-                               locs(),
+
+#if !defined(TARGET_ARCH_DBC)
+  compiler->GenerateStaticCall(deopt_id(), token_pos(), function(),
+                               ArgumentCount(), argument_names(), locs(),
                                *call_ic_data);
 #else
   const Array& arguments_descriptor =
-      (ic_data() == NULL) ?
-        Array::Handle(ArgumentsDescriptor::New(ArgumentCount(),
-                                               argument_names())) :
-        Array::Handle(ic_data()->arguments_descriptor());
+      (ic_data() == NULL) ? Array::Handle(ArgumentsDescriptor::New(
+                                ArgumentCount(), argument_names()))
+                          : Array::Handle(ic_data()->arguments_descriptor());
   const intptr_t argdesc_kidx = __ AddConstant(arguments_descriptor);
 
-  __ PushConstant(function());
-  __ StaticCall(ArgumentCount(), argdesc_kidx);
-  compiler->AddCurrentDescriptor(RawPcDescriptors::kUnoptStaticCall,
-                                 deopt_id(),
-                                 token_pos());
-
-  compiler->RecordAfterCall(this);
-
   if (compiler->is_optimizing()) {
+    __ PushConstant(function());
+    __ StaticCall(ArgumentCount(), argdesc_kidx);
+    compiler->AddCurrentDescriptor(RawPcDescriptors::kOther, deopt_id(),
+                                   token_pos());
+    compiler->RecordAfterCall(this);
     __ PopLocal(locs()->out(0).reg());
+  } else {
+    const intptr_t ic_data_kidx = __ AddConstant(*call_ic_data);
+    __ PushConstant(ic_data_kidx);
+    __ IndirectStaticCall(ArgumentCount(), argdesc_kidx);
+    compiler->AddCurrentDescriptor(RawPcDescriptors::kUnoptStaticCall,
+                                   deopt_id(), token_pos());
+    compiler->RecordAfterCall(this);
   }
 #endif  // !defined(TARGET_ARCH_DBC)
 }
 
 
 void AssertAssignableInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
-  compiler->GenerateAssertAssignable(token_pos(),
-                                     deopt_id(),
-                                     dst_type(),
-                                     dst_name(),
-                                     locs());
+  compiler->GenerateAssertAssignable(token_pos(), deopt_id(), dst_type(),
+                                     dst_name(), locs());
 
-  // DBC does not use LocationSummaries in the same way as other architectures.
+// DBC does not use LocationSummaries in the same way as other architectures.
 #if !defined(TARGET_ARCH_DBC)
   ASSERT(locs()->in(0).reg() == locs()->out(0).reg());
-#else
-  ASSERT(!compiler->is_optimizing() ||
-         (locs()->in(0).reg() == locs()->out(0).reg()));
 #endif  // !defined(TARGET_ARCH_DBC)
 }
 
 
 LocationSummary* DeoptimizeInstr::MakeLocationSummary(Zone* zone,
                                                       bool opt) const {
-  return new(zone) LocationSummary(zone, 0, 0, LocationSummary::kNoCall);
+  return new (zone) LocationSummary(zone, 0, 0, LocationSummary::kNoCall);
 }
 
 
 void DeoptimizeInstr::EmitNativeCode(FlowGraphCompiler* compiler) {
+#if !defined(TARGET_ARCH_DBC)
   __ Jump(compiler->AddDeoptStub(deopt_id(), deopt_reason_));
+#else
+  compiler->EmitDeopt(deopt_id(), deopt_reason_);
+#endif
 }
 
 
@@ -3307,13 +3318,10 @@ Environment* Environment::From(Zone* zone,
                                intptr_t fixed_parameter_count,
                                const ParsedFunction& parsed_function) {
   Environment* env =
-      new(zone) Environment(definitions.length(),
-                               fixed_parameter_count,
-                               Thread::kNoDeoptId,
-                               parsed_function,
-                               NULL);
+      new (zone) Environment(definitions.length(), fixed_parameter_count,
+                             Thread::kNoDeoptId, parsed_function, NULL);
   for (intptr_t i = 0; i < definitions.length(); ++i) {
-    env->values_.Add(new(zone) Value(definitions[i]));
+    env->values_.Add(new (zone) Value(definitions[i]));
   }
   return env;
 }
@@ -3321,12 +3329,9 @@ Environment* Environment::From(Zone* zone,
 
 Environment* Environment::DeepCopy(Zone* zone, intptr_t length) const {
   ASSERT(length <= values_.length());
-  Environment* copy = new(zone) Environment(
-      length,
-      fixed_parameter_count_,
-      deopt_id_,
-      parsed_function_,
-      (outer_ == NULL) ? NULL : outer_->DeepCopy(zone));
+  Environment* copy = new (zone)
+      Environment(length, fixed_parameter_count_, deopt_id_, parsed_function_,
+                  (outer_ == NULL) ? NULL : outer_->DeepCopy(zone));
   if (locations_ != NULL) {
     Location* new_locations = zone->Alloc<Location>(length);
     copy->set_locations(new_locations);
@@ -3367,9 +3372,9 @@ void Environment::DeepCopyAfterTo(Zone* zone,
 
   Environment* copy = DeepCopy(zone, values_.length() - argc);
   for (intptr_t i = 0; i < argc; i++) {
-    copy->values_.Add(new(zone) Value(dead));
+    copy->values_.Add(new (zone) Value(dead));
   }
-  copy->values_.Add(new(zone) Value(result));
+  copy->values_.Add(new (zone) Value(result));
 
   instr->SetEnvironment(copy);
   for (Environment::DeepIterator it(copy); !it.Done(); it.Advance()) {
@@ -3398,37 +3403,32 @@ void Environment::DeepCopyToOuter(Zone* zone, Instruction* instr) const {
 }
 
 
+ComparisonInstr* DoubleTestOpInstr::CopyWithNewOperands(Value* new_left,
+                                                        Value* new_right) {
+  UNREACHABLE();
+  return NULL;
+}
+
+
 ComparisonInstr* EqualityCompareInstr::CopyWithNewOperands(Value* new_left,
                                                            Value* new_right) {
-  return new EqualityCompareInstr(token_pos(),
-                                  kind(),
-                                  new_left,
-                                  new_right,
-                                  operation_cid(),
-                                  deopt_id());
+  return new EqualityCompareInstr(token_pos(), kind(), new_left, new_right,
+                                  operation_cid(), deopt_id());
 }
 
 
 ComparisonInstr* RelationalOpInstr::CopyWithNewOperands(Value* new_left,
                                                         Value* new_right) {
-  return new RelationalOpInstr(token_pos(),
-                               kind(),
-                               new_left,
-                               new_right,
-                               operation_cid(),
-                               deopt_id());
+  return new RelationalOpInstr(token_pos(), kind(), new_left, new_right,
+                               operation_cid(), deopt_id());
 }
 
 
 ComparisonInstr* StrictCompareInstr::CopyWithNewOperands(Value* new_left,
                                                          Value* new_right) {
-  return new StrictCompareInstr(token_pos(),
-                                kind(),
-                                new_left,
-                                new_right,
+  return new StrictCompareInstr(token_pos(), kind(), new_left, new_right,
                                 needs_number_check());
 }
-
 
 
 ComparisonInstr* TestSmiInstr::CopyWithNewOperands(Value* new_left,
@@ -3437,13 +3437,9 @@ ComparisonInstr* TestSmiInstr::CopyWithNewOperands(Value* new_left,
 }
 
 
-
 ComparisonInstr* TestCidsInstr::CopyWithNewOperands(Value* new_left,
                                                     Value* new_right) {
-  return new TestCidsInstr(token_pos(),
-                           kind(),
-                           new_left,
-                           cid_results(),
+  return new TestCidsInstr(token_pos(), kind(), new_left, cid_results(),
                            deopt_id());
 }
 
@@ -3480,8 +3476,8 @@ bool IfThenElseInstr::Supports(ComparisonInstr* comparison,
   if (comparison->IsStrictCompare()) {
     // Strict comparison with number checks calls a stub and is not supported
     // by if-conversion.
-    return is_smi_result
-        && !comparison->AsStrictCompare()->needs_number_check();
+    return is_smi_result &&
+           !comparison->AsStrictCompare()->needs_number_check();
   }
   if (comparison->operation_cid() != kSmiCid) {
     // Non-smi comparisons are not supported by if-conversion.
@@ -3511,8 +3507,9 @@ bool CheckArrayBoundInstr::IsFixedLengthArrayType(intptr_t cid) {
 
 
 Instruction* CheckArrayBoundInstr::Canonicalize(FlowGraph* flow_graph) {
-  return IsRedundant(RangeBoundary::FromDefinition(length()->definition())) ?
-      NULL : this;
+  return IsRedundant(RangeBoundary::FromDefinition(length()->definition()))
+             ? NULL
+             : this;
 }
 
 
@@ -3546,12 +3543,9 @@ const Function& StringInterpolateInstr::CallFunction() const {
     const Class& cls =
         Class::Handle(Library::LookupCoreClass(Symbols::StringBase()));
     ASSERT(!cls.IsNull());
-    function_ =
-        Resolver::ResolveStatic(
-            cls,
-            Library::PrivateCoreLibName(Symbols::Interpolate()),
-            kNumberOfArguments,
-            kNoArgumentNames);
+    function_ = Resolver::ResolveStatic(
+        cls, Library::PrivateCoreLibName(Symbols::Interpolate()),
+        kNumberOfArguments, kNoArgumentNames);
   }
   ASSERT(!function_.IsNull());
   return function_;
@@ -3590,8 +3584,7 @@ Definition* StringInterpolateInstr::Canonicalize(FlowGraph* flow_graph) {
     pieces.Add(Object::null_string());
   }
 
-  for (Value::Iterator it(create_array->input_use_list());
-       !it.Done();
+  for (Value::Iterator it(create_array->input_use_list()); !it.Done();
        it.Advance()) {
     Instruction* curr = it.Current()->instruction();
     if (curr == this) continue;
@@ -3613,10 +3606,10 @@ Definition* StringInterpolateInstr::Canonicalize(FlowGraph* flow_graph) {
       } else if (obj.IsSmi()) {
         const char* cstr = obj.ToCString();
         pieces.SetAt(store_index,
-            String::Handle(zone, String::New(cstr, Heap::kOld)));
+                     String::Handle(zone, String::New(cstr, Heap::kOld)));
       } else if (obj.IsBool()) {
-        pieces.SetAt(store_index,
-            Bool::Cast(obj).value() ? Symbols::True() : Symbols::False());
+        pieces.SetAt(store_index, Bool::Cast(obj).value() ? Symbols::True()
+                                                          : Symbols::False());
       } else if (obj.IsNull()) {
         pieces.SetAt(store_index, Symbols::Null());
       } else {
@@ -3627,9 +3620,73 @@ Definition* StringInterpolateInstr::Canonicalize(FlowGraph* flow_graph) {
     }
   }
 
-  const String& concatenated = String::ZoneHandle(zone,
-      Symbols::FromConcatAll(thread, pieces));
+  const String& concatenated =
+      String::ZoneHandle(zone, Symbols::FromConcatAll(thread, pieces));
   return flow_graph->GetConstant(concatenated);
+}
+
+
+static AlignmentType StrengthenAlignment(intptr_t cid,
+                                         AlignmentType alignment) {
+  switch (cid) {
+    case kTypedDataInt8ArrayCid:
+    case kTypedDataUint8ArrayCid:
+    case kTypedDataUint8ClampedArrayCid:
+    case kExternalTypedDataUint8ArrayCid:
+    case kExternalTypedDataUint8ClampedArrayCid:
+    case kOneByteStringCid:
+    case kExternalOneByteStringCid:
+      // Don't need to worry about alignment for accessing bytes.
+      return kAlignedAccess;
+    case kTypedDataFloat32ArrayCid:
+    case kTypedDataFloat64ArrayCid:
+    case kTypedDataFloat64x2ArrayCid:
+    case kTypedDataInt32x4ArrayCid:
+    case kTypedDataFloat32x4ArrayCid:
+      // TODO(rmacnak): Investigate alignment requirements of floating point
+      // loads.
+      return kAlignedAccess;
+  }
+
+  return alignment;
+}
+
+
+LoadIndexedInstr::LoadIndexedInstr(Value* array,
+                                   Value* index,
+                                   intptr_t index_scale,
+                                   intptr_t class_id,
+                                   AlignmentType alignment,
+                                   intptr_t deopt_id,
+                                   TokenPosition token_pos)
+    : TemplateDefinition(deopt_id),
+      index_scale_(index_scale),
+      class_id_(class_id),
+      alignment_(StrengthenAlignment(class_id, alignment)),
+      token_pos_(token_pos) {
+  SetInputAt(0, array);
+  SetInputAt(1, index);
+}
+
+
+StoreIndexedInstr::StoreIndexedInstr(Value* array,
+                                     Value* index,
+                                     Value* value,
+                                     StoreBarrierType emit_store_barrier,
+                                     intptr_t index_scale,
+                                     intptr_t class_id,
+                                     AlignmentType alignment,
+                                     intptr_t deopt_id,
+                                     TokenPosition token_pos)
+    : TemplateDefinition(deopt_id),
+      emit_store_barrier_(emit_store_barrier),
+      index_scale_(index_scale),
+      class_id_(class_id),
+      alignment_(StrengthenAlignment(class_id, alignment)),
+      token_pos_(token_pos) {
+  SetInputAt(kArrayPos, array);
+  SetInputAt(kIndexPos, index);
+  SetInputAt(kValuePos, value);
 }
 
 
@@ -3679,60 +3736,88 @@ intptr_t InvokeMathCFunctionInstr::ArgumentCountFor(
 }
 
 // Use expected function signatures to help MSVC compiler resolve overloading.
-typedef double (*UnaryMathCFunction) (double x);
-typedef double (*BinaryMathCFunction) (double x, double y);
+typedef double (*UnaryMathCFunction)(double x);
+typedef double (*BinaryMathCFunction)(double x, double y);
 
-DEFINE_RAW_LEAF_RUNTIME_ENTRY(LibcPow, 2, true /* is_float */,
-    reinterpret_cast<RuntimeFunction>(
-        static_cast<BinaryMathCFunction>(&pow)));
+DEFINE_RAW_LEAF_RUNTIME_ENTRY(
+    LibcPow,
+    2,
+    true /* is_float */,
+    reinterpret_cast<RuntimeFunction>(static_cast<BinaryMathCFunction>(&pow)));
 
-DEFINE_RAW_LEAF_RUNTIME_ENTRY(DartModulo, 2, true /* is_float */,
+DEFINE_RAW_LEAF_RUNTIME_ENTRY(
+    DartModulo,
+    2,
+    true /* is_float */,
     reinterpret_cast<RuntimeFunction>(
         static_cast<BinaryMathCFunction>(&DartModulo)));
 
-DEFINE_RAW_LEAF_RUNTIME_ENTRY(LibcAtan2, 2, true /* is_float */,
+DEFINE_RAW_LEAF_RUNTIME_ENTRY(
+    LibcAtan2,
+    2,
+    true /* is_float */,
     reinterpret_cast<RuntimeFunction>(
         static_cast<BinaryMathCFunction>(&atan2_ieee)));
 
-DEFINE_RAW_LEAF_RUNTIME_ENTRY(LibcFloor, 1, true /* is_float */,
-    reinterpret_cast<RuntimeFunction>(
-        static_cast<UnaryMathCFunction>(&floor)));
+DEFINE_RAW_LEAF_RUNTIME_ENTRY(
+    LibcFloor,
+    1,
+    true /* is_float */,
+    reinterpret_cast<RuntimeFunction>(static_cast<UnaryMathCFunction>(&floor)));
 
-DEFINE_RAW_LEAF_RUNTIME_ENTRY(LibcCeil, 1, true /* is_float */,
-    reinterpret_cast<RuntimeFunction>(
-        static_cast<UnaryMathCFunction>(&ceil)));
+DEFINE_RAW_LEAF_RUNTIME_ENTRY(
+    LibcCeil,
+    1,
+    true /* is_float */,
+    reinterpret_cast<RuntimeFunction>(static_cast<UnaryMathCFunction>(&ceil)));
 
-DEFINE_RAW_LEAF_RUNTIME_ENTRY(LibcTrunc, 1, true /* is_float */,
-    reinterpret_cast<RuntimeFunction>(
-        static_cast<UnaryMathCFunction>(&trunc)));
+DEFINE_RAW_LEAF_RUNTIME_ENTRY(
+    LibcTrunc,
+    1,
+    true /* is_float */,
+    reinterpret_cast<RuntimeFunction>(static_cast<UnaryMathCFunction>(&trunc)));
 
-DEFINE_RAW_LEAF_RUNTIME_ENTRY(LibcRound, 1, true /* is_float */,
-    reinterpret_cast<RuntimeFunction>(
-        static_cast<UnaryMathCFunction>(&round)));
+DEFINE_RAW_LEAF_RUNTIME_ENTRY(
+    LibcRound,
+    1,
+    true /* is_float */,
+    reinterpret_cast<RuntimeFunction>(static_cast<UnaryMathCFunction>(&round)));
 
-DEFINE_RAW_LEAF_RUNTIME_ENTRY(LibcCos, 1, true /* is_float */,
-    reinterpret_cast<RuntimeFunction>(
-        static_cast<UnaryMathCFunction>(&cos)));
+DEFINE_RAW_LEAF_RUNTIME_ENTRY(
+    LibcCos,
+    1,
+    true /* is_float */,
+    reinterpret_cast<RuntimeFunction>(static_cast<UnaryMathCFunction>(&cos)));
 
-DEFINE_RAW_LEAF_RUNTIME_ENTRY(LibcSin, 1, true /* is_float */,
-    reinterpret_cast<RuntimeFunction>(
-        static_cast<UnaryMathCFunction>(&sin)));
+DEFINE_RAW_LEAF_RUNTIME_ENTRY(
+    LibcSin,
+    1,
+    true /* is_float */,
+    reinterpret_cast<RuntimeFunction>(static_cast<UnaryMathCFunction>(&sin)));
 
-DEFINE_RAW_LEAF_RUNTIME_ENTRY(LibcAsin, 1, true /* is_float */,
-    reinterpret_cast<RuntimeFunction>(
-        static_cast<UnaryMathCFunction>(&asin)));
+DEFINE_RAW_LEAF_RUNTIME_ENTRY(
+    LibcAsin,
+    1,
+    true /* is_float */,
+    reinterpret_cast<RuntimeFunction>(static_cast<UnaryMathCFunction>(&asin)));
 
-DEFINE_RAW_LEAF_RUNTIME_ENTRY(LibcAcos, 1, true /* is_float */,
-    reinterpret_cast<RuntimeFunction>(
-        static_cast<UnaryMathCFunction>(&acos)));
+DEFINE_RAW_LEAF_RUNTIME_ENTRY(
+    LibcAcos,
+    1,
+    true /* is_float */,
+    reinterpret_cast<RuntimeFunction>(static_cast<UnaryMathCFunction>(&acos)));
 
-DEFINE_RAW_LEAF_RUNTIME_ENTRY(LibcTan, 1, true /* is_float */,
-    reinterpret_cast<RuntimeFunction>(
-        static_cast<UnaryMathCFunction>(&tan)));
+DEFINE_RAW_LEAF_RUNTIME_ENTRY(
+    LibcTan,
+    1,
+    true /* is_float */,
+    reinterpret_cast<RuntimeFunction>(static_cast<UnaryMathCFunction>(&tan)));
 
-DEFINE_RAW_LEAF_RUNTIME_ENTRY(LibcAtan, 1, true /* is_float */,
-    reinterpret_cast<RuntimeFunction>(
-        static_cast<UnaryMathCFunction>(&atan)));
+DEFINE_RAW_LEAF_RUNTIME_ENTRY(
+    LibcAtan,
+    1,
+    true /* is_float */,
+    reinterpret_cast<RuntimeFunction>(static_cast<UnaryMathCFunction>(&atan)));
 
 
 const RuntimeEntry& InvokeMathCFunctionInstr::TargetFunction() const {
@@ -3770,26 +3855,14 @@ const RuntimeEntry& InvokeMathCFunctionInstr::TargetFunction() const {
 }
 
 
-const RuntimeEntry& MathUnaryInstr::TargetFunction() const {
-  switch (kind()) {
-    case MathUnaryInstr::kSin:
-      return kLibcSinRuntimeEntry;
-    case MathUnaryInstr::kCos:
-      return kLibcCosRuntimeEntry;
-    default:
-      UNREACHABLE();
-  }
-  return kLibcSinRuntimeEntry;
-}
-
-
 const char* MathUnaryInstr::KindToCString(MathUnaryKind kind) {
   switch (kind) {
-    case kIllegal:       return "illegal";
-    case kSin:           return "sin";
-    case kCos:           return "cos";
-    case kSqrt:          return "sqrt";
-    case kDoubleSquare:  return "double-square";
+    case kIllegal:
+      return "illegal";
+    case kSqrt:
+      return "sqrt";
+    case kDoubleSquare:
+      return "double-square";
   }
   UNREACHABLE();
   return "";
@@ -3804,9 +3877,7 @@ const RuntimeEntry& CaseInsensitiveCompareUC16Instr::TargetFunction() const {
 MergedMathInstr::MergedMathInstr(ZoneGrowableArray<Value*>* inputs,
                                  intptr_t deopt_id,
                                  MergedMathInstr::Kind kind)
-    : PureDefinition(deopt_id),
-      inputs_(inputs),
-      kind_(kind) {
+    : PureDefinition(deopt_id), inputs_(inputs), kind_(kind) {
   ASSERT(inputs_->length() == InputCountFor(kind_));
   for (intptr_t i = 0; i < inputs_->length(); ++i) {
     ASSERT((*inputs)[i] != NULL);
@@ -3816,20 +3887,28 @@ MergedMathInstr::MergedMathInstr(ZoneGrowableArray<Value*>* inputs,
 }
 
 
-intptr_t MergedMathInstr::OutputIndexOf(intptr_t kind) {
+intptr_t MergedMathInstr::OutputIndexOf(MethodRecognizer::Kind kind) {
   switch (kind) {
-    case MathUnaryInstr::kSin: return 1;
-    case MathUnaryInstr::kCos: return 0;
-    default: UNIMPLEMENTED(); return -1;
+    case MethodRecognizer::kMathSin:
+      return 1;
+    case MethodRecognizer::kMathCos:
+      return 0;
+    default:
+      UNIMPLEMENTED();
+      return -1;
   }
 }
 
 
 intptr_t MergedMathInstr::OutputIndexOf(Token::Kind token) {
   switch (token) {
-    case Token::kTRUNCDIV: return 0;
-    case Token::kMOD: return 1;
-    default: UNIMPLEMENTED(); return -1;
+    case Token::kTRUNCDIV:
+      return 0;
+    case Token::kMOD:
+      return 1;
+    default:
+      UNIMPLEMENTED();
+      return -1;
   }
 }
 
@@ -3844,13 +3923,10 @@ void NativeCallInstr::SetupNative() {
   NativeFunction native_function = NativeEntry::ResolveNative(
       library, native_name(), num_params, &auto_setup_scope);
   if (native_function == NULL) {
-    Report::MessageF(Report::kError,
-                     Script::Handle(function().script()),
-                     function().token_pos(),
-                     Report::AtLocation,
+    Report::MessageF(Report::kError, Script::Handle(function().script()),
+                     function().token_pos(), Report::AtLocation,
                      "native function '%s' (%" Pd " arguments) cannot be found",
-                     native_name().ToCString(),
-                     function().NumParameters());
+                     native_name().ToCString(), function().NumParameters());
   }
   set_native_c_function(native_function);
   function().SetIsNativeAutoSetupScope(auto_setup_scope);

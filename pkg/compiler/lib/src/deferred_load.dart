@@ -8,8 +8,7 @@ import 'common/backend_api.dart' show Backend;
 import 'common/tasks.dart' show CompilerTask;
 import 'common.dart';
 import 'compiler.dart' show Compiler;
-import 'constants/expressions.dart'
-    show ConstantExpression, ConstantExpressionKind;
+import 'constants/expressions.dart' show ConstantExpression;
 import 'constants/values.dart'
     show
         ConstantValue,
@@ -36,8 +35,7 @@ import 'js_backend/js_backend.dart' show JavaScriptBackend;
 import 'resolution/resolution.dart' show AnalyzableElementX;
 import 'resolution/tree_elements.dart' show TreeElements;
 import 'tree/tree.dart' as ast;
-import 'tree/tree.dart' show Import, Node;
-import 'universe/use.dart' show StaticUse, TypeUse, TypeUseKind;
+import 'universe/use.dart' show StaticUse, StaticUseKind, TypeUse, TypeUseKind;
 import 'universe/world_impact.dart'
     show ImpactUseCase, WorldImpact, WorldImpactVisitorImpl;
 import 'util/setlet.dart' show Setlet;
@@ -91,10 +89,10 @@ class DeferredLoadTask extends CompilerTask {
   String get name => 'Deferred Loading';
 
   /// DeferredLibrary from dart:async
-  ClassElement get deferredLibraryClass => compiler.deferredLibraryClass;
+  ClassElement get deferredLibraryClass =>
+      compiler.commonElements.deferredLibraryClass;
 
-  /// A synthetic [Import] representing the loading of the main
-  /// program.
+  /// A synthetic import representing the loading of the main program.
   final _DeferredImport _fakeMainImport = const _DeferredImport();
 
   /// The OutputUnit that will be loaded when the program starts.
@@ -182,10 +180,20 @@ class DeferredLoadTask extends CompilerTask {
     return _elementToOutputUnit[element];
   }
 
+  /// Direct access to the output-unit to element relation used for testing.
+  OutputUnit getOutputUnitForElementForTesting(Element element) {
+    return _elementToOutputUnit[element];
+  }
+
   /// Returns the [OutputUnit] where [constant] belongs.
   OutputUnit outputUnitForConstant(ConstantValue constant) {
     if (!isProgramSplit) return mainOutputUnit;
     return _constantToOutputUnit[constant];
+  }
+
+  /// Direct access to the output-unit to constants map used for testing.
+  Map<ConstantValue, OutputUnit> get outputUnitForConstantsForTesting {
+    return _constantToOutputUnit;
   }
 
   bool isDeferred(Element element) {
@@ -214,11 +222,23 @@ class DeferredLoadTask extends CompilerTask {
     return outputUnitTo.imports.containsAll(outputUnitFrom.imports);
   }
 
+  // TODO(het): use a union-find to canonicalize output units
+  OutputUnit _getCanonicalUnit(OutputUnit outputUnit) {
+    OutputUnit representative = allOutputUnits.lookup(outputUnit);
+    if (representative == null) {
+      representative = outputUnit;
+      allOutputUnits.add(representative);
+    }
+    return representative;
+  }
+
   void registerConstantDeferredUse(
       DeferredConstantValue constant, PrefixElement prefix) {
     OutputUnit outputUnit = new OutputUnit();
     outputUnit.imports.add(new _DeclaredDeferredImport(prefix.deferredImport));
-    _constantToOutputUnit[constant] = outputUnit;
+
+    // Check to see if there is already a canonical output unit registered.
+    _constantToOutputUnit[constant] = _getCanonicalUnit(outputUnit);
   }
 
   /// Answers whether [element] is explicitly deferred when referred to from
@@ -235,7 +255,7 @@ class DeferredLoadTask extends CompilerTask {
     return imports.every((ImportElement import) => import.isDeferred);
   }
 
-  /// Returns a [Link] of every [Import] that imports [element] into [library].
+  /// Returns every [ImportElement] that imports [element] into [library].
   Iterable<ImportElement> _getImports(Element element, LibraryElement library) {
     if (element.isClassMember) {
       element = element.enclosingClass;
@@ -310,6 +330,13 @@ class DeferredLoadTask extends CompilerTask {
             worldImpact,
             new WorldImpactVisitorImpl(visitStaticUse: (StaticUse staticUse) {
               elements.add(staticUse.element);
+              switch (staticUse.kind) {
+                case StaticUseKind.CONSTRUCTOR_INVOKE:
+                case StaticUseKind.CONST_CONSTRUCTOR_INVOKE:
+                  collectTypeDependencies(staticUse.type);
+                  break;
+                default:
+              }
             }, visitTypeUse: (TypeUse typeUse) {
               DartType type = typeUse.type;
               switch (typeUse.kind) {
@@ -319,6 +346,8 @@ class DeferredLoadTask extends CompilerTask {
                   }
                   break;
                 case TypeUseKind.INSTANTIATION:
+                case TypeUseKind.MIRROR_INSTANTIATION:
+                case TypeUseKind.NATIVE_INSTANTIATION:
                 case TypeUseKind.IS_CHECK:
                 case TypeUseKind.AS_CAST:
                 case TypeUseKind.CATCH_TYPE:
@@ -347,8 +376,15 @@ class DeferredLoadTask extends CompilerTask {
         // implicit constant expression are seen that we should be able to add
         // (like primitive constant literals like `true`, `"foo"` and `0`).
         // See dartbug.com/26406 for context.
-        treeElements
-            .forEachConstantNode((Node node, ConstantExpression expression) {
+        treeElements.forEachConstantNode(
+            (ast.Node node, ConstantExpression expression) {
+          if (compiler.serialization.isDeserialized(analyzableElement)) {
+            if (!expression.isPotential) {
+              // Enforce evaluation of [expression].
+              backend.constants.getConstantValue(expression);
+            }
+          }
+
           // Explicitly depend on the backend constants.
           if (backend.constants.hasConstantValue(expression)) {
             ConstantValue value =
@@ -390,6 +426,7 @@ class DeferredLoadTask extends CompilerTask {
         elements.add(element);
         collectDependencies(element);
       }
+
       ClassElement cls = element.declaration;
       cls.forEachLocalMember(addLiveInstanceMember);
       if (cls.implementation != cls) {
@@ -446,8 +483,9 @@ class DeferredLoadTask extends CompilerTask {
         iterateTags(library.implementation);
       }
     }
+
     traverseLibrary(root);
-    result.add(compiler.coreLibrary);
+    result.add(compiler.commonElements.coreLibrary);
     return result;
   }
 
@@ -652,7 +690,7 @@ class DeferredLoadTask extends CompilerTask {
 
               // Now check to see if we have to add more elements due to
               // mirrors.
-              if (compiler.mirrorsLibrary != null) {
+              if (compiler.commonElements.mirrorsLibrary != null) {
                 _addMirrorElements();
               }
 
@@ -661,6 +699,11 @@ class DeferredLoadTask extends CompilerTask {
                   new Map<Element, OutputUnit>();
               Map<ConstantValue, OutputUnit> constantToOutputUnitBuilder =
                   new Map<ConstantValue, OutputUnit>();
+
+              // Add all constants that may have been registered during
+              // resolution with [registerConstantDeferredUse].
+              constantToOutputUnitBuilder.addAll(_constantToOutputUnit);
+              _constantToOutputUnit.clear();
 
               // Reverse the mappings. For each element record an OutputUnit
               // collecting all deferred imports mapped to this element. Same
@@ -704,21 +747,11 @@ class DeferredLoadTask extends CompilerTask {
               // to, and canonicalize them.
               elementToOutputUnitBuilder
                   .forEach((Element element, OutputUnit outputUnit) {
-                OutputUnit representative = allOutputUnits.lookup(outputUnit);
-                if (representative == null) {
-                  representative = outputUnit;
-                  allOutputUnits.add(representative);
-                }
-                _elementToOutputUnit[element] = representative;
+                _elementToOutputUnit[element] = _getCanonicalUnit(outputUnit);
               });
               constantToOutputUnitBuilder
                   .forEach((ConstantValue constant, OutputUnit outputUnit) {
-                OutputUnit representative = allOutputUnits.lookup(outputUnit);
-                if (representative == null) {
-                  representative = outputUnit;
-                  allOutputUnits.add(representative);
-                }
-                _constantToOutputUnit[constant] = representative;
+                _constantToOutputUnit[constant] = _getCanonicalUnit(outputUnit);
               });
 
               // Generate a unique name for each OutputUnit.
@@ -810,8 +843,8 @@ class DeferredLoadTask extends CompilerTask {
       });
     }
     if (isProgramSplit) {
-      isProgramSplit = compiler.backend.enableDeferredLoadingIfSupported(
-          lastDeferred, compiler.globalDependencies);
+      isProgramSplit =
+          compiler.backend.enableDeferredLoadingIfSupported(lastDeferred);
     }
   }
 
@@ -858,6 +891,7 @@ class DeferredLoadTask extends CompilerTask {
         }
       }
     }
+
     ast.Node first = firstNode(send);
     ast.Node identifier = first.asIdentifier();
     if (identifier == null) return null;
@@ -921,7 +955,8 @@ class DeferredLoadTask extends CompilerTask {
 
     StringBuffer sb = new StringBuffer();
     for (OutputUnit outputUnit in allOutputUnits) {
-      sb.write(outputUnit.name);
+      sb.write('\n-------------------------------\n');
+      sb.write('Output unit: ${outputUnit.name}');
       List<String> elements = elementMap[outputUnit];
       if (elements != null) {
         sb.write('\n elements:');
@@ -971,6 +1006,10 @@ class _DeferredImport {
 
   /// Computes a suggestive name for this import.
   String computeImportDeferName(Compiler compiler) => 'main';
+
+  ImportElement get declaration => null;
+
+  String toString() => 'main';
 }
 
 /// A node in the deferred import graph defined by a deferred import directive.
@@ -999,7 +1038,7 @@ class _DeclaredDeferredImport implements _DeferredImport {
         ConstantValue value =
             compiler.constants.getConstantValue(metadata.constant);
         Element element = value.getType(compiler.coreTypes).element;
-        if (element == compiler.deferredLibraryClass) {
+        if (element == compiler.commonElements.deferredLibraryClass) {
           ConstructedConstantValue constant = value;
           StringConstantValue s = constant.fields.values.single;
           result = s.primitiveValue.slowToString();
@@ -1017,4 +1056,6 @@ class _DeclaredDeferredImport implements _DeferredImport {
   }
 
   int get hashCode => declaration.hashCode * 17;
+
+  String toString() => '$declaration';
 }

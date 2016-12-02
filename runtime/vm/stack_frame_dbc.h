@@ -2,15 +2,15 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef VM_STACK_FRAME_DBC_H_
-#define VM_STACK_FRAME_DBC_H_
+#ifndef RUNTIME_VM_STACK_FRAME_DBC_H_
+#define RUNTIME_VM_STACK_FRAME_DBC_H_
 
 namespace dart {
 
 /* DBC Frame Layout
 
 IMPORTANT: On DBC stack is growing upwards which is different from all other
-architectures. This enables effecient addressing for locals via unsigned index.
+architectures. This enables efficient addressing for locals via unsigned index.
 
                |                    | <- TOS
 Callee frame   | ...                |
@@ -43,7 +43,7 @@ static const int kFirstObjectSlotFromFp = -4;  // Used by GC to traverse stack.
 static const int kSavedCallerFpSlotFromFp = -1;
 static const int kSavedCallerPpSlotFromFp = kSavedCallerFpSlotFromFp;
 static const int kSavedCallerPcSlotFromFp = -2;
-static const int kCallerSpSlotFromFp = -kDartFrameFixedSize-1;
+static const int kCallerSpSlotFromFp = -kDartFrameFixedSize - 1;
 static const int kPcMarkerSlotFromFp = -3;
 static const int kFunctionSlotFromFp = -4;
 
@@ -56,14 +56,16 @@ static const int kParamEndSlotFromFp = 4;  // One slot past last parameter.
 static const int kFirstLocalSlotFromFp = -1;
 
 
-DART_FORCE_INLINE static uword LocalVarAddress(uword fp, intptr_t index) {
-  ASSERT(index != 0);
-  if (index > 0) {
-     return fp - index * kWordSize;
+DART_FORCE_INLINE static intptr_t LocalVarIndex(intptr_t fp_offset,
+                                                intptr_t var_index) {
+  ASSERT(var_index != 0);
+  if (var_index > 0) {
+    return fp_offset - var_index;
   } else {
-     return fp - (index + 1) * kWordSize;
+    return fp_offset - (var_index + 1);
   }
 }
+
 
 DART_FORCE_INLINE static uword ParamAddress(uword fp, intptr_t reverse_index) {
   return fp - (kDartFrameFixedSize + reverse_index) * kWordSize;
@@ -82,4 +84,4 @@ static const uword kInterruptStackLimit = 0;
 
 }  // namespace dart
 
-#endif  // VM_STACK_FRAME_DBC_H_
+#endif  // RUNTIME_VM_STACK_FRAME_DBC_H_

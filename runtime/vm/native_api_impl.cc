@@ -37,6 +37,7 @@ class IsolateSaver {
       Dart_EnterIsolate(I);
     }
   }
+
  private:
   Isolate* saved_isolate_;
 
@@ -64,8 +65,8 @@ DART_EXPORT bool Dart_PostCObject(Dart_Port port_id, Dart_CObject* message) {
 
 DART_EXPORT bool Dart_PostInteger(Dart_Port port_id, int64_t message) {
   if (Smi::IsValid(message)) {
-    return PortMap::PostMessage(new Message(
-        port_id, Smi::New(message), Message::kNormalPriority));
+    return PortMap::PostMessage(
+        new Message(port_id, Smi::New(message), Message::kNormalPriority));
   }
   Dart_CObject cobj;
   cobj.type = Dart_CObject_kInt64;
@@ -90,6 +91,7 @@ DART_EXPORT Dart_Port Dart_NewNativePort(const char* name,
 
   NativeMessageHandler* nmh = new NativeMessageHandler(name, handler);
   Dart_Port port_id = PortMap::CreatePort(nmh);
+  PortMap::SetPortState(port_id, PortMap::kLivePort);
   nmh->Run(Dart::thread_pool(), NULL, NULL, 0);
   return port_id;
 }
@@ -125,6 +127,29 @@ DART_EXPORT Dart_Handle Dart_CompileAll() {
   }
   CHECK_CALLBACK_STATE(T);
   CompileAll(T, &result);
+  return result;
+}
+
+
+static void ParseAll(Thread* thread, Dart_Handle* result) {
+  ASSERT(thread != NULL);
+  const Error& error = Error::Handle(thread->zone(), Library::ParseAll(thread));
+  if (error.IsNull()) {
+    *result = Api::Success();
+  } else {
+    *result = Api::NewHandle(thread, error.raw());
+  }
+}
+
+
+DART_EXPORT Dart_Handle Dart_ParseAll() {
+  DARTSCOPE(Thread::Current());
+  Dart_Handle result = Api::CheckAndFinalizePendingClasses(T);
+  if (::Dart_IsError(result)) {
+    return result;
+  }
+  CHECK_CALLBACK_STATE(T);
+  ParseAll(T, &result);
   return result;
 }
 

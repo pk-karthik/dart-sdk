@@ -3,26 +3,27 @@
 // BSD-style license that can be found in the LICENSE file.
 
 import "dart:async";
-import "dart:_js_helper";
 import "package:async_helper/async_helper.dart";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
 typedef void Callback0();
 
 @Native("A")
 class A {
-  foo(Callback0 f) native;
+  foo(Callback0 f) native ;
 }
 
-makeA() native;
+makeA() native ;
 
 void setup() native r"""
 function A() {}
 A.prototype.foo = function(f) { return f(); };
 makeA = function() { return new A; };
+self.nativeConstructor(A);
 """;
 
 main() {
+  nativeTesting();
   setup();
 
   // Makes sure that we don't run the event-loop when we have a reentrant
@@ -36,8 +37,9 @@ main() {
   var events = [];
   asyncStart();
   var a = makeA();
-  new Future.microtask(() { events.add("scheduleMicrotask"); })
-      .whenComplete(asyncEnd);
+  new Future.microtask(() {
+    events.add("scheduleMicrotask");
+  }).whenComplete(asyncEnd);
 
   Expect.equals(499, a.foo(() {
     events.add("closure to foo");

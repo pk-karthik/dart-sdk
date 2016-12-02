@@ -13,10 +13,12 @@ import 'package:analyzer/dart/ast/ast.dart' as engine;
 import 'package:analyzer/dart/ast/visitor.dart' as engine;
 import 'package:analyzer/dart/element/element.dart' as engine;
 import 'package:analyzer/dart/element/type.dart' as engine;
+import 'package:analyzer/error/error.dart' as engine;
+import 'package:analyzer/exception/exception.dart';
 import 'package:analyzer/source/error_processor.dart';
 import 'package:analyzer/src/dart/ast/utilities.dart' as engine;
+import 'package:analyzer/src/error/codes.dart' as engine;
 import 'package:analyzer/src/generated/engine.dart' as engine;
-import 'package:analyzer/src/generated/error.dart' as engine;
 import 'package:analyzer/src/generated/source.dart' as engine;
 import 'package:analyzer/src/generated/utilities_dart.dart' as engine;
 
@@ -43,37 +45,29 @@ List<AnalysisError> doAnalysisError_listFromEngine(
             .add(newAnalysisError_fromEngine(lineInfo, error, severity));
       }
     } else {
-      AnalysisError error2 = newAnalysisError_fromEngine(lineInfo, error);
-      bool isStrongMode = context.analysisOptions.strongMode;
-      if (isStrongMode &&
-          error is engine.StaticWarningCode &&
-          (error as engine.StaticWarningCode).isStrongModeError) {
-        error2.severity = AnalysisErrorSeverity.ERROR;
-      }
-      serverErrors.add(error2);
+      serverErrors.add(newAnalysisError_fromEngine(lineInfo, error));
     }
   }
   return serverErrors;
 }
 
 /**
- * Adds [edit] to the [FileEdit] for the given [element].
+ * Adds [edit] to the file containing the given [element].
  */
 void doSourceChange_addElementEdit(
     SourceChange change, engine.Element element, SourceEdit edit) {
-  engine.AnalysisContext context = element.context;
   engine.Source source = element.source;
-  doSourceChange_addSourceEdit(change, context, source, edit);
+  doSourceChange_addSourceEdit(change, source, edit);
 }
 
 /**
- * Adds [edit] to the [FileEdit] for the given [source].
+ * Adds [edit] for the given [source] to the [change].
  */
-void doSourceChange_addSourceEdit(SourceChange change,
-    engine.AnalysisContext context, engine.Source source, SourceEdit edit) {
+void doSourceChange_addSourceEdit(
+    SourceChange change, engine.Source source, SourceEdit edit,
+    {bool isNewFile: false}) {
   String file = source.fullName;
-  int fileStamp = context.getModificationStamp(source);
-  change.addEdit(file, fileStamp, edit);
+  change.addEdit(file, isNewFile ? -1 : 0, edit);
 }
 
 String getReturnTypeString(engine.Element element) {
@@ -145,7 +139,8 @@ Location newLocation_fromElement(engine.Element element) {
   }
   int offset = element.nameOffset;
   int length = element.nameLength;
-  if (element is engine.CompilationUnitElement) {
+  if (element is engine.CompilationUnitElement ||
+      (element is engine.LibraryElement && offset < 0)) {
     offset = 0;
     length = 0;
   }
@@ -261,15 +256,15 @@ Location _locationForArgs(engine.AnalysisContext context, engine.Source source,
     engine.SourceRange range) {
   int startLine = 0;
   int startColumn = 0;
-  {
-    engine.LineInfo lineInfo = context.getLineInfo(source);
+  try {
+    engine.LineInfo lineInfo = context.computeLineInfo(source);
     if (lineInfo != null) {
       engine.LineInfo_Location offsetLocation =
           lineInfo.getLocation(range.offset);
       startLine = offsetLocation.lineNumber;
       startColumn = offsetLocation.columnNumber;
     }
-  }
+  } on AnalysisException {}
   return new Location(
       source.fullName, range.offset, range.length, startLine, startColumn);
 }

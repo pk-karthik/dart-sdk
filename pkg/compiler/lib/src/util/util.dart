@@ -4,12 +4,12 @@
 
 library dart2js.util;
 
-import 'util_implementation.dart';
 import 'characters.dart';
+import 'util_implementation.dart';
 
-export 'setlet.dart';
-export 'maplet.dart';
 export 'emptyset.dart';
+export 'maplet.dart';
+export 'setlet.dart';
 
 part 'indentation.dart';
 part 'link.dart';
@@ -42,6 +42,14 @@ class Hashing {
     return mixHashCodeBits(existing, object.hashCode);
   }
 
+  /// Mix the bits of `.hashCode` all non-null objects.
+  static int objectsHash(Object obj1, [Object obj2, Object obj3]) {
+    int hash = 0;
+    if (obj3 != null) hash = objectHash(obj3, hash);
+    if (obj2 != null) hash = objectHash(obj2, hash);
+    return objectHash(obj1, hash);
+  }
+
   /// Mix the bits of the element hash codes of [list] with [existing].
   static int listHash(List list, [int existing = 0]) {
     int h = existing;
@@ -50,6 +58,16 @@ class Hashing {
       h = mixHashCodeBits(h, list[i].hashCode);
     }
     return h;
+  }
+
+  /// Mix the bits of the hash codes of the unordered key/value from [map] with
+  /// [existing].
+  static int unorderedMapHash(Map map, [int existing = 0]) {
+    int h = 0;
+    for (var key in map.keys) {
+      h ^= objectHash(key, objectHash(map[key]));
+    }
+    return mixHashCodeBits(h, existing);
   }
 
   /// Mix the bits of the key/value hash codes from [map] with [existing].

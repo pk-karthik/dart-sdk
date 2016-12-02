@@ -10,7 +10,6 @@ import '../compiler.dart' show Compiler;
 import '../diagnostics/invariant.dart' show DEBUG_MODE;
 import '../js_backend/js_backend.dart';
 import '../tracer.dart';
-
 import 'nodes.dart';
 
 /**
@@ -20,10 +19,9 @@ import 'nodes.dart';
  */
 class HTracer extends HGraphVisitor with TracerUtil {
   Compiler compiler;
-  JavaScriptItemCompilationContext context;
   final EventSink<String> output;
 
-  HTracer(this.output, this.compiler, this.context);
+  HTracer(this.output, this.compiler);
 
   void traceGraph(String name, HGraph graph) {
     DEBUG_MODE = true;
@@ -77,7 +75,7 @@ class HTracer extends HGraphVisitor with TracerUtil {
 
   void visitBasicBlock(HBasicBlock block) {
     HInstructionStringifier stringifier =
-        new HInstructionStringifier(context, block, compiler);
+        new HInstructionStringifier(block, compiler);
     assert(block.id != null);
     tag("block", () {
       printProperty("name", "B${block.id}");
@@ -115,10 +113,9 @@ class HTracer extends HGraphVisitor with TracerUtil {
 
 class HInstructionStringifier implements HVisitor<String> {
   final Compiler compiler;
-  final JavaScriptItemCompilationContext context;
   final HBasicBlock currentBlock;
 
-  HInstructionStringifier(this.context, this.currentBlock, this.compiler);
+  HInstructionStringifier(this.currentBlock, this.compiler);
 
   visit(HInstruction node) => '${node.accept(this)} ${node.instructionType}';
 
@@ -148,7 +145,7 @@ class HInstructionStringifier implements HVisitor<String> {
       prefix = 'd';
     } else if (instruction.isNumber(compiler)) {
       prefix = 'n';
-    } else if (instruction.instructionType.containsAll(compiler.world)) {
+    } else if (instruction.instructionType.containsAll(compiler.closedWorld)) {
       prefix = 'v';
     } else {
       prefix = 'U';
@@ -201,6 +198,10 @@ class HInstructionStringifier implements HVisitor<String> {
       return "Continue ${node.label.labelName}: (B${target.id})";
     }
     return "Continue: (B${target.id})";
+  }
+
+  String visitCreate(HCreate node) {
+    return handleGenericInvoke("Create", "${node.element.name}", node.inputs);
   }
 
   String visitDivide(HDivide node) => handleInvokeBinary(node, 'Divide');
@@ -333,14 +334,11 @@ class HInstructionStringifier implements HVisitor<String> {
     return handleGenericInvoke("InvokeConstructorBody", target, invoke.inputs);
   }
 
-  String visitForeignCode(HForeignCode foreign) {
-    return handleGenericInvoke(
-        "ForeignCode", "${foreign.codeTemplate.ast}", foreign.inputs);
-  }
-
-  String visitForeignNew(HForeignNew node) {
-    return handleGenericInvoke(
-        "ForeignNew", "${node.element.name}", node.inputs);
+  String visitForeignCode(HForeignCode node) {
+    var template = node.codeTemplate;
+    String code = '${template.ast}';
+    var inputs = node.inputs.map(temporaryId).join(', ');
+    return "ForeignCode: $code ($inputs)";
   }
 
   String visitLess(HLess node) => handleInvokeBinary(node, 'Less');
@@ -486,11 +484,19 @@ class HInstructionStringifier implements HVisitor<String> {
   }
 
   String visitTypeConversion(HTypeConversion node) {
-    assert(node.inputs.length <= 2);
-    String otherInput =
-        (node.inputs.length == 2) ? temporaryId(node.inputs[1]) : '';
-    return "TypeConversion: ${temporaryId(node.checkedInput)} to "
-        "${node.instructionType} $otherInput";
+    String checkedInput = temporaryId(node.checkedInput);
+    String rest;
+    if (node.usesMethodOnType) {
+      assert(node.inputs.length == 2);
+      assert(identical(node.checkedInput, node.inputs.last));
+      rest = " ${temporaryId(node.inputs.first)}";
+    } else if (node.inputs.length == 2) {
+      rest = " ${temporaryId(node.inputs.last)}";
+    } else {
+      assert(node.inputs.length == 1);
+      rest = "";
+    }
+    return "TypeConversion: $checkedInput to ${node.instructionType}$rest";
   }
 
   String visitTypeKnown(HTypeKnown node) {
@@ -507,12 +513,30 @@ class HInstructionStringifier implements HVisitor<String> {
     return "RangeConversion: ${node.checkedInput}";
   }
 
+  String visitTypeInfoReadRaw(HTypeInfoReadRaw node) {
+    var inputs = node.inputs.map(temporaryId).join(', ');
+    return "TypeInfoReadRaw: $inputs";
+  }
+
+  String visitTypeInfoReadVariable(HTypeInfoReadVariable node) {
+    return "TypeInfoReadVariable: "
+        "${temporaryId(node.inputs.single)}.${node.variable}";
+  }
+
+  String visitTypeInfoExpression(HTypeInfoExpression node) {
+    var inputs = node.inputs.map(temporaryId).join(', ');
+    return "TypeInfoExpression: ${node.kindAsString} ${node.dartType}"
+        " ($inputs)";
+  }
+
   String visitReadTypeVariable(HReadTypeVariable node) {
-    return "ReadTypeVariable: ${node.dartType} ${node.hasReceiver}";
+    var inputs = node.inputs.map(temporaryId).join(', ');
+    return "ReadTypeVariable: ${node.dartType} ${node.hasReceiver} $inputs";
   }
 
   String visitFunctionType(HFunctionType node) {
-    return "FunctionType: ${node.dartType}";
+    var inputs = node.inputs.map(temporaryId).join(', ');
+    return "FunctionType: ${node.dartType} $inputs";
   }
 
   String visitVoidType(HVoidType node) {

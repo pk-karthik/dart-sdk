@@ -2,15 +2,14 @@
 # for details. All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 
-samples/searchable_list: Pass, Slow
-third_party/pkg/scheduled_test: Fail # Issue 26585
-
-[ $use_repository_packages ]
-samples/third_party/angular_todo: Fail # angular needs to be updated
-
 [ $use_public_packages ]
 pkg/compiler: SkipByDesign # js_ast is not published
-samples/third_party/angular_todo: Pass, Slow
 
-[ $builder_tag == russian ]
-samples/third_party/angular_todo: Fail # Issue 16356
+[ ($use_repository_packages || $use_public_packages) ]
+pkg/dev_compiler: SkipByDesign # we have relative paths to analyzer
+pkg/analyzer: Fail # Issue 27654
+pkg/front_end: Fail # Issue 27655
+pkg/kernel: Fail # Issue 27937
+
+[ $use_repository_packages ]
+third_party/pkg_tested/dart_style: Fail # Issue https://github.com/dart-lang/dart_style/issues/562

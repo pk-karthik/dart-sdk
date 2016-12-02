@@ -35,7 +35,7 @@ class Zone::Segment {
   // Computes the address of the nth byte in this segment.
   uword address(int n) { return reinterpret_cast<uword>(this) + n; }
 
-  static void Delete(Segment* segment) { delete[] segment; }
+  static void Delete(Segment* segment) { free(segment); }
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(Segment);
 };
@@ -57,17 +57,43 @@ void Zone::Segment::DeleteSegmentList(Segment* head) {
 
 Zone::Segment* Zone::Segment::New(intptr_t size, Zone::Segment* next) {
   ASSERT(size >= 0);
-  Segment* result = reinterpret_cast<Segment*>(new uint8_t[size]);
-  ASSERT(Utils::IsAligned(result->start(), Zone::kAlignment));
-  if (result != NULL) {
-#ifdef DEBUG
-    // Zap the entire allocated segment (including the header).
-    memset(result, kZapUninitializedByte, size);
-#endif
-    result->next_ = next;
-    result->size_ = size;
+  Segment* result = reinterpret_cast<Segment*>(malloc(size));
+  if (result == NULL) {
+    OUT_OF_MEMORY();
   }
+  ASSERT(Utils::IsAligned(result->start(), Zone::kAlignment));
+#ifdef DEBUG
+  // Zap the entire allocated segment (including the header).
+  memset(result, kZapUninitializedByte, size);
+#endif
+  result->next_ = next;
+  result->size_ = size;
   return result;
+}
+
+
+Zone::Zone()
+    : initial_buffer_(buffer_, kInitialChunkSize),
+      position_(initial_buffer_.start()),
+      limit_(initial_buffer_.end()),
+      head_(NULL),
+      large_segments_(NULL),
+      handles_(),
+      previous_(NULL) {
+  ASSERT(Utils::IsAligned(position_, kAlignment));
+#ifdef DEBUG
+  // Zap the entire initial buffer.
+  memset(initial_buffer_.pointer(), kZapUninitializedByte,
+         initial_buffer_.size());
+#endif
+}
+
+
+Zone::~Zone() {
+  if (FLAG_trace_zones) {
+    DumpZoneSizes();
+  }
+  DeleteAll();
 }
 
 
@@ -81,7 +107,7 @@ void Zone::DeleteAll() {
     Segment::DeleteSegmentList(large_segments_);
   }
 
-  // Reset zone state.
+// Reset zone state.
 #ifdef DEBUG
   memset(initial_buffer_.pointer(), kZapDeletedByte, initial_buffer_.size());
 #endif
@@ -121,11 +147,11 @@ uword Zone::AllocateExpand(intptr_t size) {
   // there isn't enough room in the Zone to satisfy the request.
   ASSERT(Utils::IsAligned(size, kAlignment));
   intptr_t free_size = (limit_ - position_);
-  ASSERT(free_size <  size);
+  ASSERT(free_size < size);
 
   // First check to see if we should just chain it as a large segment.
-  intptr_t max_size = Utils::RoundDown(kSegmentSize - sizeof(Segment),
-                                       kAlignment);
+  intptr_t max_size =
+      Utils::RoundDown(kSegmentSize - sizeof(Segment), kAlignment);
   ASSERT(max_size > 0);
   if (size > max_size) {
     return AllocateLargeSegment(size);
@@ -149,7 +175,7 @@ uword Zone::AllocateLargeSegment(intptr_t size) {
   // there isn't enough room in the Zone to satisfy the request.
   ASSERT(Utils::IsAligned(size, kAlignment));
   intptr_t free_size = (limit_ - position_);
-  ASSERT(free_size <  size);
+  ASSERT(free_size < size);
 
   // Create a new large segment and chain it up.
   ASSERT(Utils::IsAligned(sizeof(Segment), kAlignment));
@@ -165,6 +191,21 @@ char* Zone::MakeCopyOfString(const char* str) {
   intptr_t len = strlen(str) + 1;  // '\0'-terminated.
   char* copy = Alloc<char>(len);
   strncpy(copy, str, len);
+  return copy;
+}
+
+
+char* Zone::MakeCopyOfStringN(const char* str, intptr_t len) {
+  ASSERT(len >= 0);
+  for (intptr_t i = 0; i < len; i++) {
+    if (str[i] == '\0') {
+      len = i;
+      break;
+    }
+  }
+  char* copy = Alloc<char>(len + 1);  // +1 for '\0'
+  strncpy(copy, str, len);
+  copy[len] = '\0';
   return copy;
 }
 
@@ -189,7 +230,8 @@ void Zone::DumpZoneSizes() {
   for (Segment* s = large_segments_; s != NULL; s = s->next()) {
     size += s->size();
   }
-  OS::PrintErr("***   Zone(0x%" Px ") size in bytes,"
+  OS::PrintErr("***   Zone(0x%" Px
+               ") size in bytes,"
                " Total = %" Pd " Large Segments = %" Pd "\n",
                reinterpret_cast<intptr_t>(this), SizeInBytes(), size);
 }
@@ -217,5 +259,26 @@ char* Zone::VPrint(const char* format, va_list args) {
   return OS::VSCreate(this, format, args);
 }
 
+
+StackZone::StackZone(Thread* thread) : StackResource(thread), zone_() {
+  if (FLAG_trace_zones) {
+    OS::PrintErr("*** Starting a new Stack zone 0x%" Px "(0x%" Px ")\n",
+                 reinterpret_cast<intptr_t>(this),
+                 reinterpret_cast<intptr_t>(&zone_));
+  }
+  zone_.Link(thread->zone());
+  thread->set_zone(&zone_);
+}
+
+
+StackZone::~StackZone() {
+  ASSERT(thread()->zone() == &zone_);
+  thread()->set_zone(zone_.previous_);
+  if (FLAG_trace_zones) {
+    OS::PrintErr("*** Deleting Stack zone 0x%" Px "(0x%" Px ")\n",
+                 reinterpret_cast<intptr_t>(this),
+                 reinterpret_cast<intptr_t>(&zone_));
+  }
+}
 
 }  // namespace dart

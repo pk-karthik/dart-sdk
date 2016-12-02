@@ -221,7 +221,11 @@ Set<String> _findAllRelativeImports(Path topLibrary) {
 }
 
 Future doMultitest(
-    Path filePath, String outputDir, Path suiteDir, CreateTest doTest) {
+    Path filePath,
+    String outputDir,
+    Path suiteDir,
+    CreateTest doTest,
+    bool hotReload) {
   void writeFile(String filepath, String content) {
     final File file = new File(filepath);
 
@@ -241,7 +245,7 @@ Future doMultitest(
   ExtractTestsFromMultitest(filePath, tests, outcomes);
 
   Path sourceDir = filePath.directoryPath;
-  Path targetDir = CreateMultitestDirectory(outputDir, suiteDir);
+  Path targetDir = createMultitestDirectory(outputDir, suiteDir, sourceDir);
   assert(targetDir != null);
 
   // Copy all the relative imports of the multitest.
@@ -273,6 +277,13 @@ Future doMultitest(
       bool isNegativeIfChecked = outcome.contains('dynamic type error');
       bool hasCompileErrorIfChecked =
           outcome.contains('checked mode compile-time error');
+      if (hotReload) {
+        if (hasCompileError || hasCompileErrorIfChecked) {
+          // Running a test that expects a compilation error with hot reloading
+          // is redundant with a regular run of the test.
+          continue;
+        }
+      }
       doTest(multitestFilename, filePath, hasCompileError, hasRuntimeErrors,
           isNegativeIfChecked: isNegativeIfChecked,
           hasCompileErrorIfChecked: hasCompileErrorIfChecked,
@@ -284,24 +295,19 @@ Future doMultitest(
   });
 }
 
-Path CreateMultitestDirectory(String outputDir, Path suiteDir) {
-  Directory generatedTestDir = new Directory('$outputDir/generated_tests');
-  if (!new Directory(outputDir).existsSync()) {
-    new Directory(outputDir).createSync();
-  }
-  if (!generatedTestDir.existsSync()) {
-    generatedTestDir.createSync();
-  }
+String suiteNameFromPath(Path suiteDir) {
   var split = suiteDir.segments();
+  // co19 test suite is at tests/co19/src.
   if (split.last == 'src') {
-    // TODO(sigmund): remove this once all tests are migrated to use
-    // TestSuite.forDirectory.
     split.removeLast();
   }
-  String path = '${generatedTestDir.path}/${split.last}';
-  Directory dir = new Directory(path);
-  if (!dir.existsSync()) {
-    dir.createSync();
-  }
-  return new Path(new File(path).absolute.path);
+  return split.last;
+}
+
+Path createMultitestDirectory(String outputDir, Path suiteDir, Path sourceDir) {
+  Path relative = sourceDir.relativeTo(suiteDir);
+  Path path = new Path(outputDir).append('generated_tests')
+      .append(suiteNameFromPath(suiteDir)).join(relative);
+  TestUtils.mkdirRecursive(TestUtils.currentWorkingDirectory, path);
+  return new Path(new File(path.toNativePath()).absolute.path);
 }

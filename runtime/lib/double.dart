@@ -6,12 +6,12 @@ class _Double implements double {
   factory _Double.fromInteger(int value)
       native "Double_doubleFromInteger";
 
-  Type get runtimeType => double;
+  // TODO: Make a stared static method for hashCode and _identityHashCode
+  //       when semantics are corrected as described in:
+  //       https://github.com/dart-lang/sdk/issues/2884
+  int get hashCode => (isNaN || isInfinite) ?  0 : toInt();
+  int get _identityHashCode => (isNaN || isInfinite) ?  0 : toInt();
 
-  int get _identityHashCode {
-    if (isNaN || isInfinite) return 0;
-    return toInt();
-  }
   double operator +(num other) {
     return _add(other.toDouble());
   }

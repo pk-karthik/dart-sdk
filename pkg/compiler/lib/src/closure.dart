@@ -4,51 +4,81 @@
 
 library closureToClassMapper;
 
-import 'common.dart';
 import 'common/names.dart' show Identifiers;
 import 'common/resolution.dart' show ParsingContext, Resolution;
 import 'common/tasks.dart' show CompilerTask;
+import 'common.dart';
 import 'compiler.dart' show Compiler;
 import 'constants/expressions.dart';
 import 'dart_types.dart';
 import 'elements/elements.dart';
 import 'elements/modelx.dart'
-    show BaseFunctionElementX, ClassElementX, ElementX, LocalFunctionElementX;
+    show BaseFunctionElementX, ClassElementX, ElementX;
 import 'elements/visitor.dart' show ElementVisitor;
 import 'js_backend/js_backend.dart' show JavaScriptBackend;
 import 'resolution/tree_elements.dart' show TreeElements;
 import 'tokens/token.dart' show Token;
 import 'tree/tree.dart';
 import 'util/util.dart';
-import 'universe/universe.dart' show Universe;
 
 class ClosureTask extends CompilerTask {
-  Map<Node, ClosureClassMap> closureMappingCache;
+  Map<Element, ClosureClassMap> _closureMappingCache =
+      <Element, ClosureClassMap>{};
   Compiler compiler;
   ClosureTask(Compiler compiler)
-      : closureMappingCache = new Map<Node, ClosureClassMap>(),
-        compiler = compiler,
+      : compiler = compiler,
         super(compiler.measurer);
 
   String get name => "Closure Simplifier";
 
   DiagnosticReporter get reporter => compiler.reporter;
 
+  /// Returns the [ClosureClassMap] computed for [resolvedAst].
+  ClosureClassMap getClosureToClassMapping(ResolvedAst resolvedAst) {
+    return measure(() {
+      Element element = resolvedAst.element;
+      if (element.isGenerativeConstructorBody) {
+        ConstructorBodyElement constructorBody = element;
+        element = constructorBody.constructor;
+      }
+      ClosureClassMap closureClassMap = _closureMappingCache[element];
+      assert(invariant(resolvedAst.element, closureClassMap != null,
+          message: "No ClosureClassMap computed for ${element}."));
+      return closureClassMap;
+    });
+  }
+
+  /// Create [ClosureClassMap]s for all live members.
+  void createClosureClasses() {
+    compiler.enqueuer.resolution.processedElements
+        .forEach((AstElement element) {
+      ResolvedAst resolvedAst = element.resolvedAst;
+      if (element.isAbstract) return;
+      if (element.isField &&
+          !element.isInstanceMember &&
+          resolvedAst.body == null) {
+        // Skip top-level/static fields without an initializer.
+        return;
+      }
+      computeClosureToClassMapping(resolvedAst);
+    });
+  }
+
   ClosureClassMap computeClosureToClassMapping(ResolvedAst resolvedAst) {
     return measure(() {
       Element element = resolvedAst.element;
+      ClosureClassMap cached = _closureMappingCache[element];
+      if (cached != null) return cached;
       if (resolvedAst.kind != ResolvedAstKind.PARSED) {
-        return new ClosureClassMap(null, null, null, new ThisLocal(element));
+        return _closureMappingCache[element] =
+            new ClosureClassMap(null, null, null, new ThisLocal(element));
       }
       return reporter.withCurrentElement(element.implementation, () {
         Node node = resolvedAst.node;
         TreeElements elements = resolvedAst.elements;
 
-        ClosureClassMap cached = closureMappingCache[node];
-        if (cached != null) return cached;
-
         ClosureTranslator translator =
-            new ClosureTranslator(compiler, elements, closureMappingCache);
+            new ClosureTranslator(compiler, elements, _closureMappingCache);
 
         // The translator will store the computed closure-mappings inside the
         // cache. One for given node and one for each nested closure.
@@ -57,7 +87,8 @@ class ClosureTask extends CompilerTask {
         } else if (element.isSynthesized) {
           reporter.internalError(
               element, "Unexpected synthesized element: $element");
-          return new ClosureClassMap(null, null, null, new ThisLocal(element));
+          _closureMappingCache[element] =
+              new ClosureClassMap(null, null, null, new ThisLocal(element));
         } else {
           assert(invariant(element, element.isField,
               message: "Expected $element to be a field."));
@@ -69,23 +100,14 @@ class ClosureTask extends CompilerTask {
             assert(invariant(element, element.isInstanceMember,
                 message: "Expected $element (${element
                     .runtimeType}) to be an instance field."));
-            closureMappingCache[node] =
+            _closureMappingCache[element] =
                 new ClosureClassMap(null, null, null, new ThisLocal(element));
           }
         }
-        assert(closureMappingCache[node] != null);
-        return closureMappingCache[node];
+        assert(invariant(element, _closureMappingCache[element] != null,
+            message: "No ClosureClassMap computed for ${element}."));
+        return _closureMappingCache[element];
       });
-    });
-  }
-
-  ClosureClassMap getMappingForNestedFunction(FunctionExpression node) {
-    return measure(() {
-      ClosureClassMap nestedClosureData = closureMappingCache[node];
-      if (nestedClosureData == null) {
-        reporter.internalError(node, "No closure cache.");
-      }
-      return nestedClosureData;
     });
   }
 
@@ -99,7 +121,7 @@ class ClosureTask extends CompilerTask {
       throw new SpannableAssertionFailure(
           closure, 'Not a closure: $closure (${closure.runtimeType}).');
     }
-    compiler.enqueuer.codegen.forgetElement(cls);
+    compiler.enqueuer.codegen.forgetElement(cls, compiler);
   }
 }
 
@@ -255,6 +277,9 @@ class BoxLocal extends Local {
   final String name;
   final ExecutableElement executableContext;
 
+  final int hashCode = _nextHashCode = (_nextHashCode + 10007).toUnsigned(30);
+  static int _nextHashCode = 0;
+
   BoxLocal(this.name, this.executableContext);
 
   String toString() => 'BoxLocal($name)';
@@ -326,7 +351,7 @@ class BoxFieldElement extends ElementX
 /// A local variable used encode the direct (uncaptured) references to [this].
 class ThisLocal extends Local {
   final ExecutableElement executableContext;
-  final hashCode = ++ElementX.elementHashCode;
+  final hashCode = ElementX.newHashCode();
 
   ThisLocal(this.executableContext);
 
@@ -514,14 +539,6 @@ class ClosureClassMap {
       scope.forEachCapturedVariable(f);
     });
   }
-
-  void removeMyselfFrom(Universe universe) {
-    freeVariableMap.values.forEach((e) {
-      universe.closurizedMembers.remove(e);
-      universe.fieldSetters.remove(e);
-      universe.fieldGetters.remove(e);
-    });
-  }
 }
 
 class ClosureTranslator extends Visitor {
@@ -531,7 +548,7 @@ class ClosureTranslator extends Visitor {
   int boxedFieldCounter = 0;
   bool inTryStatement = false;
 
-  final Map<Node, ClosureClassMap> closureMappingCache;
+  final Map<Element, ClosureClassMap> closureMappingCache;
 
   // Map of captured variables. Initially they will map to `null`. If
   // a variable needs to be boxed then the scope declaring the variable
@@ -540,7 +557,7 @@ class ClosureTranslator extends Visitor {
       new Map<Local, BoxFieldElement>();
 
   // List of encountered closures.
-  List<Expression> closures = <Expression>[];
+  List<LocalFunctionElement> closures = <LocalFunctionElement>[];
 
   // The local variables that have been declared in the current scope.
   List<LocalVariableElement> scopeVariables;
@@ -635,7 +652,7 @@ class ClosureTranslator extends Visitor {
   // free variables to the boxed value. It also adds the field-elements to the
   // class representing the closure.
   void updateClosures() {
-    for (Expression closure in closures) {
+    for (LocalFunctionElement closure in closures) {
       // The captured variables that need to be stored in a field of the closure
       // class.
       Set<Local> fieldCaptures = new Set<Local>();
@@ -1051,8 +1068,7 @@ class ClosureTranslator extends Visitor {
     ClosureClassElement globalizedElement =
         new ClosureClassElement(node, closureName, compiler, element);
     // Extend [globalizedElement] as an instantiated class in the closed world.
-    compiler.world
-        .registerClass(globalizedElement, isDirectlyInstantiated: true);
+    compiler.inferenceWorld.registerClosureClass(globalizedElement);
     FunctionElement callElement = new SynthesizedCallMethodElementX(
         Identifiers.call, element, globalizedElement, node, elements);
     backend.maybeMarkClosureAsNeededForReflection(
@@ -1080,7 +1096,7 @@ class ClosureTranslator extends Visitor {
     executableContext = element;
     if (insideClosure) {
       closure = element;
-      closures.add(node);
+      closures.add(closure);
       closureData = globalizeClosure(node, closure);
     } else {
       outermostElement = element;
@@ -1090,7 +1106,10 @@ class ClosureTranslator extends Visitor {
       }
       closureData = new ClosureClassMap(null, null, null, thisElement);
     }
-    closureMappingCache[node] = closureData;
+    closureMappingCache[element.declaration] = closureData;
+    if (closureData.callElement != null) {
+      closureMappingCache[closureData.callElement] = closureData;
+    }
 
     inNewScope(node, () {
       DartType type = element.type;
@@ -1125,7 +1144,7 @@ class ClosureTranslator extends Visitor {
   visitFunctionExpression(FunctionExpression node) {
     Element element = elements[node];
 
-    if (element.isParameter) {
+    if (element.isRegularParameter) {
       // TODO(ahe): This is a hack. This method should *not* call
       // visitChildren.
       return node.name.accept(this);

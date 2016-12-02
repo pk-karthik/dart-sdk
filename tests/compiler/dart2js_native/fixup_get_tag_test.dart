@@ -2,14 +2,14 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
 // Test for dartExperimentalFixupGetTag.
 
 @Native("A")
-class Foo { // There is one native class with dispatch tag 'A'.
-  token() native;
+class Foo {
+  // There is one native class with dispatch tag 'A'.
+  token() native ;
 }
 
 void setup() native r"""
@@ -33,12 +33,15 @@ B.prototype.token = function () { return 'isB'; }
 
 makeA = function() { return new A; };
 makeB = function() { return new B; };
+
+self.nativeConstructor(A);
 """;
 
-makeA() native;
-makeB() native;
+makeA() native ;
+makeB() native ;
 
 main() {
+  nativeTesting();
   setup();
 
   var a = makeA();

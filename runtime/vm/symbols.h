@@ -2,8 +2,8 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef VM_SYMBOLS_H_
-#define VM_SYMBOLS_H_
+#ifndef RUNTIME_VM_SYMBOLS_H_
+#define RUNTIME_VM_SYMBOLS_H_
 
 #include "vm/growable_array.h"
 #include "vm/object.h"
@@ -55,6 +55,8 @@ class ObjectPointerVisitor;
   V(Close, "close")                                                            \
   V(Values, "values")                                                          \
   V(_EnumNames, "_enum_names")                                                 \
+  V(_DeletedEnumSentinel, "_deleted_enum_sentinel")                            \
+  V(_DeletedEnumPrefix, "Deleted enum value from ")                            \
   V(ExprTemp, ":expr_temp")                                                    \
   V(FinallyRetVal, ":finally_ret_val")                                         \
   V(AnonymousClosure, "<anonymous closure>")                                   \
@@ -62,6 +64,7 @@ class ObjectPointerVisitor;
   V(ImplicitClosure, "<implicit closure>")                                     \
   V(ClosureParameter, ":closure")                                              \
   V(TypeArgumentsParameter, ":type_arguments")                                 \
+  V(FunctionInstantiatorVar, ":function_instantiator_var")                     \
   V(AssertionError, "_AssertionError")                                         \
   V(CastError, "_CastError")                                                   \
   V(TypeError, "_TypeError")                                                   \
@@ -69,8 +72,11 @@ class ObjectPointerVisitor;
   V(AbstractClassInstantiationError, "AbstractClassInstantiationError")        \
   V(NoSuchMethodError, "NoSuchMethodError")                                    \
   V(CyclicInitializationError, "CyclicInitializationError")                    \
+  V(_CompileTimeError, "_CompileTimeError")                                    \
   V(ThrowNew, "_throwNew")                                                     \
   V(ThrowNewIfNotLoaded, "_throwNewIfNotLoaded")                               \
+  V(CheckAssertion, "_checkAssertion")                                         \
+  V(CheckConstAssertion, "_checkConstAssertion")                               \
   V(Symbol, "Symbol")                                                          \
   V(SymbolCtor, "Symbol.")                                                     \
   V(List, "List")                                                              \
@@ -170,6 +176,8 @@ class ObjectPointerVisitor;
   V(DeoptInfo, "DeoptInfo")                                                    \
   V(Context, "Context")                                                        \
   V(ContextScope, "ContextScope")                                              \
+  V(SingleTargetCache, "SingleTargetCache")                                    \
+  V(UnlinkedCall, "UnlinkedCall")                                              \
   V(ICData, "ICData")                                                          \
   V(MegamorphicCache, "MegamorphicCache")                                      \
   V(SubtypeTestCache, "SubtypeTestCache")                                      \
@@ -224,20 +232,20 @@ class ObjectPointerVisitor;
   V(Float64x2List, "Float64x2List")                                            \
   V(Float32List, "Float32List")                                                \
   V(Float64List, "Float64List")                                                \
-  V(_Int8ArrayFactory, "Int8List.")                                          \
-  V(_Uint8ArrayFactory, "Uint8List.")                                        \
-  V(_Uint8ClampedArrayFactory, "Uint8ClampedList.")                          \
-  V(_Int16ArrayFactory, "Int16List.")                                        \
-  V(_Uint16ArrayFactory, "Uint16List.")                                      \
-  V(_Int32ArrayFactory, "Int32List.")                                        \
-  V(_Uint32ArrayFactory, "Uint32List.")                                      \
-  V(_Int64ArrayFactory, "Int64List.")                                        \
-  V(_Uint64ArrayFactory, "Uint64List.")                                      \
-  V(_Float32x4ArrayFactory, "Float32x4List.")                                \
-  V(_Int32x4ArrayFactory, "Int32x4List.")                                    \
-  V(_Float64x2ArrayFactory, "Float64x2List.")                                \
-  V(_Float32ArrayFactory, "Float32List.")                                    \
-  V(_Float64ArrayFactory, "Float64List.")                                    \
+  V(_Int8ArrayFactory, "Int8List.")                                            \
+  V(_Uint8ArrayFactory, "Uint8List.")                                          \
+  V(_Uint8ClampedArrayFactory, "Uint8ClampedList.")                            \
+  V(_Int16ArrayFactory, "Int16List.")                                          \
+  V(_Uint16ArrayFactory, "Uint16List.")                                        \
+  V(_Int32ArrayFactory, "Int32List.")                                          \
+  V(_Uint32ArrayFactory, "Uint32List.")                                        \
+  V(_Int64ArrayFactory, "Int64List.")                                          \
+  V(_Uint64ArrayFactory, "Uint64List.")                                        \
+  V(_Float32x4ArrayFactory, "Float32x4List.")                                  \
+  V(_Int32x4ArrayFactory, "Int32x4List.")                                      \
+  V(_Float64x2ArrayFactory, "Float64x2List.")                                  \
+  V(_Float32ArrayFactory, "Float32List.")                                      \
+  V(_Float64ArrayFactory, "Float64List.")                                      \
   V(_Int8ArrayView, "_Int8ArrayView")                                          \
   V(_Uint8ArrayView, "_Uint8ArrayView")                                        \
   V(_Uint8ClampedArrayView, "_Uint8ClampedArrayView")                          \
@@ -274,6 +282,8 @@ class ObjectPointerVisitor;
   V(ByteBufferDot_New, "ByteBuffer._New")                                      \
   V(_WeakProperty, "_WeakProperty")                                            \
   V(_MirrorReference, "_MirrorReference")                                      \
+  V(FreeListElement, "FreeListElement")                                        \
+  V(ForwardingCorpse, "ForwardingCorpse")                                      \
   V(InvocationMirror, "_InvocationMirror")                                     \
   V(AllocateInvocationMirror, "_allocateInvocationMirror")                     \
   V(toString, "toString")                                                      \
@@ -295,7 +305,6 @@ class ObjectPointerVisitor;
   V(BooleanExpression, "boolean expression")                                   \
   V(MegamorphicMiss, "megamorphic_miss")                                       \
   V(CommaSpace, ", ")                                                          \
-  V(ColonSpace, ": ")                                                          \
   V(RParenArrow, ") => ")                                                      \
   V(SpaceExtendsSpace, " extends ")                                            \
   V(SpaceWhereNewLine, " where\n")                                             \
@@ -308,6 +317,9 @@ class ObjectPointerVisitor;
   V(TwoNewlines, "\n\n")                                                       \
   V(TwoSpaces, "  ")                                                           \
   V(_instanceOf, "_instanceOf")                                                \
+  V(_simpleInstanceOf, "_simpleInstanceOf")                                    \
+  V(_simpleInstanceOfTrue, "_simpleInstanceOfTrue")                            \
+  V(_simpleInstanceOfFalse, "_simpleInstanceOfFalse")                          \
   V(_instanceOfSmi, "_instanceOfSmi")                                          \
   V(_instanceOfNum, "_instanceOfNum")                                          \
   V(_instanceOfInt, "_instanceOfInt")                                          \
@@ -355,11 +367,9 @@ class ObjectPointerVisitor;
   V(hashCode, "get:hashCode")                                                  \
   V(OptimizedOut, "<optimized out>")                                           \
   V(NotInitialized, "<not initialized>")                                       \
-  V(AllocationStubFor, "[Stub] Allocate ")                                     \
   V(TempParam, ":temp_param")                                                  \
   V(_UserTag, "_UserTag")                                                      \
   V(Default, "Default")                                                        \
-  V(StubPrefix, "[Stub] ")                                                     \
   V(ClassID, "ClassID")                                                        \
   V(DartIsVM, "dart.isVM")                                                     \
   V(stack, ":stack")                                                           \
@@ -390,6 +400,11 @@ class ObjectPointerVisitor;
   V(_runPendingImmediateCallback, "_runPendingImmediateCallback")              \
   V(DartLibrary, "dart.library.")                                              \
   V(DartLibraryMirrors, "dart.library.mirrors")                                \
+  V(_name, "_name")                                                            \
+  V(_classRangeCheck, "_classRangeCheck")                                      \
+  V(_classRangeCheckNegative, "_classRangeCheckNegative")                      \
+  V(GetRuntimeType, "get:runtimeType")                                         \
+  V(HaveSameRuntimeType, "_haveSameRuntimeType")
 
 
 // Contains a list of frequently used strings in a canonicalized form. This
@@ -401,23 +416,23 @@ class Symbols : public AllStatic {
 
   // List of strings that are pre created in the vm isolate.
   enum SymbolId {
+    // clang-format off
     kIllegal = 0,
 
-#define DEFINE_SYMBOL_INDEX(symbol, literal)                                   \
-    k##symbol##Id,
+#define DEFINE_SYMBOL_INDEX(symbol, literal) k##symbol##Id,
     PREDEFINED_SYMBOLS_LIST(DEFINE_SYMBOL_INDEX)
 #undef DEFINE_SYMBOL_INDEX
 
     kTokenTableStart,  // First token at kTokenTableStart + 1.
 
-#define DEFINE_TOKEN_SYMBOL_INDEX(t, s, p, a)                                  \
-    t##Id,
-    DART_TOKEN_LIST(DEFINE_TOKEN_SYMBOL_INDEX)
-    DART_KEYWORD_LIST(DEFINE_TOKEN_SYMBOL_INDEX)
+#define DEFINE_TOKEN_SYMBOL_INDEX(t, s, p, a) t##Id,
+    DART_TOKEN_LIST(DEFINE_TOKEN_SYMBOL_INDEX) DART_KEYWORD_LIST(
+        DEFINE_TOKEN_SYMBOL_INDEX)
 #undef DEFINE_TOKEN_SYMBOL_INDEX
 
     kNullCharId,  // One char code symbol starts here and takes up 256 entries.
     kMaxPredefinedId = kNullCharId + kMaxOneCharCodeSymbol + 1,
+    // clang-format on
   };
 
   // Number of one character symbols being predefined in the predefined_ array.
@@ -433,21 +448,13 @@ class Symbols : public AllStatic {
   }
 
   // Access methods for one byte character symbols stored in the vm isolate.
-  static const String& Dot() {
-    return *(symbol_handles_[kNullCharId + '.']);
-  }
+  static const String& Dot() { return *(symbol_handles_[kNullCharId + '.']); }
   static const String& Equals() {
     return *(symbol_handles_[kNullCharId + '=']);
   }
-  static const String& Plus() {
-    return *(symbol_handles_[kNullCharId + '+']);
-  }
-  static const String& Minus() {
-    return *(symbol_handles_[kNullCharId + '-']);
-  }
-  static const String& BitOr() {
-    return *(symbol_handles_[kNullCharId + '|']);
-  }
+  static const String& Plus() { return *(symbol_handles_[kNullCharId + '+']); }
+  static const String& Minus() { return *(symbol_handles_[kNullCharId + '-']); }
+  static const String& BitOr() { return *(symbol_handles_[kNullCharId + '|']); }
   static const String& BitAnd() {
     return *(symbol_handles_[kNullCharId + '&']);
   }
@@ -475,9 +482,7 @@ class Symbols : public AllStatic {
   static const String& RBrace() {
     return *(symbol_handles_[kNullCharId + '}']);
   }
-  static const String& Blank() {
-    return *(symbol_handles_[kNullCharId + ' ']);
-  }
+  static const String& Blank() { return *(symbol_handles_[kNullCharId + ' ']); }
   static const String& Dollar() {
     return *(symbol_handles_[kNullCharId + '$']);
   }
@@ -493,39 +498,27 @@ class Symbols : public AllStatic {
   static const String& LowercaseR() {
     return *(symbol_handles_[kNullCharId + 'r']);
   }
-  static const String& Dash() {
-    return *(symbol_handles_[kNullCharId + '-']);
-  }
+  static const String& Dash() { return *(symbol_handles_[kNullCharId + '-']); }
   static const String& Ampersand() {
     return *(symbol_handles_[kNullCharId + '&']);
   }
   static const String& Backtick() {
     return *(symbol_handles_[kNullCharId + '`']);
   }
-  static const String& Slash() {
-    return *(symbol_handles_[kNullCharId + '/']);
-  }
-  static const String& At() {
-    return *(symbol_handles_[kNullCharId + '@']);
-  }
+  static const String& Slash() { return *(symbol_handles_[kNullCharId + '/']); }
+  static const String& At() { return *(symbol_handles_[kNullCharId + '@']); }
   static const String& HashMark() {
     return *(symbol_handles_[kNullCharId + '#']);
   }
   static const String& Semicolon() {
     return *(symbol_handles_[kNullCharId + ';']);
   }
-  static const String& Star() {
-    return *(symbol_handles_[kNullCharId + '*']);
-  }
+  static const String& Star() { return *(symbol_handles_[kNullCharId + '*']); }
   static const String& Percent() {
     return *(symbol_handles_[kNullCharId + '%']);
   }
-  static const String& Caret() {
-    return *(symbol_handles_[kNullCharId + '^']);
-  }
-  static const String& Tilde() {
-    return *(symbol_handles_[kNullCharId + '~']);
-  }
+  static const String& Caret() { return *(symbol_handles_[kNullCharId + '^']); }
+  static const String& Tilde() { return *(symbol_handles_[kNullCharId + '~']); }
 
   static const String& Empty() { return *(symbol_handles_[kTokenTableStart]); }
   static const String& False() { return *(symbol_handles_[kFALSEId]); }
@@ -535,14 +528,14 @@ class Symbols : public AllStatic {
   static const String& True() { return *(symbol_handles_[kTRUEId]); }
   static const String& Void() { return *(symbol_handles_[kVOIDId]); }
 
-  // Access methods for symbol handles stored in the vm isolate for predefined
-  // symbols.
+// Access methods for symbol handles stored in the vm isolate for predefined
+// symbols.
 #define DEFINE_SYMBOL_HANDLE_ACCESSOR(symbol, literal)                         \
   static const String& symbol() { return *(symbol_handles_[k##symbol##Id]); }
   PREDEFINED_SYMBOLS_LIST(DEFINE_SYMBOL_HANDLE_ACCESSOR)
 #undef DEFINE_SYMBOL_HANDLE_ACCESSOR
 
-  // Access methods for symbol handles stored in the vm isolate for keywords.
+// Access methods for symbol handles stored in the vm isolate for keywords.
 #define DEFINE_SYMBOL_HANDLE_ACCESSOR(t, s, p, a)                              \
   static const String& t() { return *(symbol_handles_[t##Id]); }
   DART_TOKEN_LIST(DEFINE_SYMBOL_HANDLE_ACCESSOR)
@@ -610,7 +603,8 @@ class Symbols : public AllStatic {
                                const String& str1,
                                const String& str2);
 
-  static RawString* FromConcatAll(Thread* thread,
+  static RawString* FromConcatAll(
+      Thread* thread,
       const GrowableHandlePtrArray<const String>& strs);
 
   static RawString* FromGet(Thread* thread, const String& str);
@@ -629,7 +623,7 @@ class Symbols : public AllStatic {
   static void DumpStats();
 
   // Returns Symbol::Null if no symbol is found.
-  template<typename StringType>
+  template <typename StringType>
   static RawString* Lookup(Thread* thread, const StringType& str);
 
   // Returns Symbol::Null if no symbol is found.
@@ -641,17 +635,12 @@ class Symbols : public AllStatic {
   static RawString* LookupFromSet(Thread* thread, const String& str);
   static RawString* LookupFromDot(Thread* thread, const String& str);
 
-  static void GetStats(Isolate* isolate,
-                       intptr_t* size,
-                       intptr_t* capacity);
+  static void GetStats(Isolate* isolate, intptr_t* size, intptr_t* capacity);
 
  private:
-  enum {
-    kInitialVMIsolateSymtabSize = 1024,
-    kInitialSymtabSize = 2048
-  };
+  enum { kInitialVMIsolateSymtabSize = 1024, kInitialSymtabSize = 2048 };
 
-  template<typename StringType>
+  template <typename StringType>
   static RawString* NewSymbol(Thread* thread, const StringType& str);
 
   static intptr_t LookupPredefinedSymbol(RawObject* obj);
@@ -673,6 +662,8 @@ class Symbols : public AllStatic {
   friend class String;
   friend class SnapshotReader;
   friend class SnapshotWriter;
+  friend class Serializer;
+  friend class Deserializer;
   friend class ApiMessageReader;
 
   DISALLOW_COPY_AND_ASSIGN(Symbols);
@@ -680,4 +671,4 @@ class Symbols : public AllStatic {
 
 }  // namespace dart
 
-#endif  // VM_SYMBOLS_H_
+#endif  // RUNTIME_VM_SYMBOLS_H_

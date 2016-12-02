@@ -111,12 +111,11 @@ class SweeperTask : public ThreadPool::Task {
     ASSERT(freelist_ != NULL);
     MonitorLocker ml(old_space_->tasks_lock());
     old_space_->set_tasks(old_space_->tasks() + 1);
-    ml.Notify();
   }
 
   virtual void Run() {
-    bool result = Thread::EnterIsolateAsHelper(task_isolate_,
-                                               Thread::kSweeperTask);
+    bool result =
+        Thread::EnterIsolateAsHelper(task_isolate_, Thread::kSweeperTask);
     ASSERT(result);
     {
       Thread* thread = Thread::Current();
@@ -152,7 +151,7 @@ class SweeperTask : public ThreadPool::Task {
     {
       MonitorLocker ml(old_space_->tasks_lock());
       old_space_->set_tasks(old_space_->tasks() - 1);
-      ml.Notify();
+      ml.NotifyAll();
     }
   }
 
@@ -169,11 +168,8 @@ void GCSweeper::SweepConcurrent(Isolate* isolate,
                                 HeapPage* first,
                                 HeapPage* last,
                                 FreeList* freelist) {
-  SweeperTask* task =
-      new SweeperTask(isolate,
-                      isolate->heap()->old_space(),
-                      first, last,
-                      freelist);
+  SweeperTask* task = new SweeperTask(isolate, isolate->heap()->old_space(),
+                                      first, last, freelist);
   ThreadPool* pool = Dart::thread_pool();
   pool->Run(task);
 }

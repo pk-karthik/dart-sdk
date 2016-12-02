@@ -4,13 +4,14 @@
 
 library compiler.src.inferrer.closure_tracer;
 
-import '../types/types.dart' show TypeMask;
 import '../common/names.dart' show Names;
 import '../elements/elements.dart';
+import '../js_backend/backend_helpers.dart';
+import '../types/types.dart' show TypeMask;
 import '../universe/selector.dart' show Selector;
+import 'debug.dart' as debug;
 import 'node_tracer.dart';
 import 'type_graph_nodes.dart';
-import 'debug.dart' as debug;
 
 class ClosureTracerVisitor extends TracerVisitor<ApplyableTypeInformation> {
   final Iterable<FunctionElement> tracedElements;
@@ -71,7 +72,7 @@ class ClosureTracerVisitor extends TracerVisitor<ApplyableTypeInformation> {
     Element called = info.calledElement;
     if (compiler.backend.isForeign(called)) {
       String name = called.name;
-      if (name == 'JS' || name == 'DART_CLOSURE_TO_JS') {
+      if (name == BackendHelpers.JS || name == 'DART_CLOSURE_TO_JS') {
         bailout('Used in JS ${info.call}');
       }
     }
@@ -94,7 +95,7 @@ class ClosureTracerVisitor extends TracerVisitor<ApplyableTypeInformation> {
       inferrer.types.getInferredTypeOf(element) == currentUser;
 
   bool _checkIfFunctionApply(element) =>
-      compiler.functionApplyMethod == element;
+      compiler.commonElements.isFunctionApplyMethod(element);
 
   @override
   visitDynamicCallSiteTypeInformation(DynamicCallSiteTypeInformation info) {

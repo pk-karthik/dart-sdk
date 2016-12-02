@@ -7,32 +7,33 @@
 //   identifier @JSName -> use @Native tag as 'scope' for @JSName.
 //   other @JSName -> use @JSName as an expression.
 
-import "package:expect/expect.dart";
-import 'dart:_js_helper' show Native, JSName, convertDartClosureToJS;
-
+import 'native_testing.dart';
+import 'dart:_js_helper' show convertDartClosureToJS;
 
 typedef int Callback(String s);
 
-@Native("CC")  // Tag can be different to class name.
+@Native("CC") // Tag can be different to class name.
 class AA {
   // This name is not an identifier, so completely defines how to access method.
   @JSName('CC.foo')
-  static int foo(String s) native;
+  static int foo(String s) native ;
 
   // This name is not an identifier, so completely defines how to access method.
   @JSName('CC.bar')
-  static int bar(Callback c) native;
-  static int baz(Callback c) { return bar(c); }
+  static int bar(Callback c) native ;
+  static int baz(Callback c) {
+    return bar(c);
+  }
 
   // Compiler should automatically use the tag and the declared name, i.e. call
   // `CC.lepton`.
-  static int lepton(Callback c) native;
+  static int lepton(Callback c) native ;
   static int electron(c) => lepton(c);
 
   // Compiler should automatically use the tag and JSName, i.e. call
   // `CC.baryon`.
   @JSName('baryon')
-  static int _baryon(Callback c) native;
+  static int _baryon(Callback c) native ;
   static int proton(c) => _baryon(c);
 }
 
@@ -50,6 +51,7 @@ self.CC = CC;
 """;
 
 main() {
+  nativeTesting();
   setup();
 
   // TODO(sra): Investigate why this line is necessary to get a correctly
@@ -66,5 +68,5 @@ main() {
 
   Expect.equals(12, AA._baryon((s) => s.length));
   Expect.equals(12, AA.proton((s) => s.length));
-  Expect.throws(() => AA.baryon((s) => s.length));  // Not defined on AA.
+  Expect.throws(() => AA.baryon((s) => s.length)); // Not defined on AA.
 }

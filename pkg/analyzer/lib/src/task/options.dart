@@ -15,7 +15,7 @@ import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/utilities_general.dart';
 import 'package:analyzer/src/task/general.dart';
-import 'package:analyzer/src/task/strong/info.dart';
+import 'package:analyzer/src/util/yaml.dart';
 import 'package:analyzer/task/general.dart';
 import 'package:analyzer/task/model.dart';
 import 'package:source_span/source_span.dart';
@@ -44,19 +44,24 @@ void configureContextOptions(
 /// `analyzer` analysis options constants.
 class AnalyzerOptions {
   static const String analyzer = 'analyzer';
+  static const String enableAssertInitializer = 'enableAssertInitializer';
   static const String enableAsync = 'enableAsync';
   static const String enableGenericMethods = 'enableGenericMethods';
+  static const String enableInitializingFormalAccess =
+      'enableInitializingFormalAccess';
   static const String enableStrictCallChecks = 'enableStrictCallChecks';
   static const String enableSuperMixins = 'enableSuperMixins';
 
-  /// This option is deprecated.
-  static const String enableConditionalDirectives =
-      "enableConditionalDirectives";
   static const String errors = 'errors';
   static const String exclude = 'exclude';
+  static const String include = 'include';
   static const String language = 'language';
   static const String plugins = 'plugins';
   static const String strong_mode = 'strong-mode';
+
+  // Strong mode options, see AnalysisOptionsImpl for documentation.
+  static const String implicitCasts = 'implicit-casts';
+  static const String implicitDynamic = 'implicit-dynamic';
 
   /// Ways to say `ignore`.
   static const List<String> ignoreSynonyms = const ['ignore', 'false'];
@@ -82,8 +87,8 @@ class AnalyzerOptions {
 
   /// Supported `analyzer` language configuration options.
   static const List<String> languageOptions = const [
+    enableAssertInitializer,
     enableAsync,
-    enableConditionalDirectives,
     enableGenericMethods,
     enableStrictCallChecks,
     enableSuperMixins
@@ -160,9 +165,7 @@ class ErrorFilterOptionValidator extends OptionsValidator {
     if (_errorCodes == null) {
       _errorCodes = new HashSet<String>();
       // Engine codes.
-      _errorCodes.addAll(ErrorCode.values.map((ErrorCode code) => code.name));
-      // Strong-mode codes.
-      _errorCodes.addAll(StaticInfo.names);
+      _errorCodes.addAll(errorCodeValues.map((ErrorCode code) => code.name));
     }
     return _errorCodes;
   }
@@ -217,10 +220,12 @@ class GenerateOptionsErrorsTask extends SourceBasedAnalysisTask {
       <ResultDescriptor>[ANALYSIS_OPTIONS_ERRORS, LINE_INFO],
       suitabilityFor: suitabilityFor);
 
-  final AnalysisOptionsProvider optionsProvider = new AnalysisOptionsProvider();
+  AnalysisOptionsProvider optionsProvider;
 
   GenerateOptionsErrorsTask(AnalysisContext context, AnalysisTarget target)
-      : super(context, target);
+      : super(context, target) {
+    optionsProvider = new AnalysisOptionsProvider(context?.sourceFactory);
+  }
 
   @override
   TaskDescriptor get descriptor => DESCRIPTOR;
@@ -232,16 +237,80 @@ class GenerateOptionsErrorsTask extends SourceBasedAnalysisTask {
     String content = getRequiredInput(CONTENT_INPUT_NAME);
 
     List<AnalysisError> errors = <AnalysisError>[];
+    Source initialSource = source;
+    SourceSpan initialIncludeSpan;
+
+    // Validate the specified options and any included option files
+    void validate(Source source, Map<String, YamlNode> options) {
+      List<AnalysisError> validationErrors =
+          new OptionsFileValidator(source).validate(options);
+      if (initialIncludeSpan != null && validationErrors.isNotEmpty) {
+        for (AnalysisError error in validationErrors) {
+          var args = [
+            source.fullName,
+            error.offset.toString(),
+            (error.offset + error.length - 1).toString(),
+            error.message,
+          ];
+          errors.add(new AnalysisError(
+              initialSource,
+              initialIncludeSpan.start.column + 1,
+              initialIncludeSpan.length,
+              AnalysisOptionsWarningCode.INCLUDED_FILE_WARNING,
+              args));
+        }
+      } else {
+        errors.addAll(validationErrors);
+      }
+
+      YamlNode node = options[AnalyzerOptions.include];
+      if (node == null) {
+        return;
+      }
+      SourceSpan span = node.span;
+      initialIncludeSpan ??= span;
+      String includeUri = span.text;
+      Source includedSource =
+          context.sourceFactory.resolveUri(source, includeUri);
+      if (!includedSource.exists()) {
+        errors.add(new AnalysisError(
+            initialSource,
+            initialIncludeSpan.start.column + 1,
+            initialIncludeSpan.length,
+            AnalysisOptionsWarningCode.INCLUDE_FILE_NOT_FOUND,
+            [includeUri, source.fullName]));
+        return;
+      }
+      try {
+        Map<String, YamlNode> options =
+            optionsProvider.getOptionsFromString(includedSource.contents.data);
+        validate(includedSource, options);
+      } on OptionsFormatException catch (e) {
+        var args = [
+          includedSource.fullName,
+          e.span.start.offset.toString(),
+          e.span.end.offset.toString(),
+          e.message,
+        ];
+        // Report errors for included option files
+        // on the include directive located in the initial options file.
+        errors.add(new AnalysisError(
+            initialSource,
+            initialIncludeSpan.start.column + 1,
+            initialIncludeSpan.length,
+            AnalysisOptionsErrorCode.INCLUDED_FILE_PARSE_ERROR,
+            args));
+      }
+    }
 
     try {
       Map<String, YamlNode> options =
           optionsProvider.getOptionsFromString(content);
-      errors.addAll(_validate(options));
+      validate(source, options);
     } on OptionsFormatException catch (e) {
       SourceSpan span = e.span;
-      var error = new AnalysisError(source, span.start.column + 1, span.length,
-          AnalysisOptionsErrorCode.PARSE_ERROR, [e.message]);
-      errors.add(error);
+      errors.add(new AnalysisError(source, span.start.column + 1, span.length,
+          AnalysisOptionsErrorCode.PARSE_ERROR, [e.message]));
     }
 
     //
@@ -250,9 +319,6 @@ class GenerateOptionsErrorsTask extends SourceBasedAnalysisTask {
     outputs[ANALYSIS_OPTIONS_ERRORS] = errors;
     outputs[LINE_INFO] = computeLineInfo(content);
   }
-
-  List<AnalysisError> _validate(Map<String, YamlNode> options) =>
-      new OptionsFileValidator(source).validate(options);
 
   /// Return a map from the names of the inputs of this kind of task to the
   /// task input descriptors describing those inputs for a task with the
@@ -433,12 +499,19 @@ class _OptionsProcessor {
     if (analyzer is Map) {
       // Process strong mode option.
       var strongMode = analyzer[AnalyzerOptions.strong_mode];
-      if (strongMode is bool) {
-        options.strongMode = strongMode;
-      }
+      _applyStrongOptions(options, strongMode);
+
+      // Set filters.
+      var filters = analyzer[AnalyzerOptions.errors];
+      _applyProcessors(options, filters);
+
       // Process language options.
       var language = analyzer[AnalyzerOptions.language];
       _applyLanguageOptions(options, language);
+
+      // Process excludes.
+      var excludes = analyzer[AnalyzerOptions.exclude];
+      _applyExcludes(options, excludes);
     }
   }
 
@@ -462,16 +535,32 @@ class _OptionsProcessor {
       // Process language options.
       var language = analyzer[AnalyzerOptions.language];
       setLanguageOptions(context, language);
+
+      // Process excludes.
+      var excludes = analyzer[AnalyzerOptions.exclude];
+      setExcludes(context, excludes);
+    }
+  }
+
+  void setExcludes(AnalysisContext context, Object excludes) {
+    if (excludes is YamlList) {
+      List<String> excludeList = toStringList(excludes);
+      if (excludeList != null) {
+        AnalysisOptionsImpl options =
+            new AnalysisOptionsImpl.from(context.analysisOptions);
+        options.excludePatterns = excludeList;
+        context.analysisOptions = options;
+      }
     }
   }
 
   void setLanguageOption(
       AnalysisContext context, Object feature, Object value) {
-    if (feature == AnalyzerOptions.enableAsync) {
-      if (isFalse(value)) {
+    if (feature == AnalyzerOptions.enableAssertInitializer) {
+      if (isTrue(value)) {
         AnalysisOptionsImpl options =
             new AnalysisOptionsImpl.from(context.analysisOptions);
-        options.enableAsync = false;
+        options.enableAssertInitializer = true;
         context.analysisOptions = options;
       }
     }
@@ -488,14 +577,6 @@ class _OptionsProcessor {
         AnalysisOptionsImpl options =
             new AnalysisOptionsImpl.from(context.analysisOptions);
         options.enableSuperMixins = true;
-        context.analysisOptions = options;
-      }
-    }
-    if (feature == AnalyzerOptions.enableGenericMethods) {
-      if (isTrue(value)) {
-        AnalysisOptionsImpl options =
-            new AnalysisOptionsImpl.from(context.analysisOptions);
-        options.enableGenericMethods = true;
         context.analysisOptions = options;
       }
     }
@@ -516,17 +597,35 @@ class _OptionsProcessor {
 
   void setProcessors(AnalysisContext context, Object codes) {
     ErrorConfig config = new ErrorConfig(codes);
-    context.setConfigurationData(
-        CONFIGURED_ERROR_PROCESSORS, config.processors);
+    AnalysisOptionsImpl options =
+        new AnalysisOptionsImpl.from(context.analysisOptions);
+    options.errorProcessors = config.processors;
+    context.analysisOptions = options;
   }
 
   void setStrongMode(AnalysisContext context, Object strongMode) {
-    bool strong = strongMode is bool ? strongMode : false;
-    if (context.analysisOptions.strongMode != strong) {
+    if (strongMode is Map) {
       AnalysisOptionsImpl options =
           new AnalysisOptionsImpl.from(context.analysisOptions);
-      options.strongMode = strong;
+      _applyStrongOptions(options, strongMode);
       context.analysisOptions = options;
+    } else {
+      strongMode = strongMode is bool ? strongMode : false;
+      if (context.analysisOptions.strongMode != strongMode) {
+        AnalysisOptionsImpl options =
+            new AnalysisOptionsImpl.from(context.analysisOptions);
+        options.strongMode = strongMode;
+        context.analysisOptions = options;
+      }
+    }
+  }
+
+  void _applyExcludes(AnalysisOptionsImpl options, Object excludes) {
+    if (excludes is YamlList) {
+      List<String> excludeList = toStringList(excludes);
+      if (excludeList != null) {
+        options.excludePatterns = excludeList;
+      }
     }
   }
 
@@ -534,14 +633,10 @@ class _OptionsProcessor {
       AnalysisOptionsImpl options, Object feature, Object value) {
     bool boolValue = toBool(value);
     if (boolValue != null) {
-      if (feature == AnalyzerOptions.enableAsync) {
-        options.enableAsync = boolValue;
-      }
-      if (feature == AnalyzerOptions.enableSuperMixins) {
+      if (feature == AnalyzerOptions.enableAssertInitializer) {
+        options.enableAssertInitializer = boolValue;
+      } else if (feature == AnalyzerOptions.enableSuperMixins) {
         options.enableSuperMixins = boolValue;
-      }
-      if (feature == AnalyzerOptions.enableGenericMethods) {
-        options.enableGenericMethods = boolValue;
       }
     }
   }
@@ -557,6 +652,40 @@ class _OptionsProcessor {
     } else if (configs is Map) {
       configs
           .forEach((key, value) => _applyLanguageOption(options, key, value));
+    }
+  }
+
+  void _applyProcessors(AnalysisOptionsImpl options, Object codes) {
+    ErrorConfig config = new ErrorConfig(codes);
+    options.errorProcessors = config.processors;
+  }
+
+  void _applyStrongModeOption(
+      AnalysisOptionsImpl options, Object feature, Object value) {
+    bool boolValue = toBool(value);
+    if (boolValue != null) {
+      if (feature == AnalyzerOptions.implicitCasts) {
+        options.implicitCasts = boolValue;
+      }
+      if (feature == AnalyzerOptions.implicitDynamic) {
+        options.implicitDynamic = boolValue;
+      }
+    }
+  }
+
+  void _applyStrongOptions(AnalysisOptionsImpl options, Object config) {
+    if (config is YamlMap) {
+      options.strongMode = true;
+      config.nodes.forEach((k, v) {
+        if (k is YamlScalar && v is YamlScalar) {
+          _applyStrongModeOption(options, k.value?.toString(), v.value);
+        }
+      });
+    } else if (config is Map) {
+      options.strongMode = true;
+      config.forEach((k, v) => _applyStrongModeOption(options, k, v));
+    } else {
+      options.strongMode = config is bool ? config : false;
     }
   }
 }

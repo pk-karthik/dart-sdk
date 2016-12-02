@@ -4,21 +4,54 @@
 
 part of app;
 
+final _allocationProfileRepository = new AllocationProfileRepository();
+final _breakpointRepository = new BreakpointRepository();
+final _classSampleProfileRepository = new ClassSampleProfileRepository();
+final _classRepository = new ClassRepository();
+final _contextRepository = new ContextRepository();
+final _evalRepository = new EvalRepository();
+final _fieldRepository = new FieldRepository();
+final _functionRepository = new FunctionRepository();
+final _heapSnapshotRepository = new HeapSnapshotRepository();
+final _icdataRepository = new ICDataRepository();
+final _inboundReferencesRepository = new InboundReferencesRepository();
+final _instanceRepository = new InstanceRepository();
+final _isolateRepository = new IsolateRepository();
+final _isolateSampleProfileRepository = new IsolateSampleProfileRepository();
+final _libraryRepository = new LibraryRepository();
+final _megamorphicCacheRepository = new MegamorphicCacheRepository();
+final _metricRepository = new MetricRepository();
+final _objectRepository = new ObjectRepository();
+final _objectPoolRepository = new ObjectPoolRepository();
+final _objectstoreRepository = new ObjectStoreRepository();
+final _persistentHandlesRepository = new PersistentHandlesRepository();
+final _portsRepository = new PortsRepository();
+final _scriptRepository = new ScriptRepository();
+final _stronglyReachangleInstancesRepository =
+    new StronglyReachableInstancesRepository();
+final _topRetainingInstancesRepository = new TopRetainingInstancesRepository();
+final _typeArgumentsRepository = new TypeArgumentsRepository();
+
 class IsolateNotFound implements Exception {
   String isolateId;
   IsolateNotFound(this.isolateId);
   String toString() => "IsolateNotFound: $isolateId";
 }
 
+RetainedSizeRepository _retainedSizeRepository = new RetainedSizeRepository();
+ReachableSizeRepository _reachableSizeRepository =
+    new ReachableSizeRepository();
+RetainingPathRepository _retainingPathRepository =
+    new RetainingPathRepository();
+
 /// A [Page] controls the user interface of Observatory. At any given time
 /// one page will be the current page. Pages are registered at startup.
 /// When the user navigates within the application, each page is asked if it
 /// can handle the current location, the first page to say yes, wins.
-abstract class Page extends Observable {
+abstract class Page {
   final ObservatoryApplication app;
-  final ObservableMap<String, String> internalArguments =
-      new ObservableMap<String, String>();
-  @observable ObservatoryElement element;
+  final Map<String, String> internalArguments = <String, String>{};
+  HtmlElement element;
 
   Page(this.app);
 
@@ -47,17 +80,10 @@ abstract class Page extends Observable {
   bool canVisit(Uri uri);
 }
 
-/// A [SimplePage] matches a single uri path and displays a single element.
-class SimplePage extends Page {
+/// A [MatchingPage] matches a single uri path.
+abstract class MatchingPage extends Page {
   final String path;
-  final String elementTagName;
-  SimplePage(this.path, this.elementTagName, app) : super(app);
-
-  void onInstall() {
-    if (element == null) {
-      element = new Element.tag(elementTagName);
-    }
-  }
+  MatchingPage(this.path, app) : super(app);
 
   void _visit(Uri uri) {
     assert(uri != null);
@@ -77,6 +103,18 @@ class SimplePage extends Page {
   bool canVisit(Uri uri) => uri.path == path;
 }
 
+/// A [SimplePage] matches a single uri path and displays a single element.
+class SimplePage extends MatchingPage {
+  final String elementTagName;
+  SimplePage(String path, this.elementTagName, app) : super(path, app);
+
+  void onInstall() {
+    if (element == null) {
+      element = new Element.tag(elementTagName);
+    }
+  }
+}
+
 /// Error page for unrecognized paths.
 class ErrorPage extends Page {
   ErrorPage(app) : super(app);
@@ -84,7 +122,7 @@ class ErrorPage extends Page {
   void onInstall() {
     if (element == null) {
       // Lazily create page.
-      element = new Element.tag('general-error');
+      element = new GeneralErrorElement(app.notifications, queue: app.queue);
     }
   }
 
@@ -92,17 +130,7 @@ class ErrorPage extends Page {
     assert(element != null);
     assert(canVisit(uri));
 
-    /*
-    if (uri.path == '') {
-      // Nothing requested.
-      return;
-    }
-    */
-
-    if (element != null) {
-      GeneralErrorElement serviceElement = element;
-      serviceElement.message = "Path '${uri.path}' not found";
-    }
+    (element as GeneralErrorElement).message = "Path '${uri.path}' not found";
   }
 
   /// Catch all.
@@ -110,20 +138,36 @@ class ErrorPage extends Page {
 }
 
 /// Top-level vm info page.
-class VMPage extends SimplePage {
-  VMPage(app) : super('vm', 'service-view', app);
+class VMPage extends MatchingPage {
+  VMPage(app) : super('vm', app);
+
+  final DivElement container = new DivElement();
+
+  void onInstall() {
+    if (element == null) {
+      element = container;
+    }
+    assert(element != null);
+  }
 
   void _visit(Uri uri) {
     super._visit(uri);
-    app.vm.reload().then((vm) {
-      if (element != null) {
-        ServiceObjectViewElement serviceElement = element;
-        serviceElement.object = vm;
-      }
+    if (app.vm == null) {
+      Logger.root.severe('VMPage has no VM');
+      // Reroute to vm-connect.
+      app.locationManager.go(Uris.vmConnect());
+      return;
+    }
+    app.vm.reload().then((VM vm) {
+      container.children = [
+        new VMViewElement(vm, app.events, app.notifications, _isolateRepository,
+            _scriptRepository,
+            queue: app.queue)
+      ];
     }).catchError((e, stack) {
       Logger.root.severe('VMPage visit error: $e');
       // Reroute to vm-connect.
-      app.locationManager.go(app.locationManager.makeLink('/vm-connect'));
+      app.locationManager.go(Uris.vmConnect());
     });
   }
 }
@@ -131,21 +175,22 @@ class VMPage extends SimplePage {
 class FlagsPage extends SimplePage {
   FlagsPage(app) : super('flags', 'flag-list', app);
 
+  @override
+  onInstall() {
+    element = new FlagListElement(
+        app.vm, app.events, new FlagsRepository(app.vm), app.notifications,
+        queue: app.queue);
+  }
+
   void _visit(Uri uri) {
     super._visit(uri);
-    app.vm.getFlagList().then((flags) {
-      if (element != null) {
-        FlagListElement serviceElement = element;
-        serviceElement.flagList = flags;
-      }
-    }).catchError((e, stack) {
-      Logger.root.severe('FlagsPage visit error: $e\n$stack');
-    });
   }
 }
 
-class InspectPage extends SimplePage {
-  InspectPage(app) : super('inspect', 'service-view', app);
+class InspectPage extends MatchingPage {
+  InspectPage(app) : super('inspect', app);
+
+  final DivElement container = new DivElement();
 
   void _visit(Uri uri) {
     super._visit(uri);
@@ -159,170 +204,540 @@ class InspectPage extends SimplePage {
     });
   }
 
-  void _visitObject(obj) {
-    if (element != null) {
-      ServiceObjectViewElement serviceElement = element;
-      serviceElement.object = obj;
+  void onInstall() {
+    if (element == null) {
+      element = container;
+    }
+    assert(element != null);
+  }
+
+  Future _visitObject(obj) async {
+    container.children = [];
+    await obj.reload();
+    if (obj is Class) {
+      container.children = [
+        new ClassViewElement(
+            app.vm,
+            obj.isolate,
+            obj,
+            app.events,
+            app.notifications,
+            _classRepository,
+            _retainedSizeRepository,
+            _reachableSizeRepository,
+            _inboundReferencesRepository,
+            _retainingPathRepository,
+            _fieldRepository,
+            _scriptRepository,
+            _instanceRepository,
+            _evalRepository,
+            _stronglyReachangleInstancesRepository,
+            _topRetainingInstancesRepository,
+            _classSampleProfileRepository,
+            queue: app.queue)
+      ];
+    } else if (obj is Code) {
+      await obj.loadScript();
+      container.children = [
+        new CodeViewElement(
+            app.vm,
+            obj.isolate,
+            obj,
+            app.events,
+            app.notifications,
+            _retainedSizeRepository,
+            _reachableSizeRepository,
+            _inboundReferencesRepository,
+            _retainingPathRepository,
+            _instanceRepository,
+            queue: app.queue)
+      ];
+    } else if (obj is Context) {
+      container.children = [
+        new ContextViewElement(
+            app.vm,
+            obj.isolate,
+            obj,
+            app.events,
+            app.notifications,
+            _contextRepository,
+            _retainedSizeRepository,
+            _reachableSizeRepository,
+            _inboundReferencesRepository,
+            _retainingPathRepository,
+            _instanceRepository,
+            queue: app.queue)
+      ];
+    } else if (obj is DartError) {
+      container.children = [
+        new ErrorViewElement(app.notifications, obj, queue: app.queue)
+      ];
+    } else if (obj is Field) {
+      container.children = [
+        new FieldViewElement(
+            app.vm,
+            obj.isolate,
+            obj,
+            app.events,
+            app.notifications,
+            _fieldRepository,
+            _classRepository,
+            _retainedSizeRepository,
+            _reachableSizeRepository,
+            _inboundReferencesRepository,
+            _retainingPathRepository,
+            _scriptRepository,
+            _instanceRepository,
+            queue: app.queue)
+      ];
+    } else if (obj is Instance) {
+      container.children = [
+        new InstanceViewElement(
+            app.vm,
+            obj.isolate,
+            obj,
+            app.events,
+            app.notifications,
+            _instanceRepository,
+            _classRepository,
+            _retainedSizeRepository,
+            _reachableSizeRepository,
+            _inboundReferencesRepository,
+            _retainingPathRepository,
+            _scriptRepository,
+            _evalRepository,
+            _typeArgumentsRepository,
+            _breakpointRepository,
+            _functionRepository,
+            queue: app.queue)
+      ];
+    } else if (obj is Isolate) {
+      container.children = [
+        new IsolateViewElement(
+            app.vm,
+            obj,
+            app.events,
+            app.notifications,
+            _isolateRepository,
+            _scriptRepository,
+            _functionRepository,
+            _libraryRepository,
+            _instanceRepository,
+            _evalRepository,
+            queue: app.queue)
+      ];
+    } else if (obj is ServiceFunction) {
+      container.children = [
+        new FunctionViewElement(
+            app.vm,
+            obj.isolate,
+            obj,
+            app.events,
+            app.notifications,
+            _functionRepository,
+            _classRepository,
+            _retainedSizeRepository,
+            _reachableSizeRepository,
+            _inboundReferencesRepository,
+            _retainingPathRepository,
+            _scriptRepository,
+            _instanceRepository,
+            queue: app.queue)
+      ];
+    } else if (obj is ICData) {
+      container.children = [
+        new ICDataViewElement(
+            app.vm,
+            obj.isolate,
+            obj,
+            app.events,
+            app.notifications,
+            _icdataRepository,
+            _retainedSizeRepository,
+            _reachableSizeRepository,
+            _inboundReferencesRepository,
+            _retainingPathRepository,
+            _instanceRepository,
+            queue: app.queue)
+      ];
+    } else if (obj is Library) {
+      container.children = [
+        new LibraryViewElement(
+            app.vm,
+            obj.isolate,
+            obj,
+            app.events,
+            app.notifications,
+            _libraryRepository,
+            _fieldRepository,
+            _retainedSizeRepository,
+            _reachableSizeRepository,
+            _inboundReferencesRepository,
+            _retainingPathRepository,
+            _scriptRepository,
+            _instanceRepository,
+            _evalRepository,
+            queue: app.queue)
+      ];
+    } else if (obj is MegamorphicCache) {
+      container.children = [
+        new MegamorphicCacheViewElement(
+            app.vm,
+            obj.isolate,
+            obj,
+            app.events,
+            app.notifications,
+            _megamorphicCacheRepository,
+            _retainedSizeRepository,
+            _reachableSizeRepository,
+            _inboundReferencesRepository,
+            _retainingPathRepository,
+            _instanceRepository,
+            queue: app.queue)
+      ];
+    } else if (obj is ObjectPool) {
+      container.children = [
+        new ObjectPoolViewElement(
+            app.vm,
+            obj.isolate,
+            obj,
+            app.events,
+            app.notifications,
+            _objectPoolRepository,
+            _retainedSizeRepository,
+            _reachableSizeRepository,
+            _inboundReferencesRepository,
+            _retainingPathRepository,
+            _instanceRepository,
+            queue: app.queue)
+      ];
+    } else if (obj is Script) {
+      var pos;
+      if (app.locationManager.internalArguments['pos'] != null) {
+        try {
+          pos = int.parse(app.locationManager.internalArguments['pos']);
+        } catch (_) {}
+      }
+      container.children = [
+        new ScriptViewElement(
+            app.vm,
+            obj.isolate,
+            obj,
+            app.events,
+            app.notifications,
+            _scriptRepository,
+            _retainedSizeRepository,
+            _reachableSizeRepository,
+            _inboundReferencesRepository,
+            _retainingPathRepository,
+            _instanceRepository,
+            pos: pos,
+            queue: app.queue)
+      ];
+    } else if (obj is HeapObject) {
+      container.children = [
+        new ObjectViewElement(
+            app.vm,
+            obj.isolate,
+            obj,
+            app.events,
+            app.notifications,
+            _objectRepository,
+            _retainedSizeRepository,
+            _reachableSizeRepository,
+            _inboundReferencesRepository,
+            _retainingPathRepository,
+            _instanceRepository,
+            queue: app.queue)
+      ];
+    } else if (obj is Sentinel) {
+      container.children = [
+        new SentinelViewElement(
+            app.vm, obj.isolate, obj, app.events, app.notifications,
+            queue: app.queue)
+      ];
+    } else {
+      container.children = [
+        new JSONViewElement(obj, app.notifications, queue: app.queue)
+      ];
     }
   }
 }
-
 
 /// Class tree page.
 class ClassTreePage extends SimplePage {
   ClassTreePage(app) : super('class-tree', 'class-tree', app);
 
+  final DivElement container = new DivElement();
+
+  @override
+  void onInstall() {
+    element = container;
+  }
+
   void _visit(Uri uri) {
     super._visit(uri);
     getIsolate(uri).then((isolate) {
-      if (element != null) {
-        /// Update the page.
-        ClassTreeElement page = element;
-        page.isolate = isolate;
-      }
+      container.children = [
+        new ClassTreeElement(
+            app.vm, isolate, app.events, app.notifications, _classRepository)
+      ];
     });
   }
 }
 
-class DebuggerPage extends SimplePage {
-  DebuggerPage(app) : super('debugger', 'debugger-page', app);
+class DebuggerPage extends MatchingPage {
+  DebuggerPage(app) : super('debugger', app);
+
+  final DivElement container = new DivElement();
 
   void _visit(Uri uri) {
     super._visit(uri);
-    getIsolate(uri).then((isolate) {
-      if (element != null) {
-        /// Update the page.
-        DebuggerPageElement page = element;
-        page.isolate = isolate;
-      }
+    getIsolate(uri).then((isolate) async {
+      container.children = [
+        new DebuggerPageElement(
+            isolate, _instanceRepository, _scriptRepository, app.events)
+      ];
     });
+  }
+
+  void onInstall() {
+    if (element == null) {
+      element = container;
+    }
+    assert(element != null);
+  }
+
+  @override
+  void onUninstall() {
+    super.onUninstall();
+    container.children = const [];
   }
 }
 
-class CpuProfilerPage extends SimplePage {
-  CpuProfilerPage(app) : super('profiler', 'cpu-profile', app);
+class ObjectStorePage extends MatchingPage {
+  ObjectStorePage(app) : super('object-store', app);
+
+  final DivElement container = new DivElement();
 
   void _visit(Uri uri) {
     super._visit(uri);
-    getIsolate(uri).then((isolate) {
-      if (element != null) {
-        /// Update the page.
-        CpuProfileElement page = element;
-        page.isolate = isolate;
-      }
+    getIsolate(uri).then((isolate) async {
+      container.children = [
+        new ObjectStoreViewElement(isolate.vm, isolate, app.events,
+            app.notifications, _objectstoreRepository, _instanceRepository)
+      ];
     });
+  }
+
+  void onInstall() {
+    if (element == null) {
+      element = container;
+    }
+    assert(element != null);
   }
 }
 
-class TableCpuProfilerPage extends SimplePage {
-  TableCpuProfilerPage(app)
-      : super('profiler-table', 'cpu-profile-table', app);
+class CpuProfilerPage extends MatchingPage {
+  CpuProfilerPage(app) : super('profiler', app);
+
+  final DivElement container = new DivElement();
 
   void _visit(Uri uri) {
     super._visit(uri);
     getIsolate(uri).then((isolate) {
-      if (element != null) {
-        /// Update the page.
-        CpuProfileTableElement page = element;
-        page.isolate = isolate;
-        // TODO(johnmccutchan): Provide a more general mechanism to notify
-        // elements of URI parameter changes. Possibly via a stream off of
-        // LocationManager. With a stream individual elements (not just pages)
-        // could be notified.
-        page.checkParameters();
-      }
+      container.children = [
+        new CpuProfileElement(isolate.vm, isolate, app.events,
+            app.notifications, _isolateSampleProfileRepository)
+      ];
     });
+  }
+
+  void onInstall() {
+    if (element == null) {
+      element = container;
+    }
+    assert(element != null);
   }
 }
 
-class AllocationProfilerPage extends SimplePage {
-  AllocationProfilerPage(app)
-      : super('allocation-profiler', 'heap-profile', app);
+class TableCpuProfilerPage extends MatchingPage {
+  TableCpuProfilerPage(app) : super('profiler-table', app);
+
+  final DivElement container = new DivElement();
 
   void _visit(Uri uri) {
     super._visit(uri);
     getIsolate(uri).then((isolate) {
-      if (element != null) {
-        /// Update the page.
-        HeapProfileElement page = element;
-        page.isolate = isolate;
-      }
+      container.children = [
+        new CpuProfileTableElement(isolate.vm, isolate, app.events,
+            app.notifications, _isolateSampleProfileRepository)
+      ];
     });
+  }
+
+  void onInstall() {
+    if (element == null) {
+      element = container;
+    }
+    assert(element != null);
   }
 }
 
-class PortsPage extends SimplePage {
-  PortsPage(app)
-      : super('ports', 'ports-page', app);
+class AllocationProfilerPage extends MatchingPage {
+  AllocationProfilerPage(app) : super('allocation-profiler', app);
+
+  final DivElement container = new DivElement();
 
   void _visit(Uri uri) {
     super._visit(uri);
     getIsolate(uri).then((isolate) {
-      if (element != null) {
-        PortsPageElement page = element;
-        page.isolate = isolate;
-      }
+      container.children = [
+        new AllocationProfileElement(isolate.vm, isolate, app.events,
+            app.notifications, _allocationProfileRepository,
+            queue: app.queue)
+      ];
     });
+  }
+
+  void onInstall() {
+    if (element == null) {
+      element = container;
+    }
+    app.startGCEventListener();
+  }
+
+  @override
+  void onUninstall() {
+    super.onUninstall();
+    app.stopGCEventListener();
+    container.children = const [];
   }
 }
 
-class PersistentHandlesPage extends SimplePage {
-  PersistentHandlesPage(app)
-      : super('persistent-handles', 'persistent-handles-page', app);
+class PortsPage extends MatchingPage {
+  PortsPage(app) : super('ports', app);
+
+  final DivElement container = new DivElement();
 
   void _visit(Uri uri) {
     super._visit(uri);
     getIsolate(uri).then((isolate) {
-      if (element != null) {
-        PersistentHandlesPageElement page = element;
-        page.isolate = isolate;
-      }
+      container.children = [
+        new PortsElement(isolate.vm, isolate, app.events, app.notifications,
+            _portsRepository, _instanceRepository,
+            queue: app.queue)
+      ];
     });
+  }
+
+  void onInstall() {
+    if (element == null) {
+      element = container;
+    }
   }
 }
 
-class HeapMapPage extends SimplePage {
-  HeapMapPage(app) : super('heap-map', 'heap-map', app);
+class PersistentHandlesPage extends MatchingPage {
+  PersistentHandlesPage(app) : super('persistent-handles', app);
+
+  final DivElement container = new DivElement();
 
   void _visit(Uri uri) {
     super._visit(uri);
     getIsolate(uri).then((isolate) {
-      if (element != null) {
-        /// Update the page.
-        HeapMapElement page = element;
-        page.isolate = isolate;
-      }
+      container.children = [
+        new PersistentHandlesPageElement(
+            isolate.vm,
+            isolate,
+            app.events,
+            app.notifications,
+            _persistentHandlesRepository,
+            _instanceRepository,
+            queue: app.queue)
+      ];
     });
+  }
+
+  void onInstall() {
+    if (element == null) {
+      element = container;
+    }
   }
 }
 
-class HeapSnapshotPage extends SimplePage {
-  HeapSnapshotPage(app) : super('heap-snapshot', 'heap-snapshot', app);
+class HeapMapPage extends MatchingPage {
+  HeapMapPage(app) : super('heap-map', app);
+
+  final DivElement container = new DivElement();
 
   void _visit(Uri uri) {
     super._visit(uri);
     getIsolate(uri).then((isolate) {
-      if (element != null) {
-        /// Update the page.
-        HeapSnapshotElement page = element;
-        page.isolate = isolate;
-      }
+      container.children = [
+        new HeapMapElement(isolate.vm, isolate, app.events, app.notifications,
+            queue: app.queue)
+      ];
     });
+  }
+
+  void onInstall() {
+    if (element == null) {
+      element = container;
+    }
   }
 }
 
+class HeapSnapshotPage extends MatchingPage {
+  HeapSnapshotPage(app) : super('heap-snapshot', app);
 
-class LoggingPage extends SimplePage {
-  LoggingPage(app) : super('logging', 'logging-page', app);
+  final DivElement container = new DivElement();
 
   void _visit(Uri uri) {
     super._visit(uri);
     getIsolate(uri).then((isolate) {
-      if (element != null) {
-        /// Update the page.
-        LoggingPageElement page = element;
-        page.isolate = isolate;
-      }
+      container.children = [
+        new HeapSnapshotElement(isolate.vm, isolate, app.events,
+            app.notifications, _heapSnapshotRepository, _instanceRepository,
+            queue: app.queue)
+      ];
+    });
+  }
+
+  void onInstall() {
+    if (element == null) {
+      element = container;
+    }
+  }
+}
+
+class LoggingPage extends MatchingPage {
+  LoggingPage(app) : super('logging', app);
+
+  final DivElement container = new DivElement();
+
+  @override
+  void onInstall() {
+    element = container;
+    container.children = const [];
+    app.startLoggingEventListener();
+  }
+
+  @override
+  void onUninstall() {
+    super.onUninstall();
+    container.children = const [];
+    app.stopLoggingEventListener();
+  }
+
+  void _visit(Uri uri) {
+    assert(element != null);
+    assert(canVisit(uri));
+    getIsolate(uri).then((isolate) {
+      container.children = [
+        new LoggingPageElement(app.vm, isolate, app.events, app.notifications,
+            queue: app.queue)
+      ];
     });
   }
 }
@@ -331,16 +746,14 @@ class ErrorViewPage extends Page {
   ErrorViewPage(app) : super(app);
 
   void onInstall() {
-    if (element == null) {
-      /// Lazily create page.
-      element = new Element.tag('service-view');
-    }
+    element = new ErrorViewElement(
+        app.notifications, app.lastErrorOrException as DartError,
+        queue: app.queue);
   }
 
   void _visit(Uri uri) {
     assert(element != null);
     assert(canVisit(uri));
-    (element as ServiceObjectViewElement).object = app.lastErrorOrException;
   }
 
   // TODO(turnidge): How to test this page?
@@ -352,7 +765,11 @@ class VMConnectPage extends Page {
 
   void onInstall() {
     if (element == null) {
-      element = new Element.tag('vm-connect');
+      element = new VMConnectElement(
+          ObservatoryApplication.app.targets,
+          ObservatoryApplication.app.loadCrashDump,
+          ObservatoryApplication.app.notifications,
+          queue: ObservatoryApplication.app.queue);
     }
     assert(element != null);
   }
@@ -368,15 +785,22 @@ class VMConnectPage extends Page {
 class IsolateReconnectPage extends Page {
   IsolateReconnectPage(app) : super(app);
 
+  final DivElement container = new DivElement();
+
   void onInstall() {
-    if (element == null) {
-      element = new Element.tag('isolate-reconnect');
-    }
-    assert(element != null);
+    element = container;
   }
 
   void _visit(Uri uri) {
     app.vm.reload();
+    container.children = [
+      new IsolateReconnectElement(
+          app.vm,
+          app.events,
+          app.notifications,
+          uri.queryParameters['isolateId'],
+          Uri.parse(uri.queryParameters['originalUri']))
+    ];
     assert(element != null);
     assert(canVisit(uri));
   }
@@ -384,77 +808,50 @@ class IsolateReconnectPage extends Page {
   bool canVisit(Uri uri) => uri.path == 'isolate-reconnect';
 }
 
-class MetricsPage extends Page {
-  // Page state, retained as long as ObservatoryApplication.
-  String selectedMetricId;
+class MetricsPage extends MatchingPage {
+  MetricsPage(app) : super('metrics', app);
 
-  final Map<int, MetricPoller> pollers = new Map<int, MetricPoller>();
+  final DivElement container = new DivElement();
 
-  // 8 seconds, 4 seconds, 2 seconds, 1 second, and one hundred milliseconds.
-  static final List<int> POLL_PERIODS = [8000,
-                                         4000,
-                                         2000,
-                                         1000,
-                                         100];
+  Isolate lastIsolate;
 
-  MetricsPage(app) : super(app) {
-    for (var i = 0; i < POLL_PERIODS.length; i++) {
-      pollers[POLL_PERIODS[i]] = new MetricPoller(POLL_PERIODS[i]);
-    }
+  void _visit(Uri uri) {
+    super._visit(uri);
+    getIsolate(uri).then((isolate) async {
+      lastIsolate = isolate;
+      container.children = const [];
+      await _metricRepository.startSampling(isolate);
+      container.children = [
+        new MetricsPageElement(isolate.vm, isolate, app.events,
+            app.notifications, _metricRepository,
+            queue: app.queue)
+      ];
+    });
   }
 
   void onInstall() {
     if (element == null) {
-      element = new Element.tag('metrics-page');
-      (element as MetricsPageElement).page = this;
+      element = container;
     }
-    assert(element != null);
   }
 
-  void setRefreshPeriod(int refreshPeriod, ServiceMetric metric) {
-    if (metric.poller != null) {
-      if (metric.poller.pollPeriod.inMilliseconds == refreshPeriod) {
-        return;
-      }
-      // Remove from current poller.
-      metric.poller.metrics.remove(metric);
-      metric.poller = null;
-    }
-    if (refreshPeriod == 0) {
-      return;
-    }
-    var poller = pollers[refreshPeriod];
-    if (poller != null) {
-      poller.metrics.add(metric);
-      metric.poller = poller;
-      return;
-    }
-    throw new FallThroughError();
+  @override
+  void onUninstall() {
+    super.onUninstall();
+    _metricRepository.stopSampling(lastIsolate);
+    container.children = const [];
   }
-
-  void _visit(Uri uri) {
-    assert(element != null);
-    assert(canVisit(uri));
-    app.vm.getIsolate(uri.queryParameters['isolateId']).then((i) {
-      (element as MetricsPageElement).isolate = i;
-    });
-  }
-
-  bool canVisit(Uri uri) => uri.path == 'metrics';
 }
 
 class TimelinePage extends Page {
   TimelinePage(app) : super(app);
 
   void onInstall() {
-    if (element == null) {
-      element = new Element.tag('timeline-page');
-    }
-    assert(element != null);
+    element = new TimelinePageElement(app.vm, app.events, app.notifications,
+        queue: app.queue);
   }
 
   void _visit(Uri uri) {
-    assert(element != null);
     assert(canVisit(uri));
   }
 

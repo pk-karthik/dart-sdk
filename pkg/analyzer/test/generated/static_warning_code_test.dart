@@ -4,18 +4,19 @@
 
 library analyzer.test.generated.static_warning_code_test;
 
+import 'package:analyzer/error/error.dart';
+import 'package:analyzer/src/error/codes.dart';
 import 'package:analyzer/src/generated/engine.dart';
-import 'package:analyzer/src/generated/error.dart';
 import 'package:analyzer/src/generated/source_io.dart';
-import 'package:unittest/unittest.dart';
+import 'package:test/test.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 
-import '../reflective_tests.dart';
-import '../utils.dart';
 import 'resolver_test_case.dart';
 
 main() {
-  initializeTestEnvironment();
-  runReflectiveTests(StaticWarningCodeTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(StaticWarningCodeTest);
+  });
 }
 
 @reflectiveTest
@@ -3372,6 +3373,45 @@ a.A v;'''
     ]);
   }
 
+  void test_typeAnnotationGenericFunctionParameter_localFunction() {
+    Source source = addSource(r'''
+class A {
+  void method() {
+    T local<T>(Object t) {
+      return (t is T) ? t : null;
+    }
+  }
+}''');
+    computeLibrarySourceErrors(source);
+    assertErrors(
+        source, [StaticWarningCode.TYPE_ANNOTATION_GENERIC_FUNCTION_PARAMETER]);
+    verify([source]);
+  }
+
+  void test_typeAnnotationGenericFunctionParameter_method() {
+    Source source = addSource(r'''
+class A {
+  T method<T>(Object t) {
+    return (t is T) ? t : null;
+  }
+}''');
+    computeLibrarySourceErrors(source);
+    assertErrors(
+        source, [StaticWarningCode.TYPE_ANNOTATION_GENERIC_FUNCTION_PARAMETER]);
+    verify([source]);
+  }
+
+  void test_typeAnnotationGenericFunctionParameter_topLevelFunction() {
+    Source source = addSource(r'''
+T function<T>(Object t) {
+  return (t is T) ? t : null;
+}''');
+    computeLibrarySourceErrors(source);
+    assertErrors(
+        source, [StaticWarningCode.TYPE_ANNOTATION_GENERIC_FUNCTION_PARAMETER]);
+    verify([source]);
+  }
+
   void test_typeParameterReferencedByStatic_field() {
     Source source = addSource(r'''
 class A<K> {
@@ -3586,6 +3626,12 @@ class B extends A {
 }''');
     computeLibrarySourceErrors(source);
     assertErrors(source, [StaticWarningCode.UNDEFINED_IDENTIFIER]);
+  }
+
+  void test_undefinedIdentifierAwait_function() {
+    Source source = addSource("void a() { await; }");
+    computeLibrarySourceErrors(source);
+    assertErrors(source, [StaticWarningCode.UNDEFINED_IDENTIFIER_AWAIT]);
   }
 
   void test_undefinedNamedParameter() {

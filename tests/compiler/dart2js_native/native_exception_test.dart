@@ -6,9 +6,7 @@
 
 library native_exception_test;
 
-import 'dart:_foreign_helper' show JS;
-import 'dart:_js_helper';
-import 'package:expect/expect.dart';
+import 'native_testing.dart';
 
 main() {
   var previous;
@@ -20,15 +18,26 @@ main() {
     previous = e;
     return '$e' != '[object Object]';
   }
-  Expect.throws(() { JS('void', 'noGlobalVariableWithThisName'); }, check);
-  Expect.throws(() { JS('void', 'throw 3'); }, check);
-  Expect.throws(
-      () {
-        JS('bool', 'Object.prototype.hasOwnProperty.call(undefined, "foo")');
-      },
-      check);
-  Expect.throws(() { JS('void', 'throw new ReferenceError()'); }, check);
-  Expect.throws(() { JS('void', 'throw void 0'); }, check);
-  Expect.throws(() { JS('void', 'throw "a string"'); }, check);
-  Expect.throws(() { JS('void', 'throw null'); }, check);
+
+  Expect.throws(() {
+    JS('void', 'noGlobalVariableWithThisName');
+  }, check);
+  Expect.throws(() {
+    JS('void', 'throw 3');
+  }, check);
+  Expect.throws(() {
+    JS('bool', 'Object.prototype.hasOwnProperty.call(undefined, "foo")');
+  }, check);
+  Expect.throws(() {
+    JS('void', 'throw new ReferenceError()');
+  }, check);
+  Expect.throws(() {
+    JS('void', 'throw void 0');
+  }, check);
+  Expect.throws(() {
+    JS('void', 'throw "a string"');
+  }, check);
+  Expect.throws(() {
+    JS('void', 'throw null');
+  }, check);
 }

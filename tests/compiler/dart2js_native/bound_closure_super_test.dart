@@ -5,13 +5,11 @@
 // Test calling convention of property extraction closures (super edition).
 library bound_closure_super_test;
 
-import "package:expect/expect.dart";
+import 'package:expect/expect.dart';
 
 import 'bound_closure_test.dart' as bound_closure_test;
 
-import 'bound_closure_test.dart' show
-    inscrutable,
-    makeCC;
+import 'bound_closure_test.dart' show inscrutable, makeCC;
 
 main() {
   // Calling main from bound_closure_test.dart to set up native code.

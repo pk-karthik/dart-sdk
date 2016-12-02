@@ -5,8 +5,7 @@
 library dart2js.resolution.constructors;
 
 import '../common.dart';
-import '../common/resolution.dart' show Feature;
-import '../compiler.dart' show Compiler;
+import '../common/resolution.dart' show Resolution;
 import '../constants/constructors.dart'
     show
         GenerativeConstantConstructor,
@@ -24,14 +23,15 @@ import '../elements/modelx.dart'
         InitializingFormalElementX,
         ParameterElementX;
 import '../tree/tree.dart';
-import '../util/util.dart' show Link;
 import '../universe/call_structure.dart' show CallStructure;
+import '../universe/feature.dart' show Feature;
 import '../universe/use.dart' show StaticUse;
-
+import '../util/util.dart' show Link;
 import 'members.dart' show lookupInScope, ResolverVisitor;
 import 'registry.dart' show ResolutionRegistry;
 import 'resolution_common.dart' show CommonResolverVisitor;
 import 'resolution_result.dart';
+import 'scope.dart' show Scope, ExtensionScope;
 
 class InitializerResolver {
   final ResolverVisitor visitor;
@@ -222,8 +222,8 @@ class InitializerResolver {
           functionNode, calledConstructor, callStructure, className,
           isImplicitSuperCall: true);
       if (!result.isError) {
-        registry.registerStaticUse(
-            new StaticUse.constructorInvoke(calledConstructor, callStructure));
+        registry.registerStaticUse(new StaticUse.superConstructorInvoke(
+            calledConstructor, callStructure));
       }
 
       if (isConst && isValidAsConstant) {
@@ -301,7 +301,20 @@ class InitializerResolver {
     // Keep track of all "this.param" parameters specified for constructor so
     // that we can ensure that fields are initialized only once.
     FunctionSignature functionParameters = constructor.functionSignature;
+    Scope oldScope = visitor.scope;
+    // In order to get the correct detection of name clashes between all
+    // parameters (regular ones and initializing formals) we must extend
+    // the parameter scope rather than adding a new nested scope.
+    visitor.scope = new ExtensionScope(visitor.scope);
+    Link<Node> parameterNodes = (functionNode.parameters == null)
+        ? const Link<Node>()
+        : functionNode.parameters.nodes;
     functionParameters.forEachParameter((ParameterElementX element) {
+      List<Element> optionals = functionParameters.optionalParameters;
+      if (!optionals.isEmpty && element == optionals.first) {
+        NodeList nodes = parameterNodes.head;
+        parameterNodes = nodes.nodes;
+      }
       if (isConst) {
         if (element.isOptional) {
           if (element.constantCache == null) {
@@ -325,9 +338,16 @@ class InitializerResolver {
         }
       }
       if (element.isInitializingFormal) {
+        VariableDefinitions variableDefinitions = parameterNodes.head;
+        Node parameterNode = variableDefinitions.definitions.nodes.head;
         InitializingFormalElementX initializingFormal = element;
         FieldElement field = initializingFormal.fieldElement;
-        checkForDuplicateInitializers(field, element.initializer);
+        if (!field.isMalformed) {
+          registry.registerStaticUse(new StaticUse.fieldInit(field));
+        }
+        checkForDuplicateInitializers(field, parameterNode);
+        visitor.defineLocalVariable(parameterNode, initializingFormal);
+        visitor.addToScope(initializingFormal);
         if (isConst) {
           if (element.isNamed) {
             fieldInitializers[field] = new NamedArgumentReference(element.name);
@@ -339,6 +359,7 @@ class InitializerResolver {
           isValidAsConstant = false;
         }
       }
+      parameterNodes = parameterNodes.tail;
     });
 
     if (functionNode.initializers == null) {
@@ -385,7 +406,7 @@ class InitializerResolver {
             reporter.reportErrorMessage(
                 call, MessageKind.REDIRECTING_CONSTRUCTOR_HAS_INITIALIZER);
           } else {
-            constructor.isRedirectingGenerative = true;
+            constructor.isRedirectingGenerativeInternal = true;
           }
           // Check that there are no field initializing parameters.
           FunctionSignature signature = constructor.functionSignature;
@@ -424,12 +445,26 @@ class InitializerResolver {
       constructorInvocation = resolveImplicitSuperConstructorSend();
     }
     if (isConst && isValidAsConstant) {
-      constructor.constantConstructor = new GenerativeConstantConstructor(
-          constructor.enclosingClass.thisType,
-          defaultValues,
-          fieldInitializers,
-          constructorInvocation);
+      constructor.enclosingClass.forEachInstanceField((_, FieldElement field) {
+        if (!fieldInitializers.containsKey(field)) {
+          visitor.resolution.ensureResolved(field);
+          // TODO(johnniwinther): Report error if `field.constant` is `null`.
+          if (field.constant != null) {
+            fieldInitializers[field] = field.constant;
+          } else {
+            isValidAsConstant = false;
+          }
+        }
+      });
+      if (isValidAsConstant) {
+        constructor.constantConstructor = new GenerativeConstantConstructor(
+            constructor.enclosingClass.thisType,
+            defaultValues,
+            fieldInitializers,
+            constructorInvocation);
+      }
     }
+    visitor.scope = oldScope;
     return null; // If there was no redirection always return null.
   }
 }
@@ -438,11 +473,13 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
   final ResolverVisitor resolver;
   final bool inConstContext;
 
-  ConstructorResolver(Compiler compiler, this.resolver,
+  ConstructorResolver(Resolution resolution, this.resolver,
       {bool this.inConstContext: false})
-      : super(compiler);
+      : super(resolution);
 
   ResolutionRegistry get registry => resolver.registry;
+
+  Element get context => resolver.enclosingElement;
 
   visitNode(Node node) {
     throw 'not supported';
@@ -452,7 +489,6 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
       Spannable diagnosticNode,
       ConstructorResultKind resultKind,
       DartType type,
-      Element enclosing,
       String name,
       MessageKind kind,
       Map arguments,
@@ -472,7 +508,7 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
       reporter.reportWarning(message, infos);
     }
     ErroneousElement error =
-        new ErroneousConstructorElementX(kind, arguments, name, enclosing);
+        new ErroneousConstructorElementX(kind, arguments, name, context);
     if (type == null) {
       type = new MalformedType(error, null);
     }
@@ -483,8 +519,8 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
       Node diagnosticNode, String constructorName) {
     ClassElement cls = type.element;
     cls.ensureResolved(resolution);
-    ConstructorElement constructor = findConstructor(
-        resolver.enclosingElement.library, cls, constructorName);
+    ConstructorElement constructor =
+        findConstructor(context.library, cls, constructorName);
     if (constructor == null) {
       MessageKind kind = constructorName.isEmpty
           ? MessageKind.CANNOT_FIND_UNNAMED_CONSTRUCTOR
@@ -493,7 +529,6 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
           diagnosticNode,
           ConstructorResultKind.UNRESOLVED_CONSTRUCTOR,
           type,
-          cls,
           constructorName,
           kind,
           {'className': cls.name, 'constructorName': constructorName},
@@ -509,7 +544,6 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
             diagnosticNode,
             ConstructorResultKind.INVALID_TYPE,
             type,
-            cls,
             constructorName,
             MessageKind.CANNOT_INSTANTIATE_ENUM,
             {'enumName': cls.name},
@@ -570,7 +604,6 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
             diagnosticNode,
             ConstructorResultKind.INVALID_TYPE,
             null,
-            element,
             element.name,
             MessageKind.NOT_A_TYPE,
             {'node': diagnosticNode});
@@ -584,7 +617,9 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
     // This is not really resolving a type-annotation, but the name of the
     // constructor. Therefore we allow deferred types.
     DartType type = resolver.resolveTypeAnnotation(node,
-        malformedIsError: inConstContext, deferredIsMalformed: false);
+        malformedIsError: inConstContext,
+        deferredIsMalformed: false,
+        registerCheckedModeCheck: false);
     Send send = node.typeName.asSend();
     PrefixElement prefix;
     if (send != null) {
@@ -624,7 +659,6 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
             name,
             ConstructorResultKind.INVALID_TYPE,
             null,
-            resolver.enclosingElement,
             name.source,
             MessageKind.NOT_A_TYPE,
             {'node': name});
@@ -663,7 +697,6 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
           node,
           ConstructorResultKind.INVALID_TYPE,
           null,
-          resolver.enclosingElement,
           name,
           MessageKind.CANNOT_RESOLVE,
           {'name': name});
@@ -673,11 +706,10 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
           node,
           ConstructorResultKind.INVALID_TYPE,
           null,
-          resolver.enclosingElement,
           name,
           ambiguous.messageKind,
           ambiguous.messageArguments,
-          infos: ambiguous.computeInfos(resolver.enclosingElement, reporter));
+          infos: ambiguous.computeInfos(context, reporter));
     } else if (element.isMalformed) {
       return constructorResultForErroneous(node, element);
     } else if (element.isClass) {
@@ -698,7 +730,6 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
           node,
           ConstructorResultKind.INVALID_TYPE,
           null,
-          resolver.enclosingElement,
           name,
           MessageKind.NOT_A_TYPE,
           {'node': name});
@@ -724,7 +755,6 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
           node,
           ConstructorResultKind.INVALID_TYPE,
           type,
-          resolver.enclosingElement,
           name,
           MessageKind.CANNOT_INSTANTIATE_TYPE_VARIABLE,
           {'typeVariableName': name});
@@ -739,7 +769,6 @@ class ConstructorResolver extends CommonResolverVisitor<ConstructorResult> {
           node,
           ConstructorResultKind.INVALID_TYPE,
           type,
-          resolver.enclosingElement,
           name,
           MessageKind.CANNOT_INSTANTIATE_TYPEDEF,
           {'typedefName': name});

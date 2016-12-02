@@ -2,38 +2,38 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
 // Native class with named constructors and static methods.
 
-
-
 @Native("A")
 class A {
-
   factory A(int len) => _construct(len);
 
-  factory A.fromString(String s)  => _construct(s.length);
+  factory A.fromString(String s) => _construct(s.length);
 
   // Only functions with zero parameters are allowed with "native r'...'".
   factory A.nativeConstructor() native r'return makeA(102);';
 
-  static A _construct(v) { return makeA(v); }
+  static A _construct(v) {
+    return makeA(v);
+  }
 
-  foo() native;
+  foo() native ;
 }
 
-makeA(v) native;
+makeA(v) native ;
 
 void setup() native """
 // This code is all inside 'setup' and so not accesible from the global scope.
 function A(arg) { this._x = arg; }
 A.prototype.foo = function() { return this._x; };
 makeA = function(arg) { return new A(arg); }
+self.nativeConstructor(A);
 """;
 
 main() {
+  nativeTesting();
   setup();
   var a1 = new A(100);
   var a2 = new A.fromString('Hello');

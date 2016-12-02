@@ -6,11 +6,11 @@ library analyzer.src.generated.constant;
 
 import 'package:analyzer/context/declared_variables.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/error/listener.dart';
 import 'package:analyzer/src/dart/constant/evaluation.dart';
 import 'package:analyzer/src/dart/constant/value.dart';
 import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/engine.dart' show RecordingErrorListener;
-import 'package:analyzer/src/generated/error.dart';
 import 'package:analyzer/src/generated/resolver.dart' show TypeProvider;
 import 'package:analyzer/src/generated/source.dart' show Source;
 import 'package:analyzer/src/generated/type_system.dart'
@@ -97,7 +97,6 @@ export 'package:analyzer/src/dart/constant/value.dart';
 /// In addition, this class defines several values that can be returned to
 /// indicate various conditions encountered during evaluation. These are
 /// documented with the static fields that define those values.
-@deprecated
 class ConstantEvaluator {
   /**
    * The source containing the expression(s) that will be evaluated.

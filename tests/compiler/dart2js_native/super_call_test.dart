@@ -2,8 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
 // Test to see if resolving a hidden native class's method interferes with
 // subsequent resolving the subclass's method.  This might happen if the
@@ -32,10 +31,10 @@ class D extends C {
   bar() => 'D.bar';
 }
 
-makeA() native;
-makeB() native;
-makeC() native;
-makeD() native;
+makeA() native ;
+makeB() native ;
+makeC() native ;
+makeD() native ;
 
 void setup() native """
 // This code is all inside 'setup' and so not accesible from the global scope.
@@ -62,10 +61,15 @@ makeA = function(){return new A};
 makeB = function(){return new B};
 makeC = function(){return new C};
 makeD = function(){return new D};
+
+self.nativeConstructor(A);
+self.nativeConstructor(B);
+self.nativeConstructor(C);
+self.nativeConstructor(D);
 """;
 
-
 main() {
+  nativeTesting();
   setup();
 
   var a = makeA();

@@ -8,10 +8,11 @@ import 'dart:collection';
 import 'dart:io';
 
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/error/error.dart';
+import 'package:analyzer/exception/exception.dart';
 import 'package:analyzer/source/error_processor.dart';
+import 'package:analyzer/src/error/codes.dart';
 import 'package:analyzer/src/generated/engine.dart';
-import 'package:analyzer/src/generated/error.dart';
-import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/java_io.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart';
@@ -255,14 +256,12 @@ class AnalyzerImpl {
   static ErrorSeverity computeSeverity(
       AnalysisError error, CommandLineOptions options,
       [AnalysisContext context]) {
-    bool isStrongMode = false;
     if (context != null) {
       ErrorProcessor processor = ErrorProcessor.getProcessor(context, error);
       // If there is a processor for this error, defer to it.
       if (processor != null) {
         return processor.severity;
       }
-      isStrongMode = context.analysisOptions.strongMode;
     }
 
     if (!options.enableTypeChecks &&
@@ -271,10 +270,6 @@ class AnalyzerImpl {
     } else if (options.hintsAreFatal && error.errorCode is HintCode) {
       return ErrorSeverity.ERROR;
     } else if (options.lintsAreFatal && error.errorCode is LintCode) {
-      return ErrorSeverity.ERROR;
-    } else if (isStrongMode &&
-        error is StaticWarningCode &&
-        (error as StaticWarningCode).isStrongModeError) {
       return ErrorSeverity.ERROR;
     }
     return error.errorCode.errorSeverity;

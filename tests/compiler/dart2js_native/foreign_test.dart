@@ -2,8 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "package:expect/expect.dart";
-import 'dart:_foreign_helper' show JS;
+import "native_testing.dart";
 
 foreign1(var a, var b) {
   return JS("num", r"# + #", a, b);
@@ -22,7 +21,7 @@ foreign2() {
 }
 
 foreign11(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11) {
-  return JS("num", r"# + # + # + # + # + # + # + # + # + # + #",
+  return JS("num|String", r"# + # + # + # + # + # + # + # + # + # + #",
       a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11);
 }
 

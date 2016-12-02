@@ -13,8 +13,16 @@ cc/IsolateReload_PendingStaticCall_NSMToDefined: Fail, Crash
 cc/ArrayNew_Overflow_Crash: Crash, Timeout
 cc/AllocGeneric_Overflow: Crash, Timeout
 cc/CodeImmutability: Crash
+cc/Fail0: Fail
+cc/Fail1: Fail
+cc/Fail2: Fail
+
+cc/Dart2JSCompileAll: Crash # Issue 27369
+cc/Dart2JSCompilerStats: Crash # Issue 27369
 
 cc/SNPrint_BadArgs: Skip
+
+cc/Profiler_InliningIntervalBoundry: Skip # Differences in ia32, debug, release
 
 # Flaky on buildbot. Issue 5133 and 10409.
 cc/Sleep: Pass, Fail
@@ -40,8 +48,59 @@ cc/Service_Profile: Skip
 cc/Dart2JSCompilerStats: Skip
 cc/CorelibCompilerStats: Skip
 
+# Profiler is completely disabled in SIMDBC builds.
+# On the simluator stack traces produced by the Profiler do not match
+# up with the real Dart stack trace and hence we don't get correct
+# symbol names.
 [ $arch == simarm || $arch == simarmv6 || $arch == simarmv5te || $arch == simarm64 || $arch == simmips || $arch == simdbc  || $arch == simdbc64 ]
 cc/Service_Profile: Skip
+cc/Profiler_AllocationSampleTest: Skip
+cc/Profiler_ArrayAllocation: Skip
+cc/Profiler_BasicSourcePosition: Skip
+cc/Profiler_BasicSourcePositionOptimized: Skip
+cc/Profiler_BinaryOperatorSourcePosition: Skip
+cc/Profiler_BinaryOperatorSourcePositionOptimized: Skip
+cc/Profiler_ChainedSamples: Skip
+cc/Profiler_ClosureAllocation: Skip
+cc/Profiler_CodeTicks: Skip
+cc/Profiler_ContextAllocation: Skip
+cc/Profiler_FunctionInline: Skip
+cc/Profiler_FunctionTicks: Skip
+cc/Profiler_InliningIntervalBoundry: Skip
+cc/Profiler_IntrinsicAllocation: Skip
+cc/Profiler_SampleBufferIterateTest: Skip
+cc/Profiler_SampleBufferWrapTest: Skip
+cc/Profiler_SourcePosition: Skip
+cc/Profiler_SourcePositionOptimized: Skip
+cc/Profiler_StringAllocation: Skip
+cc/Profiler_StringInterpolation: Skip
+cc/Profiler_ToggleRecordAllocation: Skip
+cc/Profiler_TrivialRecordAllocation: Skip
+cc/Profiler_TypedArrayAllocation: Skip
+cc/Profiler_GetSourceReport: Skip
+
+# Following tests are failing in a weird way on macos/ia32/debug builds
+# need to investigate.
+[ $runtime == vm && $mode == debug && $arch == ia32 && $system == macos ]
+cc/Profiler_TrivialRecordAllocation: Skip
+cc/Profiler_ToggleRecordAllocation: Skip
+cc/Profiler_FunctionTicks: Skip
+cc/Profiler_CodeTicks: Skip
+cc/Profiler_IntrinsicAllocation: Skip
+cc/Profiler_ArrayAllocation: Skip
+cc/Profiler_ContextAllocation: Skip
+cc/Profiler_ClosureAllocation: Skip
+cc/Profiler_TypedArrayAllocation: Skip
+cc/Profiler_StringAllocation: Skip
+cc/Profiler_StringInterpolation: Skip
+cc/Profiler_BasicSourcePosition: Skip
+cc/Profiler_BasicSourcePositionOptimized: Skip
+cc/Profiler_ChainedSamples: Skip
+cc/Profiler_FunctionInline: Skip
+cc/Profiler_SourcePosition: Skip
+cc/Profiler_SourcePositionOptimized: Skip
+cc/Profiler_BinaryOperatorSourcePosition: Skip
+cc/Profiler_BinaryOperatorSourcePositionOptimized: Skip
 
 [ $compiler == dart2js ]
 dart/redirection_type_shuffling_test: Skip # Depends on lazy enforcement of type bounds
@@ -74,10 +133,14 @@ cc/FindCodeObject: SkipSlow # Takes more than 8 minutes. Issue 17440
 [ $compiler == dart2analyzer ]
 dart/optimized_stacktrace_test: StaticWarning
 
+[ $compiler == app_jit ]
+dart/snapshot_version_test: Fail,OK # Expects to find script snapshot relative to Dart source.
+
 [ $runtime != vm ]
 dart/snapshot_version_test: SkipByDesign  # Spawns processes
 dart/spawn_infinite_loop_test: Skip  # VM shutdown test
 dart/spawn_shutdown_test: Skip  # VM Shutdown test
+dart/hello_fuchsia_test: SkipByDesign # This is a test for fuchsia OS
 
 [ ($runtime == vm || $runtime == dart_precompiled) && $mode == debug && $builder_tag == asan ]
 cc/Dart2JSCompileAll: SkipSlow  # Timeout.
@@ -85,12 +148,8 @@ cc/Dart2JSCompileAll: SkipSlow  # Timeout.
 [ $builder_tag == asan ]
 cc/CodeImmutability: Fail,OK # Address Sanitizer turns a crash into a failure.
 
-[ $arch == ia32 && $builder_tag == asan ]
-cc/Dart2JSCompileAll: Crash # Issue 26487 - stack overflow
-cc/Dart2JSCompilerStats: Crash # Issue 26487 - stack overflow
-
-[ $noopt ]
-dart/byte_array_test: Crash # Incompatible flag --disable_alloc_stubs_after_gc
+[ $noopt || $compiler == precompiler ]
+dart/byte_array_test: Skip # Incompatible flag --disable_alloc_stubs_after_gc
 
 [ $noopt || $compiler == precompiler || $mode == product ]
 dart/redirection_type_shuffling_test: SkipByDesign # Imports dart:mirrors
@@ -103,7 +162,7 @@ cc/StandaloneSnapshotSize: SkipByDesign # Imports dart:mirrors
 dart/inline_stack_frame_test: Pass, RuntimeError
 dart/optimized_stacktrace_test: Pass, RuntimeError
 
-[ $runtime == dart_app || $runtime == dart_precompiled ]
+[ $compiler == app_jit || $compiler == precompiler ]
 dart/data_uri_spawn_test: SkipByDesign # Isolate.spawnUri
 dart/optimized_stacktrace_test: SkipByDesign # Requires line numbers
 
@@ -113,48 +172,7 @@ cc/StackTraceFormat: Fail,OK  # Expects exact type name.
 cc/String_ScrubName: Fail,OK  # Expects exact type name.
 cc/GetFunctionNames: Fail,OK  # Expects exact type name.
 
-[ $arch == simdbc || $arch == simdbc64 ]
-# TODO(vegorov) Profiler is completely disabled in SIMDBC builds.
-cc/Profiler_AllocationSampleTest: Skip
-cc/Profiler_ArrayAllocation: Skip
-cc/Profiler_BasicSourcePosition: Skip
-cc/Profiler_BasicSourcePositionOptimized: Skip
-cc/Profiler_BinaryOperatorSourcePosition: Skip
-cc/Profiler_BinaryOperatorSourcePositionOptimized: Skip
-cc/Profiler_ChainedSamples: Skip
-cc/Profiler_ClosureAllocation: Skip
-cc/Profiler_CodeTicks: Skip
-cc/Profiler_ContextAllocation: Skip
-cc/Profiler_FunctionInline: Skip
-cc/Profiler_FunctionTicks: Skip
-cc/Profiler_InliningIntervalBoundry: Skip
-cc/Profiler_IntrinsicAllocation: Skip
-cc/Profiler_SampleBufferIterateTest: Skip
-cc/Profiler_SampleBufferWrapTest: Skip
-cc/Profiler_SourcePosition: Skip
-cc/Profiler_SourcePositionOptimized: Skip
-cc/Profiler_StringAllocation: Skip
-cc/Profiler_StringInterpolation: Skip
-cc/Profiler_ToggleRecordAllocation: Skip
-cc/Profiler_TrivialRecordAllocation: Skip
-cc/Profiler_TypedArrayAllocation: Skip
-cc/Profiler_GetSourceReport: Skip
-
-# TODO(vegorov) These tests are crashing because ICData objects can't be found
-cc/SourceReport_CallSites_PolymorphicCall: Skip
-cc/SourceReport_CallSites_SimpleCall: Skip
-cc/SourceReport_Coverage_AllFunctions: Skip
-cc/SourceReport_Coverage_ForceCompile: Skip
-cc/SourceReport_Coverage_NestedFunctions: Skip
-cc/SourceReport_Coverage_SimpleCall: Skip
-cc/SourceReport_Coverage_UnusedClass_NoForceCompile: Skip
-cc/SourceReport_Coverage_UnusedClass_ForceCompile: Skip
-cc/SourceReport_Coverage_UnusedClass_ForceCompileError: Skip
-cc/SourceReport_MultipleReports: Skip
-cc/Coverage_Empty: Skip
-cc/Coverage_FilterFunction: Skip
-cc/Coverage_MainWithClass: Skip
-
+[ $arch == simdbc  || $arch == simdbc64 ]
 # TODO(vegorov) These tests don't seem to work if FLAG_interpret_irregexp
 # is switched on by default because they attempt to call regexp functions
 # directly instead of going through JSSyntaxRegExp_ExecuteMatch.
@@ -163,9 +181,6 @@ cc/RegExp_ExternalTwoByteString: Skip
 cc/RegExp_OneByteString: Skip
 cc/RegExp_TwoByteString: Skip
 
-# TODO(vegorov) Optimizing compiler is disabled for the SIMDBC
-cc/CompileFunctionOnHelperThread: Skip
-
 # TODO(vegorov) Field guards are disabled for SIMDBC
 cc/GuardFieldConstructor2Test: Skip
 cc/GuardFieldConstructorTest: Skip
@@ -173,46 +188,9 @@ cc/GuardFieldFinalListTest: Skip
 cc/GuardFieldFinalVariableLengthListTest: Skip
 cc/GuardFieldSimpleTest: Skip
 
-# TODO(vegorov) Not all bytecodes have appropriate debug breaks.
-cc/Debug_BreakpointStubPatching: Skip
-cc/Debug_ExprClosureBreakpoint: Skip
-cc/Debug_StackTraceDump1: Skip
-cc/Debug_StepInto: Skip
-
-# TODO(vegorov) These parser tests rely on debugger.
-cc/Parser_AllocateVariables_CapturedVar: Skip
-cc/Parser_AllocateVariables_MiddleChain: Skip
-
 # This test is meaningless for DBC as allocation stubs are not used.
 cc/RegenerateAllocStubs: Skip
 
-# TODO(vegorov) Enable when DBC supports optimizing compiler.
-cc/Debug_InspectStack_Optimized: Skip
-cc/Debug_InspectStackWithClosure_Optimized: Skip
-
-# Isolate reload code assumes that all static calls have ICData attached to
-# them. However this is not the case on DBC.
-cc/IsolateReload_LiveStack: Skip
-cc/IsolateReload_StaticValuePreserved: Skip
-cc/IsolateReload_TopLevelFieldAdded: Skip
-cc/IsolateReload_ConstructorChanged: Skip
-cc/IsolateReload_ImplicitConstructorChanged: Skip
-cc/IsolateReload_MixinChanged: Skip
-cc/IsolateReload_SuperClassChanged: Skip
-cc/IsolateReload_ComplexInheritanceChange: Skip
-cc/IsolateReload_LibraryImportAdded: Skip
-cc/IsolateReload_LibraryHide: Skip
-cc/IsolateReload_LibraryLookup: Skip
-cc/IsolateReload_LibraryShow: Skip
-cc/IsolateReload_LiveStack: Skip
-cc/IsolateReload_StaticValuePreserved: Skip
-cc/IsolateReload_TopLevelFieldAdded: Skip
-cc/IsolateReload_ConstructorChanged: Skip
-cc/IsolateReload_ImplicitConstructorChanged: Skip
-cc/IsolateReload_MixinChanged: Skip
-cc/IsolateReload_SuperClassChanged: Skip
-cc/IsolateReload_ComplexInheritanceChange: Skip
-cc/IsolateReload_LibraryImportAdded: Skip
-cc/IsolateReload_LibraryHide: Skip
-cc/IsolateReload_LibraryLookup: Skip
-cc/IsolateReload_LibraryShow: Skip
+[ $hot_reload || $hot_reload_rollback ]
+dart/spawn_shutdown_test: Skip # We can shutdown an isolate before it reloads.
+dart/spawn_infinite_loop_test: Skip # We can shutdown an isolate before it reloads.

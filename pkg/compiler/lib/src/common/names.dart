@@ -26,6 +26,9 @@ class Identifiers {
   /// The name of the iterator property used in for-each loops.
   static const String iterator = 'iterator';
 
+  /// The name of the `loadLibrary` getter defined on deferred prefixes.
+  static const String loadLibrary = 'loadLibrary';
+
   /// The name of the main method.
   static const String main = 'main';
 
@@ -149,6 +152,10 @@ class Uris {
   /// The URI for 'dart:async'.
   static final Uri dart_async = new Uri(scheme: 'dart', path: 'async');
 
+  /// The URI for 'dart:collection'.
+  static final Uri dart_collection =
+      new Uri(scheme: 'dart', path: 'collection');
+
   /// The URI for 'dart:core'.
   static final Uri dart_core = new Uri(scheme: 'dart', path: 'core');
 
@@ -164,4 +171,13 @@ class Uris {
   /// The URI for 'dart:_native_typed_data'.
   static final Uri dart__native_typed_data =
       new Uri(scheme: 'dart', path: '_native_typed_data');
+
+  /// The URI for 'dart:svg'.
+  static final Uri dart_svg = new Uri(scheme: 'dart', path: 'svg');
+
+  /// The URI for 'dart:web_audio'.
+  static final Uri dart_web_audio = new Uri(scheme: 'dart', path: 'web_audio');
+
+  /// The URI for 'dart:web_gl'.
+  static final Uri dart_web_gl = new Uri(scheme: 'dart', path: 'web_gl');
 }

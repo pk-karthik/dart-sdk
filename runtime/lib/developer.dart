@@ -3,20 +3,21 @@
 // BSD-style license that can be found in the LICENSE file.
 
 import 'dart:isolate';
+import 'dart:_internal';
 
-patch bool debugger({bool when: true,
+@patch bool debugger({bool when: true,
                      String message}) native "Developer_debugger";
 
-patch Object inspect(Object object) native "Developer_inspect";
+@patch Object inspect(Object object) native "Developer_inspect";
 
-patch void log(String message,
-               {DateTime time,
-                int sequenceNumber,
-                int level: 0,
-                String name: '',
-                Zone zone,
-                Object error,
-                StackTrace stackTrace}) {
+@patch void log(String message,
+                {DateTime time,
+                 int sequenceNumber,
+                 int level: 0,
+                 String name: '',
+                 Zone zone,
+                 Object error,
+                 StackTrace stackTrace}) {
   if (message is! String) {
     throw new ArgumentError(message, "message", "Must be a String");
   }
@@ -52,13 +53,13 @@ _log(String message,
      Object error,
      StackTrace stackTrace) native "Developer_log";
 
-patch void _postEvent(String eventKind, String eventData)
+@patch void _postEvent(String eventKind, String eventData)
     native "Developer_postEvent";
 
-patch ServiceExtensionHandler _lookupExtension(String method)
+@patch ServiceExtensionHandler _lookupExtension(String method)
     native "Developer_lookupExtension";
 
-patch _registerExtension(String method, ServiceExtensionHandler handler)
+@patch _registerExtension(String method, ServiceExtensionHandler handler)
     native "Developer_registerExtension";
 
 // This code is only invoked when there is no other Dart code on the stack.
@@ -148,3 +149,15 @@ _postResponse(SendPort replyPort,
   }
   replyPort.send(sb.toString());
 }
+
+@patch int _getServiceMajorVersion() native "Developer_getServiceMajorVersion";
+
+@patch int _getServiceMinorVersion() native "Developer_getServiceMinorVersion";
+
+@patch void _getServerInfo(SendPort sendPort) native "Developer_getServerInfo";
+
+@patch void _webServerControl(SendPort sendPort, bool enable)
+    native "Developer_webServerControl";
+
+@patch String _getIsolateIDFromSendPort(SendPort sendPort)
+    native "Developer_getIsolateIDFromSendPort";

@@ -8,25 +8,25 @@
 // This could be done by renaming the Dart constructor or by being able to check
 // that objects are Dart classes.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
-class A {
-}
+class A {}
 
 @Native("A")
 class Z {
   foo() => 100;
 }
 
-makeZ() native;
+makeZ() native ;
 
 void setup() native """
 function A(){}
 makeZ = function(){return new A};
+self.nativeConstructor(A);
 """;
 
 main() {
+  nativeTesting();
   setup();
 
   var a = new A();
@@ -34,5 +34,5 @@ main() {
 
   Expect.equals(100, z.foo());
 
-  Expect.throws(() => a.foo(),  (ex) => ex is NoSuchMethodError);
+  Expect.throws(() => a.foo(), (ex) => ex is NoSuchMethodError);
 }

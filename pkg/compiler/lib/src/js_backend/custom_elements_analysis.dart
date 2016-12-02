@@ -2,7 +2,15 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-part of js_backend;
+import '../compiler.dart' show Compiler;
+import '../constants/values.dart';
+import '../dart_types.dart';
+import '../elements/elements.dart';
+import '../enqueue.dart' show Enqueuer;
+import '../universe/use.dart' show StaticUse;
+import '../universe/world_impact.dart'
+    show WorldImpact, StagedWorldImpactBuilder;
+import 'backend.dart';
 
 /**
  * Support for Custom Elements.
@@ -63,10 +71,11 @@ class CustomElementsAnalysis {
     codegenJoin.allClassesSelected = true;
   }
 
-  CustomElementsAnalysisJoin joinFor(Enqueuer enqueuer) =>
-      enqueuer.isResolutionQueue ? resolutionJoin : codegenJoin;
+  CustomElementsAnalysisJoin joinFor({bool forResolution}) =>
+      forResolution ? resolutionJoin : codegenJoin;
 
-  void registerInstantiatedClass(ClassElement classElement, Enqueuer enqueuer) {
+  void registerInstantiatedClass(ClassElement classElement,
+      {bool forResolution}) {
     classElement.ensureResolved(compiler.resolution);
     if (!backend.isNativeOrExtendsNative(classElement)) return;
     if (classElement.isMixinApplication) return;
@@ -74,7 +83,7 @@ class CustomElementsAnalysis {
     // JsInterop classes are opaque interfaces without a concrete
     // implementation.
     if (backend.isJsInterop(classElement)) return;
-    joinFor(enqueuer).instantiatedClasses.add(classElement);
+    joinFor(forResolution: forResolution).instantiatedClasses.add(classElement);
   }
 
   void registerTypeLiteral(DartType type) {
@@ -96,19 +105,20 @@ class CustomElementsAnalysis {
     codegenJoin.selectedClasses.add(element);
   }
 
-  void registerStaticUse(Element element, Enqueuer enqueuer) {
+  void registerStaticUse(Element element, {bool forResolution}) {
     assert(element != null);
     if (!fetchedTableAccessorMethod) {
       fetchedTableAccessorMethod = true;
       tableAccessorMethod = backend.helpers.findIndexForNativeSubclassType;
     }
     if (element == tableAccessorMethod) {
-      joinFor(enqueuer).demanded = true;
+      joinFor(forResolution: forResolution).demanded = true;
     }
   }
 
-  void onQueueEmpty(Enqueuer enqueuer) {
-    joinFor(enqueuer).flush(enqueuer);
+  /// Computes the [WorldImpact] of the classes registered since last flush.
+  WorldImpact flush({bool forResolution}) {
+    return joinFor(forResolution: forResolution).flush();
   }
 
   bool get needsTable => codegenJoin.demanded;
@@ -123,6 +133,8 @@ class CustomElementsAnalysis {
 class CustomElementsAnalysisJoin {
   final JavaScriptBackend backend;
   Compiler get compiler => backend.compiler;
+
+  final StagedWorldImpactBuilder impactBuilder = new StagedWorldImpactBuilder();
 
   // Classes that are candidates for needing constructors.  Classes are moved to
   // [activeClasses] when we know they need constructors.
@@ -142,8 +154,8 @@ class CustomElementsAnalysisJoin {
 
   CustomElementsAnalysisJoin(this.backend);
 
-  void flush(Enqueuer enqueuer) {
-    if (!demanded) return;
+  WorldImpact flush() {
+    if (!demanded) return const WorldImpact();
     var newActiveClasses = new Set<ClassElement>();
     for (ClassElement classElement in instantiatedClasses) {
       bool isNative = backend.isNative(classElement);
@@ -158,20 +170,22 @@ class CustomElementsAnalysisJoin {
         Iterable<ConstructorElement> escapingConstructors =
             computeEscapingConstructors(classElement);
         for (ConstructorElement constructor in escapingConstructors) {
-          enqueuer.registerStaticUse(new StaticUse.foreignUse(constructor));
+          impactBuilder
+              .registerStaticUse(new StaticUse.foreignUse(constructor));
         }
         escapingConstructors
             .forEach(compiler.globalDependencies.registerDependency);
         // Force the generaton of the type constant that is the key to an entry
         // in the generated table.
         ConstantValue constant = makeTypeConstant(classElement);
-        backend.registerCompileTimeConstant(
-            constant, compiler.globalDependencies);
+        backend.computeImpactForCompileTimeConstant(
+            constant, impactBuilder, false);
         backend.addCompileTimeConstantForEmission(constant);
       }
     }
     activeClasses.addAll(newActiveClasses);
     instantiatedClasses.removeAll(newActiveClasses);
+    return impactBuilder.flush();
   }
 
   TypeConstantValue makeTypeConstant(ClassElement element) {
@@ -198,6 +212,7 @@ class CustomElementsAnalysisJoin {
         }
       }
     }
+
     classElement.forEachMember(selectGenerativeConstructors,
         includeBackendMembers: false, includeSuperAndInjectedMembers: false);
     return result;

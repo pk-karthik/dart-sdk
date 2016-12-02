@@ -40,7 +40,7 @@ import 'elements/elements.dart'
         TypeDeclarationElement,
         TypedElement,
         VariableElement;
-import 'resolution/class_members.dart' show MembersCreator;
+import 'resolution/class_members.dart' show MembersCreator, ErroneousMember;
 import 'resolution/tree_elements.dart' show TreeElements;
 import 'tree/tree.dart';
 import 'util/util.dart' show Link, LinkBuilder;
@@ -64,8 +64,12 @@ class TypeCheckerTask extends CompilerTask {
             compiler, resolvedAst.elements, compiler.types);
         if (element.isField) {
           visitor.analyzingInitializer = true;
+          DartType type =
+              visitor.analyzeVariableTypeAnnotation(resolvedAst.node);
+          visitor.analyzeVariableInitializer(element, type, resolvedAst.body);
+        } else {
+          resolvedAst.node.accept(visitor);
         }
-        resolvedAst.node.accept(visitor);
       });
     });
   }
@@ -443,7 +447,7 @@ class TypeCheckerVisitor extends Visitor<DartType> {
     if (result == null) {
       reporter.internalError(node, 'Type is null.');
     }
-    return _record(node, result);
+    return result;
   }
 
   void checkTypePromotion(Node node, TypePromotion typePromotion,
@@ -733,7 +737,11 @@ class TypeCheckerVisitor extends Visitor<DartType> {
         Name name, DartType unaliasedBound, InterfaceType interface) {
       MemberSignature member = lookupMemberSignature(memberName, interface);
       if (member != null) {
-        return new MemberAccess(member);
+        if (member is ErroneousMember) {
+          return const DynamicAccess();
+        } else {
+          return new MemberAccess(member);
+        }
       }
       if (name == const PublicName('call')) {
         if (unaliasedBound.isFunctionType) {
@@ -803,6 +811,7 @@ class TypeCheckerVisitor extends Visitor<DartType> {
             foundPrivateMember = true;
           }
         }
+
         // TODO(johnniwinther): Avoid computation of all class members.
         MembersCreator.computeAllClassMembers(resolution, interface.element);
         if (lookupClassMember) {
@@ -1057,7 +1066,10 @@ class TypeCheckerVisitor extends Visitor<DartType> {
     } else if (element.isFunction) {
       // foo() where foo is a method in the same class.
       return createResolvedAccess(node, name, element);
-    } else if (element.isVariable || element.isParameter || element.isField) {
+    } else if (element.isVariable ||
+        element.isRegularParameter ||
+        element.isField ||
+        element.isInitializingFormal) {
       // foo() where foo is a field in the same class.
       return createResolvedAccess(node, name, element);
     } else if (element.isGetter || element.isSetter) {
@@ -1131,24 +1143,6 @@ class TypeCheckerVisitor extends Visitor<DartType> {
       }
     }
     return null;
-  }
-
-  static bool _fyiShown = false;
-  DartType _record(Node node, DartType type) {
-    if (node is! Expression) return type;
-    if (const bool.fromEnvironment('send_stats') &&
-        executableContext != null &&
-        // TODO(sigmund): enable also in core libs.
-        !executableContext.library.isPlatformLibrary &&
-        !type.isDynamic) {
-      if (!_fyiShown) {
-        print('FYI experiment to collect send stats is on: '
-            'caching types of expressions');
-        _fyiShown = true;
-      }
-      elements.typesCache[node] = type;
-    }
-    return type;
   }
 
   DartType visitSend(Send node) {
@@ -1636,6 +1630,8 @@ class TypeCheckerVisitor extends Visitor<DartType> {
     checkPrivateAccess(node, element, element.name);
 
     DartType newType = elements.getType(node);
+    assert(invariant(node, newType != null,
+        message: "No new type registered in $elements."));
     DartType constructorType = computeConstructorType(element, newType);
     analyzeArguments(node.send, element, constructorType);
     return newType;
@@ -1720,7 +1716,7 @@ class TypeCheckerVisitor extends Visitor<DartType> {
 
   DartType visitAwait(Await node) {
     DartType expressionType = analyze(node.expression);
-    if (compiler.backend.supportsAsyncAwait) {
+    if (resolution.target.supportsAsyncAwait) {
       return types.flatten(expressionType);
     } else {
       return const DynamicType();
@@ -1753,12 +1749,25 @@ class TypeCheckerVisitor extends Visitor<DartType> {
     return elements.getType(node);
   }
 
-  DartType visitVariableDefinitions(VariableDefinitions node) {
+  DartType analyzeVariableTypeAnnotation(VariableDefinitions node) {
     DartType type = analyzeWithDefault(node.type, const DynamicType());
     if (type.isVoid) {
       reportTypeWarning(node.type, MessageKind.VOID_VARIABLE);
       type = const DynamicType();
     }
+    return type;
+  }
+
+  void analyzeVariableInitializer(
+      Spannable spannable, DartType declaredType, Node initializer) {
+    if (initializer == null) return;
+
+    DartType expressionType = analyzeNonVoid(initializer);
+    checkAssignable(spannable, expressionType, declaredType);
+  }
+
+  DartType visitVariableDefinitions(VariableDefinitions node) {
+    DartType type = analyzeVariableTypeAnnotation(node);
     for (Link<Node> link = node.definitions.nodes;
         !link.isEmpty;
         link = link.tail) {
@@ -1767,8 +1776,8 @@ class TypeCheckerVisitor extends Visitor<DartType> {
           message: 'expected identifier or initialization');
       if (definition is SendSet) {
         SendSet initialization = definition;
-        DartType initializer = analyzeNonVoid(initialization.arguments.head);
-        checkAssignable(initialization.assignmentOperator, initializer, type);
+        analyzeVariableInitializer(initialization.assignmentOperator, type,
+            initialization.arguments.head);
         // TODO(sigmund): explore inferring a type for `var` using the RHS (like
         // DDC does), for example:
         // if (node.type == null && node.modifiers.isVar &&
@@ -1847,7 +1856,7 @@ class TypeCheckerVisitor extends Visitor<DartType> {
   visitAsyncForIn(AsyncForIn node) {
     DartType elementType = computeForInElementType(node);
     DartType expressionType = analyze(node.expression);
-    if (compiler.backend.supportsAsyncAwait) {
+    if (resolution.target.supportsAsyncAwait) {
       DartType streamOfDynamic = coreTypes.streamType();
       if (!types.isAssignable(expressionType, streamOfDynamic)) {
         reportMessage(node.expression, MessageKind.NOT_ASSIGNABLE,

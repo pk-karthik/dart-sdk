@@ -255,7 +255,6 @@ def RunTestRunner(build_info, path):
 
   build_root = utils.GetBuildRoot(
       BUILD_OS, build_info.mode, build_info.arch)
-  package_root = os.path.abspath(os.path.join(build_root, 'packages'))
 
   dart_name = 'dart.exe' if build_info.system == 'windows' else 'dart'
   dart_bin = os.path.join(sdk_bin, dart_name)
@@ -264,21 +263,22 @@ def RunTestRunner(build_info, path):
       os.path.join('third_party', 'pkg', 'test', 'bin', 'test.dart'))
 
   with utils.ChangedWorkingDirectory(path):
-    args = [dart_bin, '--package-root=' + package_root, test_bin,
-            '--package-root', package_root, '--reporter', 'expanded',
-            '--no-color']
+    args = [dart_bin, test_bin, '--reporter', 'expanded', '--no-color']
     print("Running %s" % ' '.join(args))
     RunProcess(args)
 
 
-def RunProcess(command):
+def RunProcess(command, env=None):
   """
   Runs command.
 
   If a non-zero exit code is returned, raises an OSError with errno as the exit
   code.
   """
-  no_color_env = dict(os.environ)
+  if env is None:
+    no_color_env = dict(os.environ)
+  else:
+    no_color_env = env
   no_color_env['TERM'] = 'nocolor'
 
   exit_code = subprocess.call(command, env=no_color_env)

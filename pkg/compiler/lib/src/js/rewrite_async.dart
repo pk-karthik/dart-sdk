@@ -4,15 +4,15 @@
 
 library rewrite_async;
 
-import "dart:math" show max;
 import 'dart:collection';
+import 'dart:math' show max;
 
 import 'package:js_runtime/shared/async_await_error_codes.dart' as error_codes;
 
-import "js.dart" as js;
-
 import '../common.dart';
+import '../io/source_information.dart' show SourceInformation;
 import '../util/util.dart' show Pair;
+import 'js.dart' as js;
 
 /// Rewrites a [js.Fun] with async/sync*/async* functions and await and yield
 /// (with dart-like semantics) to an equivalent function without these.
@@ -283,7 +283,7 @@ abstract class AsyncRewriterBase extends js.NodeVisitor {
   /// Each buffer ends up as its own case part in the big state-switch.
   void beginLabel(int label) {
     assert(!labelledParts.containsKey(label));
-    currentStatementBuffer = new List<js.Statement>();
+    currentStatementBuffer = <js.Statement>[];
     labelledParts[label] = currentStatementBuffer;
     addStatement(new js.Comment(labelComments[label]));
   }
@@ -520,7 +520,8 @@ abstract class AsyncRewriterBase extends js.NodeVisitor {
   js.Fun finishFunction(
       List<js.Parameter> parameters,
       js.Statement rewrittenBody,
-      js.VariableDeclarationList variableDeclarations);
+      js.VariableDeclarationList variableDeclarations,
+      SourceInformation sourceInformation);
 
   Iterable<js.VariableInitialization> variableInitializations();
 
@@ -706,7 +707,8 @@ abstract class AsyncRewriterBase extends js.NodeVisitor {
     js.VariableDeclarationList variableDeclarations =
         new js.VariableDeclarationList(variables);
 
-    return finishFunction(node.params, rewrittenBody, variableDeclarations);
+    return finishFunction(node.params, rewrittenBody, variableDeclarations,
+        node.sourceInformation);
   }
 
   @override
@@ -852,7 +854,8 @@ abstract class AsyncRewriterBase extends js.NodeVisitor {
     bool storeTarget = node.arguments.any(shouldTransform);
     return withCallTargetExpression(node.target, (target) {
       return withExpressions(node.arguments, (List<js.Expression> arguments) {
-        return new js.Call(target, arguments);
+        return new js.Call(target, arguments)
+            .withSourceInformation(node.sourceInformation);
       });
     }, store: storeTarget);
   }
@@ -967,7 +970,7 @@ abstract class AsyncRewriterBase extends js.NodeVisitor {
       bool oldInsideUntranslatedBreakable = insideUntranslatedBreakable;
       insideUntranslatedBreakable = true;
       addStatement(js.js.statement('do {#} while (#)',
-          [translateInBlock(node.body), visitExpression(node.condition)]));
+          [translateToStatement(node.body), visitExpression(node.condition)]));
       insideUntranslatedBreakable = oldInsideUntranslatedBreakable;
       return;
     }
@@ -1013,7 +1016,7 @@ abstract class AsyncRewriterBase extends js.NodeVisitor {
       withExpressions([node.init, node.condition, node.update],
           (List<js.Expression> transformed) {
         addStatement(new js.For(transformed[0], transformed[1], transformed[2],
-            translateInBlock(node.body)));
+            translateToStatement(node.body)));
       });
       insideUntranslatedBreakable = oldInsideUntranslated;
       return;
@@ -1063,23 +1066,33 @@ abstract class AsyncRewriterBase extends js.NodeVisitor {
     unsupported(node);
   }
 
-  // Only used for code where `!shouldTransform(node)`.
-  js.Block translateInBlock(js.Statement node) {
+  List<js.Statement> translateToStatementSequence(js.Statement node) {
     assert(!shouldTransform(node));
     List<js.Statement> oldBuffer = currentStatementBuffer;
-    currentStatementBuffer = new List();
+    currentStatementBuffer = <js.Statement>[];
     List<js.Statement> resultBuffer = currentStatementBuffer;
     visitStatement(node);
     currentStatementBuffer = oldBuffer;
-    return new js.Block(resultBuffer);
+    return resultBuffer;
+  }
+
+  js.Statement translateToStatement(js.Statement node) {
+    List<js.Statement> statements = translateToStatementSequence(node);
+    if (statements.length == 1) return statements.single;
+    return new js.Block(statements);
+  }
+
+  js.Block translateToBlock(js.Statement node) {
+    return new js.Block(translateToStatementSequence(node));
   }
 
   @override
   void visitIf(js.If node) {
     if (!shouldTransform(node.then) && !shouldTransform(node.otherwise)) {
       withExpression(node.condition, (js.Expression condition) {
-        addStatement(new js.If(condition, translateInBlock(node.then),
-            translateInBlock(node.otherwise)));
+        js.Statement translatedThen = translateToStatement(node.then);
+        js.Statement translatedElse = translateToStatement(node.otherwise);
+        addStatement(new js.If(condition, translatedThen, translatedElse));
       }, store: false);
       return;
     }
@@ -1137,7 +1150,7 @@ abstract class AsyncRewriterBase extends js.NodeVisitor {
   void visitLabeledStatement(js.LabeledStatement node) {
     if (!shouldTransform(node)) {
       addStatement(
-          new js.LabeledStatement(node.label, translateInBlock(node.body)));
+          new js.LabeledStatement(node.label, translateToStatement(node.body)));
       return;
     }
     // `continue label` is really continuing the nested loop.
@@ -1302,9 +1315,9 @@ abstract class AsyncRewriterBase extends js.NodeVisitor {
         List<js.SwitchClause> cases = node.cases.map((js.SwitchClause clause) {
           if (clause is js.Case) {
             return new js.Case(
-                clause.expression, translateInBlock(clause.body));
+                clause.expression, translateToBlock(clause.body));
           } else if (clause is js.Default) {
-            return new js.Default(translateInBlock(clause.body));
+            return new js.Default(translateToBlock(clause.body));
           }
         }).toList();
         addStatement(new js.Switch(key, cases));
@@ -1396,7 +1409,8 @@ abstract class AsyncRewriterBase extends js.NodeVisitor {
   @override
   void visitThrow(js.Throw node) {
     withExpression(node.expression, (js.Expression expression) {
-      addStatement(new js.Throw(expression));
+      addStatement(new js.Throw(expression)
+          .withSourceInformation(node.sourceInformation));
     }, store: false);
   }
 
@@ -1426,14 +1440,14 @@ abstract class AsyncRewriterBase extends js.NodeVisitor {
   /// See the comments of [rewriteFunction] for more explanation.
   void visitTry(js.Try node) {
     if (!shouldTransform(node)) {
-      js.Block body = translateInBlock(node.body);
+      js.Block body = translateToBlock(node.body);
       js.Catch catchPart = (node.catchPart == null)
           ? null
           : new js.Catch(node.catchPart.declaration,
-              translateInBlock(node.catchPart.body));
+              translateToBlock(node.catchPart.body));
       js.Block finallyPart = (node.finallyPart == null)
           ? null
-          : translateInBlock(node.finallyPart);
+          : translateToBlock(node.finallyPart);
       addStatement(new js.Try(body, catchPart, finallyPart));
       return;
     }
@@ -1576,7 +1590,7 @@ abstract class AsyncRewriterBase extends js.NodeVisitor {
       bool oldInsideUntranslated = insideUntranslatedBreakable;
       insideUntranslatedBreakable = true;
       withExpression(node.condition, (js.Expression condition) {
-        addStatement(new js.While(condition, translateInBlock(node.body)));
+        addStatement(new js.While(condition, translateToStatement(node.body)));
       }, store: false);
       insideUntranslatedBreakable = oldInsideUntranslated;
       return;
@@ -1703,15 +1717,13 @@ class AsyncRewriter extends AsyncRewriterBase {
       addStatement(new js.Comment("implicit return"));
     }
     addStatement(js.js.statement(
-        "return #runtimeHelper(#returnValue, #successCode, "
-        "#completer, null);",
-        {
-          "runtimeHelper": asyncHelper,
-          "successCode": js.number(error_codes.SUCCESS),
-          "returnValue":
-              analysis.hasExplicitReturns ? returnValue : new js.LiteralNull(),
-          "completer": completer
-        }));
+        "return #runtimeHelper(#returnValue, #successCode, #completer);", {
+      "runtimeHelper": asyncHelper,
+      "successCode": js.number(error_codes.SUCCESS),
+      "returnValue":
+          analysis.hasExplicitReturns ? returnValue : new js.LiteralNull(),
+      "completer": completer
+    }));
   }
 
   @override
@@ -1751,7 +1763,8 @@ class AsyncRewriter extends AsyncRewriterBase {
   js.Fun finishFunction(
       List<js.Parameter> parameters,
       js.Statement rewrittenBody,
-      js.VariableDeclarationList variableDeclarations) {
+      js.VariableDeclarationList variableDeclarations,
+      SourceInformation sourceInformation) {
     return js.js(
         """
         function (#parameters) {
@@ -1763,7 +1776,7 @@ class AsyncRewriter extends AsyncRewriterBase {
             }
             #rewrittenBody;
           });
-          return #asyncHelper(null, #bodyName, #completer, null);
+          return #asyncHelper(null, #bodyName, #completer);
         }""",
         {
           "parameters": parameters,
@@ -1779,7 +1792,7 @@ class AsyncRewriter extends AsyncRewriterBase {
           "asyncHelper": asyncHelper,
           "completer": completer,
           "wrapBody": wrapBody,
-        });
+        }).withSourceInformation(sourceInformation);
   }
 }
 
@@ -1830,7 +1843,8 @@ class SyncStarRewriter extends AsyncRewriterBase {
   js.Fun finishFunction(
       List<js.Parameter> parameters,
       js.Statement rewrittenBody,
-      js.VariableDeclarationList variableDeclarations) {
+      js.VariableDeclarationList variableDeclarations,
+      SourceInformation sourceInformation) {
     // Each iterator invocation on the iterable should work on its own copy of
     // the parameters.
     // TODO(sigurdm): We only need to do this copying for parameters that are
@@ -1883,7 +1897,7 @@ class SyncStarRewriter extends AsyncRewriterBase {
           "handler": handler,
           "currentError": currentErrorName,
           "ERROR": js.number(error_codes.ERROR),
-        });
+        }).withSourceInformation(sourceInformation);
   }
 
   void addErrorExit() {
@@ -2022,7 +2036,8 @@ class AsyncStarRewriter extends AsyncRewriterBase {
   js.Fun finishFunction(
       List<js.Parameter> parameters,
       js.Statement rewrittenBody,
-      js.VariableDeclarationList variableDeclarations) {
+      js.VariableDeclarationList variableDeclarations,
+      SourceInformation sourceInformation) {
     return js.js(
         """
         function (#parameters) {
@@ -2066,7 +2081,7 @@ class AsyncStarRewriter extends AsyncRewriterBase {
           "streamOfController": streamOfController,
           "controller": controllerName,
           "wrapBody": wrapBody,
-        });
+        }).withSourceInformation(sourceInformation);
   }
 
   @override

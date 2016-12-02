@@ -24,9 +24,7 @@ class TimelineRecorderOverride : public ValueObject {
     Timeline::recorder_ = new_recorder;
   }
 
-  ~TimelineRecorderOverride() {
-    Timeline::recorder_ = recorder_;
-  }
+  ~TimelineRecorderOverride() { Timeline::recorder_ = recorder_; }
 
  private:
   TimelineEventRecorder* recorder_;
@@ -39,11 +37,10 @@ class TimelineTestHelper : public AllStatic {
     event->StreamInit(stream);
   }
 
-  static void FakeThreadEvent(
-      TimelineEventBlock* block,
-      intptr_t ftid,
-      const char* label = "fake",
-      TimelineStream* stream = NULL) {
+  static void FakeThreadEvent(TimelineEventBlock* block,
+                              intptr_t ftid,
+                              const char* label = "fake",
+                              TimelineStream* stream = NULL) {
     TimelineEvent* event = block->StartEvent();
     ASSERT(event != NULL);
     event->DurationBegin(label);
@@ -53,16 +50,14 @@ class TimelineTestHelper : public AllStatic {
     }
   }
 
-  static void SetBlockThread(TimelineEventBlock* block,
-                             intptr_t ftid) {
+  static void SetBlockThread(TimelineEventBlock* block, intptr_t ftid) {
     block->thread_id_ = OSThread::ThreadIdFromIntPtr(ftid);
   }
 
-  static void FakeDuration(
-      TimelineEventRecorder* recorder,
-      const char* label,
-      int64_t start,
-      int64_t end) {
+  static void FakeDuration(TimelineEventRecorder* recorder,
+                           const char* label,
+                           int64_t start,
+                           int64_t end) {
     ASSERT(recorder != NULL);
     ASSERT(start < end);
     ASSERT(label != NULL);
@@ -72,10 +67,9 @@ class TimelineTestHelper : public AllStatic {
     event->Complete();
   }
 
-  static void FakeBegin(
-      TimelineEventRecorder* recorder,
-      const char* label,
-      int64_t start) {
+  static void FakeBegin(TimelineEventRecorder* recorder,
+                        const char* label,
+                        int64_t start) {
     ASSERT(recorder != NULL);
     ASSERT(label != NULL);
     ASSERT(start >= 0);
@@ -85,10 +79,9 @@ class TimelineTestHelper : public AllStatic {
     event->Complete();
   }
 
-  static void FakeEnd(
-      TimelineEventRecorder* recorder,
-      const char* label,
-      int64_t end) {
+  static void FakeEnd(TimelineEventRecorder* recorder,
+                      const char* label,
+                      int64_t end) {
     ASSERT(recorder != NULL);
     ASSERT(label != NULL);
     ASSERT(end >= 0);
@@ -103,9 +96,7 @@ class TimelineTestHelper : public AllStatic {
     recorder->Clear();
   }
 
-  static void FinishBlock(TimelineEventBlock* block) {
-    block->Finish();
-  }
+  static void FinishBlock(TimelineEventBlock* block) { block->Finish(); }
 };
 
 
@@ -172,6 +163,50 @@ TEST_CASE(TimelineEventDurationPrintJSON) {
     EXPECT_SUBSTRING("\"dur\":", js.ToCString());
   }
   event.DurationEnd();
+}
+
+
+TEST_CASE(TimelineEventPrintSystrace) {
+  const intptr_t kBufferLength = 1024;
+  char buffer[kBufferLength];
+
+  // Create a test stream.
+  TimelineStream stream;
+  stream.Init("testStream", true);
+
+  // Create a test event.
+  TimelineEvent event;
+  TimelineTestHelper::SetStream(&event, &stream);
+
+  // Test a Begin event.
+  event.Begin("apple", 1, 2);
+  event.PrintSystrace(&buffer[0], kBufferLength);
+  EXPECT_SUBSTRING("|apple", buffer);
+  EXPECT_SUBSTRING("B|", buffer);
+
+  // Test an End event.
+  event.End("apple", 2, 3);
+  event.PrintSystrace(&buffer[0], kBufferLength);
+  EXPECT_STREQ("E", buffer);
+
+  // Test a Counter event. We only report the first counter value (in this case
+  // "4").
+  event.Counter("CTR", 1);
+  // We have two counters.
+  event.SetNumArguments(2);
+  // Set the first counter value.
+  event.CopyArgument(0, "cats", "4");
+  // Set the second counter value.
+  event.CopyArgument(1, "dogs", "1");
+  event.PrintSystrace(&buffer[0], kBufferLength);
+  EXPECT_SUBSTRING("C|", buffer);
+  EXPECT_SUBSTRING("|CTR|4", buffer);
+
+  // Test a duration event. This event kind is not supported so we should
+  // serialize it to an empty string.
+  event.Duration("DUR", 0, 1, 2, 3);
+  event.PrintSystrace(&buffer[0], kBufferLength);
+  EXPECT_STREQ("", buffer);
 }
 
 
@@ -245,13 +280,9 @@ class EventCounterRecorder : public TimelineEventCallbackRecorder {
     }
   }
 
-  void OnEvent(TimelineEvent* event) {
-    counts_[event->event_type()]++;
-  }
+  void OnEvent(TimelineEvent* event) { counts_[event->event_type()]++; }
 
-  intptr_t CountFor(TimelineEvent::EventType type) {
-    return counts_[type];
-  }
+  intptr_t CountFor(TimelineEvent::EventType type) { return counts_[type]; }
 
  private:
   intptr_t counts_[TimelineEvent::kNumEventTypes];
@@ -263,8 +294,7 @@ TEST_CASE(TimelineEventCallbackRecorderBasic) {
   TimelineRecorderOverride override(recorder);
 
   // Initial counts are all zero.
-  for (intptr_t i = TimelineEvent::kNone + 1;
-       i < TimelineEvent::kNumEventTypes;
+  for (intptr_t i = TimelineEvent::kNone + 1; i < TimelineEvent::kNumEventTypes;
        i++) {
     EXPECT_EQ(0, recorder->CountFor(static_cast<TimelineEvent::EventType>(i)));
   }

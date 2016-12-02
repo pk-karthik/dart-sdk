@@ -2,25 +2,24 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import 'native_testing.dart';
 
 // Test that type checks occur on native methods.
 
 @Native("A")
 class A {
-  int foo(int x) native;
-  int cmp(A other) native;
+  int foo(int x) native ;
+  int cmp(A other) native ;
 }
 
 @Native("B")
 class B {
-  String foo(String x) native;
-  int cmp(B other) native;
+  String foo(String x) native ;
+  int cmp(B other) native ;
 }
 
-A makeA() native;
-B makeB() native;
+A makeA() native ;
+B makeB() native ;
 
 void setup() native """
 function A() {}
@@ -33,6 +32,9 @@ B.prototype.cmp = function (x) { return 1; };
 
 makeA = function(){return new A;};
 makeB = function(){return new B;};
+
+self.nativeConstructor(A);
+self.nativeConstructor(B);
 """;
 
 expectThrows(action()) {
@@ -135,6 +137,7 @@ bool isCheckedMode() {
 }
 
 main() {
+  nativeTesting();
   setup();
 
   if (isCheckedMode()) {

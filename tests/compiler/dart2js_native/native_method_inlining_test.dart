@@ -5,24 +5,23 @@
 // Test that native methods with unnamed optional arguments are called with the
 // number of arguments in the call site AND the call site is inlined.
 
-import "package:expect/expect.dart";
-import 'dart:_js_helper' show Native, NoInline;
+import 'native_testing.dart';
 
 typedef int Int2Int(int x);
 
 @Native("A")
 class A {
-  int foo([x, y, z]) native;
+  int foo([x, y, z]) native ;
 
   // Calls can be inlined provided they don't pass an argument.
-  int callFun([Int2Int fn]) native;
+  int callFun([Int2Int fn]) native ;
 }
 
 class B {
   static var g;
   @NoInline()
   method1(a) {
-    g = '(Method1Tag)';  // Tag to identify compiled JavaScript method.
+    g = '(Method1Tag)'; // Tag to identify compiled JavaScript method.
     A x = makeA();
     // Call sites that are searched for in compiled JavaScript.
     x.foo();
@@ -30,27 +29,29 @@ class B {
     x.foo(2, 10);
     return x.foo(3, 10, 30);
   }
+
   @NoInline()
   method2() {
     g = '(Method2Tag)';
     A x = makeA();
-    var r1 = x.callFun();  // Can be inlined.
+    var r1 = x.callFun(); // Can be inlined.
     var r2 = x.callFun();
     return r1 + r2;
   }
+
   @NoInline()
   method3() {
     g = '(Method3Tag)';
     A x = makeA();
-    var r1 = x.callFun((x) => x * 2);   // Can't be inlined due to conversion.
+    var r1 = x.callFun((x) => x * 2); // Can't be inlined due to conversion.
     var r2 = x.callFun((x) => x * 0);
     return r1 + r2;
   }
 }
 
-A makeA() native;
+A makeA() native ;
 
-String findMethodTextContaining(instance, string) native;
+String findMethodTextContaining(instance, string) native ;
 
 void setup() native r"""
 function A() {}
@@ -69,8 +70,9 @@ findMethodTextContaining = function (instance, string) {
     if (s.indexOf(string)>0) return s;
   }
 };
-""";
 
+self.nativeConstructor(A);
+""";
 
 bool get isCheckedMode {
   int i = 0;
@@ -147,6 +149,7 @@ test2() {
 }
 
 main() {
+  nativeTesting();
   setup();
   test1();
   test2();

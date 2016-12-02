@@ -28,12 +28,30 @@ class Expectation {
   static Expectation MISSING_STATIC_WARNING = byName('MissingStaticWarning');
   static Expectation PUB_GET_ERROR = byName('PubGetError');
 
+  // Special 'CRASH' cases
+  static Expectation DARTK_CRASH = byName('DartkCrash');
+
+  // Special 'TIMEOUT' cases
+  static Expectation DARTK_TIMEOUT = byName('DartkTimeout');
+
+  // Special 'MISSING_COMPILETIME_ERROR'
+  static Expectation DARTK_MISSING_COMPILETIME_ERROR =
+      byName('DartkMissingCompileTimeError');
+
+  // Special 'COMPILETIME_ERROR'
+  static Expectation DARTK_COMPILETIME_ERROR = byName('DartkCompileTimeError');
+
   // "meta expectations"
   static Expectation OK = byName('Ok');
   static Expectation SLOW = byName('Slow');
   static Expectation SKIP = byName('Skip');
   static Expectation SKIP_SLOW = byName('SkipSlow');
   static Expectation SKIP_BY_DESIGN = byName('SkipByDesign');
+
+  // Can be returned by the test runner to say the result should be ignored,
+  // and assumed to meet the expectations, due to an infrastructure failure.
+  // Do not place in status files.
+  static Expectation IGNORE = byName('Ignore');
 
   static Expectation byName(String name) {
     _initialize();
@@ -58,14 +76,20 @@ class Expectation {
       }
 
       var fail = build("Fail");
+      var crash = build("Crash");
+      var timeout = build("Timeout");
       build("Pass");
-      build("Crash");
-      build("Timeout");
 
-      build("MissingCompileTimeError", group: fail);
+      var missingCompileError = build("MissingCompileTimeError", group: fail);
+      var compileError = build("CompileTimeError", group: fail);
       build("MissingRuntimeError", group: fail);
-      build("CompileTimeError", group: fail);
       build("RuntimeError", group: fail);
+
+      // Dartk sub expectations
+      build("DartkCrash", group: crash);
+      build("DartkTimeout", group: timeout);
+      build("DartkMissingCompileTimeError", group: missingCompileError);
+      build("DartkCompileTimeError", group: compileError);
 
       build("MissingStaticWarning", group: fail);
       build("StaticWarning", group: fail);
@@ -77,6 +101,7 @@ class Expectation {
       build("SkipSlow", group: skip, isMetaExpectation: true);
       build("Ok", isMetaExpectation: true);
       build("Slow", isMetaExpectation: true);
+      build("Ignore");
     }
   }
 
@@ -94,6 +119,7 @@ class Expectation {
 
   bool canBeOutcomeOf(Expectation expectation) {
     Expectation outcome = this;
+    if (outcome == IGNORE) return true;
     while (outcome != null) {
       if (outcome == expectation) {
         return true;

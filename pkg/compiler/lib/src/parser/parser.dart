@@ -4,7 +4,6 @@
 
 library dart2js.parser;
 
-import '../options.dart' show ParserOptions;
 import '../common.dart';
 import '../tokens/keyword.dart' show Keyword;
 import '../tokens/precedence.dart' show PrecedenceInfo;
@@ -58,7 +57,6 @@ import '../tokens/token_constants.dart'
         STRING_TOKEN;
 import '../util/characters.dart' as Characters show $CLOSE_CURLY_BRACKET;
 import '../util/util.dart' show Link;
-
 import 'listener.dart' show Listener;
 
 class FormalParameterType {
@@ -97,23 +95,16 @@ class FormalParameterType {
  */
 class Parser {
   final Listener listener;
-  final ParserOptions parserOptions;
   bool mayParseFunctionExpressions = true;
   bool asyncAwaitKeywordsEnabled;
 
-  final bool enableGenericMethodSyntax;
-
-  Parser(this.listener, ParserOptions parserOptions,
-      {this.asyncAwaitKeywordsEnabled: false})
-      : parserOptions = parserOptions,
-        enableGenericMethodSyntax = parserOptions.enableGenericMethodSyntax;
+  Parser(this.listener, {this.asyncAwaitKeywordsEnabled: false});
 
   Token parseUnit(Token token) {
     listener.beginCompilationUnit(token);
     int count = 0;
     while (!identical(token.kind, EOF_TOKEN)) {
       token = parseTopLevelDeclaration(token);
-      listener.endTopLevelDeclaration(token);
       count++;
     }
     listener.endCompilationUnit(count, token);
@@ -121,6 +112,12 @@ class Parser {
   }
 
   Token parseTopLevelDeclaration(Token token) {
+    token = _parseTopLevelDeclaration(token);
+    listener.endTopLevelDeclaration(token);
+    return token;
+  }
+
+  Token _parseTopLevelDeclaration(Token token) {
     token = parseMetadataStar(token);
     final String value = token.stringValue;
     if ((identical(value, 'abstract') && optional('class', token.next)) ||
@@ -424,13 +421,12 @@ class Parser {
     listener.beginFormalParameters(begin);
     expect('(', token);
     int parameterCount = 0;
-    if (optional(')', token.next)) {
-      listener.endFormalParameters(parameterCount, begin, token.next);
-      return token.next.next;
-    }
     do {
-      ++parameterCount;
       token = token.next;
+      if (optional(')', token)) {
+        break;
+      }
+      ++parameterCount;
       String value = token.stringValue;
       if (identical(value, '[')) {
         token = parseOptionalFormalParameters(token, false);
@@ -463,7 +459,7 @@ class Parser {
       listener.handleNoTypeVariables(token);
       token = parseFormalParameters(token);
       listener.handleFunctionTypedFormalParameter(token);
-    } else if (enableGenericMethodSyntax && optional('<', token)) {
+    } else if (optional('<', token)) {
       token = parseTypeVariablesOpt(token);
       token = parseFormalParameters(token);
       listener.handleFunctionTypedFormalParameter(token);
@@ -477,8 +473,6 @@ class Parser {
       if (type.isRequired) {
         listener.reportError(
             equal, MessageKind.REQUIRED_PARAMETER_WITH_DEFAULT);
-      } else if (type.isNamed && identical('=', value)) {
-        listener.reportError(equal, MessageKind.NAMED_PARAMETER_WITH_EQUALS);
       } else if (type.isPositional && identical(':', value)) {
         listener.reportError(
             equal, MessageKind.POSITIONAL_PARAMETER_WITH_EQUALS);
@@ -495,11 +489,23 @@ class Parser {
     int parameterCount = 0;
     do {
       token = token.next;
+      if (isNamed && optional('}', token)) {
+        break;
+      } else if (!isNamed && optional(']', token)) {
+        break;
+      }
       var type =
           isNamed ? FormalParameterType.NAMED : FormalParameterType.POSITIONAL;
       token = parseFormalParameter(token, type);
       ++parameterCount;
     } while (optional(',', token));
+    if (parameterCount == 0) {
+      listener.reportError(
+          token,
+          isNamed
+              ? MessageKind.EMPTY_NAMED_PARAMETER_LIST
+              : MessageKind.EMPTY_OPTIONAL_PARAMETER_LIST);
+    }
     listener.endOptionalFormalParameters(parameterCount, begin, token);
     if (isNamed) {
       return expect('}', token);
@@ -571,7 +577,7 @@ class Parser {
   /// Returns token after match if [token] matches identifier ('.' identifier)?,
   /// and otherwise returns null. Does not produce listener events.
   Token tryParseQualified(Token token) {
-    if (!identical(token.kind, IDENTIFIER_TOKEN)) return null;
+    if (!isValidTypeReference(token)) return null;
     token = token.next;
     if (!identical(token.kind, PERIOD_TOKEN)) return token;
     token = token.next;
@@ -770,8 +776,7 @@ class Parser {
     listener.beginTypeVariable(token);
     token = parseIdentifier(token);
     Token extendsOrSuper = null;
-    if (optional('extends', token) ||
-        (enableGenericMethodSyntax && optional('super', token))) {
+    if (optional('extends', token) || optional('super', token)) {
       extendsOrSuper = token;
       token = parseType(token.next);
     } else {
@@ -1086,7 +1091,7 @@ class Parser {
     }
     Token token = parseIdentifier(name);
 
-    if (enableGenericMethodSyntax && getOrSet == null) {
+    if (getOrSet == null) {
       token = parseTypeVariablesOpt(token);
     } else {
       listener.handleNoTypeVariables(token);
@@ -1347,11 +1352,14 @@ class Parser {
 
   Token parseMember(Token token) {
     token = parseMetadataStar(token);
-    if (isFactoryDeclaration(token)) {
-      return parseFactoryMethod(token);
-    }
     Token start = token;
     listener.beginMember(token);
+    if (isFactoryDeclaration(token)) {
+      token = parseFactoryMethod(token);
+      listener.endMember();
+      assert(token != null);
+      return token;
+    }
 
     Link<Token> identifiers = findMemberName(token);
     if (identifiers.isEmpty) {
@@ -1396,7 +1404,7 @@ class Parser {
           (identical(value, '.')) ||
           (identical(value, '{')) ||
           (identical(value, '=>')) ||
-          (enableGenericMethodSyntax && identical(value, '<'))) {
+          (identical(value, '<'))) {
         isField = false;
         break;
       } else if (identical(value, ';')) {
@@ -1417,15 +1425,18 @@ class Parser {
         if (identical(token.kind, EOF_TOKEN)) {
           // TODO(ahe): This is a hack, see parseTopLevelMember.
           listener.endFields(1, start, token);
+          listener.endMember();
           return token;
         }
       }
     }
 
     var modifiers = identifiers.reverse();
-    return isField
+    token = isField
         ? parseFields(start, modifiers, type, getOrSet, name, false)
         : parseMethod(start, modifiers, type, getOrSet, name);
+    listener.endMember();
+    return token;
   }
 
   Token parseMethod(Token start, Link<Token> modifiers, Token type,
@@ -1488,7 +1499,7 @@ class Parser {
     }
 
     token = parseQualifiedRestOpt(token);
-    if (enableGenericMethodSyntax && getOrSet == null) {
+    if (getOrSet == null) {
       token = parseTypeVariablesOpt(token);
     } else {
       listener.handleNoTypeVariables(token);
@@ -1579,7 +1590,7 @@ class Parser {
     }
     token = parseQualifiedRestOpt(token);
     listener.endFunctionName(token);
-    if (enableGenericMethodSyntax && getOrSet == null) {
+    if (getOrSet == null) {
       token = parseTypeVariablesOpt(token);
     } else {
       listener.handleNoTypeVariables(token);
@@ -1624,11 +1635,7 @@ class Parser {
     listener.beginFunctionName(token);
     token = parseIdentifier(token);
     listener.endFunctionName(token);
-    if (enableGenericMethodSyntax) {
-      token = parseTypeVariablesOpt(token);
-    } else {
-      listener.handleNoTypeVariables(token);
-    }
+    token = parseTypeVariablesOpt(token);
     token = parseFormalParameters(token);
     listener.handleNoInitializers();
     bool previousAsyncAwaitKeywordsEnabled = asyncAwaitKeywordsEnabled;
@@ -1860,8 +1867,7 @@ class Parser {
           // by '{', '=>', 'async', or 'sync'.
           return parseFunctionDeclaration(token);
         }
-      } else if (enableGenericMethodSyntax &&
-          identical(afterIdKind, LT_TOKEN)) {
+      } else if (identical(afterIdKind, LT_TOKEN)) {
         // We are looking at "type identifier '<'".
         BeginGroupToken beginAngle = afterId;
         Token endAngle = beginAngle.endGroup;
@@ -1896,7 +1902,7 @@ class Parser {
             identical(afterParens, 'sync')) {
           return parseFunctionDeclaration(token);
         }
-      } else if (enableGenericMethodSyntax && optional('<', token.next)) {
+      } else if (optional('<', token.next)) {
         BeginGroupToken beginAngle = token.next;
         Token endAngle = beginAngle.endGroup;
         if (endAngle != null &&
@@ -2341,8 +2347,7 @@ class Parser {
   Token parseLiteralListOrMapOrFunction(Token token, Token constKeyword) {
     assert(optional('<', token));
     BeginGroupToken begin = token;
-    if (enableGenericMethodSyntax &&
-        constKeyword == null &&
+    if (constKeyword == null &&
         begin.endGroup != null &&
         identical(begin.endGroup.next.kind, OPEN_PAREN_TOKEN)) {
       token = parseTypeVariablesOpt(token);
@@ -2385,7 +2390,7 @@ class Parser {
   }
 
   bool isFunctionDeclaration(Token token) {
-    if (enableGenericMethodSyntax && optional('<', token)) {
+    if (optional('<', token)) {
       BeginGroupToken begin = token;
       if (begin.endGroup == null) return false;
       token = begin.endGroup.next;
@@ -2534,7 +2539,7 @@ class Parser {
   Token parseSend(Token token) {
     listener.beginSend(token);
     token = parseIdentifier(token);
-    if (enableGenericMethodSyntax && isValidMethodTypeArguments(token)) {
+    if (isValidMethodTypeArguments(token)) {
       token = parseTypeArgumentsOpt(token);
     } else {
       listener.handleNoTypeArguments(token);
@@ -2565,6 +2570,10 @@ class Parser {
     bool old = mayParseFunctionExpressions;
     mayParseFunctionExpressions = true;
     do {
+      if (optional(')', token.next)) {
+        token = token.next;
+        break;
+      }
       Token colon = null;
       if (optional(':', token.next.next)) {
         token = parseIdentifier(token.next);

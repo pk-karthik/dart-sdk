@@ -63,11 +63,9 @@
 library dart2js.messages;
 
 import '../tokens/token.dart' show ErrorToken, Token;
-
+import 'generated/shared_messages.dart' as shared_messages;
 import 'invariant.dart' show invariant;
 import 'spannable.dart' show CURRENT_ELEMENT_SPANNABLE;
-
-import 'generated/shared_messages.dart' as shared_messages;
 
 const DONT_KNOW_HOW_TO_FIX = "Computer says no!";
 
@@ -100,7 +98,6 @@ enum MessageKind {
   BEFORE_TOP_LEVEL,
   BINARY_OPERATOR_BAD_ARITY,
   BODY_EXPECTED,
-  CALL_NOT_SUPPORTED_ON_NATIVE_CLASS,
   CANNOT_EXTEND,
   CANNOT_EXTEND_ENUM,
   CANNOT_EXTEND_MALFORMED,
@@ -186,9 +183,11 @@ enum MessageKind {
   DUPLICATED_RESOURCE,
   EMPTY_CATCH_DECLARATION,
   EMPTY_ENUM_DECLARATION,
+  EMPTY_NAMED_PARAMETER_LIST,
+  EMPTY_OPTIONAL_PARAMETER_LIST,
   EMPTY_HIDE,
-  EQUAL_MAP_ENTRY_KEY,
   EMPTY_SHOW,
+  EQUAL_MAP_ENTRY_KEY,
   EXISTING_DEFINITION,
   EXISTING_LABEL,
   EXPECTED_IDENTIFIER_NOT_RESERVED_WORD,
@@ -327,7 +326,6 @@ enum MessageKind {
   MULTI_INHERITANCE,
   NAMED_ARGUMENT_NOT_FOUND,
   NAMED_FUNCTION_EXPRESSION,
-  NAMED_PARAMETER_WITH_EQUALS,
   NATIVE_NOT_SUPPORTED,
   NO_BREAK_TARGET,
   NO_CATCH_NOR_FINALLY,
@@ -387,6 +385,7 @@ enum MessageKind {
   PATCH_POINT_TO_SETTER,
   PATCH_REQUIRED_PARAMETER_COUNT_MISMATCH,
   PATCH_RETURN_TYPE_MISMATCH,
+  PATCH_TYPE_VARIABLES_MISMATCH,
   PLEASE_REPORT_THE_CRASH,
   POSITIONAL_PARAMETER_WITH_EQUALS,
   POTENTIAL_MUTATION,
@@ -432,6 +431,7 @@ enum MessageKind {
   TYPE_VARIABLE_IN_CONSTANT,
   TYPE_VARIABLE_WITHIN_STATIC_MEMBER,
   TYPE_VARIABLE_FROM_METHOD_NOT_REIFIED,
+  TYPE_VARIABLE_FROM_METHOD_CONSIDERED_DYNAMIC,
   TYPEDEF_FORMAL_WITH_DEFAULT,
   UNARY_OPERATOR_BAD_ARITY,
   UNBOUND_LABEL,
@@ -464,6 +464,9 @@ enum MessageKind {
   VOID_EXPRESSION,
   VOID_NOT_ALLOWED,
   VOID_VARIABLE,
+  WRONG_ARGUMENT_FOR_JS,
+  WRONG_ARGUMENT_FOR_JS_FIRST,
+  WRONG_ARGUMENT_FOR_JS_SECOND,
   WRONG_ARGUMENT_FOR_JS_INTERCEPTOR_CONSTANT,
   WRONG_NUMBER_OF_ARGUMENTS_FOR_ASSERT,
   YIELDING_MODIFIER_ON_ARROW_BODY,
@@ -610,7 +613,9 @@ main() => new A().m();
           "Cannot resolve '#{name}'.",
           howToFix: "Did you mean to add the 'async' marker "
               "to the enclosing function?",
-          examples: const ["main() { (() => await -3)(); }",]),
+          examples: const [
+            "main() { (() => await -3)(); }",
+          ]),
 
       MessageKind.CANNOT_RESOLVE_IN_INITIALIZER: const MessageTemplate(
           MessageKind.CANNOT_RESOLVE_IN_INITIALIZER,
@@ -665,6 +670,7 @@ main() => new B();
       MessageKind.DUPLICATE_DEFINITION: const MessageTemplate(
           MessageKind.DUPLICATE_DEFINITION,
           "Duplicate definition of '#{name}'.",
+          options: const ["--initializing-formal-access"],
           howToFix: "Try to rename or remove this definition.",
           examples: const [
             """
@@ -676,7 +682,36 @@ class C {
 main() {
   new C();
 }
+""",
+            """
+class C {
+  int x;
+  C(this.x, int x);
+}
 
+main() {
+  new C(4, 2);
+}
+""",
+            """
+class C {
+  int x;
+  C(int x, this.x);
+}
+
+main() {
+  new C(4, 2);
+}
+""",
+            """
+class C {
+  int x;
+  C(this.x, this.x);
+}
+
+main() {
+  new C(4, 2);
+}
 """
           ]),
 
@@ -846,6 +881,36 @@ export 'dart:core' show Foo;
 
 main() {}"""
             },
+          ]),
+
+      MessageKind.EMPTY_OPTIONAL_PARAMETER_LIST: const MessageTemplate(
+          MessageKind.EMPTY_OPTIONAL_PARAMETER_LIST,
+          "Optional parameter lists cannot be empty.",
+          howToFix: "Try adding an optional parameter to the list.",
+          examples: const [
+            const {
+              'main.dart': """
+foo([]) {}
+
+main() {
+  foo();
+}"""
+            }
+          ]),
+
+      MessageKind.EMPTY_NAMED_PARAMETER_LIST: const MessageTemplate(
+          MessageKind.EMPTY_NAMED_PARAMETER_LIST,
+          "Named parameter lists cannot be empty.",
+          howToFix: "Try adding a named parameter to the list.",
+          examples: const [
+            const {
+              'main.dart': """
+foo({}) {}
+
+main() {
+  foo();
+}"""
+            }
           ]),
 
       MessageKind.NOT_A_TYPE: const MessageTemplate(
@@ -1157,7 +1222,6 @@ void main() => new C().m(null);
       MessageKind.TYPE_VARIABLE_FROM_METHOD_NOT_REIFIED: const MessageTemplate(
           MessageKind.TYPE_VARIABLE_FROM_METHOD_NOT_REIFIED,
           "Method type variables do not have a runtime value.",
-          options: const ["--generic-method-syntax"],
           howToFix: "Try using the upper bound of the type variable, "
               "or refactor the code to avoid needing this runtime value.",
           examples: const [
@@ -1172,7 +1236,18 @@ main() => f<int>();
 bool f<T>(Object o) => o is T;
 
 main() => f<int>(42);
-""",
+"""
+          ]),
+
+      MessageKind.TYPE_VARIABLE_FROM_METHOD_CONSIDERED_DYNAMIC:
+          const MessageTemplate(
+              MessageKind.TYPE_VARIABLE_FROM_METHOD_CONSIDERED_DYNAMIC,
+              "Method type variables are treated as `dynamic` in `as` "
+              "expressions.",
+              howToFix:
+                  "Try using the upper bound of the type variable, or check "
+                  "that the blind success of the test does not introduce bugs.",
+              examples: const [
             """
 // Method type variables are not reified, so they cannot be tested dynamically.
 bool f<T>(Object o) => o as T;
@@ -1308,19 +1383,6 @@ main() {
 main() {
   foo(a = 1) => print(a);
   foo(2);
-}"""
-          ]),
-
-      MessageKind.NAMED_PARAMETER_WITH_EQUALS: const MessageTemplate(
-          MessageKind.NAMED_PARAMETER_WITH_EQUALS,
-          "Named optional parameters can't use '=' to specify a default "
-          "value.",
-          howToFix: "Try replacing '=' with ':'.",
-          examples: const [
-            """
-main() {
-  foo({a = 1}) => print(a);
-  foo(a: 2);
 }"""
           ]),
 
@@ -1937,7 +1999,9 @@ main() => new C();"""
           "Cannot assign a value to a type. Note that types are never null, "
           "so this ??= assignment has no effect.",
           howToFix: "Try removing the '??=' assignment.",
-          examples: const ["class A {} main() { print(A ??= 3);}",]),
+          examples: const [
+            "class A {} main() { print(A ??= 3);}",
+          ]),
 
       MessageKind.VOID_NOT_ALLOWED: const MessageTemplate(
           MessageKind.VOID_NOT_ALLOWED,
@@ -2635,6 +2699,18 @@ main() {}
               "Use an immediately called JavaScript function to capture the"
               " the placeholder values as JavaScript function parameters."),
 
+      MessageKind.WRONG_ARGUMENT_FOR_JS: const MessageTemplate(
+          MessageKind.WRONG_ARGUMENT_FOR_JS,
+          "JS expression must take two or more arguments."),
+
+      MessageKind.WRONG_ARGUMENT_FOR_JS_FIRST: const MessageTemplate(
+          MessageKind.WRONG_ARGUMENT_FOR_JS_FIRST,
+          "JS expression must take two or more arguments."),
+
+      MessageKind.WRONG_ARGUMENT_FOR_JS_SECOND: const MessageTemplate(
+          MessageKind.WRONG_ARGUMENT_FOR_JS_SECOND,
+          "JS second argument must be a string literal."),
+
       MessageKind.WRONG_ARGUMENT_FOR_JS_INTERCEPTOR_CONSTANT:
           const MessageTemplate(
               MessageKind.WRONG_ARGUMENT_FOR_JS_INTERCEPTOR_CONSTANT,
@@ -3026,7 +3102,11 @@ main() => r\"\"\"
           MessageKind.UNMATCHED_TOKEN,
           "Can't find '#{end}' to match '#{begin}'.",
           howToFix: DONT_KNOW_HOW_TO_FIX,
-          examples: const ["main(", "main(){", "main(){]}",]),
+          examples: const [
+            "main(",
+            "main(){",
+            "main(){]}",
+          ]),
 
       MessageKind.UNTERMINATED_TOKEN: const MessageTemplate(
           MessageKind.UNTERMINATED_TOKEN,
@@ -3150,7 +3230,8 @@ main() => new A();
       MessageKind.MAIN_WITH_EXTRA_PARAMETER: const MessageTemplate(
           MessageKind.MAIN_WITH_EXTRA_PARAMETER,
           "'#{main}' cannot have more than two parameters.",
-          howToFix: DONT_KNOW_HOW_TO_FIX, /* Don't state the obvious. */
+          howToFix: DONT_KNOW_HOW_TO_FIX,
+          /* Don't state the obvious. */
           examples: const ['main(a, b, c) {}']),
 
       MessageKind.COMPILER_CRASHED: const MessageTemplate(
@@ -3452,6 +3533,11 @@ part of test.main;
       // Patch errors start.
       //////////////////////////////////////////////////////////////////////////////
 
+      MessageKind.PATCH_TYPE_VARIABLES_MISMATCH: const MessageTemplate(
+          MessageKind.PATCH_TYPE_VARIABLES_MISMATCH,
+          "Patch type variables do not match "
+          "type variables on origin method '#{methodName}'."),
+
       MessageKind.PATCH_RETURN_TYPE_MISMATCH: const MessageTemplate(
           MessageKind.PATCH_RETURN_TYPE_MISMATCH,
           "Patch return type '#{patchReturnType}' does not match "
@@ -3565,15 +3651,18 @@ part of test.main;
       MessageKind.EXTERNAL_WITH_BODY: const MessageTemplate(
           MessageKind.EXTERNAL_WITH_BODY,
           "External function '#{functionName}' cannot have a function body.",
-          options: const ["--output-type=dart"],
           howToFix:
               "Try removing the 'external' modifier or the function body.",
           examples: const [
             """
+import 'package:js/js.dart';
+@JS()
 external foo() => 0;
 main() => foo();
 """,
             """
+import 'package:js/js.dart';
+@JS()
 external foo() {}
 main() => foo();
 """
@@ -3640,11 +3729,6 @@ dart:mirrors library is not supported when using this backend.
 Your app imports dart:mirrors via:"""
           """
 $MIRRORS_NOT_SUPPORTED_BY_BACKEND_PADDING#{importChain}"""),
-
-      MessageKind.CALL_NOT_SUPPORTED_ON_NATIVE_CLASS: const MessageTemplate(
-          MessageKind.CALL_NOT_SUPPORTED_ON_NATIVE_CLASS,
-          "Non-supported 'call' member on a native class, or a "
-          "subclass of a native class."),
 
       MessageKind.DIRECTLY_THROWING_NSM: const MessageTemplate(
           MessageKind.DIRECTLY_THROWING_NSM,

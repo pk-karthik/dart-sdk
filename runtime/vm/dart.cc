@@ -4,6 +4,8 @@
 
 #include "vm/dart.h"
 
+#include "vm/become.h"
+#include "vm/clustered_snapshot.h"
 #include "vm/code_observers.h"
 #include "vm/cpu.h"
 #include "vm/dart_api_state.h"
@@ -37,9 +39,7 @@ namespace dart {
 
 DECLARE_FLAG(bool, print_class_table);
 DECLARE_FLAG(bool, trace_time_all);
-DEFINE_FLAG(bool, keep_code, false,
-            "Keep deoptimized code for profiling.");
-DEFINE_FLAG(bool, shutdown, true, "Do a clean shutdown of the VM");
+DEFINE_FLAG(bool, keep_code, false, "Keep deoptimized code for profiling.");
 DEFINE_FLAG(bool, trace_shutdown, false, "Trace VM shutdown on stderr");
 
 Isolate* Dart::vm_isolate_ = NULL;
@@ -70,7 +70,7 @@ Dart_EntropySource Dart::entropy_source_callback_ = NULL;
 // have unintended consequences.
 class ReadOnlyHandles {
  public:
-  ReadOnlyHandles() { }
+  ReadOnlyHandles() {}
 
  private:
   VMHandles handles_;
@@ -85,31 +85,37 @@ static void CheckOffsets() {
 #define CHECK_OFFSET(expr, offset)                                             \
   if ((expr) != (offset)) {                                                    \
     FATAL2("%s == %" Pd, #expr, (expr));                                       \
-  }                                                                            \
+  }
 
 #if defined(TARGET_ARCH_ARM)
   // These offsets are embedded in precompiled instructions. We need simarm
   // (compiler) and arm (runtime) to agree.
   CHECK_OFFSET(Heap::TopOffset(Heap::kNew), 8);
-  CHECK_OFFSET(Isolate::heap_offset(), 8);
   CHECK_OFFSET(Thread::stack_limit_offset(), 4);
   CHECK_OFFSET(Thread::object_null_offset(), 36);
+  CHECK_OFFSET(SingleTargetCache::upper_limit_offset(), 14);
+  CHECK_OFFSET(Isolate::object_store_offset(), 28);
+  NOT_IN_PRODUCT(CHECK_OFFSET(sizeof(ClassHeapStats), 120));
 #endif
 #if defined(TARGET_ARCH_MIPS)
   // These offsets are embedded in precompiled instructions. We need simmips
   // (compiler) and mips (runtime) to agree.
   CHECK_OFFSET(Heap::TopOffset(Heap::kNew), 8);
-  CHECK_OFFSET(Isolate::heap_offset(), 8);
   CHECK_OFFSET(Thread::stack_limit_offset(), 4);
   CHECK_OFFSET(Thread::object_null_offset(), 36);
+  CHECK_OFFSET(SingleTargetCache::upper_limit_offset(), 14);
+  CHECK_OFFSET(Isolate::object_store_offset(), 28);
+  NOT_IN_PRODUCT(CHECK_OFFSET(sizeof(ClassHeapStats), 120));
 #endif
 #if defined(TARGET_ARCH_ARM64)
   // These offsets are embedded in precompiled instructions. We need simarm64
   // (compiler) and arm64 (runtime) to agree.
   CHECK_OFFSET(Heap::TopOffset(Heap::kNew), 8);
-  CHECK_OFFSET(Isolate::heap_offset(), 16);
   CHECK_OFFSET(Thread::stack_limit_offset(), 8);
   CHECK_OFFSET(Thread::object_null_offset(), 72);
+  CHECK_OFFSET(SingleTargetCache::upper_limit_offset(), 28);
+  CHECK_OFFSET(Isolate::object_store_offset(), 56);
+  NOT_IN_PRODUCT(CHECK_OFFSET(sizeof(ClassHeapStats), 208));
 #endif
 #undef CHECK_OFFSET
 }
@@ -141,11 +147,12 @@ char* Dart::InitOnce(const uint8_t* vm_isolate_snapshot,
   if (FLAG_support_timeline) {
     Timeline::InitOnce();
   }
-  NOT_IN_PRODUCT(TimelineDurationScope tds(Timeline::GetVMStream(),
-                                           "Dart::InitOnce"));
+  NOT_IN_PRODUCT(
+      TimelineDurationScope tds(Timeline::GetVMStream(), "Dart::InitOnce"));
   Isolate::InitOnce();
   PortMap::InitOnce();
   FreeListElement::InitOnce();
+  ForwardingCorpse::InitOnce();
   Api::InitOnce();
   NOT_IN_PRODUCT(CodeObservers::InitOnce());
   if (FLAG_profiler) {
@@ -233,24 +240,23 @@ char* Dart::InitOnce(const uint8_t* vm_isolate_snapshot,
       } else {
         return strdup("Invalid vm isolate snapshot seen");
       }
-      VmIsolateSnapshotReader reader(snapshot->kind(),
-                                     snapshot->content(),
-                                     snapshot->length(),
-                                     instructions_snapshot,
-                                     data_snapshot,
-                                     T);
+      VmIsolateSnapshotReader reader(snapshot->kind(), snapshot->content(),
+                                     snapshot->length(), instructions_snapshot,
+                                     data_snapshot, T);
       const Error& error = Error::Handle(reader.ReadVmIsolateSnapshot());
       if (!error.IsNull()) {
         // Must copy before leaving the zone.
         return strdup(error.ToErrorCString());
       }
-      NOT_IN_PRODUCT(if (tds.enabled()) {
+#if !defined(PRODUCT)
+      if (tds.enabled()) {
         tds.SetNumArguments(2);
         tds.FormatArgument(0, "snapshotSize", "%" Pd, snapshot->length());
-        tds.FormatArgument(1, "heapSize", "%" Pd64,
-                           vm_isolate_->heap()->UsedInWords(Heap::kOld) *
-                           kWordSize);
-      });
+        tds.FormatArgument(
+            1, "heapSize", "%" Pd64,
+            vm_isolate_->heap()->UsedInWords(Heap::kOld) * kWordSize);
+      }
+#endif  // !defined(PRODUCT)
       if (FLAG_trace_isolates) {
         OS::Print("Size of vm isolate snapshot = %" Pd "\n",
                   snapshot->length());
@@ -265,6 +271,8 @@ char* Dart::InitOnce(const uint8_t* vm_isolate_snapshot,
     } else {
 #if defined(DART_PRECOMPILED_RUNTIME)
       return strdup("Precompiled runtime requires a precompiled snapshot");
+#elif !defined(DART_NO_SNAPSHOT)
+      return strdup("Missing vm isolate snapshot");
 #else
       snapshot_kind_ = Snapshot::kNone;
       StubCode::InitOnce();
@@ -308,6 +316,24 @@ char* Dart::InitOnce(const uint8_t* vm_isolate_snapshot,
 }
 
 
+// This waits until only the VM isolate and the service isolate remains in the
+// list, i.e. list length == 2.
+void Dart::WaitForApplicationIsolateShutdown() {
+  ASSERT(!Isolate::creation_enabled_);
+  MonitorLocker ml(Isolate::isolates_list_monitor_);
+  while ((Isolate::isolates_list_head_ != NULL) &&
+         (Isolate::isolates_list_head_->next_ != NULL) &&
+         (Isolate::isolates_list_head_->next_->next_ != NULL)) {
+    ml.Wait();
+  }
+  ASSERT(
+      ((Isolate::isolates_list_head_ == Dart::vm_isolate()) &&
+       ServiceIsolate::IsServiceIsolate(Isolate::isolates_list_head_->next_)) ||
+      ((Isolate::isolates_list_head_->next_ == Dart::vm_isolate()) &&
+       ServiceIsolate::IsServiceIsolate(Isolate::isolates_list_head_)));
+}
+
+
 // This waits until only the VM isolate remains in the list.
 void Dart::WaitForIsolateShutdown() {
   ASSERT(!Isolate::creation_enabled_);
@@ -327,8 +353,7 @@ const char* Dart::Cleanup() {
   }
 
   if (FLAG_trace_shutdown) {
-    OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Starting shutdown\n",
-                 timestamp());
+    OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Starting shutdown\n", timestamp());
   }
 
   if (FLAG_profiler) {
@@ -354,95 +379,88 @@ const char* Dart::Cleanup() {
     Thread::ExitIsolate();
   }
 
-  if (FLAG_shutdown) {
-    // Disable the creation of new isolates.
+  // Disable the creation of new isolates.
+  if (FLAG_trace_shutdown) {
+    OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Disabling isolate creation\n",
+                 timestamp());
+  }
+  Isolate::DisableIsolateCreation();
+
+  // Send the OOB Kill message to all remaining application isolates.
+  if (FLAG_trace_shutdown) {
+    OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Killing all app isolates\n",
+                 timestamp());
+  }
+  Isolate::KillAllIsolates(Isolate::kInternalKillMsg);
+
+  // Wait for all isolates, but the service and the vm isolate to shut down.
+  // Only do that if there is a service isolate running.
+  if (ServiceIsolate::IsRunning()) {
     if (FLAG_trace_shutdown) {
-      OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Disabling isolate creation\n",
+      OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Shutting down app isolates\n",
                    timestamp());
     }
-    Isolate::DisableIsolateCreation();
+    WaitForApplicationIsolateShutdown();
+  }
 
-    // Send the OOB Kill message to all remaining application isolates.
-    if (FLAG_trace_shutdown) {
-      OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Killing all app isolates\n",
-                   timestamp());
-    }
-    Isolate::KillAllIsolates(Isolate::kInternalKillMsg);
+  // Shutdown the service isolate.
+  if (FLAG_trace_shutdown) {
+    OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Shutting down service isolate\n",
+                 timestamp());
+  }
+  ServiceIsolate::Shutdown();
 
-    // Shutdown the service isolate.
-    if (FLAG_trace_shutdown) {
-      OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Shutting down service isolate\n",
-                   timestamp());
-    }
-    ServiceIsolate::Shutdown();
+  // Wait for the remaining isolate (service isolate) to shutdown
+  // before shutting down the thread pool.
+  if (FLAG_trace_shutdown) {
+    OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Waiting for isolate shutdown\n",
+                 timestamp());
+  }
+  WaitForIsolateShutdown();
 
-    // Wait for all application isolates and the service isolate to shutdown
-    // before shutting down the thread pool.
-    if (FLAG_trace_shutdown) {
-      OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Waiting for isolate shutdown\n",
-                   timestamp());
-    }
-    WaitForIsolateShutdown();
+  // Shutdown the thread pool. On return, all thread pool threads have exited.
+  if (FLAG_trace_shutdown) {
+    OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Deleting thread pool\n",
+                 timestamp());
+  }
+  delete thread_pool_;
+  thread_pool_ = NULL;
 
-    // Shutdown the thread pool. On return, all thread pool threads have exited.
-    if (FLAG_trace_shutdown) {
-      OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Deleting thread pool\n",
-                   timestamp());
-    }
-    delete thread_pool_;
-    thread_pool_ = NULL;
+  // Disable creation of any new OSThread structures which means no more new
+  // threads can do an EnterIsolate. This must come after isolate shutdown
+  // because new threads may need to be spawned to shutdown the isolates.
+  // This must come after deletion of the thread pool to avoid a race in which
+  // a thread spawned by the thread pool does not exit through the thread
+  // pool, messing up its bookkeeping.
+  if (FLAG_trace_shutdown) {
+    OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Disabling OS Thread creation\n",
+                 timestamp());
+  }
+  OSThread::DisableOSThreadCreation();
 
-    // Disable creation of any new OSThread structures which means no more new
-    // threads can do an EnterIsolate. This must come after isolate shutdown
-    // because new threads may need to be spawned to shutdown the isolates.
-    // This must come after deletion of the thread pool to avoid a race in which
-    // a thread spawned by the thread pool does not exit through the thread
-    // pool, messing up its bookkeeping.
-    if (FLAG_trace_shutdown) {
-      OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Disabling OS Thread creation\n",
-                   timestamp());
-    }
-    OSThread::DisableOSThreadCreation();
+  // Set the VM isolate as current isolate.
+  if (FLAG_trace_shutdown) {
+    OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Cleaning up vm isolate\n",
+                 timestamp());
+  }
+  bool result = Thread::EnterIsolate(vm_isolate_);
+  ASSERT(result);
 
-    // Set the VM isolate as current isolate.
-    if (FLAG_trace_shutdown) {
-      OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Cleaning up vm isolate\n",
-                   timestamp());
-    }
-    bool result = Thread::EnterIsolate(vm_isolate_);
-    ASSERT(result);
+  ShutdownIsolate();
+  vm_isolate_ = NULL;
+  ASSERT(Isolate::IsolateListLength() == 0);
 
-    ShutdownIsolate();
-    vm_isolate_ = NULL;
-    ASSERT(Isolate::IsolateListLength() == 0);
+  TargetCPUFeatures::Cleanup();
+  StoreBuffer::ShutDown();
 
-    TargetCPUFeatures::Cleanup();
-    StoreBuffer::ShutDown();
-
-    // Delete the current thread's TLS and set it's TLS to null.
-    // If it is the last thread then the destructor would call
-    // OSThread::Cleanup.
-    OSThread* os_thread = OSThread::Current();
-    OSThread::SetCurrent(NULL);
-    delete os_thread;
-    if (FLAG_trace_shutdown) {
-      OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Deleted os_thread\n",
-                   timestamp());
-    }
-  } else {
-    // Shutdown the service isolate.
-    if (FLAG_trace_shutdown) {
-      OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Shutting down service isolate\n",
-                   timestamp());
-    }
-    ServiceIsolate::Shutdown();
-
-    // Disable thread creation.
-    if (FLAG_trace_shutdown) {
-      OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Disabling OS Thread creation\n",
-                   timestamp());
-    }
-    OSThread::DisableOSThreadCreation();
+  // Delete the current thread's TLS and set it's TLS to null.
+  // If it is the last thread then the destructor would call
+  // OSThread::Cleanup.
+  OSThread* os_thread = OSThread::Current();
+  OSThread::SetCurrent(NULL);
+  delete os_thread;
+  if (FLAG_trace_shutdown) {
+    OS::PrintErr("[+%" Pd64 "ms] SHUTDOWN: Deleted os_thread\n", timestamp());
   }
 
   if (FLAG_trace_shutdown) {
@@ -473,76 +491,85 @@ Isolate* Dart::CreateIsolate(const char* name_prefix,
 }
 
 
-RawError* Dart::InitializeIsolate(const uint8_t* snapshot_buffer, void* data) {
+RawError* Dart::InitializeIsolate(const uint8_t* snapshot_buffer,
+                                  intptr_t snapshot_length,
+                                  kernel::Program* kernel_program,
+                                  void* data) {
   // Initialize the new isolate.
   Thread* T = Thread::Current();
   Isolate* I = T->isolate();
-  NOT_IN_PRODUCT(
-    TimelineDurationScope tds(T,
-                              Timeline::GetIsolateStream(),
-                              "InitializeIsolate");
-    tds.SetNumArguments(1);
-    tds.CopyArgument(0, "isolateName", I->name());
-  )
+  NOT_IN_PRODUCT(TimelineDurationScope tds(T, Timeline::GetIsolateStream(),
+                                           "InitializeIsolate");
+                 tds.SetNumArguments(1);
+                 tds.CopyArgument(0, "isolateName", I->name());)
   ASSERT(I != NULL);
   StackZone zone(T);
   HandleScope handle_scope(T);
   {
-    NOT_IN_PRODUCT(TimelineDurationScope tds(T,
-        Timeline::GetIsolateStream(), "ObjectStore::Init"));
+    NOT_IN_PRODUCT(TimelineDurationScope tds(T, Timeline::GetIsolateStream(),
+                                             "ObjectStore::Init"));
     ObjectStore::Init(I);
   }
 
-  const Error& error = Error::Handle(Object::Init(I));
+  Error& error = Error::Handle(T->zone());
+  error = Object::Init(I, kernel_program);
   if (!error.IsNull()) {
     return error.raw();
   }
-  if (snapshot_buffer != NULL) {
+  if ((snapshot_buffer != NULL) && kernel_program == NULL) {
     // Read the snapshot and setup the initial state.
-    NOT_IN_PRODUCT(TimelineDurationScope tds(T,
-        Timeline::GetIsolateStream(), "IsolateSnapshotReader"));
+    NOT_IN_PRODUCT(TimelineDurationScope tds(T, Timeline::GetIsolateStream(),
+                                             "IsolateSnapshotReader"));
     // TODO(turnidge): Remove once length is not part of the snapshot.
     const Snapshot* snapshot = Snapshot::SetupFromBuffer(snapshot_buffer);
     if (snapshot == NULL) {
+      const String& message = String::Handle(String::New("Invalid snapshot"));
+      return ApiError::New(message);
+    }
+    if (snapshot->kind() != snapshot_kind_) {
       const String& message = String::Handle(
-          String::New("Invalid snapshot."));
+          String::NewFormatted("Invalid snapshot kind: got '%s', expected '%s'",
+                               Snapshot::KindToCString(snapshot->kind()),
+                               Snapshot::KindToCString(snapshot_kind_)));
       return ApiError::New(message);
     }
     ASSERT(Snapshot::IsFull(snapshot->kind()));
-    ASSERT(snapshot->kind() == snapshot_kind_);
     if (FLAG_trace_isolates) {
       OS::Print("Size of isolate snapshot = %" Pd "\n", snapshot->length());
     }
-    IsolateSnapshotReader reader(snapshot->kind(),
-                                 snapshot->content(),
-                                 snapshot->length(),
-                                 Dart::instructions_snapshot_buffer(),
-                                 Dart::data_snapshot_buffer(),
-                                 T);
+    IsolateSnapshotReader reader(
+        snapshot->kind(), snapshot->content(), snapshot->length(),
+        Dart::instructions_snapshot_buffer(), Dart::data_snapshot_buffer(), T);
     const Error& error = Error::Handle(reader.ReadFullSnapshot());
     if (!error.IsNull()) {
       return error.raw();
     }
-    NOT_IN_PRODUCT(if (tds.enabled()) {
+#if !defined(PRODUCT)
+    if (tds.enabled()) {
       tds.SetNumArguments(2);
       tds.FormatArgument(0, "snapshotSize", "%" Pd, snapshot->length());
       tds.FormatArgument(1, "heapSize", "%" Pd64,
                          I->heap()->UsedInWords(Heap::kOld) * kWordSize);
-    });
+    }
+#endif  // !defined(PRODUCT)
     if (FLAG_trace_isolates) {
       I->heap()->PrintSizes();
       MegamorphicCacheTable::PrintSizes(I);
     }
   } else {
-    ASSERT(snapshot_kind_ == Snapshot::kNone);
+    if ((snapshot_kind_ != Snapshot::kNone) && kernel_program == NULL) {
+      const String& message =
+          String::Handle(String::New("Missing isolate snapshot"));
+      return ApiError::New(message);
+    }
   }
 
   Object::VerifyBuiltinVtables();
   DEBUG_ONLY(I->heap()->Verify(kForbidMarked));
 
   {
-    NOT_IN_PRODUCT(TimelineDurationScope tds(T,
-        Timeline::GetIsolateStream(), "StubCode::Init"));
+    NOT_IN_PRODUCT(TimelineDurationScope tds(T, Timeline::GetIsolateStream(),
+                                             "StubCode::Init"));
     StubCode::Init(I);
   }
 
@@ -558,7 +585,7 @@ RawError* Dart::InitializeIsolate(const uint8_t* snapshot_buffer, void* data) {
       Code::Handle(I->object_store()->megamorphic_miss_code());
   I->set_ic_miss_code(miss_code);
 
-  if (snapshot_buffer == NULL) {
+  if ((snapshot_buffer == NULL) || (kernel_program != NULL)) {
     const Error& error = Error::Handle(I->object_store()->PreallocateObjects());
     if (!error.IsNull()) {
       return error.raw();
@@ -576,8 +603,7 @@ RawError* Dart::InitializeIsolate(const uint8_t* snapshot_buffer, void* data) {
   if (!ServiceIsolate::IsServiceIsolate(I)) {
     I->message_handler()->set_should_pause_on_start(
         FLAG_pause_isolates_on_start);
-    I->message_handler()->set_should_pause_on_exit(
-        FLAG_pause_isolates_on_exit);
+    I->message_handler()->set_should_pause_on_exit(FLAG_pause_isolates_on_exit);
   }
   ServiceIsolate::SendIsolateStartupMessage();
   if (FLAG_support_debugger) {
@@ -600,7 +626,7 @@ RawError* Dart::InitializeIsolate(const uint8_t* snapshot_buffer, void* data) {
 const char* Dart::FeaturesString(Snapshot::Kind kind) {
   TextBuffer buffer(64);
 
-  // Different fields are included for DEBUG/RELEASE/PRODUCT.
+// Different fields are included for DEBUG/RELEASE/PRODUCT.
 #if defined(DEBUG)
   buffer.AddString("debug");
 #elif defined(PRODUCT)
@@ -615,7 +641,7 @@ const char* Dart::FeaturesString(Snapshot::Kind kind) {
     buffer.AddString(FLAG_enable_type_checks ? " type-checks"
                                              : " no-type-checks");
 
-    // Generated code must match the host architecture and ABI.
+// Generated code must match the host architecture and ABI.
 #if defined(TARGET_ARCH_ARM)
 #if defined(TARGET_ABI_IOS)
     buffer.AddString(" arm-ios");
@@ -653,7 +679,6 @@ void Dart::RunShutdownCallback() {
   Isolate* isolate = Isolate::Current();
   void* callback_data = isolate->init_callback_data();
   Dart_IsolateShutdownCallback callback = Isolate::ShutdownCallback();
-  ServiceIsolate::SendIsolateShutdownMessage();
   if (callback != NULL) {
     (callback)(callback_data);
   }

@@ -4,20 +4,58 @@
 
 library analyzer.test.generated.non_hint_code_test;
 
-import 'package:analyzer/src/generated/error.dart';
+import 'package:analyzer/error/error.dart';
+import 'package:analyzer/src/error/codes.dart';
+import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/source_io.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 
-import '../reflective_tests.dart';
-import '../utils.dart';
 import 'resolver_test_case.dart';
 
 main() {
-  initializeTestEnvironment();
-  runReflectiveTests(NonHintCodeTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(NonHintCodeTest);
+  });
 }
 
 @reflectiveTest
 class NonHintCodeTest extends ResolverTestCase {
+  void test_() {
+    resetWithOptions(new AnalysisOptionsImpl()..enableSuperMixins = true);
+    Source source = addSource(r'''
+abstract class A {
+  void test();
+}
+class B extends A {
+  void test() {
+    super.test;
+  }
+}
+''');
+    computeLibrarySourceErrors(source);
+    assertNoErrors(source);
+    verify([source]);
+  }
+
+  void test_deadCode_afterTryCatch() {
+    Source source = addSource('''
+main() {
+  try {
+    return f();
+  } catch (e) {
+    print(e);
+  }
+  print('not dead');
+}
+f() {
+  throw 'foo';
+}
+''');
+    computeLibrarySourceErrors(source);
+    assertNoErrors(source);
+    verify([source]);
+  }
+
   void test_deadCode_deadBlock_conditionalElse_debugConst() {
     Source source = addSource(r'''
 const bool DEBUG = true;
@@ -136,6 +174,26 @@ f() {
     verify([source]);
   }
 
+  void test_deadCode_deadFinalBreakInCase() {
+    Source source = addSource(r'''
+f() {
+  switch (true) {
+  case true:
+    try {
+      int a = 1;
+    } finally {
+      return;
+    }
+    break;
+  default:
+    break;
+  }
+}''');
+    computeLibrarySourceErrors(source);
+    assertNoErrors(source);
+    verify([source]);
+  }
+
   void test_deadCode_deadOperandLHS_and_debugConst() {
     Source source = addSource(r'''
 const bool DEBUG = false;
@@ -152,6 +210,19 @@ f() {
 const bool DEBUG = true;
 f() {
   bool b = DEBUG || true;
+}''');
+    computeLibrarySourceErrors(source);
+    assertNoErrors(source);
+    verify([source]);
+  }
+
+  void test_deadCode_statementAfterIfWithoutElse() {
+    Source source = addSource(r'''
+f() {
+  if (1 < 0) {
+    return;
+  }
+  int a = 1;
 }''');
     computeLibrarySourceErrors(source);
     assertNoErrors(source);
@@ -183,6 +254,25 @@ f() {}
 @deprecated
 g() {
   f();
+}
+''');
+    computeLibrarySourceErrors(source);
+    assertNoErrors(source);
+    verify([source]);
+  }
+
+  void test_deprecatedMemberUse_inDeprecatedLibrary() {
+    Source source = addSource(r'''
+@deprecated
+library lib;
+
+@deprecated
+f() {}
+
+class C {
+  m() {
+    f();
+  }
 }
 ''');
     computeLibrarySourceErrors(source);
@@ -320,7 +410,7 @@ f() {}''',
 library root;
 import 'lib1.dart' deferred as lib1;
 main() { lib1.f(); }'''
-    ], ErrorCode.EMPTY_LIST);
+    ], const <ErrorCode>[]);
   }
 
   void test_issue20904BuggyTypePromotionAtIfJoin_1() {
@@ -434,10 +524,48 @@ class A {
     verify([source]);
   }
 
+  void test_overrideOnNonOverridingField_inInterface() {
+    Source source = addSource(r'''
+class A {
+  int get a => 0;
+  void set b(_) {}
+  int c;
+}
+class B implements A {
+  @override
+  final int a = 1;
+  @override
+  int b;
+  @override
+  int c;
+}''');
+    computeLibrarySourceErrors(source);
+    assertNoErrors(source);
+    verify([source]);
+  }
+
+  void test_overrideOnNonOverridingField_inSuperclass() {
+    Source source = addSource(r'''
+class A {
+  int get a => 0;
+  void set b(_) {}
+  int c;
+}
+class B extends A {
+  @override
+  final int a = 1;
+  @override
+  int b;
+  @override
+  int c;
+}''');
+    computeLibrarySourceErrors(source);
+    assertNoErrors(source);
+    verify([source]);
+  }
+
   void test_overrideOnNonOverridingGetter_inInterface() {
     Source source = addSource(r'''
-library dart.core;
-const override = null;
 class A {
   int get m => 0;
 }
@@ -452,8 +580,6 @@ class B implements A {
 
   void test_overrideOnNonOverridingGetter_inSuperclass() {
     Source source = addSource(r'''
-library dart.core;
-const override = null;
 class A {
   int get m => 0;
 }
@@ -468,8 +594,6 @@ class B extends A {
 
   void test_overrideOnNonOverridingMethod_inInterface() {
     Source source = addSource(r'''
-library dart.core;
-const override = null;
 class A {
   int m() => 0;
 }
@@ -484,8 +608,6 @@ class B implements A {
 
   void test_overrideOnNonOverridingMethod_inSuperclass() {
     Source source = addSource(r'''
-library dart.core;
-const override = null;
 class A {
   int m() => 0;
 }
@@ -498,10 +620,22 @@ class B extends A {
     verify([source]);
   }
 
+  void test_overrideOnNonOverridingMethod_inSuperclass_abstract() {
+    Source source = addSource(r'''
+abstract class A {
+  int m();
+}
+class B extends A {
+  @override
+  int m() => 1;
+}''');
+    computeLibrarySourceErrors(source);
+    assertNoErrors(source);
+    verify([source]);
+  }
+
   void test_overrideOnNonOverridingSetter_inInterface() {
     Source source = addSource(r'''
-library dart.core;
-const override = null;
 class A {
   set m(int x) {}
 }
@@ -516,8 +650,6 @@ class B implements A {
 
   void test_overrideOnNonOverridingSetter_inSuperclass() {
     Source source = addSource(r'''
-library dart.core;
-const override = null;
 class A {
   set m(int x) {}
 }

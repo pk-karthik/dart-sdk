@@ -24,6 +24,7 @@ DECLARE_FLAG(bool, inline_alloc);
 Assembler::Assembler(bool use_far_branches)
     : buffer_(),
       prologue_offset_(-1),
+      has_single_entry_point_(true),
       comments_(),
       constant_pool_allowed_(false) {
   // Far branching mode is only needed and implemented for MIPS and ARM.
@@ -484,7 +485,6 @@ void Assembler::cmovlessq(Register dst, Register src) {
   EmitUint8(0x4C);
   EmitOperand(dst & 7, operand);
 }
-
 
 
 void Assembler::movss(XmmRegister dst, const Address& src) {
@@ -2489,9 +2489,6 @@ void Assembler::hlt() {
 
 void Assembler::j(Condition condition, Label* label, bool near) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  if (VerifiedMemory::enabled()) {
-    near = Assembler::kFarJump;
-  }
   if (label->IsBound()) {
     static const int kShortSize = 2;
     static const int kLongSize = 6;
@@ -2546,9 +2543,6 @@ void Assembler::jmp(const Address& dst) {
 
 void Assembler::jmp(Label* label, bool near) {
   AssemblerBuffer::EnsureCapacity ensured(&buffer_);
-  if (VerifiedMemory::enabled()) {
-    near = Assembler::kFarJump;
-  }
   if (label->IsBound()) {
     static const int kShortSize = 2;
     static const int kLongSize = 5;
@@ -2797,9 +2791,8 @@ void Assembler::LoadObjectHelper(Register dst,
   if (Thread::CanLoadFromThread(object)) {
     movq(dst, Address(THR, Thread::OffsetFromThread(object)));
   } else if (CanLoadFromObjectPool(object)) {
-    const intptr_t idx =
-        is_unique ? object_pool_wrapper_.AddObject(object)
-                  : object_pool_wrapper_.FindObject(object);
+    const intptr_t idx = is_unique ? object_pool_wrapper_.AddObject(object)
+                                   : object_pool_wrapper_.FindObject(object);
     const int32_t offset = ObjectPool::element_offset(idx);
     LoadWordFromPoolOffset(dst, offset - kHeapObjectTag);
   } else {
@@ -2868,12 +2861,11 @@ void Assembler::CompareObject(Register reg, const Object& object) {
     cmpq(reg, Address(THR, Thread::OffsetFromThread(object)));
   } else if (CanLoadFromObjectPool(object)) {
     const intptr_t idx = object_pool_wrapper_.FindObject(object, kNotPatchable);
-    const int32_t offset =  ObjectPool::element_offset(idx);
-    cmpq(reg, Address(PP, offset-kHeapObjectTag));
+    const int32_t offset = ObjectPool::element_offset(idx);
+    cmpq(reg, Address(PP, offset - kHeapObjectTag));
   } else {
     ASSERT(object.IsSmi());
-    CompareImmediate(
-        reg, Immediate(reinterpret_cast<int64_t>(object.raw())));
+    CompareImmediate(reg, Immediate(reinterpret_cast<int64_t>(object.raw())));
   }
 }
 
@@ -2937,108 +2929,10 @@ void Assembler::StoreIntoObjectFilter(Register object,
   // Mask out higher, uninteresting bits which were polluted by dest.
   andl(value, Immediate(kObjectAlignment - 1));
   // Compare with the expected bit pattern.
-  cmpl(value, Immediate(
-      (kNewObjectAlignmentOffset >> 1) + kHeapObjectTag +
-      kOldObjectAlignmentOffset + kHeapObjectTag));
+  cmpl(value, Immediate((kNewObjectAlignmentOffset >> 1) + kHeapObjectTag +
+                        kOldObjectAlignmentOffset + kHeapObjectTag));
   j(NOT_ZERO, no_update, Assembler::kNearJump);
 }
-
-
-void Assembler::VerifyHeapWord(const Address& address,
-                               FieldContent old_content) {
-#if defined(DEBUG)
-  switch (old_content) {
-    case kEmptyOrSmiOrNull:
-      VerifyUninitialized(address);
-      break;
-    case kHeapObjectOrSmi:
-      VerifyObjectOrSmi(address);
-      break;
-    case kOnlySmi:
-      VerifySmi(address);
-      break;
-  }
-#endif  // DEBUG
-  if (VerifiedMemory::enabled()) {
-    Register addr_reg = RDX;
-    Register value = RBX;
-    // Preserve registers.
-    pushq(addr_reg);
-    pushq(value);
-    leaq(addr_reg, address);
-    // ASSERT(*address == *(address + offset))
-    movq(value, Address(addr_reg, 0));
-    cmpq(value, Address(addr_reg, VerifiedMemory::offset()));
-    Label ok;
-    j(EQUAL, &ok);
-    static const bool kFixedLengthEncoding = true;
-    Stop("Write barrier verification failed", kFixedLengthEncoding);
-    Bind(&ok);
-    popq(value);
-    popq(addr_reg);
-  }
-}
-
-
-void Assembler::VerifiedWrite(const Address& dest,
-                              Register value,
-                              FieldContent old_content) {
-  VerifyHeapWord(dest, old_content);
-  movq(dest, value);
-  if (VerifiedMemory::enabled()) {
-    Register temp = (value == RDX) ? RCX : RDX;
-    pushq(temp);
-    leaq(temp, dest);
-    movq(Address(temp, VerifiedMemory::offset()), value);
-    popq(temp);
-  }
-}
-
-
-#if defined(DEBUG)
-void Assembler::VerifyObjectOrSmi(const Address& dest) {
-  Label ok;
-  testb(dest, Immediate(kHeapObjectTag));
-  j(ZERO, &ok, Assembler::kNearJump);
-  // Non-smi case: Verify object pointer is word-aligned when untagged.
-  COMPILE_ASSERT(kHeapObjectTag == 1);
-  testb(dest, Immediate((kWordSize - 1) - kHeapObjectTag));
-  j(ZERO, &ok, Assembler::kNearJump);
-  static const bool kFixedLengthEncoding = true;
-  Stop("Expected heap object or Smi", kFixedLengthEncoding);
-  Bind(&ok);
-}
-
-
-void Assembler::VerifyUninitialized(const Address& dest) {
-  Label ok;
-  testb(dest, Immediate(kHeapObjectTag));
-  j(ZERO, &ok, Assembler::kNearJump);
-  // Non-smi case: Check for the special zap word or null.
-#if defined(DEBUG)
-  cmpq(dest, Immediate(Heap::kZap64Bits));
-  j(EQUAL, &ok, Assembler::kNearJump);
-#else
-#error Only supported in DEBUG mode
-#endif
-  LoadObject(TMP, Object::null_object());
-  cmpq(dest, TMP);
-  j(EQUAL, &ok, Assembler::kNearJump);
-  static const bool kFixedLengthEncoding = true;
-  Stop("Expected zapped, Smi or null", kFixedLengthEncoding);
-  Bind(&ok);
-}
-
-
-void Assembler::VerifySmi(const Address& dest, const char* stop_msg) {
-  Label done;
-  testb(dest, Immediate(kHeapObjectTag));
-  j(ZERO, &done, Assembler::kNearJump);
-  static const bool kFixedLengthEncoding = true;
-  Stop(stop_msg, kFixedLengthEncoding);
-  Bind(&done);
-}
-#endif  // defined(DEBUG)
 
 
 void Assembler::StoreIntoObject(Register object,
@@ -3046,7 +2940,7 @@ void Assembler::StoreIntoObject(Register object,
                                 Register value,
                                 bool can_value_be_smi) {
   ASSERT(object != value);
-  VerifiedWrite(dest, value, kHeapObjectOrSmi);
+  movq(dest, value);
   Label done;
   if (can_value_be_smi) {
     StoreIntoObjectFilter(object, value, &done);
@@ -3071,9 +2965,8 @@ void Assembler::StoreIntoObject(Register object,
 
 void Assembler::StoreIntoObjectNoBarrier(Register object,
                                          const Address& dest,
-                                         Register value,
-                                         FieldContent old_content) {
-  VerifiedWrite(dest, value, old_content);
+                                         Register value) {
+  movq(dest, value);
 #if defined(DEBUG)
   Label done;
   pushq(value);
@@ -3088,22 +2981,10 @@ void Assembler::StoreIntoObjectNoBarrier(Register object,
 
 void Assembler::StoreIntoObjectNoBarrier(Register object,
                                          const Address& dest,
-                                         const Object& value,
-                                         FieldContent old_content) {
+                                         const Object& value) {
   ASSERT(!value.IsICData() || ICData::Cast(value).IsOriginal());
   ASSERT(!value.IsField() || Field::Cast(value).IsOriginal());
-  VerifyHeapWord(dest, old_content);
-  if (VerifiedMemory::enabled()) {
-    const Register temp = RCX;
-    pushq(temp);
-    leaq(temp, dest);
-    StoreObject(Address(temp, 0), value);
-    StoreObject(Address(temp, VerifiedMemory::offset()), value);
-    popq(temp);
-  } else {
-    StoreObject(dest, value);
-  }
-  // TODO(koda): Use 'object', verify that generational barrier's not needed.
+  StoreObject(dest, value);
 }
 
 
@@ -3115,39 +2996,21 @@ void Assembler::StoreIntoSmiField(const Address& dest, Register value) {
   Stop("New value must be Smi.");
   Bind(&done);
 #endif  // defined(DEBUG)
-  VerifiedWrite(dest, value, kOnlySmi);
+  movq(dest, value);
 }
 
 
 void Assembler::ZeroInitSmiField(const Address& dest) {
-  // TODO(koda): Add VerifySmi once we distinguish initalization.
-  VerifyHeapWord(dest, kEmptyOrSmiOrNull);
   Immediate zero(Smi::RawValue(0));
   movq(dest, zero);
-  if (VerifiedMemory::enabled()) {
-    Register temp = RCX;
-    pushq(temp);
-    leaq(temp, dest);
-    movq(Address(temp, VerifiedMemory::offset()), zero);
-    popq(temp);
-  }
 }
 
 
 void Assembler::IncrementSmiField(const Address& dest, int64_t increment) {
   // Note: FlowGraphCompiler::EdgeCounterIncrementSizeInBytes depends on
   // the length of this instruction sequence.
-  // TODO(koda): Add VerifySmi once we distinguish initalization.
-  VerifyHeapWord(dest, kOnlySmi);
   Immediate inc_imm(Smi::RawValue(increment));
   addq(dest, inc_imm);
-  if (VerifiedMemory::enabled()) {
-    Register temp = RCX;
-    pushq(temp);
-    leaq(temp, dest);
-    addq(Address(temp, VerifiedMemory::offset()), inc_imm);
-    popq(temp);
-  }
 }
 
 
@@ -3455,6 +3318,38 @@ void Assembler::LeaveStubFrame() {
 }
 
 
+// RDI receiver, RBX guarded cid as Smi
+void Assembler::MonomorphicCheckedEntry() {
+  ASSERT(has_single_entry_point_);
+  has_single_entry_point_ = false;
+  Label immediate, have_cid, miss;
+  Bind(&miss);
+  jmp(Address(THR, Thread::monomorphic_miss_entry_offset()));
+
+  Bind(&immediate);
+  movq(R10, Immediate(kSmiCid));
+  jmp(&have_cid, kNearJump);
+
+  Comment("MonomorphicCheckedEntry");
+  ASSERT(CodeSize() == Instructions::kCheckedEntryOffset);
+  SmiUntag(RBX);
+  testq(RDI, Immediate(kSmiTagMask));
+  j(ZERO, &immediate, kNearJump);
+
+  LoadClassId(R10, RDI);
+
+  Bind(&have_cid);
+  cmpq(R10, RBX);
+  j(NOT_EQUAL, &miss, Assembler::kNearJump);
+  nop();
+
+  // Fall through to unchecked entry.
+  ASSERT(CodeSize() == Instructions::kUncheckedEntryOffset);
+  ASSERT((CodeSize() & kSmiTagMask) == kSmiTag);
+}
+
+
+#ifndef PRODUCT
 void Assembler::MaybeTraceAllocation(intptr_t cid,
                                      Label* trace,
                                      bool near_jump) {
@@ -3473,8 +3368,7 @@ void Assembler::MaybeTraceAllocation(intptr_t cid,
 }
 
 
-void Assembler::UpdateAllocationStats(intptr_t cid,
-                                      Heap::Space space) {
+void Assembler::UpdateAllocationStats(intptr_t cid, Heap::Space space) {
   ASSERT(cid > 0);
   intptr_t counter_offset =
       ClassTable::CounterOffsetFor(cid, space == Heap::kNew);
@@ -3509,6 +3403,7 @@ void Assembler::UpdateAllocationStatsWithSize(intptr_t cid,
   intptr_t size_offset = ClassTable::SizeOffsetFor(cid, space == Heap::kNew);
   addq(Address(temp_reg, size_offset), Immediate(size_in_bytes));
 }
+#endif  // !PRODUCT
 
 
 void Assembler::TryAllocate(const Class& cls,
@@ -3521,9 +3416,9 @@ void Assembler::TryAllocate(const Class& cls,
     // If this allocation is traced, program will jump to failure path
     // (i.e. the allocation stub) which will allocate the object and trace the
     // allocation call site.
-    MaybeTraceAllocation(cls.id(), failure, near_jump);
+    NOT_IN_PRODUCT(MaybeTraceAllocation(cls.id(), failure, near_jump));
     const intptr_t instance_size = cls.instance_size();
-    Heap::Space space = Heap::SpaceForAllocation(cls.id());
+    Heap::Space space = Heap::kNew;
     movq(temp, Address(THR, Thread::heap_offset()));
     movq(instance_reg, Address(temp, Heap::TopOffset(space)));
     addq(instance_reg, Immediate(instance_size));
@@ -3533,7 +3428,7 @@ void Assembler::TryAllocate(const Class& cls,
     // Successfully allocated the object, now update top to point to
     // next object start and store the class in the class field of object.
     movq(Address(temp, Heap::TopOffset(space)), instance_reg);
-    UpdateAllocationStats(cls.id(), space);
+    NOT_IN_PRODUCT(UpdateAllocationStats(cls.id(), space));
     ASSERT(instance_size >= kHeapObjectTag);
     AddImmediate(instance_reg, Immediate(kHeapObjectTag - instance_size));
     uword tags = 0;
@@ -3560,8 +3455,8 @@ void Assembler::TryAllocateArray(intptr_t cid,
     // If this allocation is traced, program will jump to failure path
     // (i.e. the allocation stub) which will allocate the object and trace the
     // allocation call site.
-    MaybeTraceAllocation(cid, failure, near_jump);
-    Heap::Space space = Heap::SpaceForAllocation(cid);
+    NOT_IN_PRODUCT(MaybeTraceAllocation(cid, failure, near_jump));
+    Heap::Space space = Heap::kNew;
     movq(temp, Address(THR, Thread::heap_offset()));
     movq(instance, Address(temp, Heap::TopOffset(space)));
     movq(end_address, instance);
@@ -3579,7 +3474,7 @@ void Assembler::TryAllocateArray(intptr_t cid,
     // next object start and initialize the object.
     movq(Address(temp, Heap::TopOffset(space)), end_address);
     addq(instance, Immediate(kHeapObjectTag));
-    UpdateAllocationStatsWithSize(cid, instance_size, space);
+    NOT_IN_PRODUCT(UpdateAllocationStatsWithSize(cid, instance_size, space));
 
     // Initialize the tags.
     // instance: new object start as a tagged pointer.
@@ -3607,7 +3502,7 @@ void Assembler::Align(int alignment, intptr_t offset) {
   if (bytes_needed) {
     nop(bytes_needed);
   }
-  ASSERT(((offset + buffer_.GetPosition()) & (alignment-1)) == 0);
+  ASSERT(((offset + buffer_.GetPosition()) & (alignment - 1)) == 0);
 }
 
 
@@ -3732,8 +3627,8 @@ void Assembler::LoadClassId(Register result, Register object) {
   ASSERT(RawObject::kClassIdTagPos == kBitsPerInt32);
   ASSERT(RawObject::kClassIdTagSize == kBitsPerInt32);
   ASSERT(sizeof(classid_t) == sizeof(uint32_t));
-  const intptr_t class_id_offset = Object::tags_offset() +
-      RawObject::kClassIdTagPos / kBitsPerByte;
+  const intptr_t class_id_offset =
+      Object::tags_offset() + RawObject::kClassIdTagPos / kBitsPerByte;
   movl(result, FieldAddress(object, class_id_offset));
 }
 
@@ -3767,8 +3662,8 @@ void Assembler::SmiUntagOrCheckClass(Register object,
   ASSERT(RawObject::kClassIdTagPos == kBitsPerInt32);
   ASSERT(RawObject::kClassIdTagSize == kBitsPerInt32);
   ASSERT(sizeof(classid_t) == sizeof(uint32_t));
-  const intptr_t class_id_offset = Object::tags_offset() +
-      RawObject::kClassIdTagPos / kBitsPerByte;
+  const intptr_t class_id_offset =
+      Object::tags_offset() + RawObject::kClassIdTagPos / kBitsPerByte;
 
   // Untag optimistically. Tag bit is shifted into the CARRY.
   SmiUntag(object);
@@ -3794,9 +3689,9 @@ void Assembler::LoadClassIdMayBeSmi(Register result, Register object) {
   // if it is a Smi, which will be ignored.
   LoadClassId(result, object);
 
-  movq(object, Immediate(kSmiCid));
+  movq(TMP, Immediate(kSmiCid));
   // If object is a Smi, move the Smi cid into result. o/w leave alone.
-  cmoveq(result, object);
+  cmoveq(result, TMP);
 }
 
 
@@ -3804,48 +3699,6 @@ void Assembler::LoadTaggedClassIdMayBeSmi(Register result, Register object) {
   LoadClassIdMayBeSmi(result, object);
   // Finally, tag the result.
   SmiTag(result);
-}
-
-
-void Assembler::ComputeRange(Register result, Register value, Label* not_mint) {
-  Label done, not_smi;
-  testl(value, Immediate(kSmiTagMask));
-  j(NOT_ZERO, &not_smi, Assembler::kNearJump);
-
-  sarq(value, Immediate(32));  // Take the tag into account.
-  movq(result, Immediate(ICData::kUint32RangeBit));  // Uint32
-  cmpq(value, Immediate(1));
-  j(EQUAL, &done, Assembler::kNearJump);
-
-  movq(result, Immediate(ICData::kInt32RangeBit));
-  subq(result, value);  // 10 (positive int32), 11 (negative int32)
-  negq(value);
-  cmpq(value, Immediate(1));
-  j(BELOW_EQUAL, &done);
-
-  // On 64-bit we don't need to track sign of smis outside of the Int32 range.
-  // Just pretend they are all signed.
-  movq(result, Immediate(ICData::kSignedRangeBit));
-  jmp(&done);
-
-  Bind(&not_smi);
-  CompareClassId(value, kMintCid);
-  j(NOT_EQUAL, not_mint);
-  movq(result, Immediate(ICData::kInt64RangeBit));
-
-  Bind(&done);
-}
-
-
-void Assembler::UpdateRangeFeedback(Register value,
-                                    intptr_t index,
-                                    Register ic_data,
-                                    Register scratch,
-                                    Label* miss) {
-  ASSERT(ICData::IsValidRangeFeedbackIndex(index));
-  ComputeRange(scratch, value, miss);
-  shll(scratch, Immediate(ICData::RangeFeedbackShift(index)));
-  orl(FieldAddress(ic_data, ICData::state_bits_offset()), scratch);
 }
 
 
@@ -3858,7 +3711,7 @@ Address Assembler::ElementAddressForIntIndex(bool is_external,
     return Address(array, index * index_scale);
   } else {
     const int64_t disp = static_cast<int64_t>(index) * index_scale +
-        Instance::DataOffsetFor(cid);
+                         Instance::DataOffsetFor(cid);
     ASSERT(Utils::IsInt(32, disp));
     return FieldAddress(array, static_cast<int32_t>(disp));
   }
@@ -3871,11 +3724,16 @@ static ScaleFactor ToScaleFactor(intptr_t index_scale) {
   // expected to be untagged before accessing.
   ASSERT(kSmiTagShift == 1);
   switch (index_scale) {
-    case 1: return TIMES_1;
-    case 2: return TIMES_1;
-    case 4: return TIMES_2;
-    case 8: return TIMES_4;
-    case 16: return TIMES_8;
+    case 1:
+      return TIMES_1;
+    case 2:
+      return TIMES_1;
+    case 4:
+      return TIMES_2;
+    case 8:
+      return TIMES_4;
+    case 16:
+      return TIMES_8;
     default:
       UNREACHABLE();
       return TIMES_1;
@@ -3891,18 +3749,15 @@ Address Assembler::ElementAddressForRegIndex(bool is_external,
   if (is_external) {
     return Address(array, index, ToScaleFactor(index_scale), 0);
   } else {
-    return FieldAddress(array,
-                        index,
-                        ToScaleFactor(index_scale),
+    return FieldAddress(array, index, ToScaleFactor(index_scale),
                         Instance::DataOffsetFor(cid));
   }
 }
 
 
 static const char* cpu_reg_names[kNumberOfCpuRegisters] = {
-  "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
-  "r8", "r9", "r10", "r11", "r12", "r13", "r14", "r15"
-};
+    "rax", "rcx", "rdx", "rbx", "rsp", "rbp", "rsi", "rdi",
+    "r8",  "r9",  "r10", "r11", "r12", "r13", "thr", "pp"};
 
 
 const char* Assembler::RegisterName(Register reg) {
@@ -3912,9 +3767,8 @@ const char* Assembler::RegisterName(Register reg) {
 
 
 static const char* xmm_reg_names[kNumberOfXmmRegisters] = {
-  "xmm0", "xmm1", "xmm2", "xmm3", "xmm4", "xmm5", "xmm6", "xmm7",
-  "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15"
-};
+    "xmm0", "xmm1", "xmm2",  "xmm3",  "xmm4",  "xmm5",  "xmm6",  "xmm7",
+    "xmm8", "xmm9", "xmm10", "xmm11", "xmm12", "xmm13", "xmm14", "xmm15"};
 
 
 const char* Assembler::FpuRegisterName(FpuRegister reg) {

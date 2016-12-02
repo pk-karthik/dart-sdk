@@ -2,8 +2,8 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef VM_HEAP_H_
-#define VM_HEAP_H_
+#ifndef RUNTIME_VM_HEAP_H_
+#define RUNTIME_VM_HEAP_H_
 
 #include "platform/assert.h"
 #include "vm/allocation.h"
@@ -31,21 +31,11 @@ class Heap {
     kNew,
     kOld,
     kCode,
-    // TODO(koda): Harmonize all old-space allocation and get rid of this.
-    kPretenured,
   };
 
-  enum WeakSelector {
-    kPeers = 0,
-    kHashes,
-    kObjectIds,
-    kNumWeakSelectors
-  };
+  enum WeakSelector { kPeers = 0, kHashes, kObjectIds, kNumWeakSelectors };
 
-  enum ApiCallbacks {
-    kIgnoreApiCallbacks,
-    kInvokeApiCallbacks
-  };
+  enum ApiCallbacks { kIgnoreApiCallbacks, kInvokeApiCallbacks };
 
   enum GCReason {
     kNewSpace,
@@ -81,8 +71,6 @@ class Heap {
         return AllocateOld(size, HeapPage::kData);
       case kCode:
         return AllocateOld(size, HeapPage::kExecutable);
-      case kPretenured:
-        return AllocatePretenured(size);
       default:
         UNREACHABLE();
     }
@@ -148,7 +136,6 @@ class Heap {
   // Accessors for inlined allocation in generated code.
   static intptr_t TopOffset(Space space);
   static intptr_t EndOffset(Space space);
-  static Space SpaceForAllocation(intptr_t class_id);
 
   // Initialize the heap and register it with the isolate.
   static void Init(Isolate* isolate,
@@ -171,7 +158,8 @@ class Heap {
 
   intptr_t Collections(Space space) const;
 
-  ObjectSet* CreateAllocatedObjectSet(MarkExpectation mark_expectation) const;
+  ObjectSet* CreateAllocatedObjectSet(Zone* zone,
+                                      MarkExpectation mark_expectation) const;
 
   static const char* GCReasonToString(GCReason gc_reason);
 
@@ -215,7 +203,7 @@ class Heap {
     if (space == kNew) {
       return new_weak_tables_[selector];
     }
-    ASSERT(space ==kOld);
+    ASSERT(space == kOld);
     return old_weak_tables_[selector];
   }
   void SetWeakTable(Space space, WeakSelector selector, WeakTable* value) {
@@ -244,19 +232,19 @@ class Heap {
     return size <= kNewAllocatableSize;
   }
 
+#ifndef PRODUCT
   void PrintToJSONObject(Space space, JSONObject* object) const;
 
   // The heap map contains the sizes and class ids for the objects in each page.
   void PrintHeapMapToJSONStream(Isolate* isolate, JSONStream* stream) {
-    return old_space_.PrintHeapMapToJSONStream(isolate, stream);
+    old_space_.PrintHeapMapToJSONStream(isolate, stream);
   }
+#endif  // PRODUCT
 
   Isolate* isolate() const { return isolate_; }
 
   Monitor* barrier() const { return barrier_; }
   Monitor* barrier_done() const { return barrier_done_; }
-
-  bool ShouldPretenure(intptr_t class_id) const;
 
   void SetupExternalPage(void* pointer, uword size, bool is_executable) {
     old_space_.SetupExternalPage(pointer, size, is_executable);
@@ -276,13 +264,12 @@ class Heap {
       int64_t micros_;
       SpaceUsage new_;
       SpaceUsage old_;
+
      private:
       DISALLOW_COPY_AND_ASSIGN(Data);
     };
 
-    enum {
-      kDataEntries = 4
-    };
+    enum { kDataEntries = 4 };
 
     Data before_;
     Data after_;
@@ -302,7 +289,6 @@ class Heap {
 
   uword AllocateNew(intptr_t size);
   uword AllocateOld(intptr_t size, HeapPage::PageType type);
-  uword AllocatePretenured(intptr_t size);
 
   // Visit all pointers. Caller must ensure concurrent sweeper is not running,
   // and the visitor must not allocate.
@@ -317,17 +303,18 @@ class Heap {
   bool VerifyGC(MarkExpectation mark_expectation = kForbidMarked) const;
 
   // Helper functions for garbage collection.
-  void CollectNewSpaceGarbage(
-      Thread* thread, ApiCallbacks api_callbacks, GCReason reason);
-  void CollectOldSpaceGarbage(
-      Thread* thread, ApiCallbacks api_callbacks, GCReason reason);
+  void CollectNewSpaceGarbage(Thread* thread,
+                              ApiCallbacks api_callbacks,
+                              GCReason reason);
+  void CollectOldSpaceGarbage(Thread* thread,
+                              ApiCallbacks api_callbacks,
+                              GCReason reason);
 
   // GC stats collection.
   void RecordBeforeGC(Space space, GCReason reason);
   void RecordAfterGC(Space space);
   void PrintStats();
   void UpdateClassHeapStatsBeforeGC(Heap::Space space);
-  void UpdatePretenurePolicy();
   void PrintStatsToTimeline(TimelineEventScope* event);
 
   // Updates gc in progress flags.
@@ -336,10 +323,7 @@ class Heap {
   bool BeginOldSpaceGC(Thread* thread);
   void EndOldSpaceGC();
 
-  // If this heap is non-empty, updates start and end to the smallest range that
-  // contains both the original [start, end) and the [lowest, highest) addresses
-  // of this heap.
-  void GetMergedAddressRange(uword* start, uword* end) const;
+  void AddRegionsToObjectSet(ObjectSet* set) const;
 
   Isolate* isolate_;
 
@@ -364,11 +348,10 @@ class Heap {
   bool gc_new_space_in_progress_;
   bool gc_old_space_in_progress_;
 
-  int pretenure_policy_;
-
-  friend class Become;  // VisitObjectPointers
+  friend class Become;       // VisitObjectPointers
+  friend class Precompiler;  // VisitObjects
   friend class ServiceEvent;
-  friend class PageSpace;  // VerifyGC
+  friend class PageSpace;             // VerifyGC
   friend class IsolateReloadContext;  // VisitObjects
 
   DISALLOW_COPY_AND_ASSIGN(Heap);
@@ -379,6 +362,7 @@ class HeapIterationScope : public StackResource {
  public:
   HeapIterationScope();
   ~HeapIterationScope();
+
  private:
   NoSafepointScope no_safepoint_scope_;
   PageSpace* old_space_;
@@ -391,6 +375,7 @@ class NoHeapGrowthControlScope : public StackResource {
  public:
   NoHeapGrowthControlScope();
   ~NoHeapGrowthControlScope();
+
  private:
   bool current_growth_controller_state_;
   DISALLOW_COPY_AND_ASSIGN(NoHeapGrowthControlScope);
@@ -406,4 +391,4 @@ class WritableVMIsolateScope : StackResource {
 
 }  // namespace dart
 
-#endif  // VM_HEAP_H_
+#endif  // RUNTIME_VM_HEAP_H_

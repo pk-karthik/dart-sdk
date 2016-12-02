@@ -8,7 +8,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:analysis_server/plugin/protocol/protocol.dart';
-import 'package:unittest/unittest.dart';
+import 'package:test/test.dart';
 
 import '../../test/integration/integration_tests.dart';
 
@@ -43,10 +43,10 @@ abstract class AbstractAnalysisServerPerformanceTest
     });
     Completer serverConnected = new Completer();
     onServerConnected.listen((_) {
-      expect(serverConnected.isCompleted, isFalse);
+      outOfTestExpect(serverConnected.isCompleted, isFalse);
       serverConnected.complete();
     });
-    return startServer().then((_) {
+    return startServer(checked: false).then((_) {
       server.listenToOutput(dispatchNotification);
       server.exitCode.then((_) {
         skipShutdown = true;
@@ -61,13 +61,11 @@ abstract class AbstractAnalysisServerPerformanceTest
   Future shutdown() async => await shutdownIfNeeded();
 
   /**
-   * Enable [SERVER_STATUS] notifications so that [analysisFinished]
+   * Enable [ServerService.STATUS] notifications so that [analysisFinished]
    * can be used.
    */
-  Future subscribeToStatusNotifications() {
-    List<Future> futures = <Future>[];
-    futures.add(sendServerSetSubscriptions([ServerService.STATUS]));
-    return Future.wait(futures);
+  Future subscribeToStatusNotifications() async {
+    await sendServerSetSubscriptions([ServerService.STATUS]);
   }
 }
 

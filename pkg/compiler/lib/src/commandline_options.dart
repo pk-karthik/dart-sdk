@@ -44,18 +44,24 @@ class Flags {
   static const String trustJSInteropTypeAnnotations =
       '--experimental-trust-js-interop-type-annotations';
   static const String useContentSecurityPolicy = '--csp';
-  static const String useCpsIr = '--use-cps-ir';
+  static const String useKernel = '--use-kernel';
   static const String useNewSourceInfo = '--use-new-source-info';
   static const String verbose = '--verbose';
   static const String version = '--version';
 
   static const String conditionalDirectives = '--conditional-directives';
 
-  // Experimental flags.
-
-  // Considerations about this feature (esp. locations where generalizations
-  // or changes are required for full support of generic methods) are marked
-  // with 'GENERIC_METHODS'. The approach taken is to parse generic methods,
+  // The syntax-only level of support for generic methods is included in the
+  // 1.50 milestone for Dart. It is not experimental, but also not permanent:
+  // a full implementation is expected in the future. Hence, the
+  // 'GENERIC_METHODS' comments which were added when this feature was
+  // experimental have been preserved, such that it will be easy to find the
+  // relevant locations to update when generic methods are implemented fully.
+  //
+  // The option is still accepted, but it has no effect: The feature is enabled
+  // by default and it cannot be disabled.
+  //
+  // The approach taken in the implementation is to parse generic methods,
   // introduce AST nodes for them, generate corresponding types (such that
   // front end treatment is consistent with the code that programmers wrote),
   // but considering all method type variables to have bound `dynamic` no
@@ -63,7 +69,16 @@ class Flags {
   // is unchecked), and then replacing method type variables by a `DynamicType`
   // (such that the backend does not need to take method type arguments into
   // account).
+  //
+  // The feature has an informal specification which is available at
+  // https://gist.github.com/eernstg/4353d7b4f669745bed3a5423e04a453c.
   static const String genericMethodSyntax = '--generic-method-syntax';
+
+  // Initializing-formal access is enabled by default and cannot be disabled.
+  // For backward compatibility the option is still accepted, but it is ignored.
+  static const String initializingFormalAccess = '--initializing-formal-access';
+
+  // Experimental flags.
   static const String resolveOnly = '--resolve-only';
 }
 
@@ -73,4 +88,5 @@ class Option {
 
   // Experimental options.
   static const String resolutionInput = '--resolution-input=.+';
+  static const String bazelPaths = '--bazel-paths=.+';
 }

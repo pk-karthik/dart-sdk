@@ -2,7 +2,17 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-part of js_backend;
+import '../common.dart';
+import '../compiler.dart' show Compiler;
+import '../constants/values.dart';
+import '../dart_types.dart';
+import '../elements/elements.dart';
+import '../io/code_output.dart';
+import '../js/js.dart' as jsAst;
+import '../js/js.dart' show js;
+import 'backend.dart';
+import 'constant_system_javascript.dart';
+import 'namer.dart';
 
 typedef jsAst.Expression _ConstantReferenceGenerator(ConstantValue constant);
 
@@ -61,6 +71,11 @@ class ConstantEmitter implements ConstantValueVisitor<jsAst.Expression, Null> {
 
   @override
   jsAst.Expression visitNull(NullConstantValue constant, [_]) {
+    return new jsAst.LiteralNull();
+  }
+
+  @override
+  jsAst.Expression visitNonConstant(NonConstantValue constant, [_]) {
     return new jsAst.LiteralNull();
   }
 
@@ -236,10 +251,14 @@ class ConstantEmitter implements ConstantValueVisitor<jsAst.Expression, Null> {
           "Compiler and ${className} disagree on number of fields.");
     }
 
+    if (backend.classNeedsRtiField(classElement)) {
+      arguments.add(_reifiedTypeArguments(constant.type));
+    }
+
     jsAst.Expression constructor =
         backend.emitter.constructorAccess(classElement);
     jsAst.Expression value = new jsAst.New(constructor, arguments);
-    return maybeAddTypeArguments(constant.type, value);
+    return value;
   }
 
   JavaScriptBackend get backend => compiler.backend;
@@ -264,7 +283,7 @@ class ConstantEmitter implements ConstantValueVisitor<jsAst.Expression, Null> {
 
   @override
   jsAst.Expression visitSynthetic(SyntheticConstantValue constant, [_]) {
-    switch (constant.kind) {
+    switch (constant.valueKind) {
       case SyntheticConstantKind.DUMMY_INTERCEPTOR:
       case SyntheticConstantKind.EMPTY_VALUE:
         return new jsAst.LiteralNumber('0');
@@ -280,7 +299,7 @@ class ConstantEmitter implements ConstantValueVisitor<jsAst.Expression, Null> {
 
   @override
   jsAst.Expression visitConstructed(ConstructedConstantValue constant, [_]) {
-    Element element = constant.type.element;
+    ClassElement element = constant.type.element;
     if (backend.isForeign(element) && element.name == 'JS_CONST') {
       StringConstantValue str = constant.fields.values.single;
       String value = str.primitiveValue.slowToString();
@@ -288,11 +307,15 @@ class ConstantEmitter implements ConstantValueVisitor<jsAst.Expression, Null> {
     }
     jsAst.Expression constructor =
         backend.emitter.constructorAccess(constant.type.element);
-    List<jsAst.Expression> fields = constant.fields.values
-        .map(constantReferenceGenerator)
-        .toList(growable: false);
+    List<jsAst.Expression> fields = <jsAst.Expression>[];
+    element.forEachInstanceField((_, FieldElement field) {
+      fields.add(constantReferenceGenerator(constant.fields[field]));
+    }, includeSuperAndInjectedMembers: true);
+    if (backend.classNeedsRtiField(constant.type.element)) {
+      fields.add(_reifiedTypeArguments(constant.type));
+    }
     jsAst.New instantiation = new jsAst.New(constructor, fields);
-    return maybeAddTypeArguments(constant.type, instantiation);
+    return instantiation;
   }
 
   String stripComments(String rawJavaScript) {
@@ -304,18 +327,28 @@ class ConstantEmitter implements ConstantValueVisitor<jsAst.Expression, Null> {
     if (type is InterfaceType &&
         !type.treatAsRaw &&
         backend.classNeedsRti(type.element)) {
-      InterfaceType interface = type;
-      RuntimeTypesEncoder rtiEncoder = backend.rtiEncoder;
-      Iterable<jsAst.Expression> arguments = interface.typeArguments.map(
-          (DartType type) =>
-              rtiEncoder.getTypeRepresentationWithPlaceholders(type, (_) {}));
-      jsAst.Expression argumentList =
-          new jsAst.ArrayInitializer(arguments.toList());
       return new jsAst.Call(
           getHelperProperty(backend.helpers.setRuntimeTypeInfo),
-          [value, argumentList]);
+          [value, _reifiedTypeArguments(type)]);
     }
     return value;
+  }
+
+  jsAst.Expression _reifiedTypeArguments(InterfaceType type) {
+    jsAst.Expression unexpected(TypeVariableType variable) {
+      reporter.internalError(
+          NO_LOCATION_SPANNABLE,
+          "Unexpected type variable '${variable.getStringAsDeclared(null)}'"
+          " in constant type '${type.getStringAsDeclared(null)}'");
+      return null;
+    }
+
+    List<jsAst.Expression> arguments = <jsAst.Expression>[];
+    RuntimeTypesEncoder rtiEncoder = backend.rtiEncoder;
+    for (DartType argument in type.typeArguments) {
+      arguments.add(rtiEncoder.getTypeRepresentation(argument, unexpected));
+    }
+    return new jsAst.ArrayInitializer(arguments);
   }
 
   @override

@@ -10,13 +10,14 @@ import '../common.dart';
 import '../common/names.dart' show Identifiers;
 import '../compiler.dart' show Compiler;
 import '../constants/values.dart';
-import '../cps_ir/cps_ir_nodes.dart' as cps_ir show Node;
 import '../dart_types.dart' show DartType, FunctionType, TypeKind;
 import '../elements/elements.dart';
-import '../native/native.dart' as native;
-import '../tree/tree.dart' as ast show DartString, Node, LiteralBool, Send;
-import '../types/types.dart'
+import '../js_backend/backend.dart';
+import '../tree/dartstring.dart' show DartString;
+import '../tree/tree.dart' as ast show Node, LiteralBool, Send;
+import '../types/masks.dart'
     show
+        CommonMasks,
         ContainerTypeMask,
         DictionaryTypeMask,
         MapTypeMask,
@@ -24,7 +25,7 @@ import '../types/types.dart'
         ValueTypeMask;
 import '../universe/selector.dart' show Selector;
 import '../util/util.dart' show ImmutableEmptySet, Setlet;
-import '../world.dart' show ClassWorld;
+import '../world.dart' show ClosedWorld;
 import 'debug.dart' as debug;
 import 'inferrer_visitor.dart' show ArgumentsTypes;
 import 'type_graph_inferrer.dart'
@@ -88,9 +89,9 @@ abstract class TypeInformation {
   /// change.
   bool isStable = false;
 
-  // TypeInformations are unique.
-  static int staticHashCode = 0;
-  final int hashCode = staticHashCode++;
+  // TypeInformations are unique. Store an arbitrary identity hash code.
+  static int _staticHashCode = 0;
+  final int hashCode = _staticHashCode = (_staticHashCode + 1).toUnsigned(30);
 
   bool get isConcrete => false;
 
@@ -344,7 +345,7 @@ abstract class ElementTypeInformation extends TypeInformation {
   bool disableInferenceForClosures = true;
 
   factory ElementTypeInformation(Element element, TypeInformationSystem types) {
-    if (element.isParameter || element.isInitializingFormal) {
+    if (element.isRegularParameter || element.isInitializingFormal) {
       ParameterElement parameter = element;
       if (parameter.functionDeclaration.isInstanceMember) {
         return new ParameterTypeInformation._instanceMember(element, types);
@@ -390,9 +391,8 @@ class MemberTypeInformation extends ElementTypeInformation
    * This map contains the callers of [element]. It stores all unique call sites
    * to enable counting the global number of call sites of [element].
    *
-   * A call site is either an AST [ast.Node], a [cps_ir.Node] or in the case of
-   * synthesized calls, an [Element] (see uses of [synthesizeForwardingCall]
-   * in [SimpleTypeInferrerVisitor]).
+   * A call site is either an AST [ast.Node], an [Element] (see uses of
+   * [synthesizeForwardingCall] in [SimpleTypeInferrerVisitor]).
    *
    * The global information is summarized in [cleanup], after which [_callers]
    * is set to `null`.
@@ -403,7 +403,7 @@ class MemberTypeInformation extends ElementTypeInformation
       : super._internal(null, element);
 
   void addCall(Element caller, Spannable node) {
-    assert(node is ast.Node || node is cps_ir.Node || node is Element);
+    assert(node is ast.Node || node is Element);
     _callers ??= <Element, Setlet>{};
     _callers.putIfAbsent(caller, () => new Setlet()).add(node);
   }
@@ -473,7 +473,7 @@ class MemberTypeInformation extends ElementTypeInformation
       if (element.isField) {
         return inferrer
             .typeOfNativeBehavior(
-                native.NativeBehavior.ofFieldLoad(element, inferrer.compiler))
+                inferrer.backend.getNativeFieldLoadBehavior(element))
             .type;
       } else {
         assert(element.isFunction ||
@@ -487,22 +487,25 @@ class MemberTypeInformation extends ElementTypeInformation
         } else {
           return inferrer
               .typeOfNativeBehavior(
-                  native.NativeBehavior.ofMethod(element, inferrer.compiler))
+                  inferrer.backend.getNativeMethodBehavior(element))
               .type;
         }
       }
     }
 
-    Compiler compiler = inferrer.compiler;
-    if (element.declaration == compiler.intEnvironment) {
-      giveUp(inferrer);
-      return compiler.typesTask.intType.nullable();
-    } else if (element.declaration == compiler.boolEnvironment) {
-      giveUp(inferrer);
-      return compiler.typesTask.boolType.nullable();
-    } else if (element.declaration == compiler.stringEnvironment) {
-      giveUp(inferrer);
-      return compiler.typesTask.stringType.nullable();
+    CommonMasks commonMasks = inferrer.commonMasks;
+    if (element.isConstructor) {
+      ConstructorElement constructor = element;
+      if (constructor.isIntFromEnvironmentConstructor) {
+        giveUp(inferrer);
+        return commonMasks.intType.nullable();
+      } else if (constructor.isBoolFromEnvironmentConstructor) {
+        giveUp(inferrer);
+        return commonMasks.boolType.nullable();
+      } else if (constructor.isStringFromEnvironmentConstructor) {
+        giveUp(inferrer);
+        return commonMasks.stringType.nullable();
+      }
     }
     return null;
   }
@@ -519,13 +522,13 @@ class MemberTypeInformation extends ElementTypeInformation
       return mask;
     }
     if (element.isField) {
-      return _narrowType(compiler, mask, element.type);
+      return _narrowType(compiler.closedWorld, mask, element.type);
     }
     assert(
         element.isFunction || element.isGetter || element.isFactoryConstructor);
 
     FunctionType type = element.type;
-    return _narrowType(compiler, mask, type.returnType);
+    return _narrowType(compiler.closedWorld, mask, type.returnType);
   }
 
   TypeMask computeType(TypeGraphInferrerEngine inferrer) {
@@ -598,7 +601,7 @@ class ParameterTypeInformation extends ElementTypeInformation {
   bool isTearOffClosureParameter = false;
 
   void tagAsTearOffClosureParameter(TypeGraphInferrerEngine inferrer) {
-    assert(element.isParameter);
+    assert(element.isRegularParameter);
     isTearOffClosureParameter = true;
     // We have to add a flow-edge for the default value (if it exists), as we
     // might not see all call-sites and thus miss the use of it.
@@ -637,7 +640,8 @@ class ParameterTypeInformation extends ElementTypeInformation {
       giveUp(inferrer);
       return safeType(inferrer);
     }
-    if (inferrer.compiler.world.getMightBePassedToApply(declaration)) {
+    if (inferrer.compiler.inferenceWorld
+        .getCurrentlyKnownMightBePassedToApply(declaration)) {
       giveUp(inferrer);
       return safeType(inferrer);
     }
@@ -665,7 +669,7 @@ class ParameterTypeInformation extends ElementTypeInformation {
     // ignore type annotations to ensure that the checks are actually inserted
     // into the function body and retained until runtime.
     assert(!compiler.options.enableTypeAssertions);
-    return _narrowType(compiler, mask, element.type);
+    return _narrowType(compiler.closedWorld, mask, element.type);
   }
 
   TypeMask computeType(TypeGraphInferrerEngine inferrer) {
@@ -814,7 +818,8 @@ class DynamicCallSiteTypeInformation extends CallSiteTypeInformation {
   void addToGraph(TypeGraphInferrerEngine inferrer) {
     assert(receiver != null);
     TypeMask typeMask = computeTypedSelector(inferrer);
-    targets = inferrer.compiler.world.allFunctions.filter(selector, typeMask);
+    targets =
+        inferrer.compiler.closedWorld.allFunctions.filter(selector, typeMask);
     receiver.addUser(this);
     if (arguments != null) {
       arguments.forEach((info) => info.addUser(this));
@@ -835,7 +840,7 @@ class DynamicCallSiteTypeInformation extends CallSiteTypeInformation {
     TypeMask receiverType = receiver.type;
 
     if (mask != receiverType) {
-      return receiverType == inferrer.compiler.typesTask.dynamicType
+      return receiverType == inferrer.commonMasks.dynamicType
           ? null
           : receiverType;
     } else {
@@ -853,90 +858,111 @@ class DynamicCallSiteTypeInformation extends CallSiteTypeInformation {
   }
 
   /**
-   * We optimize certain operations on the [int] class because we know
-   * more about their return type than the actual Dart code. For
-   * example, we know int + int returns an int. The Dart code for
-   * [int.operator+] only says it returns a [num].
+   * We optimize certain operations on the [int] class because we know more
+   * about their return type than the actual Dart code. For example, we know int
+   * + int returns an int. The Dart library code for [int.operator+] only says
+   * it returns a [num].
+   *
+   * Returns the more precise TypeInformation, or `null` to defer to the library
+   * code.
    */
   TypeInformation handleIntrisifiedSelector(
       Selector selector, TypeMask mask, TypeGraphInferrerEngine inferrer) {
-    ClassWorld classWorld = inferrer.classWorld;
-    if (!classWorld.backend.intImplementation.isResolved) return null;
+    ClosedWorld closedWorld = inferrer.closedWorld;
+    if (!closedWorld.backendClasses.intImplementation.isResolved) return null;
     if (mask == null) return null;
-    if (!mask.containsOnlyInt(classWorld)) {
+    if (!mask.containsOnlyInt(closedWorld)) {
       return null;
     }
     if (!selector.isCall && !selector.isOperator) return null;
     if (!arguments.named.isEmpty) return null;
     if (arguments.positional.length > 1) return null;
 
-    ClassElement uint31Implementation = classWorld.backend.uint31Implementation;
-    bool isInt(info) => info.type.containsOnlyInt(classWorld);
+    ClassElement uint31Implementation =
+        closedWorld.backendClasses.uint31Implementation;
+    bool isInt(info) => info.type.containsOnlyInt(closedWorld);
     bool isEmpty(info) => info.type.isEmpty;
     bool isUInt31(info) {
-      return info.type.satisfies(uint31Implementation, classWorld);
-    }
-    bool isPositiveInt(info) {
-      return info.type
-          .satisfies(classWorld.backend.positiveIntImplementation, classWorld);
+      return info.type.satisfies(uint31Implementation, closedWorld);
     }
 
+    bool isPositiveInt(info) {
+      return info.type.satisfies(
+          closedWorld.backendClasses.positiveIntImplementation, closedWorld);
+    }
+
+    TypeInformation tryLater() => inferrer.types.nonNullEmptyType;
+
+    TypeInformation argument =
+        arguments.isEmpty ? null : arguments.positional.first;
+
     String name = selector.name;
-    // We are optimizing for the cases that are not expressed in the
-    // Dart code, for example:
-    // int + int -> int
-    // uint31 | uint31 -> uint31
-    if (name == '*' ||
-        name == '+' ||
-        name == '%' ||
-        name == 'remainder' ||
-        name == '~/') {
-      if (isPositiveInt(receiver) &&
-          arguments.hasOnePositionalArgumentThatMatches(isPositiveInt)) {
-        // uint31 + uint31 -> uint32
-        if (name == '+' &&
-            isUInt31(receiver) &&
-            arguments.hasOnePositionalArgumentThatMatches(isUInt31)) {
-          return inferrer.types.uint32Type;
-        } else {
+    // These are type inference rules only for useful cases that are not
+    // expressed in the library code, for example:
+    //
+    //     int + int        ->  int
+    //     uint31 | uint31  ->  uint31
+    //
+    switch (name) {
+      case '*':
+      case '+':
+      case '%':
+      case 'remainder':
+      case '~/':
+        if (isEmpty(argument)) return tryLater();
+        if (isPositiveInt(receiver) && isPositiveInt(argument)) {
+          // uint31 + uint31 -> uint32
+          if (name == '+' && isUInt31(receiver) && isUInt31(argument)) {
+            return inferrer.types.uint32Type;
+          }
           return inferrer.types.positiveIntType;
         }
-      } else if (arguments.hasOnePositionalArgumentThatMatches(isInt)) {
-        return inferrer.types.intType;
-      } else if (arguments.hasOnePositionalArgumentThatMatches(isEmpty)) {
-        return inferrer.types.nonNullEmptyType;
-      } else {
+        if (isInt(argument)) {
+          return inferrer.types.intType;
+        }
         return null;
-      }
-    } else if (name == '|' || name == '^') {
-      if (isUInt31(receiver) &&
-          arguments.hasOnePositionalArgumentThatMatches(isUInt31)) {
-        return inferrer.types.uint31Type;
-      }
-    } else if (name == '>>') {
-      if (isUInt31(receiver)) {
-        return inferrer.types.uint31Type;
-      }
-    } else if (name == '&') {
-      if (isUInt31(receiver) ||
-          arguments.hasOnePositionalArgumentThatMatches(isUInt31)) {
-        return inferrer.types.uint31Type;
-      }
-    } else if (name == 'unary-') {
-      // The receiver being an int, the return value will also be an
-      // int.
-      return inferrer.types.intType;
-    } else if (name == '-') {
-      if (arguments.hasOnePositionalArgumentThatMatches(isInt)) {
+
+      case '|':
+      case '^':
+        if (isEmpty(argument)) return tryLater();
+        if (isUInt31(receiver) && isUInt31(argument)) {
+          return inferrer.types.uint31Type;
+        }
+        return null;
+
+      case '>>':
+        if (isEmpty(argument)) return tryLater();
+        if (isUInt31(receiver)) {
+          return inferrer.types.uint31Type;
+        }
+        return null;
+
+      case '&':
+        if (isEmpty(argument)) return tryLater();
+        if (isUInt31(receiver) || isUInt31(argument)) {
+          return inferrer.types.uint31Type;
+        }
+        return null;
+
+      case '-':
+        if (isEmpty(argument)) return tryLater();
+        if (isInt(argument)) {
+          return inferrer.types.intType;
+        }
+        return null;
+
+      case 'unary-':
+        // The receiver being an int, the return value will also be an int.
         return inferrer.types.intType;
-      } else if (arguments.hasOnePositionalArgumentThatMatches(isEmpty)) {
-        return inferrer.types.nonNullEmptyType;
-      }
-      return null;
-    } else if (name == 'abs') {
-      return arguments.hasNoArguments() ? inferrer.types.positiveIntType : null;
+
+      case 'abs':
+        return arguments.hasNoArguments()
+            ? inferrer.types.positiveIntType
+            : null;
+
+      default:
+        return null;
     }
-    return null;
   }
 
   TypeMask computeType(TypeGraphInferrerEngine inferrer) {
@@ -945,17 +971,18 @@ class DynamicCallSiteTypeInformation extends CallSiteTypeInformation {
     inferrer.updateSelectorInTree(caller, call, selector, typeMask);
 
     Compiler compiler = inferrer.compiler;
+    JavaScriptBackend backend = compiler.backend;
     TypeMask maskToUse =
-        compiler.world.extendMaskIfReachesAll(selector, typeMask);
-    bool canReachAll = compiler.enabledInvokeOn && (maskToUse != typeMask);
+        compiler.closedWorld.extendMaskIfReachesAll(selector, typeMask);
+    bool canReachAll = backend.hasInvokeOnSupport && (maskToUse != typeMask);
 
     // If this call could potentially reach all methods that satisfy
     // the untyped selector (through noSuchMethod's `Invocation`
     // and a call to `delegate`), we iterate over all these methods to
     // update their parameter types.
-    targets = compiler.world.allFunctions.filter(selector, maskToUse);
+    targets = compiler.closedWorld.allFunctions.filter(selector, maskToUse);
     Iterable<Element> typedTargets = canReachAll
-        ? compiler.world.allFunctions.filter(selector, typeMask)
+        ? compiler.closedWorld.allFunctions.filter(selector, typeMask)
         : targets;
 
     // Update the call graph if the targets could have changed.
@@ -1051,7 +1078,8 @@ class DynamicCallSiteTypeInformation extends CallSiteTypeInformation {
     if (!abandonInferencing) {
       inferrer.updateSelectorInTree(caller, call, selector, mask);
       Iterable<Element> oldTargets = targets;
-      targets = inferrer.compiler.world.allFunctions.filter(selector, mask);
+      targets =
+          inferrer.compiler.closedWorld.allFunctions.filter(selector, mask);
       for (Element element in targets) {
         if (!oldTargets.contains(element)) {
           MemberTypeInformation callee =
@@ -1188,7 +1216,7 @@ class ConcreteTypeInformation extends TypeInformation {
 }
 
 class StringLiteralTypeInformation extends ConcreteTypeInformation {
-  final ast.DartString value;
+  final DartString value;
 
   StringLiteralTypeInformation(value, TypeMask mask)
       : super(new ValueTypeMask(mask, new StringConstantValue(value))),
@@ -1252,10 +1280,10 @@ class NarrowTypeInformation extends TypeInformation {
   TypeMask computeType(TypeGraphInferrerEngine inferrer) {
     TypeMask input = assignments.first.type;
     TypeMask intersection =
-        input.intersection(typeAnnotation, inferrer.classWorld);
+        input.intersection(typeAnnotation, inferrer.closedWorld);
     if (debug.ANOMALY_WARN) {
-      if (!input.containsMask(intersection, inferrer.classWorld) ||
-          !typeAnnotation.containsMask(intersection, inferrer.classWorld)) {
+      if (!input.containsMask(intersection, inferrer.closedWorld) ||
+          !typeAnnotation.containsMask(intersection, inferrer.closedWorld)) {
         print("ANOMALY WARNING: narrowed $input to $intersection via "
             "$typeAnnotation");
       }
@@ -1491,7 +1519,7 @@ class MapTypeInformation extends TypeInformation with TracedTypeInformation {
       for (var key in typeInfoMap.keys) {
         TypeInformation value = typeInfoMap[key];
         if (!mask.typeMap.containsKey(key) &&
-            !value.type.containsAll(inferrer.classWorld) &&
+            !value.type.containsAll(inferrer.closedWorld) &&
             !value.type.isNullable) {
           return toTypeMask(inferrer);
         }
@@ -1698,23 +1726,24 @@ abstract class TypeInformationVisitor<T> {
   T visitAwaitTypeInformation(AwaitTypeInformation info);
 }
 
-TypeMask _narrowType(Compiler compiler, TypeMask type, DartType annotation,
+TypeMask _narrowType(
+    ClosedWorld closedWorld, TypeMask type, DartType annotation,
     {bool isNullable: true}) {
   if (annotation.treatAsDynamic) return type;
   if (annotation.isObject) return type;
   TypeMask otherType;
   if (annotation.isTypedef || annotation.isFunctionType) {
-    otherType = compiler.typesTask.functionType;
+    otherType = closedWorld.commonMasks.functionType;
   } else if (annotation.isTypeVariable) {
     // TODO(ngeoffray): Narrow to bound.
     return type;
   } else if (annotation.isVoid) {
-    otherType = compiler.typesTask.nullType;
+    otherType = closedWorld.commonMasks.nullType;
   } else {
     assert(annotation.isInterfaceType);
-    otherType = new TypeMask.nonNullSubtype(annotation.element, compiler.world);
+    otherType = new TypeMask.nonNullSubtype(annotation.element, closedWorld);
   }
   if (isNullable) otherType = otherType.nullable();
   if (type == null) return otherType;
-  return type.intersection(otherType, compiler.world);
+  return type.intersection(otherType, closedWorld);
 }

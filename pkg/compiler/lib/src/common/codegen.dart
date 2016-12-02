@@ -4,9 +4,8 @@
 
 library dart2js.common.codegen;
 
-import '../closure.dart' show SynthesizedCallMethodElementX;
 import '../common.dart';
-import '../compiler.dart' show Compiler;
+import '../common/backend_api.dart' show Backend;
 import '../constants/values.dart' show ConstantValue;
 import '../dart_types.dart' show DartType, InterfaceType;
 import '../elements/elements.dart'
@@ -17,19 +16,15 @@ import '../elements/elements.dart'
         FunctionElement,
         LocalFunctionElement,
         ResolvedAst;
-import '../enqueue.dart' show CodegenEnqueuer;
+import '../enqueue.dart' show Enqueuer;
 import '../universe/use.dart' show DynamicUse, StaticUse, TypeUse;
 import '../universe/world_impact.dart'
-    show WorldImpact, WorldImpactBuilder, WorldImpactVisitor;
+    show WorldImpact, WorldImpactBuilderImpl, WorldImpactVisitor;
 import '../util/util.dart' show Pair, Setlet;
-import 'registry.dart' show Registry, EagerRegistry;
-import 'work.dart' show ItemCompilationContext, WorkItem;
+import 'work.dart' show WorkItem;
 
 class CodegenImpact extends WorldImpact {
   const CodegenImpact();
-
-  // TODO(johnniwinther): Remove this.
-  Registry get registry => null;
 
   Iterable<ConstantValue> get compileTimeConstants => const <ConstantValue>[];
 
@@ -50,10 +45,7 @@ class CodegenImpact extends WorldImpact {
   Iterable<Element> get asyncMarkers => const <FunctionElement>[];
 }
 
-class _CodegenImpact extends WorldImpactBuilder implements CodegenImpact {
-  // TODO(johnniwinther): Remove this.
-  final Registry registry;
-
+class _CodegenImpact extends WorldImpactBuilderImpl implements CodegenImpact {
   Setlet<ConstantValue> _compileTimeConstants;
   Setlet<Pair<DartType, DartType>> _typeVariableBoundsSubtypeChecks;
   Setlet<String> _constSymbols;
@@ -62,7 +54,7 @@ class _CodegenImpact extends WorldImpactBuilder implements CodegenImpact {
   Setlet<ClassElement> _typeConstants;
   Setlet<FunctionElement> _asyncMarkers;
 
-  _CodegenImpact(this.registry);
+  _CodegenImpact();
 
   void apply(WorldImpactVisitor visitor) {
     staticUses.forEach(visitor.visitStaticUse);
@@ -153,20 +145,22 @@ class _CodegenImpact extends WorldImpactBuilder implements CodegenImpact {
 
 // TODO(johnniwinther): Split this class into interface and implementation.
 // TODO(johnniwinther): Move this implementation to the JS backend.
-class CodegenRegistry extends Registry {
-  final Compiler compiler;
+class CodegenRegistry {
   final Element currentElement;
   final _CodegenImpact worldImpact;
 
-  CodegenRegistry(Compiler compiler, AstElement currentElement)
-      : this.compiler = compiler,
-        this.currentElement = currentElement,
-        this.worldImpact = new _CodegenImpact(new EagerRegistry(
-            'EagerRegistry for $currentElement', compiler.enqueuer.codegen));
+  CodegenRegistry(AstElement currentElement)
+      : this.currentElement = currentElement,
+        this.worldImpact = new _CodegenImpact();
 
   bool get isForResolution => false;
 
   String toString() => 'CodegenRegistry for $currentElement';
+
+  /// Add the uses in [impact] to the impact of this registry.
+  void addImpact(WorldImpact impact) {
+    worldImpact.addImpact(impact);
+  }
 
   @deprecated
   void registerInstantiatedClass(ClassElement element) {
@@ -227,9 +221,9 @@ class CodegenRegistry extends Registry {
 class CodegenWorkItem extends WorkItem {
   CodegenRegistry registry;
   final ResolvedAst resolvedAst;
+  final Backend backend;
 
-  factory CodegenWorkItem(Compiler compiler, AstElement element,
-      ItemCompilationContext compilationContext) {
+  factory CodegenWorkItem(Backend backend, AstElement element) {
     // If this assertion fails, the resolution callbacks of the backend may be
     // missing call of form registry.registerXXX. Alternatively, the code
     // generation could spuriously be adding dependencies on things we know we
@@ -237,18 +231,17 @@ class CodegenWorkItem extends WorkItem {
     assert(invariant(element, element.hasResolvedAst,
         message: "$element has no resolved ast."));
     ResolvedAst resolvedAst = element.resolvedAst;
-    return new CodegenWorkItem.internal(resolvedAst, compilationContext);
+    return new CodegenWorkItem.internal(resolvedAst, backend);
   }
 
-  CodegenWorkItem.internal(
-      ResolvedAst resolvedAst, ItemCompilationContext compilationContext)
+  CodegenWorkItem.internal(ResolvedAst resolvedAst, this.backend)
       : this.resolvedAst = resolvedAst,
-        super(resolvedAst.element, compilationContext);
+        super(resolvedAst.element);
 
-  WorldImpact run(Compiler compiler, CodegenEnqueuer world) {
-    if (world.isProcessed(element)) return const WorldImpact();
-
-    registry = new CodegenRegistry(compiler, element);
-    return compiler.codegen(this, world);
+  WorldImpact run() {
+    registry = new CodegenRegistry(element);
+    return backend.codegen(this);
   }
+
+  String toString() => 'CodegenWorkItem(${resolvedAst.element})';
 }

@@ -128,11 +128,11 @@ import 'elements/modelx.dart'
         ClassElementX,
         GetterElementX,
         LibraryElementX,
+        MetadataAnnotationX,
         SetterElementX;
 import 'id_generator.dart';
 import 'js_backend/js_backend.dart' show JavaScriptBackend;
 import 'library_loader.dart' show LibraryLoader;
-import 'options.dart' show ParserOptions;
 import 'parser/element_listener.dart' show ElementListener;
 import 'parser/listener.dart' show Listener, ParserError;
 import 'parser/member_listener.dart' show MemberListener;
@@ -145,11 +145,10 @@ import 'tokens/token.dart' show StringToken, Token;
 
 class PatchParserTask extends CompilerTask {
   final String name = "Patching Parser";
-  final ParserOptions parserOptions;
   final Compiler compiler;
   DiagnosticReporter get reporter => compiler.reporter;
 
-  PatchParserTask(Compiler compiler, this.parserOptions)
+  PatchParserTask(Compiler compiler)
       : compiler = compiler,
         super(compiler.measurer);
 
@@ -183,7 +182,7 @@ class PatchParserTask extends CompilerTask {
       Listener patchListener = new PatchElementListener(
           compiler, compilationUnit, compiler.idGenerator);
       try {
-        new PartialParser(patchListener, parserOptions).parseUnit(tokens);
+        new PartialParser(patchListener).parseUnit(tokens);
       } on ParserError catch (e) {
         // No need to recover from a parser error in platform libraries, user
         // will never see this if the libraries are tested correctly.
@@ -200,7 +199,7 @@ class PatchParserTask extends CompilerTask {
 
     measure(() => reporter.withCurrentElement(cls, () {
           MemberListener listener = new PatchMemberListener(compiler, cls);
-          Parser parser = new PatchClassElementParser(listener, parserOptions);
+          Parser parser = new PatchClassElementParser(listener);
           try {
             Token token = parser.parseTopLevelDeclaration(cls.beginToken);
             assert(identical(token, cls.endToken.next));
@@ -250,8 +249,7 @@ class PatchMemberListener extends MemberListener {
  * declarations.
  */
 class PatchClassElementParser extends PartialParser {
-  PatchClassElementParser(Listener listener, ParserOptions options)
-      : super(listener, options);
+  PatchClassElementParser(Listener listener) : super(listener);
 
   Token parseClassBody(Token token) => fullParseClassBody(token);
 }
@@ -403,7 +401,7 @@ abstract class EagerAnnotationHandler<T> {
 class NativeAnnotationHandler implements EagerAnnotationHandler<String> {
   const NativeAnnotationHandler();
 
-  String getNativeAnnotation(MetadataAnnotation annotation) {
+  String getNativeAnnotation(MetadataAnnotationX annotation) {
     if (annotation.beginToken != null &&
         annotation.beginToken.next.value == 'Native') {
       // Skipping '@', 'Native', and '('.
@@ -431,7 +429,8 @@ class NativeAnnotationHandler implements EagerAnnotationHandler<String> {
   void validate(Compiler compiler, Element element,
       MetadataAnnotation annotation, ConstantValue constant) {
     DartType annotationType = constant.getType(compiler.coreTypes);
-    if (annotationType.element != compiler.nativeAnnotationClass) {
+    if (annotationType.element !=
+        compiler.commonElements.nativeAnnotationClass) {
       DiagnosticReporter reporter = compiler.reporter;
       reporter.internalError(annotation, 'Invalid @Native(...) annotation.');
     }
@@ -443,7 +442,7 @@ class NativeAnnotationHandler implements EagerAnnotationHandler<String> {
 class JsInteropAnnotationHandler implements EagerAnnotationHandler<bool> {
   const JsInteropAnnotationHandler();
 
-  bool hasJsNameAnnotation(MetadataAnnotation annotation) =>
+  bool hasJsNameAnnotation(MetadataAnnotationX annotation) =>
       annotation.beginToken != null && annotation.beginToken.next.value == 'JS';
 
   bool apply(
@@ -474,7 +473,7 @@ class JsInteropAnnotationHandler implements EagerAnnotationHandler<bool> {
 class PatchAnnotationHandler implements EagerAnnotationHandler<PatchVersion> {
   const PatchAnnotationHandler();
 
-  PatchVersion getPatchVersion(MetadataAnnotation annotation) {
+  PatchVersion getPatchVersion(MetadataAnnotationX annotation) {
     if (annotation.beginToken != null) {
       if (annotation.beginToken.next.value == 'patch') {
         return const PatchVersion(null);
@@ -499,7 +498,8 @@ class PatchAnnotationHandler implements EagerAnnotationHandler<PatchVersion> {
   void validate(Compiler compiler, Element element,
       MetadataAnnotation annotation, ConstantValue constant) {
     DartType annotationType = constant.getType(compiler.coreTypes);
-    if (annotationType.element != compiler.patchAnnotationClass) {
+    if (annotationType.element !=
+        compiler.commonElements.patchAnnotationClass) {
       DiagnosticReporter reporter = compiler.reporter;
       reporter.internalError(annotation, 'Invalid patch annotation.');
     }

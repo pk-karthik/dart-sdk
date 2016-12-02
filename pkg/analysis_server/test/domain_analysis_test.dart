@@ -13,21 +13,20 @@ import 'package:analysis_server/src/domain_analysis.dart';
 import 'package:analysis_server/src/plugin/server_plugin.dart';
 import 'package:analyzer/file_system/memory_file_system.dart';
 import 'package:analyzer/instrumentation/instrumentation.dart';
-import 'package:path/path.dart';
+import 'package:analyzer/src/generated/sdk.dart';
 import 'package:plugin/manager.dart';
+import 'package:test/test.dart';
 import 'package:test_reflective_loader/test_reflective_loader.dart';
-import 'package:unittest/unittest.dart';
 
 import 'analysis_abstract.dart';
 import 'mock_sdk.dart';
 import 'mocks.dart';
-import 'utils.dart';
 
 main() {
-  initializeTestEnvironment();
-
-  defineReflectiveTests(AnalysisDomainTest);
-  defineReflectiveTests(SetSubscriptionsTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(AnalysisDomainTest);
+    defineReflectiveTests(SetSubscriptionsTest);
+  });
 
   MockServerChannel serverChannel;
   MemoryResourceProvider resourceProvider;
@@ -40,6 +39,8 @@ main() {
     ExtensionManager manager = new ExtensionManager();
     ServerPlugin serverPlugin = new ServerPlugin();
     manager.processPlugins([serverPlugin]);
+    // Create an SDK in the mock file system.
+    new MockSdk(resourceProvider: resourceProvider);
     server = new AnalysisServer(
         serverChannel,
         resourceProvider,
@@ -47,7 +48,7 @@ main() {
         null,
         serverPlugin,
         new AnalysisServerOptions(),
-        (_) => new MockSdk(),
+        new DartSdkManager('/', false),
         InstrumentationService.NULL_SERVICE);
     handler = new AnalysisDomainHandler(server);
   });
@@ -104,7 +105,7 @@ main() {
       }
 
       group('excluded', () {
-        test('excluded folder', () {
+        test('excluded folder', () async {
           String fileA = '/project/aaa/a.dart';
           String fileB = '/project/bbb/b.dart';
           resourceProvider.newFile(fileA, '// a');
@@ -114,10 +115,9 @@ main() {
           expect(response, isResponseSuccess('0'));
           // unit "a" is resolved eventually
           // unit "b" is not resolved
-          return server.onAnalysisComplete.then((_) {
-            expect(serverRef.getResolvedCompilationUnits(fileA), hasLength(1));
-            expect(serverRef.getResolvedCompilationUnits(fileB), isEmpty);
-          });
+          await server.onAnalysisComplete;
+          expect(await serverRef.getResolvedCompilationUnit(fileA), isNotNull);
+          expect(await serverRef.getResolvedCompilationUnit(fileB), isNull);
         });
 
         test('not absolute', () async {
@@ -138,7 +138,7 @@ main() {
       });
 
       group('included', () {
-        test('new folder', () {
+        test('new folder', () async {
           String file = '/project/bin/test.dart';
           resourceProvider.newFile('/project/pubspec.yaml', 'name: project');
           resourceProvider.newFile(file, 'main() {}');
@@ -146,10 +146,9 @@ main() {
           var serverRef = server;
           expect(response, isResponseSuccess('0'));
           // verify that unit is resolved eventually
-          return server.onAnalysisComplete.then((_) {
-            var units = serverRef.getResolvedCompilationUnits(file);
-            expect(units, hasLength(1));
-          });
+          await server.onAnalysisComplete;
+          var unit = await serverRef.getResolvedCompilationUnit(file);
+          expect(unit, isNotNull);
         });
 
         test('nonexistent folder', () async {
@@ -161,7 +160,8 @@ main() {
           // Non-existence of /project_a should not prevent files in /project_b
           // from being analyzed.
           await server.onAnalysisComplete;
-          expect(serverRef.getResolvedCompilationUnits(fileB), hasLength(1));
+          var unit = await serverRef.getResolvedCompilationUnit(fileB);
+          expect(unit, isNotNull);
         });
 
         test('not absolute', () async {
@@ -249,7 +249,9 @@ testUpdateContent() {
     return helper.onAnalysisComplete.then((_) {
       Request request = new Request('0', ANALYSIS_UPDATE_CONTENT, {
         'files': {
-          helper.testFile: {TYPE: 'foo',}
+          helper.testFile: {
+            TYPE: 'foo',
+          }
         }
       });
       Response response = helper.handler.handleRequest(request);
@@ -381,40 +383,6 @@ class AnalysisDomainTest extends AbstractAnalysisTest {
     }
   }
 
-  test_packageMapDependencies() async {
-    // Prepare a source file that has errors because it refers to an unknown
-    // package.
-    String pkgFile = '/packages/pkgA/libA.dart';
-    resourceProvider.newFile(
-        pkgFile,
-        '''
-library lib_a;
-class A {}
-''');
-    addTestFile('''
-import 'package:pkgA/libA.dart';
-f(A a) {
-}
-''');
-    String pkgDependency = posix.join(projectPath, 'package_dep');
-    resourceProvider.newFile(pkgDependency, 'contents');
-    packageMapProvider.dependencies.add(pkgDependency);
-    // Create project and wait for analysis
-    createProject();
-    await waitForTasksFinished();
-    expect(filesErrors[testFile], isNotEmpty);
-    // Add the package to the package map and tickle the package dependency.
-    packageMapProvider.packageMap = {
-      'pkgA': [resourceProvider.getResource('/packages/pkgA')]
-    };
-    resourceProvider.modifyFile(pkgDependency, 'new contents');
-    // Give the server time to notice the file has changed, then let
-    // analysis complete. There should now be no error.
-    await pumpEventQueue();
-    await waitForTasksFinished();
-    expect(filesErrors[testFile], isEmpty);
-  }
-
   test_setRoots_packages() {
     // prepare package
     String pkgFile = '/packages/pkgA/libA.dart';
@@ -424,9 +392,8 @@ f(A a) {
 library lib_a;
 class A {}
 ''');
-    packageMapProvider.packageMap['pkgA'] = [
-      resourceProvider.getResource('/packages/pkgA')
-    ];
+    resourceProvider.newFile(
+        '/project/.packages', 'pkgA:file:///packages/pkgA');
     addTestFile('''
 import 'package:pkgA/libA.dart';
 main(A a) {
@@ -467,6 +434,8 @@ class AnalysisTestHelper {
     ExtensionManager manager = new ExtensionManager();
     ServerPlugin serverPlugin = new ServerPlugin();
     manager.processPlugins([serverPlugin]);
+    // Create an SDK in the mock file system.
+    new MockSdk(resourceProvider: resourceProvider);
     server = new AnalysisServer(
         serverChannel,
         resourceProvider,
@@ -474,7 +443,7 @@ class AnalysisTestHelper {
         null,
         serverPlugin,
         new AnalysisServerOptions(),
-        (_) => new MockSdk(),
+        new DartSdkManager('/', false),
         InstrumentationService.NULL_SERVICE);
     handler = new AnalysisDomainHandler(server);
     // listen for notifications
@@ -703,9 +672,8 @@ class SetSubscriptionsTest extends AbstractAnalysisTest {
 library lib_a;
 class A {}
 ''');
-    packageMapProvider.packageMap = {
-      'pkgA': [(resourceProvider.newFolder('/packages/pkgA/lib'))]
-    };
+    resourceProvider.newFile(
+        '/project/.packages', 'pkgA:file:///packages/pkgA/lib');
     //
     addTestFile('''
 import 'package:pkgA/libA.dart';
@@ -773,9 +741,7 @@ main() {
 library lib_a;
 class A {}
 ''');
-    packageMapProvider.packageMap = {
-      'pkgA': [(resourceProvider.newFolder('/packages/pkgA/lib'))]
-    };
+    resourceProvider.newFile('/project/.packages', 'pkgA:/packages/pkgA/lib');
     //
     addTestFile('// no "pkgA" reference');
     createProject();

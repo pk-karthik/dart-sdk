@@ -2,8 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import 'native_testing.dart';
 
 // Test that hidden native exception classes can be marked as existing.
 //
@@ -16,11 +15,10 @@ import "package:expect/expect.dart";
 // is no place in the Dart language to communicate (3).  So we use the following
 // fake body technique.
 
-
 // The exception type.
 @Native("E")
 class E {
-  E._used() native;  // Bogus native constructor, called only from fake body.
+  E._used() native ; // Bogus native constructor, called only from fake body.
 
   final int code;
 }
@@ -31,7 +29,7 @@ class A {
   // Exception class E is created.
   @Creates("E")
   @Returns('int')
-  op(int x) native;
+  op(int x) native ;
 }
 
 // This class is here just so that a dynamic context is polymorphic.
@@ -40,7 +38,7 @@ class B {
   op(String x) => 123;
 }
 
-makeA() native;
+makeA() native ;
 
 void setup1() native """
 // Ensure we are not relying on global names 'A' and 'E'.
@@ -58,11 +56,15 @@ A.prototype.op = function (x) {
   return  x / 2;
 };
 makeA = function(){return new A};
+
+self.nativeConstructor(E);
+self.nativeConstructor(A);
 """;
 
 int inscrutable(int x) => x == 0 ? 0 : x | inscrutable(x & (x - 1));
 
 main() {
+  nativeTesting();
   setup1();
   setup2();
 

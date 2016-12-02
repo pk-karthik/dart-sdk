@@ -5,30 +5,27 @@
 library dart2js.resolution.registry;
 
 import '../common.dart';
-import '../common/backend_api.dart' show Backend, ForeignResolver;
-import '../common/resolution.dart'
-    show Feature, ListLiteralUse, MapLiteralUse, ResolutionImpact;
-import '../common/registry.dart' show Registry;
-import '../compiler.dart' show Compiler;
+import '../common/backend_api.dart'
+    show Backend, ForeignResolver, NativeRegistry;
+import '../common/resolution.dart' show ResolutionImpact, Target;
 import '../constants/expressions.dart';
 import '../dart_types.dart';
 import '../diagnostics/source_span.dart';
-import '../enqueue.dart' show ResolutionEnqueuer;
 import '../elements/elements.dart';
 import '../tree/tree.dart';
-import '../util/util.dart' show Setlet;
 import '../universe/call_structure.dart' show CallStructure;
+import '../universe/feature.dart';
 import '../universe/selector.dart' show Selector;
 import '../universe/use.dart' show DynamicUse, StaticUse, TypeUse;
-import '../universe/world_impact.dart' show WorldImpact, WorldImpactBuilder;
+import '../universe/world_impact.dart' show WorldImpact, WorldImpactBuilderImpl;
 import '../util/enumset.dart' show EnumSet;
-
-import 'send_structure.dart';
-
+import '../util/util.dart' show Setlet;
 import 'members.dart' show ResolverVisitor;
+import 'send_structure.dart';
 import 'tree_elements.dart' show TreeElementMapping;
 
-class _ResolutionWorldImpact extends ResolutionImpact with WorldImpactBuilder {
+class ResolutionWorldImpactBuilder extends WorldImpactBuilderImpl
+    implements NativeRegistry, ResolutionImpact {
   final String name;
   EnumSet<Feature> _features;
   Setlet<MapLiteralUse> _mapLiterals;
@@ -37,7 +34,10 @@ class _ResolutionWorldImpact extends ResolutionImpact with WorldImpactBuilder {
   Setlet<ConstantExpression> _constantLiterals;
   Setlet<dynamic> _nativeData;
 
-  _ResolutionWorldImpact(this.name);
+  ResolutionWorldImpactBuilder(this.name);
+
+  @override
+  bool get isEmpty => false;
 
   void registerMapLiteral(MapLiteralUse mapLiteralUse) {
     assert(mapLiteralUse != null);
@@ -156,20 +156,17 @@ class _ResolutionWorldImpact extends ResolutionImpact with WorldImpactBuilder {
 /// related information in a [TreeElements] mapping and registers calls with
 /// [Backend], [World] and [Enqueuer].
 // TODO(johnniwinther): Split this into an interface and implementation class.
-class ResolutionRegistry extends Registry {
-  final Compiler compiler;
+class ResolutionRegistry {
+  final Target target;
   final TreeElementMapping mapping;
-  final _ResolutionWorldImpact worldImpact;
+  final ResolutionWorldImpactBuilder impactBuilder;
 
-  ResolutionRegistry(Compiler compiler, TreeElementMapping mapping)
-      : this.compiler = compiler,
-        this.mapping = mapping,
-        this.worldImpact =
-            new _ResolutionWorldImpact(mapping.analyzedElement.toString());
+  ResolutionRegistry(this.target, TreeElementMapping mapping)
+      : this.mapping = mapping,
+        this.impactBuilder = new ResolutionWorldImpactBuilder(
+            mapping.analyzedElement.toString());
 
   bool get isForResolution => true;
-
-  Backend get backend => compiler.backend;
 
   String toString() => 'ResolutionRegistry for ${mapping.analyzedElement}';
 
@@ -328,16 +325,19 @@ class ResolutionRegistry extends Registry {
   //////////////////////////////////////////////////////////////////////////////
 
   void registerStaticUse(StaticUse staticUse) {
-    worldImpact.registerStaticUse(staticUse);
-  }
-
-  void registerMetadataConstant(MetadataAnnotation metadata) {
-    backend.registerMetadataConstant(metadata, metadata.annotatedElement, this);
+    impactBuilder.registerStaticUse(staticUse);
   }
 
   /// Register the use of a type.
   void registerTypeUse(TypeUse typeUse) {
-    worldImpact.registerTypeUse(typeUse);
+    impactBuilder.registerTypeUse(typeUse);
+  }
+
+  /// Register checked mode check of [type] if it isn't `dynamic`.
+  void registerCheckedModeCheck(DartType type) {
+    if (!type.isDynamic) {
+      impactBuilder.registerTypeUse(new TypeUse.checkedModeCheck(type));
+    }
   }
 
   void registerSuperUse(SourceSpan span) {
@@ -346,56 +346,56 @@ class ResolutionRegistry extends Registry {
 
   void registerTypeLiteral(Send node, DartType type) {
     mapping.setType(node, type);
-    worldImpact.registerTypeUse(new TypeUse.typeLiteral(type));
+    impactBuilder.registerTypeUse(new TypeUse.typeLiteral(type));
   }
 
   void registerLiteralList(Node node, InterfaceType type,
       {bool isConstant, bool isEmpty}) {
     setType(node, type);
-    worldImpact.registerListLiteral(
+    impactBuilder.registerListLiteral(
         new ListLiteralUse(type, isConstant: isConstant, isEmpty: isEmpty));
   }
 
   void registerMapLiteral(Node node, InterfaceType type,
       {bool isConstant, bool isEmpty}) {
     setType(node, type);
-    worldImpact.registerMapLiteral(
+    impactBuilder.registerMapLiteral(
         new MapLiteralUse(type, isConstant: isConstant, isEmpty: isEmpty));
   }
 
   void registerForeignCall(Node node, Element element,
       CallStructure callStructure, ResolverVisitor visitor) {
-    var nativeData = backend.resolveForeignCall(node, element, callStructure,
+    var nativeData = target.resolveForeignCall(node, element, callStructure,
         new ForeignResolutionResolver(visitor, this));
     if (nativeData != null) {
       // Split impact from resolution result.
       mapping.registerNativeData(node, nativeData);
-      worldImpact.registerNativeData(nativeData);
+      impactBuilder.registerNativeData(nativeData);
     }
   }
 
   void registerDynamicUse(DynamicUse dynamicUse) {
-    worldImpact.registerDynamicUse(dynamicUse);
+    impactBuilder.registerDynamicUse(dynamicUse);
   }
 
   void registerFeature(Feature feature) {
-    worldImpact.registerFeature(feature);
+    impactBuilder.registerFeature(feature);
   }
 
   void registerConstSymbol(String name) {
-    worldImpact.registerConstSymbolName(name);
+    impactBuilder.registerConstSymbolName(name);
   }
 
   void registerConstantLiteral(ConstantExpression constant) {
-    worldImpact.registerConstantLiteral(constant);
+    impactBuilder.registerConstantLiteral(constant);
   }
 
   ClassElement defaultSuperclass(ClassElement element) {
-    return backend.defaultSuperclass(element);
+    return target.defaultSuperclass(element);
   }
 
   void registerInstantiation(InterfaceType type) {
-    worldImpact.registerTypeUse(new TypeUse.instantiation(type));
+    impactBuilder.registerTypeUse(new TypeUse.instantiation(type));
   }
 
   void registerSendStructure(Send node, SendStructure sendStructure) {

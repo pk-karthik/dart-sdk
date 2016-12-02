@@ -16,12 +16,12 @@ import '../resolution/operators.dart';
 import '../resolution/semantic_visitor.dart';
 import '../resolution/tree_elements.dart' show TreeElements;
 import '../tree/tree.dart';
-import '../types/types.dart' show TypeMask;
 import '../types/constants.dart' show computeTypeMask;
+import '../types/types.dart' show TypeMask;
 import '../universe/call_structure.dart' show CallStructure;
 import '../universe/selector.dart' show Selector;
 import '../util/util.dart';
-import '../world.dart' show ClassWorld;
+import '../world.dart' show ClosedWorld;
 
 /**
  * The interface [InferrerVisitor] will use when working on types.
@@ -314,10 +314,6 @@ class ArgumentsTypes<T> extends IterableMixin<T> {
 
   bool hasNoArguments() => positional.isEmpty && named.isEmpty;
 
-  bool hasOnePositionalArgumentThatMatches(bool f(T type)) {
-    return named.isEmpty && positional.length == 1 && f(positional[0]);
-  }
-
   void forEach(void f(T type)) {
     positional.forEach(f);
     named.values.forEach(f);
@@ -472,6 +468,7 @@ class LocalsHandler<T> {
         inferrer.recordLocalUpdate(local, type);
       }
     }
+
     if (capturedAndBoxed.containsKey(local)) {
       inferrer.recordTypeOfNonFinalField(node, capturedAndBoxed[local], type);
     } else if (inTryBlock) {
@@ -766,9 +763,22 @@ abstract class InferrerVisitor<T, E extends MinimalInferrerEngine<T>>
 
   T visitAssert(Assert node) {
     // Avoid pollution from assert statement unless enabled.
-    if (compiler.options.enableUserAssertions) {
-      super.visitAssert(node);
+    if (!compiler.options.enableUserAssertions) {
+      return null;
     }
+    List<Send> tests = <Send>[];
+    bool simpleCondition = handleCondition(node.condition, tests);
+    LocalsHandler<T> saved = locals;
+    locals = new LocalsHandler<T>.from(locals, node);
+    updateIsChecks(tests, usePositive: true);
+
+    LocalsHandler<T> thenLocals = locals;
+    locals = new LocalsHandler<T>.from(saved, node);
+    if (simpleCondition) updateIsChecks(tests, usePositive: false);
+    visit(node.message);
+    locals.seenReturnOrThrow = true;
+    saved.mergeDiamondFlow(thenLocals, locals);
+    locals = saved;
     return null;
   }
 
@@ -953,19 +963,12 @@ abstract class InferrerVisitor<T, E extends MinimalInferrerEngine<T>>
   T get thisType {
     if (_thisType != null) return _thisType;
     ClassElement cls = outermostElement.enclosingClass;
-    ClassWorld classWorld = compiler.world;
-    if (classWorld.isUsedAsMixin(cls)) {
+    ClosedWorld closedWorld = compiler.closedWorld;
+    if (closedWorld.isUsedAsMixin(cls)) {
       return _thisType = types.nonNullSubtype(cls);
     } else {
       return _thisType = types.nonNullSubclass(cls);
     }
-  }
-
-  T _superType;
-  T get superType {
-    if (_superType != null) return _superType;
-    return _superType =
-        types.nonNullExact(outermostElement.enclosingClass.superclass);
   }
 
   @override
@@ -977,7 +980,7 @@ abstract class InferrerVisitor<T, E extends MinimalInferrerEngine<T>>
     if (node.isThis()) {
       return thisType;
     } else if (node.isSuper()) {
-      return superType;
+      return internalError(node, 'Unexpected expression $node.');
     } else {
       Element element = elements[node];
       if (Elements.isLocal(element)) {

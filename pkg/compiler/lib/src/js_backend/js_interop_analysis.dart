@@ -5,8 +5,10 @@
 /// Analysis to determine how to generate code for typed JavaScript interop.
 library compiler.src.js_backend.js_interop_analysis;
 
+import '../common.dart';
 import '../constants/values.dart'
     show ConstantValue, ConstructedConstantValue, StringConstantValue;
+import '../dart_types.dart' show DartType, DynamicType, FunctionType;
 import '../diagnostics/messages.dart' show MessageKind;
 import '../elements/elements.dart'
     show
@@ -20,7 +22,7 @@ import '../elements/elements.dart'
 import '../js/js.dart' as jsAst;
 import '../js/js.dart' show js;
 import '../universe/selector.dart' show Selector;
-import '../universe/universe.dart' show SelectorConstraints;
+import '../universe/world_builder.dart' show SelectorConstraints;
 import 'backend_helpers.dart' show BackendHelpers;
 import 'js_backend.dart' show JavaScriptBackend;
 
@@ -54,6 +56,8 @@ class JsInteropAnalysis {
 
   void processJsInteropAnnotation(Element e) {
     for (MetadataAnnotation annotation in e.implementation.metadata) {
+      // TODO(johnniwinther): Avoid processing unresolved elements.
+      if (annotation.constant == null) continue;
       ConstantValue constant =
           backend.compiler.constants.getConstantValue(annotation.constant);
       if (constant == null || constant is! ConstructedConstantValue) continue;
@@ -112,7 +116,7 @@ class JsInteropAnalysis {
 
       // Skip classes that are completely unreachable. This should only happen
       // when all of jsinterop types are unreachable from main.
-      if (!backend.compiler.world.isImplemented(classElement)) return;
+      if (!backend.compiler.resolverWorld.isImplemented(classElement)) return;
 
       if (!classElement.implementsInterface(helpers.jsJavaScriptObjectClass)) {
         backend.reporter.reportErrorMessage(classElement,
@@ -181,5 +185,13 @@ class JsInteropAnalysis {
       });
     });
     return new jsAst.Block(statements);
+  }
+
+  FunctionType buildJsFunctionType() {
+    // TODO(jacobr): consider using codegenWorld.isChecks to determine the
+    // range of positional arguments that need to be supported by JavaScript
+    // function types.
+    return new FunctionType.synthesized(const DynamicType(), [],
+        new List<DartType>.filled(16, const DynamicType()));
   }
 }

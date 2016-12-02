@@ -143,8 +143,10 @@ class Collector {
     }
 
     JavaScriptConstantCompiler handler = backend.constants;
-    List<ConstantValue> constants = handler.getConstantsForEmission(compiler
-        .options.hasIncrementalSupport ? null : emitter.compareConstants);
+    List<ConstantValue> constants = handler.getConstantsForEmission(
+        compiler.options.hasIncrementalSupport
+            ? null
+            : emitter.compareConstants);
     for (ConstantValue constant in constants) {
       if (emitter.isConstantInlinedOrAlreadyEmitted(constant)) continue;
 
@@ -168,7 +170,7 @@ class Collector {
   void computeNeededDeclarations() {
     // Compute needed typedefs.
     typedefsNeededForReflection = Elements.sortedByPosition(compiler
-        .world.allTypedefs
+        .closedWorld.allTypedefs
         .where(backend.isAccessibleByReflection)
         .toList());
 
@@ -282,18 +284,21 @@ class Collector {
       list.add(element);
     }
 
-    Iterable<VariableElement> staticNonFinalFields = handler
-        .getStaticNonFinalFieldsForEmission()
-        .where(compiler.codegenWorld.allReferencedStaticFields.contains);
+    Iterable<Element> fields = compiler.codegenWorld.allReferencedStaticFields
+        .where((FieldElement field) {
+      if (!field.isConst) {
+        return field.isField &&
+            !field.isInstanceMember &&
+            !field.isFinal &&
+            field.constant != null;
+      } else {
+        // We also need to emit static const fields if they are available for
+        // reflection.
+        return backend.isAccessibleByReflection(field);
+      }
+    });
 
-    Elements.sortedByPosition(staticNonFinalFields).forEach(addToOutputUnit);
-
-    // We also need to emit static const fields if they are available for
-    // reflection.
-    compiler.codegenWorld.allReferencedStaticFields
-        .where((FieldElement field) => field.isConst)
-        .where(backend.isAccessibleByReflection)
-        .forEach(addToOutputUnit);
+    Elements.sortedByPosition(fields).forEach(addToOutputUnit);
   }
 
   void computeNeededLibraries() {

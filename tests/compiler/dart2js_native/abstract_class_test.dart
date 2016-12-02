@@ -2,26 +2,24 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
 // Native classes can have subclasses that are not declared to the program.  The
 // subclasses are indistinguishable from the base class.  This means that
 // abstract native classes can appear to have instances.
 
 @Native("A")
-abstract class A {
-}
+abstract class A {}
 
 @Native("B")
 abstract class B {
-  foo() native;
+  foo() native ;
 }
 
 class C {}
 
-makeA() native;
-makeB() native;
+makeA() native ;
+makeB() native ;
 
 void setup() native """
 // This code is all inside 'setup' and so not accesible from the global scope.
@@ -30,17 +28,17 @@ function B(){}
 B.prototype.foo = function() { return 'B.foo'; };
 makeA = function(){return new A};
 makeB = function(){return new B};
+self.nativeConstructor(A);
+self.nativeConstructor(B);
 """;
 
-var inscrutable;
 main() {
+  nativeTesting();
   setup();
-  inscrutable = (x) => x;
-  inscrutable = inscrutable(inscrutable);
 
   var a = makeA();
   var b = makeB();
-  var c = inscrutable(new C());
+  var c = confuse(new C());
 
   Expect.isTrue(a is A);
   Expect.isFalse(b is A);

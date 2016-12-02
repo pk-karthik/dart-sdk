@@ -2,10 +2,10 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef VM_ASSEMBLER_IA32_H_
-#define VM_ASSEMBLER_IA32_H_
+#ifndef RUNTIME_VM_ASSEMBLER_IA32_H_
+#define RUNTIME_VM_ASSEMBLER_IA32_H_
 
-#ifndef VM_ASSEMBLER_H_
+#ifndef RUNTIME_VM_ASSEMBLER_H_
 #error Do not include assembler_ia32.h directly; use assembler.h instead.
 #endif
 
@@ -21,9 +21,9 @@ class StubEntry;
 
 class Immediate : public ValueObject {
  public:
-  explicit Immediate(int32_t value) : value_(value) { }
+  explicit Immediate(int32_t value) : value_(value) {}
 
-  Immediate(const Immediate& other) : ValueObject(), value_(other.value_) { }
+  Immediate(const Immediate& other) : ValueObject(), value_(other.value_) {}
 
   int32_t value() const { return value_; }
 
@@ -42,13 +42,9 @@ class Immediate : public ValueObject {
 
 class Operand : public ValueObject {
  public:
-  uint8_t mod() const {
-    return (encoding_at(0) >> 6) & 3;
-  }
+  uint8_t mod() const { return (encoding_at(0) >> 6) & 3; }
 
-  Register rm() const {
-    return static_cast<Register>(encoding_at(0) & 7);
-  }
+  Register rm() const { return static_cast<Register>(encoding_at(0) & 7); }
 
   ScaleFactor scale() const {
     return static_cast<ScaleFactor>((encoding_at(1) >> 6) & 3);
@@ -58,9 +54,7 @@ class Operand : public ValueObject {
     return static_cast<Register>((encoding_at(1) >> 3) & 7);
   }
 
-  Register base() const {
-    return static_cast<Register>(encoding_at(1) & 7);
-  }
+  Register base() const { return static_cast<Register>(encoding_at(1) & 7); }
 
   int8_t disp8() const {
     ASSERT(length_ >= 2);
@@ -91,7 +85,7 @@ class Operand : public ValueObject {
   }
 
  protected:
-  Operand() : length_(0) { }  // Needed by subclass Address.
+  Operand() : length_(0) {}  // Needed by subclass Address.
 
   void SetModRM(int mod, Register rm) {
     ASSERT((mod & ~3) == 0);
@@ -135,7 +129,7 @@ class Operand : public ValueObject {
   // disguise. Used from the assembler to generate better encodings.
   bool IsRegister(Register reg) const {
     return ((encoding_[0] & 0xF8) == 0xC0)  // Addressing mode is register only.
-        && ((encoding_[0] & 0x07) == reg);  // Register codes match.
+           && ((encoding_[0] & 0x07) == reg);  // Register codes match.
   }
 
   friend class Assembler;
@@ -188,7 +182,7 @@ class Address : public Operand {
   // This addressing mode does not exist.
   Address(Register base, Register index, ScaleFactor scale, Register r);
 
-  Address(const Address& other) : Operand(other) { }
+  Address(const Address& other) : Operand(other) {}
 
   Address& operator=(const Address& other) {
     Operand::operator=(other);
@@ -203,25 +197,25 @@ class Address : public Operand {
   }
 
  private:
-  Address() { }  // Needed by Address::Absolute.
+  Address() {}  // Needed by Address::Absolute.
 };
 
 
 class FieldAddress : public Address {
  public:
   FieldAddress(Register base, int32_t disp)
-      : Address(base, disp - kHeapObjectTag) { }
+      : Address(base, disp - kHeapObjectTag) {}
 
   // This addressing mode does not exist.
   FieldAddress(Register base, Register r);
 
   FieldAddress(Register base, Register index, ScaleFactor scale, int32_t disp)
-      : Address(base, index, scale, disp - kHeapObjectTag) { }
+      : Address(base, index, scale, disp - kHeapObjectTag) {}
 
   // This addressing mode does not exist.
   FieldAddress(Register base, Register index, ScaleFactor scale, Register r);
 
-  FieldAddress(const FieldAddress& other) : Address(other) { }
+  FieldAddress(const FieldAddress& other) : Address(other) {}
 
   FieldAddress& operator=(const FieldAddress& other) {
     Address::operator=(other);
@@ -310,7 +304,7 @@ class Assembler : public ValueObject {
     // This mode is only needed and implemented for MIPS and ARM.
     ASSERT(!use_far_branches);
   }
-  ~Assembler() { }
+  ~Assembler() {}
 
   static const bool kNearJump = true;
   static const bool kFarJump = false;
@@ -498,9 +492,9 @@ class Assembler : public ValueObject {
 
   enum RoundingMode {
     kRoundToNearest = 0x0,
-    kRoundDown      = 0x1,
-    kRoundUp        = 0x2,
-    kRoundToZero    = 0x3
+    kRoundDown = 0x1,
+    kRoundUp = 0x2,
+    kRoundToZero = 0x3
   };
   void roundsd(XmmRegister dst, XmmRegister src, RoundingMode mode);
 
@@ -632,16 +626,12 @@ class Assembler : public ValueObject {
   void int3();
   void hlt();
 
-  static uword GetBreakInstructionFiller() {
-    return 0xCCCCCCCC;
-  }
+  static uword GetBreakInstructionFiller() { return 0xCCCCCCCC; }
 
-  // Note: verified_mem mode forces far jumps.
   void j(Condition condition, Label* label, bool near = kFarJump);
   void j(Condition condition, const ExternalLabel* label);
 
   void jmp(Register reg);
-  // Note: verified_mem mode forces far jumps.
   void jmp(Label* label, bool near = kFarJump);
   void jmp(const ExternalLabel* label);
 
@@ -677,37 +667,17 @@ class Assembler : public ValueObject {
   void CompareObject(Register reg, const Object& object);
   void LoadDoubleConstant(XmmRegister dst, double value);
 
-  // When storing into a heap object field, knowledge of the previous content
-  // is expressed through these constants.
-  enum FieldContent {
-    kEmptyOrSmiOrNull,  // Empty = garbage/zapped in release/debug mode.
-    kHeapObjectOrSmi,
-    kOnlySmi,
-  };
-
-  void StoreIntoObject(Register object,  // Object we are storing into.
+  void StoreIntoObject(Register object,      // Object we are storing into.
                        const Address& dest,  // Where we are storing into.
-                       Register value,  // Value we are storing.
+                       Register value,       // Value we are storing.
                        bool can_value_be_smi = true);
 
   void StoreIntoObjectNoBarrier(Register object,
                                 const Address& dest,
-                                Register value,
-                                FieldContent old_content = kHeapObjectOrSmi);
-  void InitializeFieldNoBarrier(Register object,
-                                const Address& dest,
-                                Register value) {
-    return StoreIntoObjectNoBarrier(object, dest, value, kEmptyOrSmiOrNull);
-  }
+                                Register value);
   void StoreIntoObjectNoBarrier(Register object,
                                 const Address& dest,
-                                const Object& value,
-                                FieldContent old_content = kHeapObjectOrSmi);
-  void InitializeFieldNoBarrier(Register object,
-                                const Address& dest,
-                                const Object& value) {
-    return StoreIntoObjectNoBarrier(object, dest, value, kEmptyOrSmiOrNull);
-  }
+                                const Object& value);
 
   // Stores a Smi value into a heap object field that always contains a Smi.
   void StoreIntoSmiField(const Address& dest, Register value);
@@ -762,20 +732,6 @@ class Assembler : public ValueObject {
                             Register scratch,
                             Label* is_smi);
 
-  void ComputeRange(Register result,
-                    Register value,
-                    Register lo_temp,
-                    Register hi_temp,
-                    Label* miss);
-
-  void UpdateRangeFeedback(Register value,
-                           intptr_t index,
-                           Register ic_data,
-                           Register scratch1,
-                           Register scratch2,
-                           Register scratch3,
-                           Label* miss);
-
   static Address ElementAddressForIntIndex(bool is_external,
                                            intptr_t cid,
                                            intptr_t index_scale,
@@ -795,32 +751,29 @@ class Assembler : public ValueObject {
   /*
    * Misc. functionality
    */
-  void SmiTag(Register reg) {
-    addl(reg, reg);
+  void SmiTag(Register reg) { addl(reg, reg); }
+
+  void SmiUntag(Register reg) { sarl(reg, Immediate(kSmiTagSize)); }
+
+  void BranchIfNotSmi(Register reg, Label* label) {
+    testl(reg, Immediate(kSmiTagMask));
+    j(NOT_ZERO, label);
   }
 
-  void SmiUntag(Register reg) {
-    sarl(reg, Immediate(kSmiTagSize));
-  }
-
-  intptr_t PreferredLoopAlignment() { return 16; }
   void Align(intptr_t alignment, intptr_t offset);
   void Bind(Label* label);
   void Jump(Label* label) { jmp(label); }
 
   // Address of code at offset.
-  uword CodeAddress(intptr_t offset) {
-    return buffer_.Address(offset);
-  }
+  uword CodeAddress(intptr_t offset) { return buffer_.Address(offset); }
 
   intptr_t CodeSize() const { return buffer_.Size(); }
   intptr_t prologue_offset() const { return prologue_offset_; }
+  bool has_single_entry_point() const { return true; }
 
   // Count the fixups that produce a pointer offset, without processing
   // the fixups.
-  intptr_t CountPointerOffsets() const {
-    return buffer_.CountPointerOffsets();
-  }
+  intptr_t CountPointerOffsets() const { return buffer_.CountPointerOffsets(); }
   const ZoneGrowableArray<intptr_t>& GetPointerOffsets() const {
     return buffer_.pointer_offsets();
   }
@@ -963,9 +916,7 @@ class Assembler : public ValueObject {
     return !object.IsSmi() || IsSafeSmi(object);
   }
 
-  void set_code_object(const Code& code) {
-    code_ ^= code.raw();
-  }
+  void set_code_object(const Code& code) { code_ ^= code.raw(); }
 
   void PushCodeObject();
 
@@ -973,7 +924,7 @@ class Assembler : public ValueObject {
   class CodeComment : public ZoneAllocated {
    public:
     CodeComment(intptr_t pc_offset, const String& comment)
-        : pc_offset_(pc_offset), comment_(comment) { }
+        : pc_offset_(pc_offset), comment_(comment) {}
 
     intptr_t pc_offset() const { return pc_offset_; }
     const String& comment() const { return comment_; }
@@ -1009,17 +960,6 @@ class Assembler : public ValueObject {
   void StoreIntoObjectFilterNoSmi(Register object,
                                   Register value,
                                   Label* no_update);
-#if defined(DEBUG)
-  void VerifyUninitialized(const Address& address);
-  void VerifyObjectOrSmi(const Address& address);
-  void VerifySmi(const Address& address, const char* stop_msg = "Expected Smi");
-#endif  // DEBUG
-  // Like VerifiedMemory::Verify(address, kWordSize) and ::Write, but also,
-  // in DEBUG mode, verifies that 'address' has content of type 'old_content'.
-  void VerifyHeapWord(const Address& address, FieldContent old_content);
-  void VerifiedWrite(const Address& dest,
-                     Register value,
-                     FieldContent old_content);
   void UnverifiedStoreOldObject(const Address& dest, const Object& value);
 
   int32_t jit_cookie();
@@ -1068,4 +1008,4 @@ inline void Assembler::EmitOperandSizeOverride() {
 
 }  // namespace dart
 
-#endif  // VM_ASSEMBLER_IA32_H_
+#endif  // RUNTIME_VM_ASSEMBLER_IA32_H_

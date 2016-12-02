@@ -20,59 +20,35 @@ const Map<String, List<String>> WHITE_LIST = const {
 
   // Node.asAssert, Node.asLiteralBool is never used.
   "lib/src/tree/nodes.dart": const [
-      "The method 'asAssert' is never called.",
-      "The method 'asLiteralBool' is never called."],
-
-  // Some things in dart_printer are not yet used
-  "lib/src/dart_backend/backend_ast_nodes.dart": const [" is never "],
+    "The method 'asAssert' is never called.",
+    "The method 'asLiteralBool' is never called."
+  ],
 
   // Uncalled methods in SemanticSendVisitor and subclasses.
-  "lib/src/resolution/semantic_visitor.dart": const [
-      "The method 'error"],
+  "lib/src/resolution/semantic_visitor.dart": const ["The method 'error"],
   "lib/src/resolution/semantic_visitor_mixins.dart": const [
-      "The class 'SuperBulkMixin'",
-      "The class 'Base",
-      "The method 'error",
-      "The method 'visit"],
+    "The class 'SuperBulkMixin'",
+    "The class 'Base",
+    "The method 'error",
+    "The method 'visit"
+  ],
 
   // Uncalled type predicate.  Keep while related predicates are used.
-  "lib/src/ssa/nodes.dart": const [
-      "The method 'isArray' is never called"],
+  "lib/src/ssa/nodes.dart": const ["The method 'isArray' is never called"],
 
   // Serialization code is only used in test.
-  "lib/src/serialization/": const [
-      "is never"],
+  "lib/src/serialization/": const ["is never"],
 
-  // Nested functions are currently kept alive in the IR.
-  "lib/src/tree_ir/": const [
-    "accept", "FunctionExpression", "CreateFunction"
-  ],
-
-  "lib/src/universe/universe.dart": const [
-      "The method 'getterInvocationsByName' is never called.",
-      "The method 'setterInvocationsByName' is never called."],
-
-  "lib/src/cps_ir/": const [
-    "accept", "CreateFunction",
-  ],
-
-  "lib/src/dart_backend/backend_ast_to_frontend_ast.dart": const [
-    " is never "
-  ],
-
-  // Useful utility functions that are not currently used.
-  "lib/src/cps_ir/cps_fragment.dart": const [
-    "The method 'beginLoop' is never called.",
-    "The method 'continueLoop' is never called.",
-    "The method 'invokeMethod' is never called.",
+  "lib/src/universe/world_builder.dart": const [
+    "The method 'getterInvocationsByName' is never called.",
+    "The method 'setterInvocationsByName' is never called."
   ],
 };
 
 void main() {
-  var uri = currentDirectory.resolve(
-      'pkg/compiler/lib/src/use_unused_api.dart');
-  asyncTest(() => analyze(
-      [uri],
+  var uri =
+      currentDirectory.resolve('pkg/compiler/lib/src/use_unused_api.dart');
+  asyncTest(() => analyze([uri],
       // TODO(johnniwinther): Use [WHITE_LIST] again when
       // [Compiler.reportUnusedCode] is reenabled.
       const {}, // WHITE_LIST
@@ -81,31 +57,29 @@ void main() {
 }
 
 bool checkResults(Compiler compiler, CollectingDiagnosticHandler handler) {
-  var helperUri = currentDirectory.resolve(
-      'pkg/compiler/lib/src/helpers/helpers.dart');
+  var helperUri =
+      currentDirectory.resolve('pkg/compiler/lib/src/helpers/helpers.dart');
   void checkLive(member) {
     if (member.isFunction) {
       if (compiler.enqueuer.resolution.hasBeenProcessed(member)) {
-        compiler.reporter.reportHintMessage(
-            member, MessageKind.GENERIC,
+        compiler.reporter.reportHintMessage(member, MessageKind.GENERIC,
             {'text': "Helper function in production code '$member'."});
       }
     } else if (member.isClass) {
       if (member.isResolved) {
-        compiler.reporter.reportHintMessage(
-            member, MessageKind.GENERIC,
+        compiler.reporter.reportHintMessage(member, MessageKind.GENERIC,
             {'text': "Helper class in production code '$member'."});
       } else {
         member.forEachLocalMember(checkLive);
       }
     } else if (member.isTypedef) {
       if (member.isResolved) {
-        compiler.reporter.reportHintMessage(
-            member, MessageKind.GENERIC,
+        compiler.reporter.reportHintMessage(member, MessageKind.GENERIC,
             {'text': "Helper typedef in production code '$member'."});
       }
     }
   }
+
   compiler.libraryLoader.lookupLibrary(helperUri).forEachLocalMember(checkLive);
   return handler.checkResults();
 }

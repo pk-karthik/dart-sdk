@@ -10,6 +10,7 @@
 #include "platform/assert.h"
 #include "vm/constants_dbc.h"
 #include "vm/cpu.h"
+#include "vm/instructions.h"
 
 namespace dart {
 
@@ -194,9 +195,9 @@ static void FormatA_B_C(char* buf,
 }
 
 
-#define BYTECODE_FORMATTER(name, encoding, op1, op2, op3)                     \
-  static void Format##name(char* buf, intptr_t size, uword pc, uint32_t op) { \
-    Format##encoding(buf, size, pc, op, Fmt##op1, Fmt##op2, Fmt##op3);        \
+#define BYTECODE_FORMATTER(name, encoding, op1, op2, op3)                      \
+  static void Format##name(char* buf, intptr_t size, uword pc, uint32_t op) {  \
+    Format##encoding(buf, size, pc, op, Fmt##op1, Fmt##op2, Fmt##op3);         \
   }
 BYTECODES_LIST(BYTECODE_FORMATTER)
 #undef BYTECODE_FORMATTER
@@ -214,6 +215,8 @@ void Disassembler::DecodeInstruction(char* hex_buffer,
                                      char* human_buffer,
                                      intptr_t human_size,
                                      int* out_instr_size,
+                                     const Code& code,
+                                     Object** object,
                                      uword pc) {
   const uint32_t instr = *reinterpret_cast<uint32_t*>(pc);
   const uint8_t opcode = instr & 0xFF;
@@ -228,6 +231,14 @@ void Disassembler::DecodeInstruction(char* hex_buffer,
   OS::SNPrint(hex_buffer, hex_size, "%08x", instr);
   if (out_instr_size) {
     *out_instr_size = sizeof(uint32_t);
+  }
+
+  *object = NULL;
+  if (!code.IsNull()) {
+    *object = &Object::Handle();
+    if (!DecodeLoadObjectFromPoolOrThread(pc, code, *object)) {
+      *object = NULL;
+    }
   }
 }
 

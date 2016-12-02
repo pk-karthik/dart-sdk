@@ -10,15 +10,17 @@ import "dart:math" as math;
 import 'package:analyzer/file_system/file_system.dart';
 import 'package:analyzer/src/context/source.dart';
 import 'package:analyzer/src/generated/engine.dart';
-import 'package:analyzer/src/generated/java_core.dart';
 import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/java_io.dart' show JavaFile;
 import 'package:analyzer/src/generated/sdk.dart' show DartSdk;
-import 'package:analyzer/src/generated/source_io.dart'
-    show FileBasedSource, FileUriResolver, PackageUriResolver;
-import 'package:analyzer/task/model.dart';
+import 'package:analyzer/src/generated/source_io.dart' show FileBasedSource;
+import 'package:front_end/src/base/source.dart';
+import 'package:front_end/src/base/uri_kind.dart';
 import 'package:package_config/packages.dart';
 import 'package:path/path.dart' as pathos;
+
+export 'package:front_end/src/base/source.dart' show Source;
+export 'package:front_end/src/base/uri_kind.dart' show UriKind;
 
 /**
  * A function that is used to visit [ContentCache] entries.
@@ -41,6 +43,8 @@ class ContentCache {
    * overridden.
    */
   HashMap<String, int> _stampMap = new HashMap<String, int>();
+
+  int _nextStamp = 0;
 
   /**
    * Visit all entries of this cache.
@@ -82,7 +86,7 @@ class ContentCache {
       _stampMap.remove(fullName);
       return _contentMap.remove(fullName);
     } else {
-      int newStamp = JavaSystem.currentTimeMillis();
+      int newStamp = _nextStamp++;
       int oldStamp = _stampMap[fullName];
       _stampMap[fullName] = newStamp;
       // Occasionally, if this method is called in rapid succession, the
@@ -98,6 +102,7 @@ class ContentCache {
   }
 }
 
+@deprecated
 class CustomUriResolver extends UriResolver {
   final Map<String, String> _urlMappings;
 
@@ -184,19 +189,19 @@ class LineInfo {
    * A list containing the offsets of the first character of each line in the
    * source code.
    */
-  final List<int> _lineStarts;
+  final List<int> lineStarts;
 
   /**
-   * The zero-based [_lineStarts] index resulting from the last call to
+   * The zero-based [lineStarts] index resulting from the last call to
    * [getLocation].
    */
   int _previousLine = 0;
 
   /**
    * Initialize a newly created set of line information to represent the data
-   * encoded in the given list of [_lineStarts].
+   * encoded in the given list of [lineStarts].
    */
-  factory LineInfo(List<int> _lineStarts) => new LineInfoWithCount(_lineStarts);
+  factory LineInfo(List<int> lineStarts) => new LineInfoWithCount(lineStarts);
 
   /**
    * Initialize a newly created set of line information corresponding to the
@@ -207,39 +212,39 @@ class LineInfo {
 
   /**
    * Initialize a newly created set of line information to represent the data
-   * encoded in the given list of [_lineStarts].
+   * encoded in the given list of [lineStarts].
    */
-  LineInfo._(this._lineStarts) {
-    if (_lineStarts == null) {
-      throw new IllegalArgumentException("lineStarts must be non-null");
-    } else if (_lineStarts.length < 1) {
-      throw new IllegalArgumentException("lineStarts must be non-empty");
+  LineInfo._(this.lineStarts) {
+    if (lineStarts == null) {
+      throw new ArgumentError("lineStarts must be non-null");
+    } else if (lineStarts.length < 1) {
+      throw new ArgumentError("lineStarts must be non-empty");
     }
   }
 
   /**
    * The number of lines.
    */
-  int get lineCount => _lineStarts.length;
+  int get lineCount => lineStarts.length;
 
   /**
    * Return the location information for the character at the given [offset].
    */
   LineInfo_Location getLocation(int offset) {
     var min = 0;
-    var max = _lineStarts.length - 1;
+    var max = lineStarts.length - 1;
 
     // Subsequent calls to [getLocation] are often for offsets near each other.
     // To take advantage of that, we cache the index of the line start we found
     // when this was last called. If the current offset is on that line or
     // later, we'll skip those early indices completely when searching.
-    if (offset >= _lineStarts[_previousLine]) {
+    if (offset >= lineStarts[_previousLine]) {
       min = _previousLine;
 
       // Before kicking off a full binary search, do a quick check here to see
       // if the new offset is on that exact line.
-      if (min == _lineStarts.length - 1 || offset < _lineStarts[min + 1]) {
-        return new LineInfo_Location(min + 1, offset - _lineStarts[min] + 1);
+      if (min == lineStarts.length - 1 || offset < lineStarts[min + 1]) {
+        return new LineInfo_Location(min + 1, offset - lineStarts[min] + 1);
       }
     }
 
@@ -247,7 +252,7 @@ class LineInfo {
     while (min < max) {
       var midpoint = (max - min + 1) ~/ 2 + min;
 
-      if (_lineStarts[midpoint] > offset) {
+      if (lineStarts[midpoint] > offset) {
         max = midpoint - 1;
       } else {
         min = midpoint;
@@ -256,7 +261,7 @@ class LineInfo {
 
     _previousLine = min;
 
-    return new LineInfo_Location(min + 1, offset - _lineStarts[min] + 1);
+    return new LineInfo_Location(min + 1, offset - lineStarts[min] + 1);
   }
 
   /**
@@ -265,9 +270,10 @@ class LineInfo {
    */
   int getOffsetOfLine(int lineNumber) {
     if (lineNumber < 0 || lineNumber >= lineCount) {
-      throw new ArgumentError('Invalid line number: $lineNumber');
+      throw new ArgumentError(
+          'Invalid line number: $lineNumber; must be between 0 and ${lineCount - 1}');
     }
-    return _lineStarts[lineNumber];
+    return lineStarts[lineNumber];
   }
 }
 
@@ -309,14 +315,9 @@ class LineInfo_Location {
 class LineInfoWithCount extends LineInfo {
   /**
    * Initialize a newly created set of line information to represent the data
-   * encoded in the given list of [_lineStarts].
+   * encoded in the given list of [lineStarts].
    */
-  LineInfoWithCount(List<int> _lineStarts) : super._(_lineStarts);
-
-  /**
-   * Return the number of lines in the file.
-   */
-  int get lineCount => _lineStarts.length;
+  LineInfoWithCount(List<int> lineStarts) : super._(lineStarts);
 }
 
 /**
@@ -382,7 +383,7 @@ class NonExistingSource extends Source {
 
   @override
   TimestampedData<String> get contents {
-    throw new UnsupportedOperationException('$fullName does not exist.');
+    throw new UnsupportedError('$fullName does not exist.');
   }
 
   @override
@@ -410,144 +411,6 @@ class NonExistingSource extends Source {
 
   @override
   bool exists() => false;
-}
-
-/**
- * The interface `Source` defines the behavior of objects representing source code that can be
- * analyzed by the analysis engine.
- *
- * Implementations of this interface need to be aware of some assumptions made by the analysis
- * engine concerning sources:
- * * Sources are not required to be unique. That is, there can be multiple instances representing
- * the same source.
- * * Sources are long lived. That is, the engine is allowed to hold on to a source for an extended
- * period of time and that source must continue to report accurate and up-to-date information.
- * Because of these assumptions, most implementations will not maintain any state but will delegate
- * to an authoritative system of record in order to implement this API. For example, a source that
- * represents files on disk would typically query the file system to determine the state of the
- * file.
- *
- * If the instances that implement this API are the system of record, then they will typically be
- * unique. In that case, sources that are created that represent non-existent files must also be
- * retained so that if those files are created at a later date the long-lived sources representing
- * those files will know that they now exist.
- */
-abstract class Source implements AnalysisTarget {
-  /**
-   * An empty list of sources.
-   */
-  static const List<Source> EMPTY_LIST = const <Source>[];
-
-  /**
-   * Get the contents and timestamp of this source.
-   *
-   * Clients should consider using the method [AnalysisContext.getContents]
-   * because contexts can have local overrides of the content of a source that the source is not
-   * aware of.
-   *
-   * @return the contents and timestamp of the source
-   * @throws Exception if the contents of this source could not be accessed
-   */
-  TimestampedData<String> get contents;
-
-  /**
-   * Return an encoded representation of this source that can be used to create a source that is
-   * equal to this source.
-   *
-   * @return an encoded representation of this source
-   * See [SourceFactory.fromEncoding].
-   */
-  String get encoding;
-
-  /**
-   * Return the full (long) version of the name that can be displayed to the user to denote this
-   * source. For example, for a source representing a file this would typically be the absolute path
-   * of the file.
-   *
-   * @return a name that can be displayed to the user to denote this source
-   */
-  String get fullName;
-
-  /**
-   * Return a hash code for this source.
-   *
-   * @return a hash code for this source
-   * See [Object.hashCode].
-   */
-  @override
-  int get hashCode;
-
-  /**
-   * Return `true` if this source is in one of the system libraries.
-   *
-   * @return `true` if this is in a system library
-   */
-  bool get isInSystemLibrary;
-
-  /**
-   * Return the modification stamp for this source, or a negative value if the
-   * source does not exist. A modification stamp is a non-negative integer with
-   * the property that if the contents of the source have not been modified
-   * since the last time the modification stamp was accessed then the same value
-   * will be returned, but if the contents of the source have been modified one
-   * or more times (even if the net change is zero) the stamps will be different.
-   *
-   * Clients should consider using the method
-   * [AnalysisContext.getModificationStamp] because contexts can have local
-   * overrides of the content of a source that the source is not aware of.
-   */
-  int get modificationStamp;
-
-  /**
-   * Return a short version of the name that can be displayed to the user to denote this source. For
-   * example, for a source representing a file this would typically be the name of the file.
-   *
-   * @return a name that can be displayed to the user to denote this source
-   */
-  String get shortName;
-
-  @override
-  Source get source => this;
-
-  /**
-   * Return the URI from which this source was originally derived.
-   *
-   * @return the URI from which this source was originally derived
-   */
-  Uri get uri;
-
-  /**
-   * Return the kind of URI from which this source was originally derived. If this source was
-   * created from an absolute URI, then the returned kind will reflect the scheme of the absolute
-   * URI. If it was created from a relative URI, then the returned kind will be the same as the kind
-   * of the source against which the relative URI was resolved.
-   *
-   * @return the kind of URI from which this source was originally derived
-   */
-  UriKind get uriKind;
-
-  /**
-   * Return `true` if the given object is a source that represents the same source code as
-   * this source.
-   *
-   * @param object the object to be compared with this object
-   * @return `true` if the given object is a source that represents the same source code as
-   *         this source
-   * See [Object.==].
-   */
-  @override
-  bool operator ==(Object object);
-
-  /**
-   * Return `true` if this source exists.
-   *
-   * Clients should consider using the method [AnalysisContext.exists] because
-   * contexts can have local overrides of the content of a source that the source is not aware of
-   * and a source with local content is considered to exist even if there is no file on disk.
-   *
-   * @return `true` if this source exists
-   */
-  bool exists();
 }
 
 /**
@@ -686,7 +549,7 @@ abstract class SourceFactory {
  * The enumeration `SourceKind` defines the different kinds of sources that are
  * known to the analysis engine.
  */
-class SourceKind extends Enum<SourceKind> {
+class SourceKind implements Comparable<SourceKind> {
   /**
    * A source containing HTML. The HTML might or might not contain Dart scripts.
    */
@@ -714,7 +577,26 @@ class SourceKind extends Enum<SourceKind> {
 
   static const List<SourceKind> values = const [HTML, LIBRARY, PART, UNKNOWN];
 
-  const SourceKind(String name, int ordinal) : super(name, ordinal);
+  /**
+   * The name of this source kind.
+   */
+  final String name;
+
+  /**
+   * The ordinal value of the source kind.
+   */
+  final int ordinal;
+
+  const SourceKind(this.name, this.ordinal);
+
+  @override
+  int get hashCode => ordinal;
+
+  @override
+  int compareTo(SourceKind other) => ordinal - other.ordinal;
+
+  @override
+  String toString() => name;
 }
 
 /**
@@ -840,76 +722,6 @@ class SourceRange {
 
   @override
   String toString() => '[offset=$offset, length=$length]';
-}
-
-/**
- * The enumeration `UriKind` defines the different kinds of URI's that are known to the
- * analysis engine. These are used to keep track of the kind of URI associated with a given source.
- */
-class UriKind extends Enum<UriKind> {
-  /**
-   * A 'dart:' URI.
-   */
-  static const UriKind DART_URI = const UriKind('DART_URI', 0, 0x64);
-
-  /**
-   * A 'file:' URI.
-   */
-  static const UriKind FILE_URI = const UriKind('FILE_URI', 1, 0x66);
-
-  /**
-   * A 'package:' URI.
-   */
-  static const UriKind PACKAGE_URI = const UriKind('PACKAGE_URI', 2, 0x70);
-
-  static const List<UriKind> values = const [DART_URI, FILE_URI, PACKAGE_URI];
-
-  /**
-   * The single character encoding used to identify this kind of URI.
-   */
-  final int encoding;
-
-  /**
-   * Initialize a newly created URI kind to have the given encoding.
-   *
-   * @param encoding the single character encoding used to identify this kind of URI.
-   */
-  const UriKind(String name, int ordinal, this.encoding) : super(name, ordinal);
-
-  /**
-   * Return the URI kind represented by the given encoding, or `null` if there is no kind with
-   * the given encoding.
-   *
-   * @param encoding the single character encoding used to identify the URI kind to be returned
-   * @return the URI kind represented by the given encoding
-   */
-  static UriKind fromEncoding(int encoding) {
-    while (true) {
-      if (encoding == 0x64) {
-        return DART_URI;
-      } else if (encoding == 0x66) {
-        return FILE_URI;
-      } else if (encoding == 0x70) {
-        return PACKAGE_URI;
-      }
-      break;
-    }
-    return null;
-  }
-
-  /**
-   * Return the URI kind corresponding to the given scheme string.
-   */
-  static UriKind fromScheme(String scheme) {
-    if (scheme == PackageUriResolver.PACKAGE_SCHEME) {
-      return UriKind.PACKAGE_URI;
-    } else if (scheme == DartUriResolver.DART_SCHEME) {
-      return UriKind.DART_URI;
-    } else if (scheme == FileUriResolver.FILE_SCHEME) {
-      return UriKind.FILE_URI;
-    }
-    return UriKind.FILE_URI;
-  }
 }
 
 /**

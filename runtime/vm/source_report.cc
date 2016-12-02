@@ -1,7 +1,7 @@
 // Copyright (c) 2015, the Dart project authors.  Please see the AUTHORS file
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
-
+#ifndef PRODUCT
 #include "vm/source_report.h"
 
 #include "vm/compiler.h"
@@ -26,7 +26,22 @@ SourceReport::SourceReport(intptr_t report_set, CompileMode compile_mode)
       start_pos_(TokenPosition::kNoSource),
       end_pos_(TokenPosition::kNoSource),
       profile_(Isolate::Current()),
-      next_script_index_(0) {
+      next_script_index_(0) {}
+
+
+SourceReport::~SourceReport() {
+  ClearScriptTable();
+}
+
+
+void SourceReport::ClearScriptTable() {
+  for (intptr_t i = 0; i < script_table_entries_.length(); i++) {
+    delete script_table_entries_[i];
+    script_table_entries_[i] = NULL;
+  }
+  script_table_entries_.Clear();
+  script_table_.Clear();
+  next_script_index_ = 0;
 }
 
 
@@ -38,14 +53,11 @@ void SourceReport::Init(Thread* thread,
   script_ = script;
   start_pos_ = start_pos;
   end_pos_ = end_pos;
-  script_table_entries_.Clear();
-  script_table_.Clear();
-  next_script_index_ = 0;
+  ClearScriptTable();
   if (IsReportRequested(kProfile)) {
     // Build the profile.
-    SampleFilter samplesForIsolate(thread_->isolate(),
-                                   Thread::kMutatorTask,
-                                   -1, -1);
+    SampleFilter samplesForIsolate(thread_->isolate(), Thread::kMutatorTask, -1,
+                                   -1);
     profile_.Build(thread, &samplesForIsolate, Profile::kNoTags);
   }
 }
@@ -81,8 +93,7 @@ bool SourceReport::ShouldSkipFunction(const Function& func) {
     default:
       return true;
   }
-  if (func.is_abstract() ||
-      func.IsImplicitConstructor() ||
+  if (func.is_abstract() || func.IsImplicitConstructor() ||
       func.IsRedirectingFactory()) {
     return true;
   }
@@ -99,19 +110,38 @@ bool SourceReport::ShouldSkipFunction(const Function& func) {
 
 intptr_t SourceReport::GetScriptIndex(const Script& script) {
   const String& url = String::Handle(zone(), script.url());
-  ScriptTableEntry* pair = script_table_.Lookup(&url);
+  ScriptTableEntry* pair = script_table_.LookupValue(&url);
   if (pair != NULL) {
     return pair->index;
   }
-
-  ScriptTableEntry tmp;
-  tmp.key = &url;
-  tmp.index = next_script_index_++;
-  tmp.script = &script;
+  ScriptTableEntry* tmp = new ScriptTableEntry();
+  tmp->key = &url;
+  tmp->index = next_script_index_++;
+  tmp->script = &Script::Handle(zone(), script.raw());
   script_table_entries_.Add(tmp);
-  script_table_.Insert(&(script_table_entries_.Last()));
-  return tmp.index;
+  script_table_.Insert(tmp);
+  ASSERT(script_table_entries_.length() == next_script_index_);
+#if defined(DEBUG)
+  VerifyScriptTable();
+#endif
+  return tmp->index;
 }
+
+
+#if defined(DEBUG)
+void SourceReport::VerifyScriptTable() {
+  for (intptr_t i = 0; i < script_table_entries_.length(); i++) {
+    const String* url = script_table_entries_[i]->key;
+    const Script* script = script_table_entries_[i]->script;
+    intptr_t index = script_table_entries_[i]->index;
+    ASSERT(i == index);
+    const String& url2 = String::Handle(zone(), script->url());
+    ASSERT(url2.Equals(*url));
+    ScriptTableEntry* pair = script_table_.LookupValue(&url2);
+    ASSERT(i == pair->index);
+  }
+}
+#endif
 
 
 bool SourceReport::ScriptIsLoadedByLibrary(const Script& script,
@@ -133,10 +163,10 @@ void SourceReport::PrintCallSitesData(JSONObject* jsobj,
   const TokenPosition end_pos = function.end_token_pos();
 
   ZoneGrowableArray<const ICData*>* ic_data_array =
-      new(zone()) ZoneGrowableArray<const ICData*>();
+      new (zone()) ZoneGrowableArray<const ICData*>();
   function.RestoreICDataMap(ic_data_array, false /* clone ic-data */);
-  const PcDescriptors& descriptors = PcDescriptors::Handle(
-      zone(), code.pc_descriptors());
+  const PcDescriptors& descriptors =
+      PcDescriptors::Handle(zone(), code.pc_descriptors());
 
   JSONArray sites(jsobj, "callSites");
 
@@ -145,7 +175,7 @@ void SourceReport::PrintCallSitesData(JSONObject* jsobj,
       RawPcDescriptors::kIcCall | RawPcDescriptors::kUnoptStaticCall);
   while (iter.MoveNext()) {
     HANDLESCOPE(thread());
-    // TODO(zra): Remove this bailout once DBC has reliable ICData.
+// TODO(zra): Remove this bailout once DBC has reliable ICData.
 #if defined(TARGET_ARCH_DBC)
     if (iter.DeoptId() >= ic_data_array->length()) {
       continue;
@@ -160,8 +190,7 @@ void SourceReport::PrintCallSitesData(JSONObject* jsobj,
         // Does not correspond to a valid source position.
         continue;
       }
-      bool is_static_call = iter.Kind() == RawPcDescriptors::kUnoptStaticCall;
-      ic_data->PrintToJSONArrayNew(sites, token_pos, is_static_call);
+      ic_data->PrintToJSONArray(sites, token_pos);
     }
   }
 }
@@ -174,10 +203,10 @@ void SourceReport::PrintCoverageData(JSONObject* jsobj,
   const TokenPosition end_pos = function.end_token_pos();
 
   ZoneGrowableArray<const ICData*>* ic_data_array =
-      new(zone()) ZoneGrowableArray<const ICData*>();
+      new (zone()) ZoneGrowableArray<const ICData*>();
   function.RestoreICDataMap(ic_data_array, false /* clone ic-data */);
-  const PcDescriptors& descriptors = PcDescriptors::Handle(
-      zone(), code.pc_descriptors());
+  const PcDescriptors& descriptors =
+      PcDescriptors::Handle(zone(), code.pc_descriptors());
 
   const int kCoverageNone = 0;
   const int kCoverageMiss = 1;
@@ -195,7 +224,7 @@ void SourceReport::PrintCoverageData(JSONObject* jsobj,
       RawPcDescriptors::kIcCall | RawPcDescriptors::kUnoptStaticCall);
   while (iter.MoveNext()) {
     HANDLESCOPE(thread());
-    // TODO(zra): Remove this bailout once DBC has reliable ICData.
+// TODO(zra): Remove this bailout once DBC has reliable ICData.
 #if defined(TARGET_ARCH_DBC)
     if (iter.DeoptId() >= ic_data_array->length()) {
       continue;
@@ -247,14 +276,14 @@ void SourceReport::PrintCoverageData(JSONObject* jsobj,
 void SourceReport::PrintPossibleBreakpointsData(JSONObject* jsobj,
                                                 const Function& func,
                                                 const Code& code) {
-  const uint8_t kSafepointKind = (RawPcDescriptors::kIcCall |
-                                  RawPcDescriptors::kUnoptStaticCall |
-                                  RawPcDescriptors::kRuntimeCall);
+  const uint8_t kSafepointKind =
+      (RawPcDescriptors::kIcCall | RawPcDescriptors::kUnoptStaticCall |
+       RawPcDescriptors::kRuntimeCall);
   const TokenPosition begin_pos = func.token_pos();
   const TokenPosition end_pos = func.end_token_pos();
 
-  const PcDescriptors& descriptors = PcDescriptors::Handle(
-      zone(), code.pc_descriptors());
+  const PcDescriptors& descriptors =
+      PcDescriptors::Handle(zone(), code.pc_descriptors());
 
   intptr_t func_length = (end_pos.Pos() - begin_pos.Pos()) + 1;
   GrowableArray<char> possible(func_length);
@@ -337,8 +366,8 @@ void SourceReport::PrintProfileData(JSONObject* jsobj,
 
 
 void SourceReport::PrintScriptTable(JSONArray* scripts) {
-  for (int i = 0; i < script_table_entries_.length(); i++) {
-    const Script* script = script_table_entries_[i].script;
+  for (intptr_t i = 0; i < script_table_entries_.length(); i++) {
+    const Script* script = script_table_entries_[i]->script;
     scripts->AddValue(*script);
   }
 }
@@ -384,8 +413,7 @@ void SourceReport::VisitFunction(JSONArray* jsarr, const Function& func) {
   // We skip compiled async functions.  Once an async function has
   // been compiled, there is another function with the same range which
   // actually contains the user code.
-  if (func.IsAsyncFunction() ||
-      func.IsAsyncGenerator() ||
+  if (func.IsAsyncFunction() || func.IsAsyncGenerator() ||
       func.IsSyncGenerator()) {
     return;
   }
@@ -505,3 +533,4 @@ void SourceReport::PrintJSON(JSONStream* js,
 }
 
 }  // namespace dart
+#endif  // PRODUCT

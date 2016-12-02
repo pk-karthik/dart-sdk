@@ -2,8 +2,8 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef VM_PROFILER_H_
-#define VM_PROFILER_H_
+#ifndef RUNTIME_VM_PROFILER_H_
+#define RUNTIME_VM_PROFILER_H_
 
 #include "vm/allocation.h"
 #include "vm/bitfield.h"
@@ -27,6 +27,23 @@ class Sample;
 class SampleBuffer;
 class ProfileTrieNode;
 
+struct ProfilerCounters {
+  // Count of bail out reasons:
+  int64_t bail_out_unknown_task;
+  int64_t bail_out_jump_to_exception_handler;
+  int64_t bail_out_check_isolate;
+  // Count of single frame sampling reasons:
+  int64_t single_frame_sample_deoptimizing;
+  int64_t single_frame_sample_register_check;
+  int64_t single_frame_sample_get_and_validate_stack_bounds;
+  // Count of stack walkers used:
+  int64_t stack_walker_native;
+  int64_t stack_walker_dart_exit;
+  int64_t stack_walker_dart;
+  int64_t stack_walker_none;
+};
+
+
 class Profiler : public AllStatic {
  public:
   static void InitOnce();
@@ -35,11 +52,10 @@ class Profiler : public AllStatic {
   static void SetSampleDepth(intptr_t depth);
   static void SetSamplePeriod(intptr_t period);
 
-  static SampleBuffer* sample_buffer() {
-    return sample_buffer_;
-  }
+  static SampleBuffer* sample_buffer() { return sample_buffer_; }
 
-  static void DumpStackTrace(bool native_stack_trace = true);
+  static void DumpStackTrace(void* context);
+  static void DumpStackTrace();
 
   static void SampleAllocation(Thread* thread, intptr_t cid);
 
@@ -51,15 +67,23 @@ class Profiler : public AllStatic {
   //   * Allocating memory -- Because this takes locks which may already be
   //                          held, resulting in a dead lock.
   //   * Taking a lock -- See above.
-  static void SampleThread(Thread* thread,
-                           const InterruptedThreadState& state);
+  static void SampleThread(Thread* thread, const InterruptedThreadState& state);
+
+  static ProfilerCounters counters() {
+    // Copies the counter values.
+    return counters_;
+  }
 
  private:
+  static void DumpStackTrace(uword sp, uword fp, uword pc);
+
   // Does not walk the thread's stack.
   static void SampleThreadSingleFrame(Thread* thread, uintptr_t pc);
   static bool initialized_;
 
   static SampleBuffer* sample_buffer_;
+
+  static ProfilerCounters counters_;
 
   friend class Thread;
 };
@@ -67,22 +91,16 @@ class Profiler : public AllStatic {
 
 class SampleVisitor : public ValueObject {
  public:
-  explicit SampleVisitor(Isolate* isolate) : isolate_(isolate), visited_(0) { }
+  explicit SampleVisitor(Isolate* isolate) : isolate_(isolate), visited_(0) {}
   virtual ~SampleVisitor() {}
 
   virtual void VisitSample(Sample* sample) = 0;
 
-  intptr_t visited() const {
-    return visited_;
-  }
+  intptr_t visited() const { return visited_; }
 
-  void IncrementVisited() {
-    visited_++;
-  }
+  void IncrementVisited() { visited_++; }
 
-  Isolate* isolate() const {
-    return isolate_;
-  }
+  Isolate* isolate() const { return isolate_; }
 
  private:
   Isolate* isolate_;
@@ -106,17 +124,13 @@ class SampleFilter : public ValueObject {
     ASSERT(time_origin_micros_ >= -1);
     ASSERT(time_extent_micros_ >= -1);
   }
-  virtual ~SampleFilter() { }
+  virtual ~SampleFilter() {}
 
   // Override this function.
   // Return |true| if |sample| passes the filter.
-  virtual bool FilterSample(Sample* sample) {
-    return true;
-  }
+  virtual bool FilterSample(Sample* sample) { return true; }
 
-  Isolate* isolate() const {
-    return isolate_;
-  }
+  Isolate* isolate() const { return isolate_; }
 
   // Returns |true| if |sample| passes the time filter.
   bool TimeFilterSample(Sample* sample);
@@ -151,14 +165,10 @@ class Sample {
   }
 
   // Isolate sample was taken from.
-  Isolate* isolate() const {
-    return isolate_;
-  }
+  Isolate* isolate() const { return isolate_; }
 
   // Thread sample was taken on.
-  ThreadId tid() const {
-    return tid_;
-  }
+  ThreadId tid() const { return tid_; }
 
   void Clear() {
     isolate_ = NULL;
@@ -180,14 +190,10 @@ class Sample {
   }
 
   // Timestamp sample was taken at.
-  int64_t timestamp() const {
-    return timestamp_;
-  }
+  int64_t timestamp() const { return timestamp_; }
 
   // Top most pc.
-  uword pc() const {
-    return At(0);
-  }
+  uword pc() const { return At(0); }
 
   // Get stack trace entry.
   uword At(intptr_t i) const {
@@ -205,56 +211,36 @@ class Sample {
     pcs[i] = pc;
   }
 
-  uword vm_tag() const {
-    return vm_tag_;
-  }
+  uword vm_tag() const { return vm_tag_; }
   void set_vm_tag(uword tag) {
     ASSERT(tag != VMTag::kInvalidTagId);
     vm_tag_ = tag;
   }
 
-  uword user_tag() const {
-    return user_tag_;
-  }
-  void set_user_tag(uword tag) {
-    user_tag_ = tag;
-  }
+  uword user_tag() const { return user_tag_; }
+  void set_user_tag(uword tag) { user_tag_ = tag; }
 
-  uword pc_marker() const {
-    return pc_marker_;
-  }
+  uword pc_marker() const { return pc_marker_; }
 
-  void set_pc_marker(uword pc_marker) {
-    pc_marker_ = pc_marker;
-  }
+  void set_pc_marker(uword pc_marker) { pc_marker_ = pc_marker; }
 
-  uword lr() const {
-    return lr_;
-  }
+  uword lr() const { return lr_; }
 
-  void set_lr(uword link_register) {
-    lr_ = link_register;
-  }
+  void set_lr(uword link_register) { lr_ = link_register; }
 
-  bool leaf_frame_is_dart() const {
-    return LeafFrameIsDart::decode(state_);
-  }
+  bool leaf_frame_is_dart() const { return LeafFrameIsDart::decode(state_); }
 
   void set_leaf_frame_is_dart(bool leaf_frame_is_dart) {
     state_ = LeafFrameIsDart::update(leaf_frame_is_dart, state_);
   }
 
-  bool ignore_sample() const {
-    return IgnoreBit::decode(state_);
-  }
+  bool ignore_sample() const { return IgnoreBit::decode(state_); }
 
   void set_ignore_sample(bool ignore_sample) {
     state_ = IgnoreBit::update(ignore_sample, state_);
   }
 
-  bool exit_frame_sample() const {
-    return ExitFrameBit::decode(state_);
-  }
+  bool exit_frame_sample() const { return ExitFrameBit::decode(state_); }
 
   void set_exit_frame_sample(bool exit_frame_sample) {
     state_ = ExitFrameBit::update(exit_frame_sample, state_);
@@ -268,9 +254,7 @@ class Sample {
     state_ = MissingFrameInsertedBit::update(missing_frame_inserted, state_);
   }
 
-  bool truncated_trace() const {
-    return TruncatedTraceBit::decode(state_);
-  }
+  bool truncated_trace() const { return TruncatedTraceBit::decode(state_); }
 
   void set_truncated_trace(bool truncated_trace) {
     state_ = TruncatedTraceBit::update(truncated_trace, state_);
@@ -284,9 +268,7 @@ class Sample {
     state_ = ClassAllocationSampleBit::update(allocation_sample, state_);
   }
 
-  Thread::TaskKind thread_task() const {
-    return ThreadTaskBit::decode(state_);
-  }
+  Thread::TaskKind thread_task() const { return ThreadTaskBit::decode(state_); }
 
   void set_thread_task(Thread::TaskKind task) {
     state_ = ThreadTaskBit::update(task, state_);
@@ -318,13 +300,9 @@ class Sample {
     state_ = HeadSampleBit::update(head_sample, state_);
   }
 
-  bool head_sample() const {
-    return HeadSampleBit::decode(state_);
-  }
+  bool head_sample() const { return HeadSampleBit::decode(state_); }
 
-  void set_metadata(intptr_t metadata) {
-    metadata_ = metadata;
-  }
+  void set_metadata(intptr_t metadata) { metadata_ = metadata; }
 
   void SetAllocationCid(intptr_t cid) {
     set_is_allocation_sample(true);
@@ -333,16 +311,12 @@ class Sample {
 
   static void InitOnce();
 
-  static intptr_t instance_size() {
-    return instance_size_;
-  }
+  static intptr_t instance_size() { return instance_size_; }
 
   uword* GetPCArray() const;
 
   static const int kStackBufferSizeInWords = 2;
-  uword* GetStackBuffer() {
-    return &stack_buffer_[0];
-  }
+  uword* GetStackBuffer() { return &stack_buffer_[0]; }
 
  private:
   static intptr_t instance_size_;
@@ -356,24 +330,24 @@ class Sample {
     kTruncatedTraceBit = 5,
     kClassAllocationSampleBit = 6,
     kContinuationSampleBit = 7,
-    kThreadTaskBit = 8,  // 4 bits.
-    kNextFreeBit = 12,
+    kThreadTaskBit = 8,  // 5 bits.
+    kNextFreeBit = 13,
   };
   class HeadSampleBit : public BitField<uword, bool, kHeadSampleBit, 1> {};
-  class LeafFrameIsDart :
-      public BitField<uword, bool, kLeafFrameIsDartBit, 1> {};
+  class LeafFrameIsDart : public BitField<uword, bool, kLeafFrameIsDartBit, 1> {
+  };
   class IgnoreBit : public BitField<uword, bool, kIgnoreBit, 1> {};
   class ExitFrameBit : public BitField<uword, bool, kExitFrameBit, 1> {};
   class MissingFrameInsertedBit
       : public BitField<uword, bool, kMissingFrameInsertedBit, 1> {};
-  class TruncatedTraceBit :
-      public BitField<uword, bool, kTruncatedTraceBit, 1> {};
+  class TruncatedTraceBit
+      : public BitField<uword, bool, kTruncatedTraceBit, 1> {};
   class ClassAllocationSampleBit
       : public BitField<uword, bool, kClassAllocationSampleBit, 1> {};
   class ContinuationSampleBit
       : public BitField<uword, bool, kContinuationSampleBit, 1> {};
   class ThreadTaskBit
-      : public BitField<uword, Thread::TaskKind, kThreadTaskBit, 4> {};
+      : public BitField<uword, Thread::TaskKind, kThreadTaskBit, 5> {};
 
   int64_t timestamp_;
   ThreadId tid_;
@@ -399,37 +373,31 @@ class CodeDescriptor : public ZoneAllocated {
  public:
   explicit CodeDescriptor(const Code& code);
 
-  uword Entry() const;
+  uword Start() const;
 
   uword Size() const;
 
   int64_t CompileTimestamp() const;
 
-  RawCode* code() const {
-    return code_.raw();
-  }
+  RawCode* code() const { return code_.raw(); }
 
-  const char* Name() const {
-    const String& name = String::Handle(code_.Name());
-    return name.ToCString();
-  }
+  const char* Name() const { return code_.Name(); }
 
   bool Contains(uword pc) const {
-    uword end = Entry() + Size();
-    return (pc >= Entry()) && (pc < end);
+    uword end = Start() + Size();
+    return (pc >= Start()) && (pc < end);
   }
 
-  static int Compare(CodeDescriptor* const* a,
-                     CodeDescriptor* const* b) {
+  static int Compare(CodeDescriptor* const* a, CodeDescriptor* const* b) {
     ASSERT(a != NULL);
     ASSERT(b != NULL);
 
-    uword a_entry = (*a)->Entry();
-    uword b_entry = (*b)->Entry();
+    uword a_start = (*a)->Start();
+    uword b_start = (*b)->Start();
 
-    if (a_entry < b_entry) {
+    if (a_start < b_start) {
       return -1;
-    } else if (a_entry > b_entry) {
+    } else if (a_start > b_start) {
       return 1;
     } else {
       return 0;
@@ -448,9 +416,7 @@ class CodeLookupTable : public ZoneAllocated {
  public:
   explicit CodeLookupTable(Thread* thread);
 
-  intptr_t length() const {
-    return code_objects_.length();
-  }
+  intptr_t length() const { return code_objects_.length(); }
 
   const CodeDescriptor* At(intptr_t index) const {
     return code_objects_.At(index);
@@ -548,14 +514,10 @@ class ProcessedSample : public ZoneAllocated {
   ProcessedSample();
 
   // Add |pc| to stack trace.
-  void Add(uword pc) {
-    pcs_.Add(pc);
-  }
+  void Add(uword pc) { pcs_.Add(pc); }
 
   // Insert |pc| at |index|.
-  void InsertAt(intptr_t index, uword pc) {
-    pcs_.InsertAt(index, pc);
-  }
+  void InsertAt(intptr_t index, uword pc) { pcs_.InsertAt(index, pc); }
 
   // Number of pcs in stack trace.
   intptr_t length() const { return pcs_.length(); }
@@ -586,9 +548,7 @@ class ProcessedSample : public ZoneAllocated {
   intptr_t allocation_cid() const { return allocation_cid_; }
   void set_allocation_cid(intptr_t cid) { allocation_cid_ = cid; }
 
-  bool IsAllocationSample() const {
-    return allocation_cid_ > 0;
-  }
+  bool IsAllocationSample() const { return allocation_cid_ > 0; }
 
   // Was the stack trace truncated?
   bool truncated() const { return truncated_; }
@@ -636,17 +596,11 @@ class ProcessedSampleBuffer : public ZoneAllocated {
  public:
   ProcessedSampleBuffer();
 
-  void Add(ProcessedSample* sample) {
-    samples_.Add(sample);
-  }
+  void Add(ProcessedSample* sample) { samples_.Add(sample); }
 
-  intptr_t length() const {
-    return samples_.length();
-  }
+  intptr_t length() const { return samples_.length(); }
 
-  ProcessedSample* At(intptr_t index) {
-    return samples_.At(index);
-  }
+  ProcessedSample* At(intptr_t index) { return samples_.At(index); }
 
   const CodeLookupTable& code_lookup_table() const {
     return *code_lookup_table_;
@@ -661,4 +615,4 @@ class ProcessedSampleBuffer : public ZoneAllocated {
 
 }  // namespace dart
 
-#endif  // VM_PROFILER_H_
+#endif  // RUNTIME_VM_PROFILER_H_

@@ -7,6 +7,7 @@ library summary_resynthesizer;
 import 'dart:collection';
 
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_ast_factory.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
@@ -14,12 +15,12 @@ import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/handle.dart';
 import 'package:analyzer/src/dart/element/member.dart';
 import 'package:analyzer/src/dart/element/type.dart';
-import 'package:analyzer/src/generated/constant.dart';
 import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/resolver.dart';
 import 'package:analyzer/src/generated/source_io.dart';
-import 'package:analyzer/src/generated/testing/ast_factory.dart';
+import 'package:analyzer/src/generated/testing/ast_test_factory.dart';
 import 'package:analyzer/src/generated/testing/token_factory.dart';
+import 'package:analyzer/src/summary/format.dart';
 import 'package:analyzer/src/summary/idl.dart';
 
 /**
@@ -152,6 +153,7 @@ abstract class SummaryResynthesizer extends ElementResynthesizer {
                 e is PropertyAccessorElementImpl ? e.identifier : e.name;
             elementsInUnit[id] = e;
           }
+
           unitElement.accessors.forEach(putElement);
           unitElement.enums.forEach(putElement);
           unitElement.functions.forEach(putElement);
@@ -205,15 +207,29 @@ abstract class SummaryResynthesizer extends ElementResynthesizer {
       return parent.getLibraryElement(uri);
     }
     return _resynthesizedLibraries.putIfAbsent(uri, () {
-      LinkedLibrary serializedLibrary = _getLinkedSummaryOrThrow(uri);
-      List<UnlinkedUnit> serializedUnits = <UnlinkedUnit>[
-        _getUnlinkedSummaryOrThrow(uri)
-      ];
+      LinkedLibrary serializedLibrary = _getLinkedSummaryOrNull(uri);
       Source librarySource = _getSource(uri);
+      if (serializedLibrary == null) {
+        LibraryElementImpl libraryElement =
+            new LibraryElementImpl(context, '', -1, 0);
+        libraryElement.isSynthetic = true;
+        CompilationUnitElementImpl unitElement =
+            new CompilationUnitElementImpl(librarySource.shortName);
+        libraryElement.definingCompilationUnit = unitElement;
+        unitElement.source = librarySource;
+        unitElement.librarySource = librarySource;
+        return libraryElement..isSynthetic = true;
+      }
+      UnlinkedUnit unlinkedSummary = _getUnlinkedSummaryOrNull(uri);
+      if (unlinkedSummary == null) {
+        throw new StateError('Unable to find unlinked summary: $uri');
+      }
+      List<UnlinkedUnit> serializedUnits = <UnlinkedUnit>[unlinkedSummary];
       for (String part in serializedUnits[0].publicNamespace.parts) {
         Source partSource = sourceFactory.resolveUri(librarySource, part);
         String partAbsUri = partSource.uri.toString();
-        serializedUnits.add(_getUnlinkedSummaryOrThrow(partAbsUri));
+        serializedUnits.add(_getUnlinkedSummaryOrNull(partAbsUri) ??
+            new UnlinkedUnitBuilder(codeRange: new CodeRangeBuilder()));
       }
       _LibraryResynthesizer libraryResynthesizer = new _LibraryResynthesizer(
           this, serializedLibrary, serializedUnits, librarySource);
@@ -245,18 +261,14 @@ abstract class SummaryResynthesizer extends ElementResynthesizer {
   bool hasLibrarySummary(String uri);
 
   /**
-   * Return the [LinkedLibrary] for the given [uri] or throw [StateError] if it
+   * Return the [LinkedLibrary] for the given [uri] or return `null` if it
    * could not be found.
    */
-  LinkedLibrary _getLinkedSummaryOrThrow(String uri) {
+  LinkedLibrary _getLinkedSummaryOrNull(String uri) {
     if (parent != null && parent._hasLibrarySummary(uri)) {
-      return parent._getLinkedSummaryOrThrow(uri);
+      return parent._getLinkedSummaryOrNull(uri);
     }
-    LinkedLibrary summary = getLinkedSummary(uri);
-    if (summary != null) {
-      return summary;
-    }
-    throw new StateError('Unable to find linked summary: $uri');
+    return getLinkedSummary(uri);
   }
 
   /**
@@ -267,18 +279,14 @@ abstract class SummaryResynthesizer extends ElementResynthesizer {
   }
 
   /**
-   * Return the [UnlinkedUnit] for the given [uri] or throw [StateError] if it
+   * Return the [UnlinkedUnit] for the given [uri] or return `null` if it
    * could not be found.
    */
-  UnlinkedUnit _getUnlinkedSummaryOrThrow(String uri) {
+  UnlinkedUnit _getUnlinkedSummaryOrNull(String uri) {
     if (parent != null && parent._hasLibrarySummary(uri)) {
-      return parent._getUnlinkedSummaryOrThrow(uri);
+      return parent._getUnlinkedSummaryOrNull(uri);
     }
-    UnlinkedUnit summary = getUnlinkedSummary(uri);
-    if (summary != null) {
-      return summary;
-    }
-    throw new StateError('Unable to find unlinked summary: $uri');
+    return getUnlinkedSummary(uri);
   }
 
   /**
@@ -294,12 +302,12 @@ abstract class SummaryResynthesizer extends ElementResynthesizer {
 }
 
 /**
- * Builder of [Expression]s from [UnlinkedConst]s.
+ * Builder of [Expression]s from [UnlinkedExpr]s.
  */
 class _ConstExprBuilder {
   final _UnitResynthesizer resynthesizer;
   final ElementImpl context;
-  final UnlinkedConst uc;
+  final UnlinkedExpr uc;
 
   int intPtr = 0;
   int doublePtr = 0;
@@ -309,50 +317,63 @@ class _ConstExprBuilder {
 
   _ConstExprBuilder(this.resynthesizer, this.context, this.uc);
 
+  /**
+   * Return the [ConstructorElement] enclosing [context].
+   */
+  ConstructorElement get _enclosingConstructor {
+    for (Element e = context; e != null; e = e.enclosingElement) {
+      if (e is ConstructorElement) {
+        return e;
+      }
+    }
+    throw new StateError(
+        'Unable to find the enclosing constructor of $context');
+  }
+
   Expression build() {
     if (!uc.isValidConst) {
-      return AstFactory.identifier3(r'$$invalidConstExpr$$');
+      return AstTestFactory.identifier3(r'$$invalidConstExpr$$');
     }
-    for (UnlinkedConstOperation operation in uc.operations) {
+    for (UnlinkedExprOperation operation in uc.operations) {
       switch (operation) {
-        case UnlinkedConstOperation.pushNull:
-          _push(AstFactory.nullLiteral());
+        case UnlinkedExprOperation.pushNull:
+          _push(AstTestFactory.nullLiteral());
           break;
         // bool
-        case UnlinkedConstOperation.pushFalse:
-          _push(AstFactory.booleanLiteral(false));
+        case UnlinkedExprOperation.pushFalse:
+          _push(AstTestFactory.booleanLiteral(false));
           break;
-        case UnlinkedConstOperation.pushTrue:
-          _push(AstFactory.booleanLiteral(true));
+        case UnlinkedExprOperation.pushTrue:
+          _push(AstTestFactory.booleanLiteral(true));
           break;
         // literals
-        case UnlinkedConstOperation.pushInt:
+        case UnlinkedExprOperation.pushInt:
           int value = uc.ints[intPtr++];
-          _push(AstFactory.integer(value));
+          _push(AstTestFactory.integer(value));
           break;
-        case UnlinkedConstOperation.pushLongInt:
+        case UnlinkedExprOperation.pushLongInt:
           int value = 0;
           int count = uc.ints[intPtr++];
           for (int i = 0; i < count; i++) {
             int next = uc.ints[intPtr++];
             value = value << 32 | next;
           }
-          _push(AstFactory.integer(value));
+          _push(AstTestFactory.integer(value));
           break;
-        case UnlinkedConstOperation.pushDouble:
+        case UnlinkedExprOperation.pushDouble:
           double value = uc.doubles[doublePtr++];
-          _push(AstFactory.doubleLiteral(value));
+          _push(AstTestFactory.doubleLiteral(value));
           break;
-        case UnlinkedConstOperation.makeSymbol:
+        case UnlinkedExprOperation.makeSymbol:
           String component = uc.strings[stringPtr++];
-          _push(AstFactory.symbolLiteral([component]));
+          _push(AstTestFactory.symbolLiteral([component]));
           break;
         // String
-        case UnlinkedConstOperation.pushString:
+        case UnlinkedExprOperation.pushString:
           String value = uc.strings[stringPtr++];
-          _push(AstFactory.string2(value));
+          _push(AstTestFactory.string2(value));
           break;
-        case UnlinkedConstOperation.concatenate:
+        case UnlinkedExprOperation.concatenate:
           int count = uc.ints[intPtr++];
           List<InterpolationElement> elements = <InterpolationElement>[];
           for (int i = 0; i < count; i++) {
@@ -360,133 +381,141 @@ class _ConstExprBuilder {
             InterpolationElement element = _newInterpolationElement(expr);
             elements.insert(0, element);
           }
-          _push(AstFactory.string(elements));
+          _push(AstTestFactory.string(elements));
           break;
         // binary
-        case UnlinkedConstOperation.equal:
+        case UnlinkedExprOperation.equal:
           _pushBinary(TokenType.EQ_EQ);
           break;
-        case UnlinkedConstOperation.notEqual:
+        case UnlinkedExprOperation.notEqual:
           _pushBinary(TokenType.BANG_EQ);
           break;
-        case UnlinkedConstOperation.and:
+        case UnlinkedExprOperation.and:
           _pushBinary(TokenType.AMPERSAND_AMPERSAND);
           break;
-        case UnlinkedConstOperation.or:
+        case UnlinkedExprOperation.or:
           _pushBinary(TokenType.BAR_BAR);
           break;
-        case UnlinkedConstOperation.bitXor:
+        case UnlinkedExprOperation.bitXor:
           _pushBinary(TokenType.CARET);
           break;
-        case UnlinkedConstOperation.bitAnd:
+        case UnlinkedExprOperation.bitAnd:
           _pushBinary(TokenType.AMPERSAND);
           break;
-        case UnlinkedConstOperation.bitOr:
+        case UnlinkedExprOperation.bitOr:
           _pushBinary(TokenType.BAR);
           break;
-        case UnlinkedConstOperation.bitShiftLeft:
+        case UnlinkedExprOperation.bitShiftLeft:
           _pushBinary(TokenType.LT_LT);
           break;
-        case UnlinkedConstOperation.bitShiftRight:
+        case UnlinkedExprOperation.bitShiftRight:
           _pushBinary(TokenType.GT_GT);
           break;
-        case UnlinkedConstOperation.add:
+        case UnlinkedExprOperation.add:
           _pushBinary(TokenType.PLUS);
           break;
-        case UnlinkedConstOperation.subtract:
+        case UnlinkedExprOperation.subtract:
           _pushBinary(TokenType.MINUS);
           break;
-        case UnlinkedConstOperation.multiply:
+        case UnlinkedExprOperation.multiply:
           _pushBinary(TokenType.STAR);
           break;
-        case UnlinkedConstOperation.divide:
+        case UnlinkedExprOperation.divide:
           _pushBinary(TokenType.SLASH);
           break;
-        case UnlinkedConstOperation.floorDivide:
+        case UnlinkedExprOperation.floorDivide:
           _pushBinary(TokenType.TILDE_SLASH);
           break;
-        case UnlinkedConstOperation.modulo:
+        case UnlinkedExprOperation.modulo:
           _pushBinary(TokenType.PERCENT);
           break;
-        case UnlinkedConstOperation.greater:
+        case UnlinkedExprOperation.greater:
           _pushBinary(TokenType.GT);
           break;
-        case UnlinkedConstOperation.greaterEqual:
+        case UnlinkedExprOperation.greaterEqual:
           _pushBinary(TokenType.GT_EQ);
           break;
-        case UnlinkedConstOperation.less:
+        case UnlinkedExprOperation.less:
           _pushBinary(TokenType.LT);
           break;
-        case UnlinkedConstOperation.lessEqual:
+        case UnlinkedExprOperation.lessEqual:
           _pushBinary(TokenType.LT_EQ);
           break;
         // prefix
-        case UnlinkedConstOperation.complement:
+        case UnlinkedExprOperation.complement:
           _pushPrefix(TokenType.TILDE);
           break;
-        case UnlinkedConstOperation.negate:
+        case UnlinkedExprOperation.negate:
           _pushPrefix(TokenType.MINUS);
           break;
-        case UnlinkedConstOperation.not:
+        case UnlinkedExprOperation.not:
           _pushPrefix(TokenType.BANG);
           break;
         // conditional
-        case UnlinkedConstOperation.conditional:
+        case UnlinkedExprOperation.conditional:
           Expression elseExpr = _pop();
           Expression thenExpr = _pop();
           Expression condition = _pop();
-          _push(
-              AstFactory.conditionalExpression(condition, thenExpr, elseExpr));
+          _push(AstTestFactory.conditionalExpression(
+              condition, thenExpr, elseExpr));
           break;
         // invokeMethodRef
-        case UnlinkedConstOperation.invokeMethodRef:
+        case UnlinkedExprOperation.invokeMethodRef:
           _pushInvokeMethodRef();
           break;
         // containers
-        case UnlinkedConstOperation.makeUntypedList:
+        case UnlinkedExprOperation.makeUntypedList:
           _pushList(null);
           break;
-        case UnlinkedConstOperation.makeTypedList:
+        case UnlinkedExprOperation.makeTypedList:
           TypeName itemType = _newTypeName();
-          _pushList(AstFactory.typeArgumentList(<TypeName>[itemType]));
+          _pushList(AstTestFactory.typeArgumentList(<TypeName>[itemType]));
           break;
-        case UnlinkedConstOperation.makeUntypedMap:
+        case UnlinkedExprOperation.makeUntypedMap:
           _pushMap(null);
           break;
-        case UnlinkedConstOperation.makeTypedMap:
+        case UnlinkedExprOperation.makeTypedMap:
           TypeName keyType = _newTypeName();
           TypeName valueType = _newTypeName();
-          _pushMap(AstFactory.typeArgumentList(<TypeName>[keyType, valueType]));
+          _pushMap(
+              AstTestFactory.typeArgumentList(<TypeName>[keyType, valueType]));
           break;
-        case UnlinkedConstOperation.pushReference:
+        case UnlinkedExprOperation.pushReference:
           _pushReference();
           break;
-        case UnlinkedConstOperation.extractProperty:
+        case UnlinkedExprOperation.extractProperty:
           _pushExtractProperty();
           break;
-        case UnlinkedConstOperation.invokeConstructor:
+        case UnlinkedExprOperation.invokeConstructor:
           _pushInstanceCreation();
           break;
-        case UnlinkedConstOperation.pushParameter:
+        case UnlinkedExprOperation.pushParameter:
           String name = uc.strings[stringPtr++];
-          SimpleIdentifier identifier = AstFactory.identifier3(name);
-          identifier.staticElement = resynthesizer.currentConstructor.parameters
+          SimpleIdentifier identifier = AstTestFactory.identifier3(name);
+          identifier.staticElement = _enclosingConstructor.parameters
               .firstWhere((parameter) => parameter.name == name,
                   orElse: () => throw new StateError(
                       'Unable to resolve constructor parameter: $name'));
           _push(identifier);
           break;
-        case UnlinkedConstOperation.assignToRef:
-        case UnlinkedConstOperation.assignToProperty:
-        case UnlinkedConstOperation.assignToIndex:
-        case UnlinkedConstOperation.extractIndex:
-        case UnlinkedConstOperation.invokeMethod:
-        case UnlinkedConstOperation.cascadeSectionBegin:
-        case UnlinkedConstOperation.cascadeSectionEnd:
-        case UnlinkedConstOperation.typeCast:
-        case UnlinkedConstOperation.typeCheck:
-        case UnlinkedConstOperation.throwException:
-        case UnlinkedConstOperation.pushLocalFunctionReference:
+        case UnlinkedExprOperation.ifNull:
+          _pushBinary(TokenType.QUESTION_QUESTION);
+          break;
+        case UnlinkedExprOperation.await:
+          Expression expression = _pop();
+          _push(AstTestFactory.awaitExpression(expression));
+          break;
+        case UnlinkedExprOperation.assignToRef:
+        case UnlinkedExprOperation.assignToProperty:
+        case UnlinkedExprOperation.assignToIndex:
+        case UnlinkedExprOperation.extractIndex:
+        case UnlinkedExprOperation.invokeMethod:
+        case UnlinkedExprOperation.cascadeSectionBegin:
+        case UnlinkedExprOperation.cascadeSectionEnd:
+        case UnlinkedExprOperation.typeCast:
+        case UnlinkedExprOperation.typeCheck:
+        case UnlinkedExprOperation.throwException:
+        case UnlinkedExprOperation.pushLocalFunctionReference:
           throw new UnimplementedError(
               'Unexpected $operation in a constant expression.');
       }
@@ -505,7 +534,8 @@ class _ConstExprBuilder {
       for (int i = 0; i < numNamedArgs; i++) {
         String name = uc.strings[stringPtr++];
         int index = numPositionalArgs + i;
-        arguments[index] = AstFactory.namedExpression2(name, arguments[index]);
+        arguments[index] =
+            AstTestFactory.namedExpression2(name, arguments[index]);
       }
     }
     return arguments;
@@ -525,16 +555,16 @@ class _ConstExprBuilder {
       element = _getStringLengthElement();
     }
     if (enclosing == null) {
-      return AstFactory.identifier3(info.name)..staticElement = element;
+      return AstTestFactory.identifier3(info.name)..staticElement = element;
     }
     if (enclosing is SimpleIdentifier) {
-      SimpleIdentifier identifier = AstFactory.identifier3(info.name)
+      SimpleIdentifier identifier = AstTestFactory.identifier3(info.name)
         ..staticElement = element;
-      return AstFactory.identifier(enclosing, identifier);
+      return AstTestFactory.identifier(enclosing, identifier);
     }
-    SimpleIdentifier property = AstFactory.identifier3(info.name)
+    SimpleIdentifier property = AstTestFactory.identifier3(info.name)
       ..staticElement = element;
-    return AstFactory.propertyAccess(enclosing, property);
+    return AstTestFactory.propertyAccess(enclosing, property);
   }
 
   TypeName _buildTypeAst(DartType type) {
@@ -548,7 +578,7 @@ class _ConstExprBuilder {
             : typeArguments.map(_buildTypeAst).toList();
       }
     }
-    TypeName node = AstFactory.typeName4(type.name, argumentNodes);
+    TypeName node = AstTestFactory.typeName4(type.name, argumentNodes);
     node.type = type;
     (node.name as SimpleIdentifier).staticElement = type.element;
     return node;
@@ -559,9 +589,9 @@ class _ConstExprBuilder {
 
   InterpolationElement _newInterpolationElement(Expression expr) {
     if (expr is SimpleStringLiteral) {
-      return new InterpolationString(expr.literal, expr.value);
+      return astFactory.interpolationString(expr.literal, expr.value);
     } else {
-      return new InterpolationExpression(
+      return astFactory.interpolationExpression(
           TokenFactory.tokenFromType(TokenType.STRING_INTERPOLATION_EXPRESSION),
           expr,
           TokenFactory.tokenFromType(TokenType.CLOSE_CURLY_BRACKET));
@@ -588,18 +618,18 @@ class _ConstExprBuilder {
   void _pushBinary(TokenType operator) {
     Expression right = _pop();
     Expression left = _pop();
-    _push(AstFactory.binaryExpression(left, operator, right));
+    _push(AstTestFactory.binaryExpression(left, operator, right));
   }
 
   void _pushExtractProperty() {
     Expression target = _pop();
     String name = uc.strings[stringPtr++];
-    SimpleIdentifier propertyNode = AstFactory.identifier3(name);
+    SimpleIdentifier propertyNode = AstTestFactory.identifier3(name);
     // Only String.length property access can be potentially resolved.
     if (name == 'length') {
       propertyNode.staticElement = _getStringLengthElement();
     }
-    _push(AstFactory.propertyAccess(target, propertyNode));
+    _push(AstTestFactory.propertyAccess(target, propertyNode));
   }
 
   void _pushInstanceCreation() {
@@ -621,34 +651,34 @@ class _ConstExprBuilder {
       InterfaceType definingType = resynthesizer._createConstructorDefiningType(
           context?.typeParameterContext, info, ref.typeArguments);
       constructorElement =
-          resynthesizer._createConstructorElement(definingType, info);
+          resynthesizer._getConstructorForInfo(definingType, info);
       typeNode = _buildTypeAst(definingType);
     } else {
       if (info.enclosing != null) {
         if (info.enclosing.enclosing != null) {
-          PrefixedIdentifier typeName = AstFactory.identifier5(
+          PrefixedIdentifier typeName = AstTestFactory.identifier5(
               info.enclosing.enclosing.name, info.enclosing.name);
           typeName.prefix.staticElement = info.enclosing.enclosing.element;
           typeName.identifier.staticElement = info.enclosing.element;
           typeName.identifier.staticType = info.enclosing.type;
-          typeNode = AstFactory.typeName3(typeName);
+          typeNode = AstTestFactory.typeName3(typeName);
           typeNode.type = info.enclosing.type;
           constructorName = info.name;
         } else if (info.enclosing.element != null) {
           SimpleIdentifier typeName =
-              AstFactory.identifier3(info.enclosing.name);
+              AstTestFactory.identifier3(info.enclosing.name);
           typeName.staticElement = info.enclosing.element;
           typeName.staticType = info.enclosing.type;
-          typeNode = AstFactory.typeName3(typeName);
+          typeNode = AstTestFactory.typeName3(typeName);
           typeNode.type = info.enclosing.type;
           constructorName = info.name;
         } else {
-          typeNode = AstFactory.typeName3(
-              AstFactory.identifier5(info.enclosing.name, info.name));
+          typeNode = AstTestFactory.typeName3(
+              AstTestFactory.identifier5(info.enclosing.name, info.name));
           constructorName = null;
         }
       } else {
-        typeNode = AstFactory.typeName4(info.name);
+        typeNode = AstTestFactory.typeName4(info.name);
       }
     }
     // prepare arguments
@@ -656,14 +686,15 @@ class _ConstExprBuilder {
     // create ConstructorName
     ConstructorName constructorNode;
     if (constructorName != null) {
-      constructorNode = AstFactory.constructorName(typeNode, constructorName);
+      constructorNode =
+          AstTestFactory.constructorName(typeNode, constructorName);
       constructorNode.name.staticElement = constructorElement;
     } else {
-      constructorNode = AstFactory.constructorName(typeNode, null);
+      constructorNode = AstTestFactory.constructorName(typeNode, null);
     }
     constructorNode.staticElement = constructorElement;
     // create InstanceCreationExpression
-    InstanceCreationExpression instanceCreation = AstFactory
+    InstanceCreationExpression instanceCreation = AstTestFactory
         .instanceCreationExpression(Keyword.CONST, constructorNode, arguments);
     instanceCreation.staticElement = constructorElement;
     _push(instanceCreation);
@@ -681,15 +712,15 @@ class _ConstExprBuilder {
       for (int i = 0; i < numTypeArguments; i++) {
         typeNames[i] = _newTypeName();
       }
-      typeArguments = AstFactory.typeArgumentList(typeNames);
+      typeArguments = AstTestFactory.typeArgumentList(typeNames);
     }
     if (node is SimpleIdentifier) {
-      _push(new MethodInvocation(
+      _push(astFactory.methodInvocation(
           null,
           TokenFactory.tokenFromType(TokenType.PERIOD),
           node,
           typeArguments,
-          AstFactory.argumentList(arguments)));
+          AstTestFactory.argumentList(arguments)));
     } else {
       throw new UnimplementedError('For ${node?.runtimeType}: $node');
     }
@@ -701,7 +732,7 @@ class _ConstExprBuilder {
     for (int i = 0; i < count; i++) {
       elements.insert(0, _pop());
     }
-    _push(AstFactory.listLiteral2(Keyword.CONST, typeArguments, elements));
+    _push(AstTestFactory.listLiteral2(Keyword.CONST, typeArguments, elements));
   }
 
   void _pushMap(TypeArgumentList typeArguments) {
@@ -710,14 +741,14 @@ class _ConstExprBuilder {
     for (int i = 0; i < count; i++) {
       Expression value = _pop();
       Expression key = _pop();
-      entries.insert(0, AstFactory.mapLiteralEntry2(key, value));
+      entries.insert(0, AstTestFactory.mapLiteralEntry2(key, value));
     }
-    _push(AstFactory.mapLiteral(Keyword.CONST, typeArguments, entries));
+    _push(AstTestFactory.mapLiteral(Keyword.CONST, typeArguments, entries));
   }
 
   void _pushPrefix(TokenType operator) {
     Expression operand = _pop();
-    _push(AstFactory.prefixExpression(operator, operand));
+    _push(AstTestFactory.prefixExpression(operator, operand));
   }
 
   void _pushReference() {
@@ -733,165 +764,6 @@ class _ConstExprBuilder {
     List<Expression> items = stack.getRange(start, end).toList();
     stack.removeRange(start, end);
     return items;
-  }
-}
-
-/**
- * A class element that has been resynthesized from a summary.  The actual
- * element won't be constructed until it is requested.  But properties
- * [context],  [displayName], [enclosingElement] and [name] can be used without
- * creating the actual element.  This allows to put these elements into
- * namespaces without creating actual elements until they are really needed.
- */
-class _DeferredClassElement extends ClassElementHandle {
-  final _UnitResynthesizer unitResynthesizer;
-  final CompilationUnitElement unitElement;
-  final UnlinkedClass serializedClass;
-
-  ClassElementImpl _actualElement;
-
-  /**
-   * We don't resynthesize executables of classes until they are requested.
-   * TODO(scheglov) Check whether we need separate flags for separate kinds.
-   */
-  bool _executablesResynthesized = false;
-
-  @override
-  final String name;
-
-  factory _DeferredClassElement(_UnitResynthesizer unitResynthesizer,
-      CompilationUnitElement unitElement, UnlinkedClass serializedClass) {
-    String name = serializedClass.name;
-    List<String> components =
-        unitResynthesizer.unit.location.components.toList();
-    components.add(name);
-    ElementLocationImpl location = new ElementLocationImpl.con3(components);
-    return new _DeferredClassElement._(
-        unitResynthesizer, unitElement, serializedClass, name, location);
-  }
-
-  _DeferredClassElement._(this.unitResynthesizer, this.unitElement,
-      this.serializedClass, this.name, ElementLocation location)
-      : super(null, location);
-
-  @override
-  List<PropertyAccessorElement> get accessors {
-    _ensureExecutables();
-    return actualElement.accessors;
-  }
-
-  @override
-  ClassElementImpl get actualElement {
-    if (_actualElement == null) {
-      _actualElement = unitResynthesizer.buildClassImpl(serializedClass, this);
-      _actualElement.enclosingElement = unitElement;
-    }
-    return _actualElement;
-  }
-
-  @override
-  List<ConstructorElement> get constructors {
-    _ensureExecutables();
-    return actualElement.constructors;
-  }
-
-  @override
-  AnalysisContext get context => unitElement.context;
-
-  @override
-  String get displayName => name;
-
-  @override
-  CompilationUnitElement get enclosingElement {
-    return unitElement;
-  }
-
-  @override
-  List<FieldElement> get fields {
-    _ensureExecutables();
-    return actualElement.fields;
-  }
-
-  @override
-  List<MethodElement> get methods {
-    _ensureExecutables();
-    return actualElement.methods;
-  }
-
-  @override
-  void ensureAccessorsReady() {
-    _ensureExecutables();
-  }
-
-  @override
-  void ensureActualElementComplete() {
-    _ensureExecutables();
-  }
-
-  @override
-  void ensureConstructorsReady() {
-    _ensureExecutables();
-  }
-
-  @override
-  void ensureMethodsReady() {
-    _ensureExecutables();
-  }
-
-  /**
-   * Ensure that we have [actualElement], and it has all executables.
-   */
-  void _ensureExecutables() {
-    if (!_executablesResynthesized) {
-      _executablesResynthesized = true;
-      unitResynthesizer.buildClassExecutables(actualElement, serializedClass);
-    }
-  }
-}
-
-/**
- * The constructor element that has been resynthesized from a summary.  The
- * actual element won't be constructed until it is requested.  But properties
- * [displayName], [enclosingElement] and [name] can be used without creating
- * the actual element.
- */
-class _DeferredConstructorElement extends ConstructorElementHandle {
-  /**
-   * The type defining this constructor element.  If [_isMember] is `false`,
-   * then the type parameters of [_definingType] are not guaranteed to be
-   * valid.
-   */
-  final InterfaceType _definingType;
-
-  /**
-   * The constructor name.
-   */
-  final String name;
-
-  factory _DeferredConstructorElement(InterfaceType definingType, String name) {
-    List<String> components = definingType.element.location.components.toList();
-    components.add(name);
-    ElementLocationImpl location = new ElementLocationImpl.con3(components);
-    return new _DeferredConstructorElement._(definingType, name, location);
-  }
-
-  _DeferredConstructorElement._(
-      this._definingType, this.name, ElementLocation location)
-      : super(null, location);
-
-  @override
-  ConstructorElement get actualElement =>
-      enclosingElement.getNamedConstructor(name);
-
-  @override
-  AnalysisContext get context => _definingType.element.context;
-
-  @override
-  String get displayName => name;
-
-  @override
-  ClassElement get enclosingElement {
-    return _definingType.element;
   }
 }
 
@@ -1032,12 +904,6 @@ class _LibraryResynthesizer {
   LibraryElementImpl library;
 
   /**
-   * Classes which should have their supertype set to "object" once
-   * resynthesis is complete.  Only used if [isCoreLibrary] is `true`.
-   */
-  List<ClassElementImpl> delayedObjectSubclasses = <ClassElementImpl>[];
-
-  /**
    * Map of compilation unit elements that have been resynthesized so far.  The
    * key is the URI of the compilation unit.
    */
@@ -1103,6 +969,7 @@ class _LibraryResynthesizer {
         // and they always refer to defined top-level entities.
         throw new StateError('Unexpected export name kind: ${exportName.kind}');
     }
+    return null;
   }
 
   /**
@@ -1159,17 +1026,9 @@ class _LibraryResynthesizer {
     }
     library.parts = partResynthesizers.map((r) => r.unit).toList();
     // Populate units.
-    populateUnit(definingUnitResynthesizer);
+    rememberUriToUnit(definingUnitResynthesizer);
     for (_UnitResynthesizer partResynthesizer in partResynthesizers) {
-      populateUnit(partResynthesizer);
-    }
-    // Update delayed Object class references.
-    if (isCoreLibrary) {
-      ClassElement objectElement = library.getType('Object');
-      assert(objectElement != null);
-      for (ClassElementImpl classElement in delayedObjectSubclasses) {
-        classElement.supertype = objectElement.type;
-      }
+      rememberUriToUnit(partResynthesizer);
     }
     // Create the synthetic element for `loadLibrary`.
     // Until the client received dart:core and dart:async, we cannot do this,
@@ -1250,13 +1109,12 @@ class _LibraryResynthesizer {
   }
 
   /**
-   * Populate a [CompilationUnitElement] by deserializing all the elements
-   * contained in it.
+   * Remember the absolute URI to the corresponding unit mapping.
    */
-  void populateUnit(_UnitResynthesizer unitResynthesized) {
-    unitResynthesized.populateUnit();
-    String absoluteUri = unitResynthesized.unit.source.uri.toString();
-    resynthesizedUnits[absoluteUri] = unitResynthesized.unit;
+  void rememberUriToUnit(_UnitResynthesizer unitResynthesized) {
+    CompilationUnitElementImpl unit = unitResynthesized.unit;
+    String absoluteUri = unit.source.uri.toString();
+    resynthesizedUnits[absoluteUri] = unit;
   }
 }
 
@@ -1313,10 +1171,12 @@ class _LibraryResynthesizerContext implements LibraryResynthesizerContext {
   }
 
   LibraryElementHandle _getLibraryByRelativeUri(String depUri) {
-    String absoluteUri = resynthesizer.summaryResynthesizer.sourceFactory
-        .resolveUri(resynthesizer.librarySource, depUri)
-        .uri
-        .toString();
+    Source source = resynthesizer.summaryResynthesizer.sourceFactory
+        .resolveUri(resynthesizer.librarySource, depUri);
+    if (source == null) {
+      return null;
+    }
+    String absoluteUri = source.uri.toString();
     return new LibraryElementHandle(resynthesizer.summaryResynthesizer,
         new ElementLocationImpl.con3(<String>[absoluteUri]));
   }
@@ -1438,12 +1298,23 @@ class _ReferenceInfo {
       InterfaceTypeImpl type =
           new InterfaceTypeImpl.elementWithNameAndArgs(element, name, () {
         if (typeArguments == null) {
-          typeArguments = element.typeParameters.map((typeParameter) {
-            DartType bound = typeParameter.bound;
-            return libraryResynthesizer.summaryResynthesizer.strongMode &&
-                instantiateToBoundsAllowed &&
-                bound != null ? bound : DynamicTypeImpl.instance;
-          }).toList();
+          typeArguments = element.typeParameters
+              .map/*<DartType>*/((_) => DynamicTypeImpl.instance)
+              .toList();
+          if (libraryResynthesizer.summaryResynthesizer.strongMode &&
+              instantiateToBoundsAllowed) {
+            List<DartType> typeParameterTypes;
+            for (int i = 0; i < typeArguments.length; i++) {
+              DartType bound = element.typeParameters[i].bound;
+              if (bound != null) {
+                typeParameterTypes ??= element.typeParameters
+                    .map/*<DartType>*/((TypeParameterElement e) => e.type)
+                    .toList();
+                typeArguments[i] =
+                    bound.substitute2(typeArguments, typeParameterTypes);
+              }
+            }
+          }
         }
         return typeArguments;
       });
@@ -1510,12 +1381,12 @@ class _ResynthesizerContext implements ResynthesizerContext {
   _ResynthesizerContext(this._unitResynthesizer);
 
   @override
-  ElementAnnotationImpl buildAnnotation(ElementImpl context, UnlinkedConst uc) {
+  ElementAnnotationImpl buildAnnotation(ElementImpl context, UnlinkedExpr uc) {
     return _unitResynthesizer.buildAnnotation(context, uc);
   }
 
   @override
-  Expression buildExpression(ElementImpl context, UnlinkedConst uc) {
+  Expression buildExpression(ElementImpl context, UnlinkedExpr uc) {
     return _unitResynthesizer._buildConstExpression(context, uc);
   }
 
@@ -1525,20 +1396,25 @@ class _ResynthesizerContext implements ResynthesizerContext {
   }
 
   @override
-  List<FunctionElementImpl> buildTopLevelFunctions() {
-    return _unitResynthesizer.buildTopLevelFunctions();
-  }
-
-  @override
   UnitExplicitTopLevelVariables buildTopLevelVariables() {
     return _unitResynthesizer.buildUnitExplicitTopLevelVariables();
   }
 
   @override
-  FunctionElementImpl buildVariableInitializer(
-      VariableElementImpl variable, UnlinkedExecutable serializedInitializer) {
-    return _unitResynthesizer.buildVariableInitializer(
-        variable, serializedInitializer);
+  bool inheritsCovariant(int slot) {
+    return _unitResynthesizer.parametersInheritingCovariant.contains(slot);
+  }
+
+  @override
+  bool isInConstCycle(int slot) {
+    return _unitResynthesizer.constCycles.contains(slot);
+  }
+
+  @override
+  ConstructorElement resolveConstructorRef(
+      TypeParameterizedElementMixin typeParameterContext, EntityRef entry) {
+    return _unitResynthesizer._getConstructorForEntry(
+        typeParameterContext, entry);
   }
 
   @override
@@ -1584,13 +1460,6 @@ class _UnitResynthesizer {
   CompilationUnitElementImpl unit;
 
   /**
-   * [ElementHolder] into which resynthesized elements should be placed.  This
-   * object is recreated afresh for each unit in the library, and is used to
-   * populate the [CompilationUnitElement].
-   */
-  final ElementHolder unitHolder = new ElementHolder();
-
-  /**
    * Map from slot id to the corresponding [EntityRef] object for linked types
    * (i.e. propagated and inferred types).
    */
@@ -1603,24 +1472,10 @@ class _UnitResynthesizer {
   Set<int> constCycles;
 
   /**
-   * The [ConstructorElementImpl] for the constructor currently being
-   * resynthesized.
+   * Set of slot ids corresponding to parameters that inherit `@covariant`
+   * behavior.
    */
-  ConstructorElementImpl currentConstructor;
-
-  /**
-   * If a class is currently being resynthesized, map from field name to the
-   * corresponding field element.  This is used when resynthesizing
-   * initializing formal parameters.
-   */
-  Map<String, FieldElementImpl> fields;
-
-  /**
-   * If a class is currently being resynthesized, map from constructor name to
-   * the corresponding constructor element.  This is used when resynthesizing
-   * constructor initializers.
-   */
-  Map<String, ConstructorElementImpl> constructors;
+  Set<int> parametersInheritingCovariant;
 
   int numLinkedReferences;
   int numUnlinkedReferences;
@@ -1650,6 +1505,8 @@ class _UnitResynthesizer {
       linkedTypeMap[t.slot] = t;
     }
     constCycles = linkedUnit.constCycles.toSet();
+    parametersInheritingCovariant =
+        linkedUnit.parametersInheritingCovariant.toSet();
     numLinkedReferences = linkedUnit.references.length;
     numUnlinkedReferences = unlinkedUnit.references.length;
     referenceInfos = new List<_ReferenceInfo>(numLinkedReferences);
@@ -1661,14 +1518,14 @@ class _UnitResynthesizer {
   TypeProvider get typeProvider => summaryResynthesizer.typeProvider;
 
   /**
-   * Build [ElementAnnotationImpl] for the given [UnlinkedConst].
+   * Build [ElementAnnotationImpl] for the given [UnlinkedExpr].
    */
-  ElementAnnotationImpl buildAnnotation(ElementImpl context, UnlinkedConst uc) {
+  ElementAnnotationImpl buildAnnotation(ElementImpl context, UnlinkedExpr uc) {
     ElementAnnotationImpl elementAnnotation = new ElementAnnotationImpl(unit);
     Expression constExpr = _buildConstExpression(context, uc);
     if (constExpr is Identifier) {
       elementAnnotation.element = constExpr.staticElement;
-      elementAnnotation.annotationAst = AstFactory.annotation(constExpr);
+      elementAnnotation.annotationAst = AstTestFactory.annotation(constExpr);
     } else if (constExpr is InstanceCreationExpression) {
       elementAnnotation.element = constExpr.staticElement;
       Identifier typeName = constExpr.constructorName.type.name;
@@ -1676,405 +1533,17 @@ class _UnitResynthesizer {
       if (typeName is SimpleIdentifier && constructorName != null) {
         // E.g. `@cls.ctor()`.  Since `cls.ctor` would have been parsed as
         // a PrefixedIdentifier, we need to resynthesize it as one.
-        typeName = AstFactory.identifier(typeName, constructorName);
+        typeName = AstTestFactory.identifier(typeName, constructorName);
         constructorName = null;
       }
-      elementAnnotation.annotationAst = AstFactory.annotation2(
-          typeName, constructorName, constExpr.argumentList);
+      elementAnnotation.annotationAst = AstTestFactory.annotation2(
+          typeName, constructorName, constExpr.argumentList)
+        ..element = constExpr.staticElement;
     } else {
       throw new StateError(
           'Unexpected annotation type: ${constExpr.runtimeType}');
     }
     return elementAnnotation;
-  }
-
-  /**
-   * Build the annotations for the given [element].
-   */
-  void buildAnnotations(
-      ElementImpl element, List<UnlinkedConst> serializedAnnotations) {
-    if (serializedAnnotations.isNotEmpty) {
-      element.metadata = serializedAnnotations
-          .map((a) => buildAnnotation(element, a))
-          .toList();
-    }
-  }
-
-  /**
-   * Resynthesize a [ClassElement] and place it in [unitHolder].
-   */
-  void buildClass(UnlinkedClass serializedClass) {
-    ClassElement classElement;
-    if (libraryResynthesizer.isCoreLibrary &&
-        serializedClass.supertype == null) {
-      classElement = buildClassImpl(serializedClass, null);
-      if (!serializedClass.hasNoSupertype) {
-        libraryResynthesizer.delayedObjectSubclasses.add(classElement);
-      }
-    } else {
-      classElement = new _DeferredClassElement(this, unit, serializedClass);
-    }
-    unitHolder.addType(classElement);
-  }
-
-  /**
-   * Fill the given [ClassElementImpl] with executable elements and fields.
-   */
-  void buildClassExecutables(
-      ClassElementImpl classElement, UnlinkedClass serializedClass) {
-    ElementHolder memberHolder = new ElementHolder();
-    fields = <String, FieldElementImpl>{};
-    for (UnlinkedVariable serializedVariable in serializedClass.fields) {
-      buildVariable(classElement, serializedVariable, memberHolder);
-    }
-    bool constructorFound = false;
-    constructors = <String, ConstructorElementImpl>{};
-    for (UnlinkedExecutable serializedExecutable
-        in serializedClass.executables) {
-      switch (serializedExecutable.kind) {
-        case UnlinkedExecutableKind.constructor:
-          constructorFound = true;
-          buildConstructor(serializedExecutable, classElement, memberHolder);
-          break;
-        case UnlinkedExecutableKind.functionOrMethod:
-        case UnlinkedExecutableKind.getter:
-        case UnlinkedExecutableKind.setter:
-          buildExecutable(serializedExecutable, classElement, memberHolder);
-          break;
-      }
-    }
-    if (!serializedClass.isMixinApplication) {
-      if (!constructorFound) {
-        // Synthesize implicit constructors.
-        ConstructorElementImpl constructor = new ConstructorElementImpl('', -1);
-        constructor.synthetic = true;
-        constructor.returnType = classElement.type;
-        constructor.type = new FunctionTypeImpl.elementWithNameAndArgs(
-            constructor, null, classElement.type.typeArguments, false);
-        memberHolder.addConstructor(constructor);
-      }
-      classElement.constructors = memberHolder.constructors;
-    }
-    classElement.accessors = memberHolder.accessors;
-    classElement.fields = memberHolder.fields;
-    classElement.methods = memberHolder.methods;
-    resolveConstructorInitializers(classElement);
-  }
-
-  /**
-   * Resynthesize a [ClassElementImpl].  If [handle] is not `null`, then
-   * executables are not resynthesized, and [InterfaceTypeImpl] is created
-   * around the [handle], so that executables are resynthesized lazily.
-   */
-  ClassElementImpl buildClassImpl(
-      UnlinkedClass serializedClass, ClassElementHandle handle) {
-    ClassElementImpl classElement =
-        new ClassElementImpl.forSerialized(serializedClass, unit);
-    classElement.hasBeenInferred = summaryResynthesizer.strongMode;
-    InterfaceTypeImpl correspondingType =
-        new InterfaceTypeImpl(handle ?? classElement);
-    if (serializedClass.supertype != null) {
-      classElement.supertype =
-          buildType(serializedClass.supertype, classElement);
-    } else if (!libraryResynthesizer.isCoreLibrary) {
-      classElement.supertype = typeProvider.objectType;
-    }
-    // TODO(scheglov) move to ClassElementImpl
-    correspondingType.typeArguments = classElement.typeParameterTypes;
-    classElement.type = correspondingType;
-    // TODO(scheglov) Somehow Observatory shows too much time spent here
-    // during DDC run on the large codebase. I would expect only Object here.
-    if (handle == null) {
-      buildClassExecutables(classElement, serializedClass);
-    }
-    fields = null;
-    constructors = null;
-    return classElement;
-  }
-
-  void buildCodeRange(ElementImpl element, CodeRange codeRange) {
-    if (codeRange != null) {
-      element.setCodeRange(codeRange.offset, codeRange.length);
-    }
-  }
-
-  /**
-   * Resynthesize a [NamespaceCombinator].
-   */
-  NamespaceCombinator buildCombinator(UnlinkedCombinator serializedCombinator) {
-    if (serializedCombinator.shows.isNotEmpty) {
-      ShowElementCombinatorImpl combinator = new ShowElementCombinatorImpl();
-      // Note: we call toList() so that we don't retain a reference to the
-      // deserialized data structure.
-      combinator.shownNames = serializedCombinator.shows.toList();
-      combinator.offset = serializedCombinator.offset;
-      combinator.end = serializedCombinator.end;
-      return combinator;
-    } else {
-      HideElementCombinatorImpl combinator = new HideElementCombinatorImpl();
-      // Note: we call toList() so that we don't retain a reference to the
-      // deserialized data structure.
-      combinator.hiddenNames = serializedCombinator.hides.toList();
-      return combinator;
-    }
-  }
-
-  /**
-   * Resynthesize a [ConstructorElement] and place it in the given [holder].
-   * [classElement] is the element of the class for which this element is a
-   * constructor.
-   */
-  void buildConstructor(UnlinkedExecutable serializedExecutable,
-      ClassElementImpl classElement, ElementHolder holder) {
-    assert(serializedExecutable.kind == UnlinkedExecutableKind.constructor);
-    currentConstructor = new ConstructorElementImpl.forSerialized(
-        serializedExecutable, classElement);
-    currentConstructor.isCycleFree = serializedExecutable.isConst &&
-        !constCycles.contains(serializedExecutable.constCycleSlot);
-    if (serializedExecutable.name.isEmpty) {
-      currentConstructor.nameEnd =
-          serializedExecutable.nameOffset + classElement.name.length;
-    } else {
-      currentConstructor.nameEnd = serializedExecutable.nameEnd;
-      currentConstructor.periodOffset = serializedExecutable.periodOffset;
-    }
-    constructors[serializedExecutable.name] = currentConstructor;
-    currentConstructor.constantInitializers = serializedExecutable
-        .constantInitializers
-        .map((i) => buildConstructorInitializer(currentConstructor, i))
-        .toList();
-    if (serializedExecutable.isRedirectedConstructor) {
-      if (serializedExecutable.isFactory) {
-        EntityRef redirectedConstructor =
-            serializedExecutable.redirectedConstructor;
-        _ReferenceInfo info = getReferenceInfo(redirectedConstructor.reference);
-        List<EntityRef> typeArguments = redirectedConstructor.typeArguments;
-        currentConstructor.redirectedConstructor = _createConstructorElement(
-            _createConstructorDefiningType(classElement, info, typeArguments),
-            info);
-      } else {
-        List<String> locationComponents = unit.location.components.toList();
-        locationComponents.add(classElement.name);
-        locationComponents.add(serializedExecutable.redirectedConstructorName);
-        currentConstructor.redirectedConstructor =
-            new _DeferredConstructorElement._(
-                classElement.type,
-                serializedExecutable.redirectedConstructorName,
-                new ElementLocationImpl.con3(locationComponents));
-      }
-    }
-    holder.addConstructor(currentConstructor);
-    currentConstructor = null;
-  }
-
-  /**
-   * Resynthesize the [ConstructorInitializer] in context of
-   * [currentConstructor], which is used to resolve constructor parameter names.
-   */
-  ConstructorInitializer buildConstructorInitializer(
-      ConstructorElementImpl enclosingConstructor,
-      UnlinkedConstructorInitializer serialized) {
-    UnlinkedConstructorInitializerKind kind = serialized.kind;
-    String name = serialized.name;
-    List<Expression> arguments = <Expression>[];
-    {
-      int numArguments = serialized.arguments.length;
-      int numNames = serialized.argumentNames.length;
-      for (int i = 0; i < numArguments; i++) {
-        Expression expression = _buildConstExpression(
-            enclosingConstructor, serialized.arguments[i]);
-        int nameIndex = numNames + i - numArguments;
-        if (nameIndex >= 0) {
-          expression = AstFactory.namedExpression2(
-              serialized.argumentNames[nameIndex], expression);
-        }
-        arguments.add(expression);
-      }
-    }
-    switch (kind) {
-      case UnlinkedConstructorInitializerKind.field:
-        return AstFactory.constructorFieldInitializer(false, name,
-            _buildConstExpression(enclosingConstructor, serialized.expression));
-      case UnlinkedConstructorInitializerKind.superInvocation:
-        return AstFactory.superConstructorInvocation2(
-            name.isNotEmpty ? name : null, arguments);
-      case UnlinkedConstructorInitializerKind.thisInvocation:
-        return AstFactory.redirectingConstructorInvocation2(
-            name.isNotEmpty ? name : null, arguments);
-    }
-  }
-
-  /**
-   * Build the documentation for the given [element].  Does nothing if
-   * [serializedDocumentationComment] is `null`.
-   */
-  void buildDocumentation(ElementImpl element,
-      UnlinkedDocumentationComment serializedDocumentationComment) {
-    if (serializedDocumentationComment != null) {
-      element.documentationComment = serializedDocumentationComment.text;
-      element.setDocRange(serializedDocumentationComment.offset,
-          serializedDocumentationComment.length);
-    }
-  }
-
-  /**
-   * Resynthesize the [ClassElement] corresponding to an enum, along with the
-   * associated fields and implicit accessors.
-   */
-  void buildEnum(UnlinkedEnum serializedEnum) {
-    assert(!libraryResynthesizer.isCoreLibrary);
-    ClassElementImpl classElement =
-        new ClassElementImpl(serializedEnum.name, serializedEnum.nameOffset);
-    classElement.enum2 = true;
-    InterfaceType enumType = new InterfaceTypeImpl(classElement);
-    classElement.type = enumType;
-    classElement.supertype = typeProvider.objectType;
-    buildDocumentation(classElement, serializedEnum.documentationComment);
-    buildAnnotations(classElement, serializedEnum.annotations);
-    buildCodeRange(classElement, serializedEnum.codeRange);
-    ElementHolder memberHolder = new ElementHolder();
-    // Build the 'index' field.
-    FieldElementImpl indexField = new FieldElementImpl('index', -1);
-    indexField.final2 = true;
-    indexField.synthetic = true;
-    indexField.type = typeProvider.intType;
-    memberHolder.addField(indexField);
-    buildImplicitAccessors(indexField, memberHolder);
-    // Build the 'values' field.
-    FieldElementImpl valuesField = new ConstFieldElementImpl('values', -1);
-    valuesField.synthetic = true;
-    valuesField.const3 = true;
-    valuesField.static = true;
-    valuesField.type = typeProvider.listType.instantiate(<DartType>[enumType]);
-    memberHolder.addField(valuesField);
-    buildImplicitAccessors(valuesField, memberHolder);
-    // Build fields for all enum constants.
-    List<DartObjectImpl> constantValues = <DartObjectImpl>[];
-    for (int i = 0; i < serializedEnum.values.length; i++) {
-      UnlinkedEnumValue serializedEnumValue = serializedEnum.values[i];
-      String fieldName = serializedEnumValue.name;
-      ConstFieldElementImpl field =
-          new ConstFieldElementImpl(fieldName, serializedEnumValue.nameOffset);
-      buildDocumentation(field, serializedEnumValue.documentationComment);
-      field.const3 = true;
-      field.static = true;
-      field.type = enumType;
-      // Create a value for the constant.
-      Map<String, DartObjectImpl> fieldMap = <String, DartObjectImpl>{
-        fieldName: new DartObjectImpl(typeProvider.intType, new IntState(i))
-      };
-      DartObjectImpl value =
-          new DartObjectImpl(enumType, new GenericState(fieldMap));
-      constantValues.add(value);
-      field.evaluationResult = new EvaluationResultImpl(value);
-      // Add the field.
-      memberHolder.addField(field);
-      buildImplicitAccessors(field, memberHolder);
-    }
-    // Build the value of the 'values' field.
-    valuesField.evaluationResult = new EvaluationResultImpl(
-        new DartObjectImpl(valuesField.type, new ListState(constantValues)));
-    // done
-    classElement.fields = memberHolder.fields;
-    classElement.accessors = memberHolder.accessors;
-    classElement.constructors = <ConstructorElement>[];
-    unitHolder.addEnum(classElement);
-  }
-
-  /**
-   * Resynthesize an [ExecutableElement] and place it in the given [holder].
-   */
-  void buildExecutable(
-      UnlinkedExecutable serializedExecutable, ElementImpl enclosingElement,
-      [ElementHolder holder]) {
-    bool isTopLevel = holder == null;
-    if (holder == null) {
-      holder = unitHolder;
-    }
-    UnlinkedExecutableKind kind = serializedExecutable.kind;
-    String name = serializedExecutable.name;
-    if (kind == UnlinkedExecutableKind.setter) {
-      assert(name.endsWith('='));
-      name = name.substring(0, name.length - 1);
-    }
-    switch (kind) {
-      case UnlinkedExecutableKind.functionOrMethod:
-        if (isTopLevel) {
-          // Created lazily.
-        } else {
-          MethodElementImpl executableElement =
-              new MethodElementImpl.forSerialized(
-                  serializedExecutable, enclosingElement);
-          holder.addMethod(executableElement);
-        }
-        break;
-      case UnlinkedExecutableKind.getter:
-      case UnlinkedExecutableKind.setter:
-        // Top-level accessors are created lazily.
-        if (isTopLevel) {
-          break;
-        }
-        // Class member accessors.
-        PropertyAccessorElementImpl executableElement =
-            new PropertyAccessorElementImpl.forSerialized(
-                serializedExecutable, enclosingElement);
-        DartType type;
-        if (kind == UnlinkedExecutableKind.getter) {
-          type = executableElement.returnType;
-        } else {
-          type = executableElement.parameters[0].type;
-        }
-        holder.addAccessor(executableElement);
-        FieldElementImpl field = buildImplicitField(name, type, kind, holder);
-        field.static = serializedExecutable.isStatic;
-        executableElement.variable = field;
-        if (kind == UnlinkedExecutableKind.getter) {
-          field.getter = executableElement;
-        } else {
-          field.setter = executableElement;
-        }
-        break;
-      default:
-        // The only other executable type is a constructor, and that is handled
-        // separately (in [buildConstructor].  So this code should be
-        // unreachable.
-        assert(false);
-    }
-  }
-
-  /**
-   * Build the implicit getter and setter associated with [element], and place
-   * them in [holder].
-   */
-  void buildImplicitAccessors(
-      PropertyInducingElementImpl element, ElementHolder holder) {
-    PropertyAccessorElementImpl getter = buildImplicitGetter(element);
-    holder?.addAccessor(getter);
-    if (!(element.isConst || element.isFinal)) {
-      PropertyAccessorElementImpl setter = buildImplicitSetter(element);
-      holder?.addAccessor(setter);
-    }
-  }
-
-  /**
-   * Build the implicit field associated with a getter or setter, and place it
-   * in [holder].
-   */
-  FieldElementImpl buildImplicitField(String name, DartType type,
-      UnlinkedExecutableKind kind, ElementHolder holder) {
-    FieldElementImpl field = holder.getField(name);
-    if (field == null) {
-      field = new FieldElementImpl(name, -1);
-      field.synthetic = true;
-      field.final2 = kind == UnlinkedExecutableKind.getter;
-      field.type = type;
-      holder.addField(field);
-      return field;
-    } else {
-      // TODO(paulberry): what if the getter and setter have a type mismatch?
-      field.final2 = false;
-      return field;
-    }
   }
 
   /**
@@ -2120,19 +1589,6 @@ class _UnitResynthesizer {
     return buildType(type, typeParameterContext);
   }
 
-  List<FunctionElementImpl> buildTopLevelFunctions() {
-    List<FunctionElementImpl> functions = <FunctionElementImpl>[];
-    List<UnlinkedExecutable> executables = unlinkedUnit.executables;
-    for (UnlinkedExecutable unlinkedExecutable in executables) {
-      if (unlinkedExecutable.kind == UnlinkedExecutableKind.functionOrMethod) {
-        FunctionElementImpl function =
-            new FunctionElementImpl.forSerialized(unlinkedExecutable, unit);
-        functions.add(function);
-      }
-    }
-    return functions;
-  }
-
   /**
    * Build a [DartType] object based on a [EntityRef].  This [DartType]
    * may refer to elements in other libraries than the library being
@@ -2163,6 +1619,7 @@ class _UnitResynthesizer {
           return DynamicTypeImpl.instance;
         }
       }
+
       _ReferenceInfo referenceInfo = getReferenceInfo(type.reference);
       return referenceInfo.buildType(
           instantiateToBoundsAllowed,
@@ -2199,10 +1656,10 @@ class _UnitResynthesizer {
           variable.enclosingElement = unit;
           implicitVariables[name] = variable;
           accessorsData.implicitVariables.add(variable);
-          variable.synthetic = true;
-          variable.final2 = kind == UnlinkedExecutableKind.getter;
+          variable.isSynthetic = true;
+          variable.isFinal = kind == UnlinkedExecutableKind.getter;
         } else {
-          variable.final2 = false;
+          variable.isFinal = false;
         }
         accessor.variable = variable;
         // link
@@ -2226,12 +1683,8 @@ class _UnitResynthesizer {
       TopLevelVariableElementImpl element;
       if (unlinkedVariable.initializer?.bodyExpr != null &&
           unlinkedVariable.isConst) {
-        ConstTopLevelVariableElementImpl constElement =
-            new ConstTopLevelVariableElementImpl.forSerialized(
-                unlinkedVariable, unit);
-        element = constElement;
-        constElement.constantInitializer =
-            _buildConstExpression(null, unlinkedVariable.initializer.bodyExpr);
+        element = new ConstTopLevelVariableElementImpl.forSerialized(
+            unlinkedVariable, unit);
       } else {
         element = new TopLevelVariableElementImpl.forSerialized(
             unlinkedVariable, unit);
@@ -2244,47 +1697,6 @@ class _UnitResynthesizer {
       }
     }
     return variablesData;
-  }
-
-  /**
-   * Resynthesize a [TopLevelVariableElement] or [FieldElement].
-   */
-  void buildVariable(
-      ClassElementImpl enclosingClass, UnlinkedVariable serializedVariable,
-      [ElementHolder holder]) {
-    if (holder == null) {
-      throw new UnimplementedError('Must be lazy');
-    } else {
-      FieldElementImpl element;
-      if (serializedVariable.initializer?.bodyExpr != null &&
-          (serializedVariable.isConst ||
-              serializedVariable.isFinal && !serializedVariable.isStatic)) {
-        element = new ConstFieldElementImpl.forSerialized(
-            serializedVariable, enclosingClass);
-      } else {
-        element = new FieldElementImpl.forSerialized(
-            serializedVariable, enclosingClass);
-      }
-      element.static = serializedVariable.isStatic;
-      holder.addField(element);
-      buildImplicitAccessors(element, holder);
-      fields[element.name] = element;
-    }
-  }
-
-  /**
-   * If the given [serializedInitializer] is not `null`, return the
-   * corresponding [FunctionElementImpl], otherwise return `null`.
-   */
-  FunctionElementImpl buildVariableInitializer(
-      VariableElementImpl variable, UnlinkedExecutable serializedInitializer) {
-    if (serializedInitializer == null) {
-      return null;
-    }
-    FunctionElementImpl initializerElement =
-        new FunctionElementImpl.forSerialized(serializedInitializer, variable);
-    initializerElement.synthetic = true;
-    return initializerElement;
   }
 
   /**
@@ -2403,59 +1815,24 @@ class _UnitResynthesizer {
     return result;
   }
 
-  /**
-   * Populate a [CompilationUnitElement] by deserializing all the elements
-   * contained in it.
-   */
-  void populateUnit() {
-    unlinkedUnit.classes.forEach(buildClass);
-    unlinkedUnit.enums.forEach(buildEnum);
-    unit.enums = unitHolder.enums;
-    unit.types = unitHolder.types;
-  }
-
-  /**
-   * Constructor initializers can reference fields and other constructors of
-   * the same class, including forward references. So, we need to delay
-   * resolution until after class elements are built.
-   */
-  void resolveConstructorInitializers(ClassElementImpl classElement) {
-    for (ConstructorElementImpl constructor in constructors.values) {
-      for (ConstructorInitializer initializer
-          in constructor.constantInitializers) {
-        if (initializer is ConstructorFieldInitializer) {
-          SimpleIdentifier nameNode = initializer.fieldName;
-          nameNode.staticElement = fields[nameNode.name];
-        } else if (initializer is SuperConstructorInvocation) {
-          SimpleIdentifier nameNode = initializer.constructorName;
-          ConstructorElement element = new _DeferredConstructorElement(
-              classElement.supertype, nameNode?.name ?? '');
-          initializer.staticElement = element;
-          nameNode?.staticElement = element;
-        } else if (initializer is RedirectingConstructorInvocation) {
-          SimpleIdentifier nameNode = initializer.constructorName;
-          ConstructorElement element = constructors[nameNode?.name ?? ''];
-          initializer.staticElement = element;
-          nameNode?.staticElement = element;
-        }
-      }
-    }
-  }
-
-  Expression _buildConstExpression(ElementImpl context, UnlinkedConst uc) {
+  Expression _buildConstExpression(ElementImpl context, UnlinkedExpr uc) {
     return new _ConstExprBuilder(this, context, uc).build();
   }
 
   /**
    * Return the defining type for a [ConstructorElement] by applying
-   * [typeArgumentRefs] to the given linked [info].
+   * [typeArgumentRefs] to the given linked [info].  Return [DynamicTypeImpl]
+   * if the [info] is unresolved.
    */
-  InterfaceType _createConstructorDefiningType(
+  DartType _createConstructorDefiningType(
       TypeParameterizedElementMixin typeParameterContext,
       _ReferenceInfo info,
       List<EntityRef> typeArgumentRefs) {
     bool isClass = info.element is ClassElement;
     _ReferenceInfo classInfo = isClass ? info : info.enclosing;
+    if (classInfo == null) {
+      return DynamicTypeImpl.instance;
+    }
     List<DartType> typeArguments = typeArgumentRefs
         .map((t) => buildType(t, typeParameterContext))
         .toList();
@@ -2469,22 +1846,38 @@ class _UnitResynthesizer {
   }
 
   /**
+   * Return the [ConstructorElement] corresponding to the given [entry].
+   */
+  ConstructorElement _getConstructorForEntry(
+      TypeParameterizedElementMixin typeParameterContext, EntityRef entry) {
+    _ReferenceInfo info = getReferenceInfo(entry.reference);
+    DartType type = _createConstructorDefiningType(
+        typeParameterContext, info, entry.typeArguments);
+    if (type is InterfaceType) {
+      return _getConstructorForInfo(type, info);
+    }
+    return null;
+  }
+
+  /**
    * Return the [ConstructorElement] corresponding to the given linked [info],
    * using the [classType] which has already been computed (e.g. by
    * [_createConstructorDefiningType]).  Both cases when [info] is a
    * [ClassElement] and [ConstructorElement] are supported.
    */
-  ConstructorElement _createConstructorElement(
+  ConstructorElement _getConstructorForInfo(
       InterfaceType classType, _ReferenceInfo info) {
-    bool isClass = info.element is ClassElement;
-    String name = isClass ? '' : info.name;
-    _DeferredConstructorElement element =
-        new _DeferredConstructorElement(classType, name);
-    if (info.numTypeParameters != 0) {
-      return new ConstructorMember(element, classType);
-    } else {
-      return element;
+    ConstructorElement element;
+    Element infoElement = info.element;
+    if (infoElement is ConstructorElement) {
+      element = infoElement;
+    } else if (infoElement is ClassElement) {
+      element = infoElement.unnamedConstructor;
     }
+    if (element != null && info.numTypeParameters != 0) {
+      return new ConstructorMember(element, classType);
+    }
+    return element;
   }
 
   /**

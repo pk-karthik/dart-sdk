@@ -2,8 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
 // Tests super setter where the HInvokeSuper is using interceptor aka
 // explicit-receiver calling convention.
@@ -20,6 +19,7 @@ class B extends A {
   set foo(value) {
     super.foo = value;
   }
+
   get foo => super.foo;
 }
 
@@ -33,11 +33,12 @@ class D extends C {
   set foo(value) {
     super.foo = value;
   }
+
   get foo => super.foo;
 }
 
-makeA() native;
-makeB() native;
+makeA() native ;
+makeB() native ;
 
 void setup() native """
 // This code is all inside 'setup' and so not accesible from the global scope.
@@ -45,19 +46,22 @@ function A(){}
 function B(){}
 makeA = function(){return new A};
 makeB = function(){return new B};
+self.nativeConstructor(A);
+self.nativeConstructor(B);
 """;
 
 testThing(a) {
   a.foo = 123;
-  Expect.equals(123,  a.foo);
-  Expect.equals(123,  a.get_foo());
+  Expect.equals(123, a.foo);
+  Expect.equals(123, a.get_foo());
 
   a.bar = 234;
-  Expect.equals(234,  a.foo);
-  Expect.equals(234,  a.get_foo());
+  Expect.equals(234, a.foo);
+  Expect.equals(234, a.get_foo());
 }
 
 main() {
+  nativeTesting();
   setup();
   var things = [makeA(), makeB(), new C(), new D()];
   var test = testThing;

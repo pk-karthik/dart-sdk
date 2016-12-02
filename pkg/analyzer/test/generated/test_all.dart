@@ -4,10 +4,10 @@
 
 library analyzer.test.generated.test_all;
 
-import 'package:unittest/unittest.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 
-import '../utils.dart';
 import 'all_the_rest_test.dart' as all_the_rest;
+import 'bazel_test.dart' as bazel_test;
 import 'checked_mode_compile_time_error_code_test.dart'
     as checked_mode_compile_time_error_code_test;
 import 'compile_time_error_code_test.dart' as compile_time_error_code_test;
@@ -18,7 +18,6 @@ import 'engine_test.dart' as engine_test;
 import 'error_suppression_test.dart' as error_suppression_test;
 import 'hint_code_test.dart' as hint_code_test;
 import 'incremental_resolver_test.dart' as incremental_resolver_test;
-import 'incremental_scanner_test.dart' as incremental_scanner_test;
 import 'inheritance_manager_test.dart' as inheritance_manager_test;
 import 'java_core_test.dart' as java_core_test;
 import 'java_io_test.dart' as java_io_test;
@@ -27,6 +26,7 @@ import 'non_hint_code_test.dart' as non_hint_code_test;
 import 'parser_test.dart' as parser_test;
 import 'resolver_test.dart' as resolver_test;
 import 'scanner_test.dart' as scanner_test;
+import 'sdk_test.dart' as sdk_test;
 import 'simple_resolver_test.dart' as simple_resolver_test;
 import 'source_factory_test.dart' as source_factory_test;
 import 'static_type_analyzer_test.dart' as static_type_analyzer_test;
@@ -34,13 +34,14 @@ import 'static_type_warning_code_test.dart' as static_type_warning_code_test;
 import 'static_warning_code_test.dart' as static_warning_code_test;
 import 'strong_mode_test.dart' as strong_mode_test;
 import 'type_system_test.dart' as type_system_test;
+import 'utilities_dart_test.dart' as utilities_dart_test;
 import 'utilities_test.dart' as utilities_test;
 
 /// Utility for manually running all tests.
 main() {
-  initializeTestEnvironment();
-  group('generated tests', () {
+  defineReflectiveSuite(() {
     all_the_rest.main();
+    bazel_test.main();
     checked_mode_compile_time_error_code_test.main();
     compile_time_error_code_test.main();
     constant_test.main();
@@ -50,7 +51,6 @@ main() {
     error_suppression_test.main();
     hint_code_test.main();
     incremental_resolver_test.main();
-    incremental_scanner_test.main();
     inheritance_manager_test.main();
     java_core_test.main();
     java_io_test.main();
@@ -59,6 +59,7 @@ main() {
     parser_test.main();
     resolver_test.main();
     scanner_test.main();
+    sdk_test.main();
     simple_resolver_test.main();
     source_factory_test.main();
     static_type_analyzer_test.main();
@@ -66,6 +67,7 @@ main() {
     static_warning_code_test.main();
     strong_mode_test.main();
     type_system_test.main();
+    utilities_dart_test.main();
     utilities_test.main();
-  });
+  }, name: 'generated');
 }

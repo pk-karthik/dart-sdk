@@ -10,19 +10,18 @@
 import 'dart:io';
 
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/file_system/file_system.dart';
+import 'package:analyzer/file_system/physical_file_system.dart';
+import 'package:analyzer/source/package_map_resolver.dart';
+import 'package:analyzer/src/context/builder.dart';
+import 'package:analyzer/src/dart/sdk/sdk.dart';
 import 'package:analyzer/src/generated/engine.dart';
-import 'package:analyzer/src/generated/java_io.dart';
-import 'package:analyzer/src/generated/sdk_io.dart' show DirectoryBasedDartSdk;
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart';
+import 'package:analyzer/src/source/source_resource.dart';
 import 'package:path/path.dart' as p;
 
 void main(List<String> args) {
-  JavaSystemIO.setProperty(
-      "com.google.dart.sdk",
-      p.normalize(
-          p.join(p.dirname(p.fromUri(Platform.script)), "../../../sdk")));
-
   // Assumes you have run "pub get" in the analyzer directory itself and uses
   // that "packages" directory as its package root.
   var packageRoot =
@@ -33,19 +32,28 @@ void main(List<String> args) {
     var start = new DateTime.now();
     AnalysisEngine.instance.clearCaches();
 
-    var context = AnalysisEngine.instance.createAnalysisContext();
-    context.sourceFactory = new SourceFactory([
-      new DartUriResolver(DirectoryBasedDartSdk.defaultSdk),
-      new FileUriResolver(),
-      new PackageUriResolver([new JavaFile(packageRoot)])
-    ]);
-
-    AnalysisOptionsImpl options = context.analysisOptions;
+    AnalysisOptionsImpl options = new AnalysisOptionsImpl();
     options.strongMode = true;
     options.strongModeHints = true;
 
+    PhysicalResourceProvider resourceProvider =
+        PhysicalResourceProvider.INSTANCE;
+    FolderBasedDartSdk sdk = new FolderBasedDartSdk(
+        resourceProvider, resourceProvider.getFolder(args[0]));
+    sdk.analysisOptions = options;
+
+    ContextBuilder builder = new ContextBuilder(resourceProvider, null, null);
+    AnalysisContext context = AnalysisEngine.instance.createAnalysisContext();
+    context.sourceFactory = new SourceFactory([
+      new DartUriResolver(sdk),
+      new ResourceUriResolver(resourceProvider),
+      new PackageMapUriResolver(resourceProvider,
+          builder.convertPackagesToMap(builder.createPackageMap(packageRoot)))
+    ]);
+    context.analysisOptions = options;
+
     var mainSource =
-        new FileBasedSource(new JavaFile(p.fromUri(Platform.script)));
+        new FileSource(resourceProvider.getFile(p.fromUri(Platform.script)));
     context.applyChanges(new ChangeSet()..addedSource(mainSource));
 
     var initialLibrary =
@@ -84,6 +92,7 @@ List<LibraryElement> _reachableLibraries(LibraryElement start) {
     lib.importedLibraries.forEach(find);
     lib.exportedLibraries.forEach(find);
   }
+
   find(start);
   return results;
 }

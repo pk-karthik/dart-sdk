@@ -16,8 +16,7 @@ import '../elements/elements.dart'
         LibraryElement,
         PublicName;
 import '../util/util.dart' show Hashing;
-import '../world.dart' show World;
-
+import '../common/resolution.dart' show Target;
 import 'call_structure.dart' show CallStructure;
 
 class SelectorKind {
@@ -218,20 +217,19 @@ class Selector {
     return kind;
   }
 
-  bool appliesUnnamed(Element element, World world) {
-    assert(sameNameHack(element, world));
-    return appliesUntyped(element, world);
+  bool appliesUnnamed(Element element) {
+    assert(name == element.name);
+    return appliesUntyped(element);
   }
 
-  bool appliesUntyped(Element element, World world) {
-    assert(sameNameHack(element, world));
+  bool appliesUntyped(Element element) {
+    assert(name == element.name);
     if (Elements.isUnresolved(element)) return false;
     if (memberName.isPrivate && memberName.library != element.library) {
       // TODO(johnniwinther): Maybe this should be
       // `memberName != element.memberName`.
       return false;
     }
-    if (world.isForeign(element)) return true;
     if (element.isSetter) return isSetter;
     if (element.isGetter) return isGetter || isCall;
     if (element.isField) {
@@ -249,14 +247,9 @@ class Selector {
     return callStructure.signatureApplies(function.functionSignature);
   }
 
-  bool sameNameHack(Element element, World world) {
-    // TODO(ngeoffray): Remove workaround checks.
-    return element.isConstructor || name == element.name;
-  }
-
-  bool applies(Element element, World world) {
-    if (!sameNameHack(element, world)) return false;
-    return appliesUnnamed(element, world);
+  bool applies(Element element) {
+    if (name != element.name) return false;
+    return appliesUnnamed(element);
   }
 
   bool match(SelectorKind kind, Name memberName, CallStructure callStructure) {

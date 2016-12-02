@@ -2,16 +2,20 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef VM_SERVICE_H_
-#define VM_SERVICE_H_
+#ifndef RUNTIME_VM_SERVICE_H_
+#define RUNTIME_VM_SERVICE_H_
 
 #include "include/dart_tools_api.h"
 
 #include "vm/allocation.h"
+#include "vm/object_graph.h"
 #include "vm/object_id_ring.h"
 #include "vm/os_thread.h"
 
 namespace dart {
+
+#define SERVICE_PROTOCOL_MAJOR_VERSION 3
+#define SERVICE_PROTOCOL_MINOR_VERSION 5
 
 class Array;
 class EmbedderServiceHandler;
@@ -37,6 +41,7 @@ class ServiceIdZone {
  private:
 };
 
+#define ISOLATE_SERVICE_ID_FORMAT_STRING "isolates/%" Pd64 ""
 
 class RingServiceIdZone : public ServiceIdZone {
  public:
@@ -48,13 +53,9 @@ class RingServiceIdZone : public ServiceIdZone {
   // Returned string will be zone allocated.
   virtual char* GetServiceId(const Object& obj);
 
-  void set_policy(ObjectIdRing::IdPolicy policy) {
-    policy_ = policy;
-  }
+  void set_policy(ObjectIdRing::IdPolicy policy) { policy_ = policy; }
 
-  ObjectIdRing::IdPolicy policy() const {
-    return policy_;
-  }
+  ObjectIdRing::IdPolicy policy() const { return policy_; }
 
  private:
   ObjectIdRing* ring_;
@@ -82,6 +83,10 @@ class Service : public AllStatic {
   // Handles a message which is not directed to an isolate.
   static void HandleRootMessage(const Array& message);
 
+  // Handles a message which is not directed to an isolate and also
+  // expects the parameter keys and values to be actual dart objects.
+  static void HandleObjectRootMessage(const Array& message);
+
   // Handles a message which is directed to a particular isolate.
   static void HandleIsolateMessage(Isolate* isolate, const Array& message);
 
@@ -92,10 +97,9 @@ class Service : public AllStatic {
       Dart_ServiceRequestCallback callback,
       void* user_data);
 
-  static void RegisterRootEmbedderCallback(
-      const char* name,
-      Dart_ServiceRequestCallback callback,
-      void* user_data);
+  static void RegisterRootEmbedderCallback(const char* name,
+                                           Dart_ServiceRequestCallback callback,
+                                           void* user_data);
 
   static void SetEmbedderStreamCallbacks(
       Dart_ServiceStreamListenCallback listen_callback,
@@ -105,7 +109,9 @@ class Service : public AllStatic {
       Dart_GetVMServiceAssetsArchive get_service_assets);
 
   static void SendEchoEvent(Isolate* isolate, const char* text);
-  static void SendGraphEvent(Thread* thread, bool collect_garbage);
+  static void SendGraphEvent(Thread* thread,
+                             ObjectGraph::SnapshotRoots roots,
+                             bool collect_garbage);
   static void SendInspectEvent(Isolate* isolate, const Object& inspectee);
 
   static void SendEmbedderEvent(Isolate* isolate,
@@ -160,8 +166,12 @@ class Service : public AllStatic {
 
   static void PrintJSONForVM(JSONStream* js, bool ref);
 
+  static void CheckForPause(Isolate* isolate, JSONStream* stream);
+
  private:
-  static void InvokeMethod(Isolate* isolate, const Array& message);
+  static void InvokeMethod(Isolate* isolate,
+                           const Array& message,
+                           bool parameters_are_dart_objects = false);
 
   static void EmbedderHandleMessage(EmbedderServiceHandler* handler,
                                     JSONStream* js);
@@ -174,21 +184,26 @@ class Service : public AllStatic {
                                        const Array& parameter_values,
                                        const Instance& reply_port,
                                        const Instance& id);
+  // Takes ownership of 'bytes'.
   static void SendEvent(const char* stream_id,
                         const char* event_type,
-                        const Object& eventMessage);
+                        uint8_t* bytes,
+                        intptr_t bytes_length);
 
   // Does not take ownership of 'data'.
   static void SendEventWithData(const char* stream_id,
                                 const char* event_type,
-                                const String& meta,
+                                const char* metadata,
+                                intptr_t metadata_size,
                                 const uint8_t* data,
-                                intptr_t size);
+                                intptr_t data_size);
 
   static void PostEvent(Isolate* isolate,
                         const char* stream_id,
                         const char* kind,
                         JSONStream* event);
+
+  static void MaybePause(Isolate* isolate);
 
   static EmbedderServiceHandler* isolate_service_handler_head_;
   static EmbedderServiceHandler* root_service_handler_head_;
@@ -205,4 +220,4 @@ class Service : public AllStatic {
 
 }  // namespace dart
 
-#endif  // VM_SERVICE_H_
+#endif  // RUNTIME_VM_SERVICE_H_

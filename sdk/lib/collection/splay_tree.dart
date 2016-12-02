@@ -260,7 +260,7 @@ class _TypeTest<T> {
  * Non-comparable objects (including `null`) will not work as keys
  * in that case.
  *
- * To allow calling [operator[]], [remove] or [containsKey] with objects
+ * To allow calling [[]], [remove] or [containsKey] with objects
  * that are not supported by the `compare` function, an extra `isValidKey`
  * predicate function can be supplied. This function is tested before
  * using the `compare` function on an argument value that may not be a [K]
@@ -607,8 +607,7 @@ abstract class _SplayTreeIterator<K, T> implements Iterator<T> {
   T _getValue(_SplayTreeNode<K> node);
 }
 
-class _SplayTreeKeyIterable<K> extends Iterable<K>
-                               implements EfficientLength {
+class _SplayTreeKeyIterable<K> extends EfficientLengthIterable<K> {
   _SplayTree<K, _SplayTreeNode<K>> _tree;
   _SplayTreeKeyIterable(this._tree);
   int get length => _tree._count;
@@ -624,8 +623,7 @@ class _SplayTreeKeyIterable<K> extends Iterable<K>
   }
 }
 
-class _SplayTreeValueIterable<K, V> extends Iterable<V>
-                                    implements EfficientLength {
+class _SplayTreeValueIterable<K, V> extends EfficientLengthIterable<V> {
   SplayTreeMap<K, V> _map;
   _SplayTreeValueIterable(this._map);
   int get length => _map._count;

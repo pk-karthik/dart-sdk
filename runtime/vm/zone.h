@@ -2,8 +2,8 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef VM_ZONE_H_
-#define VM_ZONE_H_
+#ifndef RUNTIME_VM_ZONE_H_
+#define RUNTIME_VM_ZONE_H_
 
 #include "platform/utils.h"
 #include "vm/allocation.h"
@@ -45,6 +45,10 @@ class Zone {
   // Make a copy of the string in the zone allocated area.
   char* MakeCopyOfString(const char* str);
 
+  // Make a copy of the first n characters of a string in the zone
+  // allocated area.
+  char* MakeCopyOfStringN(const char* str, intptr_t len);
+
   // Concatenate strings |a| and |b|. |a| may be NULL. If |a| is not NULL,
   // |join| will be inserted between |a| and |b|.
   char* ConcatStrings(const char* a, const char* b, char join = ',');
@@ -66,29 +70,11 @@ class Zone {
 
   void VisitObjectPointers(ObjectPointerVisitor* visitor);
 
- private:
-  Zone()
-    : initial_buffer_(buffer_, kInitialChunkSize),
-      position_(initial_buffer_.start()),
-      limit_(initial_buffer_.end()),
-      head_(NULL),
-      large_segments_(NULL),
-      handles_(),
-      previous_(NULL) {
-    ASSERT(Utils::IsAligned(position_, kAlignment));
-#ifdef DEBUG
-    // Zap the entire initial buffer.
-    memset(initial_buffer_.pointer(), kZapUninitializedByte,
-           initial_buffer_.size());
-#endif
-  }
+  Zone* previous() const { return previous_; }
 
-  ~Zone() {  // Delete all memory associated with the zone.
-    if (FLAG_trace_zones) {
-      DumpZoneSizes();
-    }
-    DeleteAll();
-  }
+ private:
+  Zone();
+  ~Zone();  // Delete all memory associated with the zone.
 
   // All pointers returned from AllocateUnsafe() and New() have this alignment.
   static const intptr_t kAlignment = kDoubleSize;
@@ -112,9 +98,7 @@ class Zone {
   uword AllocateLargeSegment(intptr_t size);
 
   // Insert zone into zone chain, after current_zone.
-  void Link(Zone* current_zone) {
-    previous_ = current_zone;
-  }
+  void Link(Zone* current_zone) { previous_ = current_zone; }
 
   // Delete all objects and free all memory allocated in the zone.
   void DeleteAll();
@@ -170,8 +154,10 @@ class Zone {
 
   friend class StackZone;
   friend class ApiZone;
-  template<typename T, typename B, typename Allocator>
+  template <typename T, typename B, typename Allocator>
   friend class BaseGrowableArray;
+  template <typename T, typename B, typename Allocator>
+  friend class BaseDirectChainedHashMap;
   DISALLOW_COPY_AND_ASSIGN(Zone);
 };
 
@@ -179,26 +165,10 @@ class Zone {
 class StackZone : public StackResource {
  public:
   // Create an empty zone and set is at the current zone for the Thread.
-  explicit StackZone(Thread* thread) : StackResource(thread), zone_() {
-    if (FLAG_trace_zones) {
-      OS::PrintErr("*** Starting a new Stack zone 0x%" Px "(0x%" Px ")\n",
-                   reinterpret_cast<intptr_t>(this),
-                   reinterpret_cast<intptr_t>(&zone_));
-    }
-    zone_.Link(thread->zone());
-    thread->set_zone(&zone_);
-  }
+  explicit StackZone(Thread* thread);
 
   // Delete all memory associated with the zone.
-  ~StackZone() {
-    ASSERT(thread()->zone() == &zone_);
-    thread()->set_zone(zone_.previous_);
-    if (FLAG_trace_zones) {
-      OS::PrintErr("*** Deleting Stack zone 0x%" Px "(0x%" Px ")\n",
-                   reinterpret_cast<intptr_t>(this),
-                   reinterpret_cast<intptr_t>(&zone_));
-    }
-  }
+  ~StackZone();
 
   // Compute the total size of this zone. This includes wasted space that is
   // due to internal fragmentation in the segments.
@@ -209,8 +179,10 @@ class StackZone : public StackResource {
  private:
   Zone zone_;
 
-  template<typename T> friend class GrowableArray;
-  template<typename T> friend class ZoneGrowableArray;
+  template <typename T>
+  friend class GrowableArray;
+  template <typename T>
+  friend class ZoneGrowableArray;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(StackZone);
 };
@@ -279,12 +251,11 @@ inline ElementType* Zone::Realloc(ElementType* old_data,
   ElementType* new_data = Alloc<ElementType>(new_len);
   if (old_data != 0) {
     memmove(reinterpret_cast<void*>(new_data),
-            reinterpret_cast<void*>(old_data),
-            old_len * kElementSize);
+            reinterpret_cast<void*>(old_data), old_len * kElementSize);
   }
   return new_data;
 }
 
 }  // namespace dart
 
-#endif  // VM_ZONE_H_
+#endif  // RUNTIME_VM_ZONE_H_

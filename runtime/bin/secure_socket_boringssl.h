@@ -2,10 +2,10 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef BIN_SECURE_SOCKET_BORINGSSL_H_
-#define BIN_SECURE_SOCKET_BORINGSSL_H_
+#ifndef RUNTIME_BIN_SECURE_SOCKET_BORINGSSL_H_
+#define RUNTIME_BIN_SECURE_SOCKET_BORINGSSL_H_
 
-#if !defined(BIN_SECURE_SOCKET_H_)
+#if !defined(RUNTIME_BIN_SECURE_SOCKET_H_)
 #error Do not include secure_socket_boringssl.h directly. Use secure_socket.h.
 #endif
 
@@ -33,8 +33,39 @@ namespace bin {
 extern const unsigned char* root_certificates_pem;
 extern unsigned int root_certificates_pem_length;
 
+class SSLContext {
+ public:
+  static const intptr_t kApproximateSize;
+
+  explicit SSLContext(SSL_CTX* context)
+      : context_(context), alpn_protocol_string_(NULL) {}
+
+  ~SSLContext() {
+    SSL_CTX_free(context_);
+    if (alpn_protocol_string_ != NULL) {
+      free(alpn_protocol_string_);
+    }
+  }
+
+  SSL_CTX* context() const { return context_; }
+
+  uint8_t* alpn_protocol_string() const { return alpn_protocol_string_; }
+  void set_alpn_protocol_string(uint8_t* protocol_string) {
+    if (alpn_protocol_string_ != NULL) {
+      free(alpn_protocol_string_);
+    }
+    alpn_protocol_string_ = protocol_string;
+  }
+
+ private:
+  SSL_CTX* context_;
+  uint8_t* alpn_protocol_string_;
+
+  DISALLOW_COPY_AND_ASSIGN(SSLContext);
+};
+
 /*
- * SSLFilter encapsulates the NSS SSL(TLS) code in a filter, that communicates
+ * SSLFilter encapsulates the SSL(TLS) code in a filter, that communicates
  * with the containing _SecureFilterImpl Dart object through four shared
  * ExternalByteArray buffers, for reading and writing plaintext, and
  * reading and writing encrypted text.  The filter handles handshaking
@@ -52,6 +83,8 @@ class SSLFilter : public ReferenceCounted<SSLFilter> {
     kFirstEncrypted = kReadEncrypted
   };
 
+  static const intptr_t kApproximateSize;
+
   SSLFilter()
       : callback_error(NULL),
         ssl_(NULL),
@@ -61,7 +94,7 @@ class SSLFilter : public ReferenceCounted<SSLFilter> {
         handshake_complete_(NULL),
         bad_certificate_callback_(NULL),
         in_handshake_(false),
-        hostname_(NULL) { }
+        hostname_(NULL) {}
 
   ~SSLFilter();
 
@@ -104,6 +137,7 @@ class SSLFilter : public ReferenceCounted<SSLFilter> {
   BIO* socket_side_;
 
  private:
+  static const intptr_t kInternalBIOSize;
   static bool library_initialized_;
   static Mutex* mutex_;  // To protect library initialization.
 
@@ -131,4 +165,4 @@ class SSLFilter : public ReferenceCounted<SSLFilter> {
 }  // namespace bin
 }  // namespace dart
 
-#endif  // BIN_SECURE_SOCKET_BORINGSSL_H_
+#endif  // RUNTIME_BIN_SECURE_SOCKET_BORINGSSL_H_

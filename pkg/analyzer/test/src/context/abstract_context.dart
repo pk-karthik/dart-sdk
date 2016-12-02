@@ -18,7 +18,7 @@ import 'package:analyzer/src/task/driver.dart';
 import 'package:analyzer/task/model.dart';
 import 'package:plugin/manager.dart';
 import 'package:plugin/plugin.dart';
-import 'package:unittest/unittest.dart';
+import 'package:test/test.dart';
 
 import 'mock_sdk.dart';
 
@@ -123,10 +123,11 @@ class AbstractContextTest {
     return new AnalysisContextImpl();
   }
 
-  DartSdk createDartSdk() => new MockSdk();
+  DartSdk createDartSdk() => new MockSdk(resourceProvider: resourceProvider);
 
   Source newSource(String path, [String content = '']) {
-    File file = resourceProvider.newFile(path, content);
+    File file =
+        resourceProvider.newFile(resourceProvider.convertPath(path), content);
     return file.createSource();
   }
 
@@ -143,8 +144,8 @@ class AbstractContextTest {
     sdk = createDartSdk();
     sdkResolver = new DartUriResolver(sdk);
     resourceResolver = new ResourceUriResolver(resourceProvider);
-    sourceFactory =
-        new SourceFactory(<UriResolver>[sdkResolver, resourceResolver]);
+    sourceFactory = new SourceFactory(
+        <UriResolver>[sdkResolver, resourceResolver], null, resourceProvider);
     context = createAnalysisContext();
     if (options != null) {
       context.analysisOptions = options;

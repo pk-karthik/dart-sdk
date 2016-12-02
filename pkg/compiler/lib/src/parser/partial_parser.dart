@@ -5,17 +5,14 @@
 library dart2js.parser.partial;
 
 import '../common.dart';
-import '../options.dart' show ParserOptions;
-import '../util/characters.dart' as Characters show $CLOSE_CURLY_BRACKET;
 import '../tokens/token.dart' show BeginGroupToken, ErrorToken, Token;
 import '../tokens/token_constants.dart' as Tokens show EOF_TOKEN;
-
+import '../util/characters.dart' as Characters show $CLOSE_CURLY_BRACKET;
 import 'listener.dart' show Listener;
 import 'parser.dart' show Parser;
 
 class PartialParser extends Parser {
-  PartialParser(Listener listener, ParserOptions options)
-      : super(listener, options);
+  PartialParser(Listener listener) : super(listener);
 
   Token parseClassBody(Token token) => skipClassBody(token);
 
@@ -27,6 +24,7 @@ class PartialParser extends Parser {
     // This method is overridden for two reasons:
     // 1. Avoid generating events for arguments.
     // 2. Avoid calling skip expression for each argument (which doesn't work).
+    listener.handleNoArguments(token);
     if (optional('(', token)) {
       BeginGroupToken begin = token;
       return begin.endGroup.next;

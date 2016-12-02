@@ -44,21 +44,23 @@
 # ......dart_client.platform
 # ......dart_server.platform
 # ......dart_shared.platform
-# ......dart2dart.platform
 # ......_internal/
 #.........spec.sum
 #.........strong.sum
+#.........dev_compiler/
 # ......analysis_server/
 # ......analyzer/
 # ......async/
 # ......collection/
 # ......convert/
 # ......core/
+# ......front_end/
 # ......html/
 # ......internal/
 # ......io/
 # ......isolate/
 # ......js/
+# ......js_util/
 # ......math/
 # ......mirrors/
 # ......typed_data/
@@ -144,7 +146,7 @@ def CopySnapshots(snapshots, sdk_root):
              join(sdk_root, 'bin', 'snapshots', snapshot))
 
 def CopyAnalyzerSources(home, lib_dir):
-  for library in ['analyzer', 'analysis_server']:
+  for library in ['analyzer', 'analysis_server', 'front_end']:
     copytree(join(home, 'pkg', library), join(lib_dir, library),
              ignore=ignore_patterns('*.svn', 'doc', '*.py', '*.gypi', '*.sh',
                                     '.gitignore', 'packages'))
@@ -169,6 +171,11 @@ def CopyAnalysisSummaries(snapshots, lib):
   copyfile(join(snapshots, 'strong.sum'),
            join(lib, '_internal', 'strong.sum'))
 
+def CopyDevCompilerSdk(home, lib):
+  copyfile(join(home, 'pkg', 'dev_compiler', 'lib', 'sdk', 'ddc_sdk.sum'),
+           join(lib, '_internal', 'ddc_sdk.sum'))
+  copytree(join(home, 'pkg', 'dev_compiler', 'lib', 'js'),
+           join(lib, 'dev_compiler'))
 
 def Main():
   # Pull in all of the gypi files which will be munged into the sdk.
@@ -254,7 +261,7 @@ def Main():
                   join('html', 'dart2js'), join('html', 'dartium'),
                   join('html', 'html_common'),
                   join('indexed_db', 'dart2js'), join('indexed_db', 'dartium'),
-                  'js', 'math', 'mirrors', 'profiler', 'typed_data',
+                  'js', 'js_util', 'math', 'mirrors', 'profiler', 'typed_data',
                   join('svg', 'dart2js'), join('svg', 'dartium'),
                   join('web_audio', 'dart2js'), join('web_audio', 'dartium'),
                   join('web_gl', 'dart2js'), join('web_gl', 'dartium'),
@@ -266,8 +273,7 @@ def Main():
   # Copy the platform descriptors.
   for file_name in ["dart_client.platform",
                     "dart_server.platform",
-                    "dart_shared.platform",
-                    "dart2dart.platform"]:
+                    "dart_shared.platform"]:
     copyfile(join(HOME, 'sdk', 'lib', file_name), join(LIB, file_name));
 
   # Copy libraries.dart to lib/_internal/libraries.dart for backwards
@@ -305,6 +311,7 @@ def Main():
   CopyDartdocResources(HOME, SDK_tmp)
   CopyAnalyzerSources(HOME, LIB)
   CopyAnalysisSummaries(SNAPSHOT, LIB)
+  CopyDevCompilerSdk(HOME, LIB)
 
   # Write the 'version' file
   version = utils.GetVersion()

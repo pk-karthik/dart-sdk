@@ -7,13 +7,16 @@ library analyzer.task.model;
 import 'dart:collection';
 import 'dart:developer';
 
+import 'package:analyzer/error/error.dart' show AnalysisError;
+import 'package:analyzer/exception/exception.dart';
 import 'package:analyzer/src/generated/engine.dart';
-import 'package:analyzer/src/generated/error.dart' show AnalysisError;
-import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/utilities_general.dart';
 import 'package:analyzer/src/task/driver.dart';
 import 'package:analyzer/src/task/model.dart';
+import 'package:front_end/src/base/analysis_target.dart';
+
+export 'package:front_end/src/base/analysis_target.dart' show AnalysisTarget;
 
 /**
  * A function that converts the given [key] and [value] into a [TaskInput].
@@ -61,22 +64,10 @@ class AnalysisContextTarget implements AnalysisTarget {
   AnalysisContextTarget(this.context);
 
   @override
-  Source get source => null;
-}
+  Source get librarySource => null;
 
-/**
- * An object with which an analysis result can be associated.
- *
- * Clients may implement this class when creating new kinds of targets.
- * Instances of this type are used in hashed data structures, so subtypes are
- * required to correctly implement [==] and [hashCode].
- */
-abstract class AnalysisTarget {
-  /**
-   * Return the source associated with this target, or `null` if this target is
-   * not associated with a source.
-   */
-  Source get source;
+  @override
+  Source get source => null;
 }
 
 /**
@@ -275,6 +266,7 @@ abstract class AnalysisTask {
       // There was no cycle.
       return false;
     }
+
     if (cycle.length > 0) {
       traverse(cycle[0]);
     }
@@ -334,6 +326,8 @@ abstract class AnalysisTask {
 //        previousTag.makeCurrent();
 //      }
     } on AnalysisException {
+      rethrow;
+    } on ModificationTimeMismatchError {
       rethrow;
     } catch (exception, stackTrace) {
       throw new AnalysisException(
@@ -420,6 +414,18 @@ abstract class MapTaskInput<K, V> implements TaskInput<Map<K, V>> {
    */
   TaskInput<List/*<E>*/ > toFlattenList/*<E>*/(
       BinaryFunction<K, dynamic /*element of V*/, dynamic/*=E*/ > mapper);
+}
+
+/**
+ * Instances of this class are thrown when a task detects that the modification
+ * time of a cache entry is not the same as the actual modification time.  This
+ * means that any analysis results based on the content of the target cannot be
+ * used anymore and must be invalidated.
+ */
+class ModificationTimeMismatchError {
+  final Source source;
+
+  ModificationTimeMismatchError(this.source);
 }
 
 /**

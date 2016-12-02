@@ -7,13 +7,13 @@
 
 #include "bin/directory.h"
 
-#include <dirent.h>  // NOLINT
-#include <errno.h>  // NOLINT
-#include <stdlib.h>  // NOLINT
-#include <string.h>  // NOLINT
+#include <dirent.h>     // NOLINT
+#include <errno.h>      // NOLINT
+#include <stdlib.h>     // NOLINT
+#include <string.h>     // NOLINT
 #include <sys/param.h>  // NOLINT
-#include <sys/stat.h>  // NOLINT
-#include <unistd.h>  // NOLINT
+#include <sys/stat.h>   // NOLINT
+#include <unistd.h>     // NOLINT
 
 #include "bin/dartutils.h"
 #include "bin/file.h"
@@ -57,13 +57,9 @@ const char* PathBuffer::AsScopedString() const {
 
 bool PathBuffer::Add(const char* name) {
   char* data = AsString();
-  int written = snprintf(data + length_,
-                         PATH_MAX - length_,
-                         "%s",
-                         name);
+  int written = snprintf(data + length_, PATH_MAX - length_, "%s", name);
   data[PATH_MAX] = '\0';
-  if ((written <= PATH_MAX - length_) &&
-      (written >= 0) &&
+  if ((written <= PATH_MAX - length_) && (written >= 0) &&
       (static_cast<size_t>(written) == strnlen(name, PATH_MAX + 1))) {
     length_ += written;
     return true;
@@ -117,20 +113,17 @@ ListType DirectoryListingEntry::Next(DirectoryListing* listing) {
 
   // Iterate the directory and post the directories and files to the
   // ports.
-  int status = 0;
-  dirent entry;
-  dirent* result;
-  status = NO_RETRY_EXPECTED(readdir_r(
-      reinterpret_cast<DIR*>(lister_), &entry, &result));
-  if ((status == 0) && (result != NULL)) {
-    if (!listing->path_buffer().Add(entry.d_name)) {
+  errno = 0;
+  dirent* entry = readdir(reinterpret_cast<DIR*>(lister_));
+  if (entry != NULL) {
+    if (!listing->path_buffer().Add(entry->d_name)) {
       done_ = true;
       return kListError;
     }
-    switch (entry.d_type) {
+    switch (entry->d_type) {
       case DT_DIR:
-        if ((strcmp(entry.d_name, ".") == 0) ||
-            (strcmp(entry.d_name, "..") == 0)) {
+        if ((strcmp(entry->d_name, ".") == 0) ||
+            (strcmp(entry->d_name, "..") == 0)) {
           return Next(listing);
         }
         return kListDirectory;
@@ -140,11 +133,11 @@ ListType DirectoryListingEntry::Next(DirectoryListing* listing) {
         if (!listing->follow_links()) {
           return kListLink;
         }
-        // Else fall through to next case.
-        // Fall through.
+      // Else fall through to next case.
+      // Fall through.
       case DT_UNKNOWN: {
         // On some file systems the entry type is not determined by
-        // readdir_r. For those and for links we use stat to determine
+        // readdir. For those and for links we use stat to determine
         // the actual entry type. Notice that stat returns the type of
         // the file pointed to.
         struct stat64 entry_info;
@@ -156,9 +149,7 @@ ListType DirectoryListingEntry::Next(DirectoryListing* listing) {
         }
         if (listing->follow_links() && S_ISLNK(entry_info.st_mode)) {
           // Check to see if we are in a loop created by a symbolic link.
-          LinkList current_link = { entry_info.st_dev,
-                                    entry_info.st_ino,
-                                    link_ };
+          LinkList current_link = {entry_info.st_dev, entry_info.st_ino, link_};
           LinkList* previous = link_;
           while (previous != NULL) {
             if ((previous->dev == current_link.dev) &&
@@ -178,16 +169,16 @@ ListType DirectoryListingEntry::Next(DirectoryListing* listing) {
             // Recurse into the subdirectory with current_link added to the
             // linked list of seen file system links.
             link_ = new LinkList(current_link);
-            if ((strcmp(entry.d_name, ".") == 0) ||
-                (strcmp(entry.d_name, "..") == 0)) {
+            if ((strcmp(entry->d_name, ".") == 0) ||
+                (strcmp(entry->d_name, "..") == 0)) {
               return Next(listing);
             }
             return kListDirectory;
           }
         }
         if (S_ISDIR(entry_info.st_mode)) {
-          if ((strcmp(entry.d_name, ".") == 0) ||
-              (strcmp(entry.d_name, "..") == 0)) {
+          if ((strcmp(entry->d_name, ".") == 0) ||
+              (strcmp(entry->d_name, "..") == 0)) {
             return Next(listing);
           }
           return kListDirectory;
@@ -204,8 +195,7 @@ ListType DirectoryListingEntry::Next(DirectoryListing* listing) {
   }
   done_ = true;
 
-  if (status != 0) {
-    errno = status;
+  if (errno != 0) {
     return kListError;
   }
 
@@ -235,15 +225,13 @@ void DirectoryListingEntry::ResetLink() {
 static bool DeleteRecursively(PathBuffer* path);
 
 
-static bool DeleteFile(char* file_name,
-                       PathBuffer* path) {
+static bool DeleteFile(char* file_name, PathBuffer* path) {
   return path->Add(file_name) &&
-      (NO_RETRY_EXPECTED(unlink(path->AsString())) == 0);
+         (NO_RETRY_EXPECTED(unlink(path->AsString())) == 0);
 }
 
 
-static bool DeleteDir(char* dir_name,
-                      PathBuffer* path) {
+static bool DeleteDir(char* dir_name, PathBuffer* path) {
   if ((strcmp(dir_name, ".") == 0) || (strcmp(dir_name, "..") == 0)) {
     return true;
   }
@@ -277,32 +265,43 @@ static bool DeleteRecursively(PathBuffer* path) {
 
   // Iterate the directory and delete all files and directories.
   int path_length = path->length();
-  dirent entry;
-  dirent* result;
-  while (NO_RETRY_EXPECTED(readdir_r(dir_pointer, &entry, &result)) == 0) {
-    if (result == NULL) {
+  while (true) {
+    // In case `readdir()` returns `NULL` we distinguish between end-of-stream
+    // and error by looking if `errno` was updated.
+    errno = 0;
+    // In glibc 2.24+, readdir_r is deprecated.
+    // According to the man page for readdir:
+    // "readdir(3) is not required to be thread-safe. However, in modern
+    // implementations (including the glibc implementation), concurrent calls to
+    // readdir(3) that specify different directory streams are thread-safe."
+    dirent* entry = readdir(dir_pointer);
+    if (entry == NULL) {
+      // Failed to read next directory entry.
+      if (errno != 0) {
+        break;
+      }
       // End of directory.
       return (NO_RETRY_EXPECTED(closedir(dir_pointer)) == 0) &&
              (NO_RETRY_EXPECTED(remove(path->AsString())) == 0);
     }
     bool ok = false;
-    switch (entry.d_type) {
+    switch (entry->d_type) {
       case DT_DIR:
-        ok = DeleteDir(entry.d_name, path);
+        ok = DeleteDir(entry->d_name, path);
         break;
       case DT_REG:
       case DT_LNK:
         // Treat all links as files. This will delete the link which
         // is what we want no matter if the link target is a file or a
         // directory.
-        ok = DeleteFile(entry.d_name, path);
+        ok = DeleteFile(entry->d_name, path);
         break;
       case DT_UNKNOWN: {
-        if (!path->Add(entry.d_name)) {
+        if (!path->Add(entry->d_name)) {
           break;
         }
         // On some file systems the entry type is not determined by
-        // readdir_r. For those we use lstat to determine the entry
+        // readdir. For those we use lstat to determine the entry
         // type.
         struct stat64 entry_info;
         if (TEMP_FAILURE_RETRY(lstat64(path->AsString(), &entry_info)) == -1) {
@@ -310,12 +309,12 @@ static bool DeleteRecursively(PathBuffer* path) {
         }
         path->Reset(path_length);
         if (S_ISDIR(entry_info.st_mode)) {
-          ok = DeleteDir(entry.d_name, path);
+          ok = DeleteDir(entry->d_name, path);
         } else if (S_ISREG(entry_info.st_mode) || S_ISLNK(entry_info.st_mode)) {
           // Treat links as files. This will delete the link which is
           // what we want no matter if the link target is a file or a
           // directory.
-          ok = DeleteFile(entry.d_name, path);
+          ok = DeleteFile(entry->d_name, path);
         }
         break;
       }
@@ -346,19 +345,14 @@ Directory::ExistsResult Directory::Exists(const char* dir_name) {
       return DOES_NOT_EXIST;
     }
   } else {
-    if ((errno == EACCES) ||
-        (errno == EBADF) ||
-        (errno == EFAULT) ||
-        (errno == ENOMEM) ||
-        (errno == EOVERFLOW)) {
+    if ((errno == EACCES) || (errno == EBADF) || (errno == EFAULT) ||
+        (errno == ENOMEM) || (errno == EOVERFLOW)) {
       // Search permissions denied for one of the directories in the
       // path or a low level error occured. We do not know if the
       // directory exists.
       return UNKNOWN;
     }
-    ASSERT((errno == ELOOP) ||
-           (errno == ENAMETOOLONG) ||
-           (errno == ENOENT) ||
+    ASSERT((errno == ELOOP) || (errno == ENAMETOOLONG) || (errno == ENOENT) ||
            (errno == ENOTDIR));
     return DOES_NOT_EXIST;
   }

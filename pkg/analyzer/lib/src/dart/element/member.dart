@@ -12,7 +12,6 @@ import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/type.dart';
 import 'package:analyzer/src/generated/engine.dart'
     show AnalysisContext, AnalysisEngine;
-import 'package:analyzer/src/generated/java_core.dart';
 import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/utilities_dart.dart';
@@ -115,9 +114,6 @@ class ConstructorMember extends ExecutableMember implements ConstructorElement {
     List<DartType> parameterTypes = definingType.element.type.typeArguments;
     FunctionType substitutedType =
         baseType.substitute2(argumentTypes, parameterTypes);
-    if (baseType == substitutedType) {
-      return constructor;
-    }
     return new ConstructorMember(constructor, definingType, substitutedType);
   }
 }
@@ -149,7 +145,7 @@ abstract class ExecutableMember extends Member implements ExecutableElement {
     // Elements within this element should have type parameters substituted,
     // just like this element.
     //
-    throw new UnsupportedOperationException();
+    throw new UnsupportedError('functions');
 //    return getBaseElement().getFunctions();
   }
 
@@ -186,7 +182,7 @@ abstract class ExecutableMember extends Member implements ExecutableElement {
     // Elements within this element should have type parameters substituted,
     // just like this element.
     //
-    throw new UnsupportedOperationException();
+    throw new UnsupportedError('localVariables');
 //    return getBaseElement().getLocalVariables();
   }
 
@@ -234,6 +230,9 @@ class FieldFormalParameterMember extends ParameterMember
       : super(baseElement, definingType, type);
 
   @override
+  bool get isCovariant => baseElement.isCovariant;
+
+  @override
   FieldElement get field {
     FieldElement field = (baseElement as FieldFormalParameterElement).field;
     if (field is FieldElement) {
@@ -272,6 +271,9 @@ class FieldMember extends VariableMember implements FieldElement {
 
   @override
   bool get isEnumConstant => baseElement.isEnumConstant;
+
+  @override
+  bool get isVirtual => baseElement.isVirtual;
 
   @override
   DartType get propagatedType => substituteFor(baseElement.propagatedType);
@@ -403,9 +405,6 @@ class FunctionMember extends ExecutableMember implements FunctionElement {
         TypeParameterTypeImpl.getTypes(definingType.typeParameters);
     FunctionType substitutedType =
         baseType.substitute2(argumentTypes, parameterTypes);
-    if (baseType == substitutedType) {
-      return method;
-    }
     return new MethodMember(method, definingType, substitutedType);
   }
 }
@@ -447,10 +446,6 @@ abstract class Member implements Element {
   @override
   String get displayName => _baseElement.displayName;
 
-  @deprecated
-  @override
-  SourceRange get docRange => _baseElement.docRange;
-
   @override
   String get documentationComment => _baseElement.documentationComment;
 
@@ -459,6 +454,9 @@ abstract class Member implements Element {
 
   @override
   bool get isDeprecated => _baseElement.isDeprecated;
+
+  @override
+  bool get isFactory => _baseElement.isFactory;
 
   @override
   bool get isJS => _baseElement.isJS;
@@ -488,6 +486,9 @@ abstract class Member implements Element {
   LibraryElement get library => _baseElement.library;
 
   @override
+  Source get librarySource => _baseElement.librarySource;
+
+  @override
   ElementLocation get location => _baseElement.location;
 
   @override
@@ -515,7 +516,8 @@ abstract class Member implements Element {
   AstNode computeNode() => _baseElement.computeNode();
 
   @override
-  Element/*=E*/ getAncestor/*<E extends Element >*/(Predicate<Element> predicate) =>
+  Element/*=E*/ getAncestor/*<E extends Element >*/(
+          Predicate<Element> predicate) =>
       baseElement.getAncestor(predicate);
 
   @override
@@ -637,9 +639,6 @@ class MethodMember extends ExecutableMember implements MethodElement {
     List<DartType> parameterTypes = definingType.element.type.typeArguments;
     FunctionType substitutedType =
         baseType.substitute2(argumentTypes, parameterTypes);
-    if (baseType == substitutedType) {
-      return method;
-    }
     return new MethodMember(method, definingType, substitutedType);
   }
 }
@@ -673,6 +672,9 @@ class ParameterMember extends VariableMember
   int get hashCode => baseElement.hashCode;
 
   @override
+  bool get isCovariant => baseElement.isCovariant;
+
+  @override
   bool get isInitializingFormal => baseElement.isInitializingFormal;
 
   @override
@@ -700,7 +702,8 @@ class ParameterMember extends VariableMember
   FormalParameter computeNode() => baseElement.computeNode();
 
   @override
-  Element/*=E*/ getAncestor/*<E extends Element>*/(Predicate<Element> predicate) {
+  Element/*=E*/ getAncestor/*<E extends Element>*/(
+      Predicate<Element> predicate) {
     Element element = baseElement.getAncestor(predicate);
     ParameterizedType definingType = this.definingType;
     if (definingType is InterfaceType) {
@@ -709,7 +712,8 @@ class ParameterMember extends VariableMember
       } else if (element is MethodElement) {
         return MethodMember.from(element, definingType) as Element/*=E*/;
       } else if (element is PropertyAccessorElement) {
-        return PropertyAccessorMember.from(element, definingType) as Element/*=E*/;
+        return PropertyAccessorMember.from(element, definingType)
+            as Element/*=E*/;
       }
     }
     return element as Element/*=E*/;
@@ -737,37 +741,6 @@ class ParameterMember extends VariableMember
   void visitChildren(ElementVisitor visitor) {
     super.visitChildren(visitor);
     safelyVisitChildren(parameters, visitor);
-  }
-
-  /**
-   * If the given [parameter]'s type is different when any type parameters from
-   * the defining type's declaration are replaced with the actual type
-   * arguments from the [definingType], create a parameter member representing
-   * the given parameter. Return the member that was created, or the base
-   * parameter if no member was created.
-   */
-  static ParameterElement from(
-      ParameterElement parameter, ParameterizedType definingType) {
-    if (parameter == null || definingType.typeArguments.length == 0) {
-      return parameter;
-    }
-    // Check if parameter type depends on defining type type arguments.
-    // It is possible that we did not resolve field formal parameter yet,
-    // so skip this check for it.
-    if (parameter is FieldFormalParameterElement) {
-      return new FieldFormalParameterMember(parameter, definingType);
-    } else {
-      DartType baseType = parameter.type;
-      List<DartType> argumentTypes = definingType.typeArguments;
-      List<DartType> parameterTypes =
-          TypeParameterTypeImpl.getTypes(definingType.typeParameters);
-      DartType substitutedType =
-          baseType.substitute2(argumentTypes, parameterTypes);
-      if (baseType == substitutedType) {
-        return parameter;
-      }
-      return new ParameterMember(parameter, definingType, substitutedType);
-    }
   }
 }
 
@@ -928,9 +901,13 @@ class TypeParameterMember extends Member implements TypeParameterElement {
   @override
   final DartType bound;
 
+  DartType _type;
+
   TypeParameterMember(
       TypeParameterElement baseElement, DartType definingType, this.bound)
-      : super(baseElement, definingType);
+      : super(baseElement, definingType) {
+    _type = new TypeParameterTypeImpl(this);
+  }
 
   @override
   TypeParameterElement get baseElement =>
@@ -940,7 +917,10 @@ class TypeParameterMember extends Member implements TypeParameterElement {
   Element get enclosingElement => baseElement.enclosingElement;
 
   @override
-  TypeParameterType get type => baseElement.type;
+  int get hashCode => baseElement.hashCode;
+
+  @override
+  TypeParameterType get type => _type;
 
   @override
   accept(ElementVisitor visitor) => visitor.visitTypeParameterElement(this);
@@ -964,9 +944,6 @@ class TypeParameterMember extends Member implements TypeParameterElement {
         TypeParameterTypeImpl.getTypes(definingType.typeParameters);
     DartType substitutedBound =
         bound.substitute2(argumentTypes, parameterTypes);
-    if (bound == substitutedBound) {
-      return parameter;
-    }
     return new TypeParameterMember(parameter, definingType, substitutedBound);
   }
 }
@@ -1011,7 +988,7 @@ abstract class VariableMember extends Member implements VariableElement {
     // Elements within this element should have type parameters substituted,
     // just like this element.
     //
-    throw new UnsupportedOperationException();
+    throw new UnsupportedError('initializer');
     //    return getBaseElement().getInitializer();
   }
 

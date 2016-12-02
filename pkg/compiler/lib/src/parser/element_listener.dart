@@ -4,7 +4,6 @@
 
 library dart2js.parser.element_listener;
 
-import '../compiler.dart' show Compiler;
 import '../common.dart';
 import '../diagnostics/messages.dart' show MessageTemplate;
 import '../elements/elements.dart'
@@ -17,6 +16,7 @@ import '../elements/modelx.dart'
         EnumClassElementX,
         FieldElementX,
         LibraryElementX,
+        MetadataAnnotationX,
         NamedMixinApplicationElementX,
         VariableList;
 import '../id_generator.dart';
@@ -29,7 +29,7 @@ import '../tokens/token.dart'
 import '../tokens/token_constants.dart' as Tokens show EOF_TOKEN;
 import '../tree/tree.dart';
 import '../util/util.dart' show Link, LinkBuilder;
-
+import 'listener.dart' show closeBraceFor, Listener, ParserError, VERBOSE;
 import 'partial_elements.dart'
     show
         PartialClassElement,
@@ -38,7 +38,6 @@ import 'partial_elements.dart'
         PartialFunctionElement,
         PartialMetadataAnnotation,
         PartialTypedefElement;
-import 'listener.dart' show closeBraceFor, Listener, ParserError, VERBOSE;
 
 /// Options used for scanning.
 ///
@@ -233,8 +232,8 @@ class ElementListener extends Listener {
 
   void endTopLevelDeclaration(Token token) {
     if (!metadata.isEmpty) {
-      recoverableError(
-          metadata.first.beginToken, 'Metadata not supported here.');
+      MetadataAnnotationX first = metadata.first;
+      recoverableError(first.beginToken, 'Metadata not supported here.');
       metadata.clear();
     }
   }
@@ -322,6 +321,7 @@ class ElementListener extends Listener {
     void buildFieldElement(Identifier name, VariableList fields) {
       pushElement(new FieldElementX(name, compilationUnitElement, fields));
     }
+
     NodeList variables = makeNodeList(count, null, null, ",");
     popNode(); // type
     Modifiers modifiers = popNode();
@@ -731,19 +731,7 @@ class ElementListener extends Listener {
     beginMember(token);
   }
 
-  void endFields(fieldCount, start, token) {
-    memberErrors = memberErrors.tail;
-  }
-
-  void endMethod(getOrSet, start, token) {
-    memberErrors = memberErrors.tail;
-  }
-
-  void beginFactoryMethod(Token token) {
-    memberErrors = memberErrors.prepend(false);
-  }
-
-  void endFactoryMethod(Token beginToken, Token endToken) {
+  void endMember() {
     memberErrors = memberErrors.tail;
   }
 

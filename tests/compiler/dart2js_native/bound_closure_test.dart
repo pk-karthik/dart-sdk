@@ -2,31 +2,30 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import 'native_testing.dart';
 
 // Test calling convention of property extraction closures.
 
 class AA {
-  bar(a, [b = 'A']) => 'AA.bar($a, $b)';   // bar is plain dart convention.
-  foo(a, [b = 'A']) => 'AA.foo($a, $b)';   // foo has interceptor convention.
+  bar(a, [b = 'A']) => 'AA.bar($a, $b)'; // bar is plain dart convention.
+  foo(a, [b = 'A']) => 'AA.foo($a, $b)'; // foo has interceptor convention.
 }
 
 @Native("BB")
 class BB {
-  foo(a, [b = 'B']) native;
+  foo(a, [b = 'B']) native ;
 }
 
 @Native("CC")
 class CC extends BB {
-  foo(a, [b = 'C']) native;
+  foo(a, [b = 'C']) native ;
 
   get superfoo => super.foo;
 }
 
-makeBB() native;
-makeCC() native;
-inscrutable(a) native;
+makeBB() native ;
+makeCC() native ;
+inscrutable(a) native ;
 
 void setup() native r"""
 function BB() {}
@@ -42,10 +41,13 @@ CC.prototype.foo = function(u, v) {
 makeBB = function(){return new BB;};
 makeCC = function(){return new CC;};
 inscrutable = function(a){return a;};
+
+self.nativeConstructor(BB);
+self.nativeConstructor(CC);
 """;
 
-
 main() {
+  nativeTesting();
   setup();
   var a = inscrutable(new AA());
   var b = inscrutable(makeBB());

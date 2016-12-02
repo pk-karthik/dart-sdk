@@ -2,8 +2,8 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef VM_CONSTANTS_DBC_H_
-#define VM_CONSTANTS_DBC_H_
+#ifndef RUNTIME_VM_CONSTANTS_DBC_H_
+#define RUNTIME_VM_CONSTANTS_DBC_H_
 
 #include "platform/globals.h"
 #include "platform/assert.h"
@@ -12,6 +12,7 @@
 
 namespace dart {
 
+// clang-format off
 // List of Dart Bytecode instructions.
 //
 // INTERPRETER STATE
@@ -83,6 +84,11 @@ namespace dart {
 //
 //    Unreachable instruction.
 //
+//  - Nop D
+//
+//    This instuction does nothing. It may refer to an object in the constant
+//    pool that may be decoded by other instructions.
+//
 //  - Compile
 //
 //    Compile current function and start executing newly produced code
@@ -143,6 +149,11 @@ namespace dart {
 //    Invoke function in SP[0] with arguments SP[-(1+ArgC)], ..., SP[-1] and
 //    argument descriptor PP[D].
 //
+//  - IndirectStaticCall ArgC, D
+//
+//    Invoke the function given by the ICData in SP[0] with arguments
+//    SP[-(1+ArgC)], ..., SP[-1] and argument descriptor PP[D].
+//
 //  - InstanceCall<N> ArgC, D; InstanceCall<N>Opt ArgC, D
 //
 //    Lookup and invoke method with N checked arguments using ICData in PP[D]
@@ -152,6 +163,25 @@ namespace dart {
 //
 //    Invoke native function SP[-1] with argc_tag SP[0].
 //
+//  - PushPolymorphicInstanceCall ArgC, D
+//
+//    Skips 2*D + 1 instructions and pushes a function object onto the stack
+//    if one can be found as follows. Otherwise skips only 2*D instructions.
+//    The function is looked up in the IC data encoded in the following 2*D
+//    Nop instructions. The Nop instructions should be arranged in pairs with
+//    the first being the cid, and the second being the function to push if
+//    the cid is the cid of the receiver found at SP[-(1 + ArgC)].
+//
+//  - OneByteStringFromCharCode rA, rX
+//
+//    Load the one-character symbol with the char code given by the Smi
+//    in FP[rX] into FP[rA].
+//
+//  - StringToCharCode rA, rX
+//
+//    Load and smi-encode the single char code of the string in FP[rX] into
+//    FP[rA]. If the string's length is not 1, load smi -1 instead.
+//
 //  - AddTOS; SubTOS; MulTOS; BitOrTOS; BitAndTOS; EqualTOS; LessThanTOS;
 //    GreaterThanTOS;
 //
@@ -160,7 +190,105 @@ namespace dart {
 //    then pops operands and pushes result on the stack and skips the next
 //    instruction (which implements a slow path fallback).
 //
-//  - StoreStaticTOS D
+//  - Add, Sub, Mul, Div, Mod, Shl, Shr rA, rB, rC
+//
+//    Arithmetic operations on Smis. FP[rA] <- FP[rB] op FP[rC].
+//    If these instructions can trigger a deoptimization, the following
+//    instruction should be Deopt. If no deoptimization should be triggered,
+//    the immediately following instruction is skipped. These instructions
+//    expect their operands to be Smis, but don't check that they are.
+//
+//  - ShlImm rA, rB, rC
+//
+//    FP[rA] <- FP[rB] << rC. Shifts the Smi in FP[rB] left by rC. rC is
+//    assumed to be a legal positive number by which left-shifting is possible.
+//
+//  - Min, Max rA, rB, rC
+//
+//    FP[rA] <- {min, max}(FP[rB], FP[rC]). Assumes that FP[rB], and FP[rC] are
+//    Smis.
+//
+//  - Neg rA , rD
+//
+//    FP[rA] <- -FP[rD]. Assumes FP[rD] is a Smi. If there is no overflow the
+//    immediately following instruction is skipped.
+//
+//  - DMin, DMax, DAdd, DSub, DMul, DDiv, DPow, DMod rA, rB, rC
+//
+//    Arithmetic operaions on unboxed doubles. FP[rA] <- FP[rB] op FP[rC].
+//
+//  - DNeg, DCos, DSin, DSqrt rA, rD
+//
+//    FP[rA] <- op(FP[rD]). Assumes FP[rD] is an unboxed double.
+//
+//  - DTruncate, DFloor, DCeil rA, rD
+//
+//    Applies trunc(), floor(), or ceil() to the unboxed double in FP[rD], and
+//    stores the result in FP[rA].
+//
+//  - DoubleToFloat, FloatToDouble rA, rD
+//
+//    Convert the unboxed float or double in FP[rD] as indicated, and store the
+//    result in FP[rA].
+//
+//  - DoubleIsNaN rA, rD
+//
+//    If the unboxed double in FP[rD] is a NaN, then writes Bool::True().raw()
+//    into FP[rA], and Bool::False().raw() otherwise.
+//
+//  - DoubleIsInfinite rA, rD
+//
+//    If the unboxed double in FP[rD] is + or - infinity, then
+//    writes Bool::True().raw() into FP[rA], and Bool::False().raw() otherwise.
+//
+//  - BitOr, BitAnd, BitXor rA, rB, rC
+//
+//    FP[rA] <- FP[rB] op FP[rC]. These instructions expect their operands to be
+//    Smis, but don't check that they are.
+//
+//  - BitNot rA, rD
+//
+//    FP[rA] <- ~FP[rD]. As above, assumes FP[rD] is a Smi.
+//
+//  - WriteIntoDouble rA, rD
+//
+//    Box the double in FP[rD] using the box in FP[rA].
+//
+//  - UnboxDouble rA, rD
+//
+//    Unbox the double in FP[rD] into FP[rA]. Assumes FP[rD] is a double.
+//
+//  - CheckedUnboxDouble rA, rD
+//
+//    Unboxes FP[rD] into FP[rA] and skips the following instruction unless
+//    FP[rD] is not a double or a Smi. When FP[rD] is a Smi, converts it to a
+//    double.
+//
+//  - UnboxInt32 rA, rB, C
+//
+//    Unboxes the integer in FP[rB] into FP[rA]. If C == 1, the value may be
+//    truncated. If FP[rA] is successfully unboxed the following instruction is
+//    skipped.
+//
+//  - BoxInt32 rA, rD
+//
+//    Boxes the unboxed signed 32-bit integer in FP[rD] into FP[rA].
+//
+//  - BoxUint32 rA, rD
+//
+//    Boxes the unboxed unsigned 32-bit integer in FP[rD] into FP[rA].
+//
+//  - SmiToDouble rA, rD
+//
+//    Convert the Smi in FP[rD] to an unboxed double in FP[rA].
+//
+//  - DoubleToSmi rA, rD
+//
+//    If the unboxed double in FP[rD] can be converted to a Smi in FP[rA], then
+//    this instruction does so, and skips the following instruction. Otherwise,
+//    the following instruction is not skipped.
+//
+//  - StoreStaticT`OS D
 //
 //    Stores TOS into the static field PP[D].
 //
@@ -186,17 +314,50 @@ namespace dart {
 //        IfNeStrictTOS
 //        Jump T         ;; jump if not equal
 //
+//  - If<Cond>Null rA
+//
+//    Cond is Eq or Ne. Skips the next instruction unless the given condition
+//    holds.
+//
+//  - If<Cond> rA, rD
+//
+//    Cond is Le, Lt, Ge, Gt, unsigned variants ULe, ULt, UGe, UGt, and
+//    unboxed double variants DEq, DNe, DLe, DLt, DGe, DGt.
+//    Skips the next instruction unless FP[rA] <Cond> FP[rD]. Assumes that
+//    FP[rA] and FP[rD] are Smis or unboxed doubles as inidcated by <Cond>.
+//
 //  - CreateArrayTOS
 //
 //    Allocate array of length SP[0] with type arguments SP[-1].
+//
+//  - CreateArrayOpt rA, rB, rC
+//
+//    Try to allocate a new array where FP[rB] is the length, and FP[rC] is the
+//    type. If allocation is successful, the result is stored in FP[rA], and
+//    the next four instructions, which should be the
+//    (Push type; Push length; AllocateTOS; PopLocal) slow path are skipped.
 //
 //  - Allocate D
 //
 //    Allocate object of class PP[D] with no type arguments.
 //
+//  - AllocateOpt rA, D
+//
+//    Try allocating an object with tags in PP[D] with no type arguments.
+//    If allocation is successful, the result is stored in FP[rA], and
+//    the next two instructions, which should be the (Allocate class; PopLocal)
+//    slow path are skipped
+//
 //  - AllocateT
 //
 //    Allocate object of class SP[0] with type arguments SP[-1].
+//
+//  - AllocateTOpt rA, D
+//
+//    Similar to AllocateOpt with the difference that the offset of the
+//    type arguments in the resulting object is taken from the D field of the
+//    following Nop instruction, and on success 4 instructions are skipped and
+//    the object at the top of the stack is popped.
 //
 //  - StoreIndexedTOS
 //
@@ -205,12 +366,52 @@ namespace dart {
 //
 //  - StoreIndexed rA, rB, rC
 //
-//    Store rC into array rA at index rB. No typechecking is done.
-//    rA is assumed to be a RawArray, rB to be a smi.
+//    Store FP[rC] into array FP[rA] at index FP[rB]. No typechecking is done.
+//    FP[rA] is assumed to be a RawArray, FP[rB] to be a smi.
+//
+//  - StoreIndexed{N}{Type} rA, rB, rC
+//
+//    Where Type is Float32, Float64, Uint8, or OneByteString
+//    Where N is '', '4', or '8'. N may only be '4' for Float32 and '8' for
+//    Float64.
+//
+//    Store the unboxed double or tagged Smi in FP[rC] into the typed data array
+//    at FP[rA] at index FP[rB]. If N is not '', the index is assumed to be
+//    already scaled by N.
+//
+//  - StoreIndexedExternalUint8 rA, rB, rC
+//
+//    Similar to StoreIndexedUint8 but FP[rA] is an external typed data aray.
+//
+//  - LoadIndexed rA, rB, rC
+//
+//    Loads from array FP[rB] at index FP[rC] into FP[rA]. No typechecking is
+//    done. FP[rB] is assumed to be a RawArray, and to contain a Smi at FP[rC].
+//
+//  - LoadIndexed{N}{Type} rA, rB, rC
+//
+//    Where Type is Float32, Float64, OneByteString, TwoByteString, Uint8,
+//    Int8, and N is '', '4', or '8'. N may only be '4' for Float32, and may
+//    only be '8' for Float64.
+//
+//    Loads from typed data array FP[rB] at index FP[rC] into an unboxed double,
+//    or tagged Smi in FP[rA] as indicated by the type in the name. If N is not
+//    '', the index is assumed to be already scaled by N.
+//
+//  - LoadIndexedExternal{Int8, Uint8} rA, rB, rC
+//
+//    Loads from the external typed data array FP[rB] at index FP[rC] into
+//    FP[rA]. No typechecking is done.
 //
 //  - StoreField rA, B, rC
 //
 //    Store value FP[rC] into object FP[rA] at offset (in words) B.
+//
+//  - StoreFieldExt rA, rD
+//
+//    Store value FP[rD] into object FP[rA] at offset (in words)
+//    stored in the following Nop instruction. Used to access fields with
+//    large offsets.
 //
 //  - StoreFieldTOS D
 //
@@ -219,6 +420,16 @@ namespace dart {
 //  - LoadField rA, rB, C
 //
 //    Load value at offset (in words) C from object FP[rB] into FP[rA].
+//
+//  - LoadFieldExt rA, rD
+//
+//    Load value from object FP[rD] at offset (in words) stored in the
+//    following Nop instruction into FP[rA]. Used to access fields with
+//    large offsets.
+//
+//  - LoadUntagged rA, rB, C
+//
+//    Like LoadField, but assumes that FP[rB] is untagged.
 //
 //  - LoadFieldTOS D
 //
@@ -296,6 +507,12 @@ namespace dart {
 //
 //    Allocate Context object assuming for D context variables.
 //
+//  - AllocateUninitializedContext rA, D
+//
+//    Allocates an uninitialized context for D variables, and places the result
+//    in FP[rA]. On success, skips the next 2 instructions, which should be the
+//    slow path (AllocateContext D; PopLocal rA).
+//
 //  - CloneContext
 //
 //    Clone context stored in TOS.
@@ -314,14 +531,64 @@ namespace dart {
 //
 //    Instantiate type arguments PP[D] with instantiator SP[0].
 //
-//  - AssertAssignable D
+//  - InstanceOf A
+//
+//    Test if instance SP[-3] with type arguments SP[-2] is (A = 0) or is not
+//    (A = 1) a subtype of SP[-1] using SubtypeTestCache SP[0], with result
+//    placed at top of stack.
+//
+//  - AssertAssignable A, D
 //
 //    Assert that SP[-3] is assignable to variable named SP[0] of type
 //    SP[-1] with type arguments SP[-2] using SubtypeTestCache PP[D].
+//    If A is 1, then the instance may be a Smi.
+//
+//  - BadTypeError
+//
+//    If SP[-3] is non-null, throws a BadType error by calling into the runtime.
+//    Assumes that the stack is arranged the same as for AssertAssignable.
 //
 //  - AssertBoolean A
 //
 //    Assert that TOS is a boolean (A = 1) or that TOS is not null (A = 0).
+//
+//  - TestSmi rA, rD
+//
+//    If FP[rA] & FP[rD] != 0, then skip the next instruction. FP[rA] and FP[rD]
+//    must be Smis.
+//
+//  - TestCids rA, D
+//
+//    The next D instructions must be Nops whose D field encodes a class id. If
+//    the class id of FP[rA] matches, jump to PC + N + 1 if the matching Nop's
+//    A != 0 or PC + N + 2 if the matching Nop's A = 0. If no match is found,
+//    jump to PC + N.
+//
+//  - CheckSmi rA
+//
+//    If FP[rA] is a Smi, then skip the next instruction.
+//
+//  - CheckEitherNonSmi rA, rD
+//
+//    If either FP[rA] or FP[rD] is not a Smi, then skip the next instruction.
+//
+//  - CheckClassId rA, D
+//
+//    If the class id in FP[rA] matches the class id D, then skip the
+//    following instruction.
+//
+//  - CheckDenseSwitch rA, D
+//
+//    Skips the next 3 instructions if the object at FP[rA] is a valid class for
+//    a dense switch with low cid encoded in the following Nop instruction, and
+//    the cid mask encoded in the Nop instruction after that, or if D == 1 and
+//    FP[rA] is a Smi. Skips 2 instructions otherwise.
+//
+//  - CheckCids rA, rB, rC
+//
+//    Skips rC + 1 instructions if the object at FP[rA] is a Smi and
+//    rB == 1, or if FP[rA]'s cid is found in the array of cids encoded by the
+//    following rC Nop instructions. Otherwise skips only rC instructions.
 //
 //  - CheckStack
 //
@@ -359,7 +626,7 @@ namespace dart {
 //    e.g. in bytecode sequences like
 //
 //    InstanceCall ... <- lazy deopt inside first call
-//    InstanceCall ... <- patches seconds call with Deopt
+//    InstanceCall ... <- patches second call with Deopt
 //
 // BYTECODE LIST FORMAT
 //
@@ -380,11 +647,12 @@ namespace dart {
 //     tgt jump target relative to the PC of the current instruction
 //
 // TODO(vegorov) jump targets should be encoded relative to PC of the next
-//               instruction because PC is incremeted immediately after fetch
+//               instruction because PC is incremented immediately after fetch
 //               and before decoding.
 //
 #define BYTECODES_LIST(V)                              \
   V(Trap,                            0, ___, ___, ___) \
+  V(Nop,                           A_D, num, lit, ___) \
   V(Compile,                         0, ___, ___, ___) \
   V(HotCheck,                      A_D, num, num, ___) \
   V(Intrinsic,                       A, num, ___, ___) \
@@ -403,13 +671,17 @@ namespace dart {
   V(PushConstant,                    D, lit, ___, ___) \
   V(StoreLocal,                      X, xeg, ___, ___) \
   V(PopLocal,                        X, xeg, ___, ___) \
+  V(IndirectStaticCall,            A_D, num, num, ___) \
   V(StaticCall,                    A_D, num, num, ___) \
-  V(InstanceCall1,                  A_D, num, num, ___) \
+  V(InstanceCall1,                 A_D, num, num, ___) \
   V(InstanceCall2,                 A_D, num, num, ___) \
   V(InstanceCall1Opt,              A_D, num, num, ___) \
   V(InstanceCall2Opt,              A_D, num, num, ___) \
+  V(PushPolymorphicInstanceCall,   A_D, num, num, ___) \
   V(NativeCall,                      0, ___, ___, ___) \
   V(NativeBootstrapCall,             0, ___, ___, ___) \
+  V(OneByteStringFromCharCode,     A_X, reg, xeg, ___) \
+  V(StringToCharCode,              A_X, reg, xeg, ___) \
   V(AddTOS,                          0, ___, ___, ___) \
   V(SubTOS,                          0, ___, ___, ___) \
   V(MulTOS,                          0, ___, ___, ___) \
@@ -418,6 +690,48 @@ namespace dart {
   V(EqualTOS,                        0, ___, ___, ___) \
   V(LessThanTOS,                     0, ___, ___, ___) \
   V(GreaterThanTOS,                  0, ___, ___, ___) \
+  V(Add,                         A_B_C, reg, reg, reg) \
+  V(Sub,                         A_B_C, reg, reg, reg) \
+  V(Mul,                         A_B_C, reg, reg, reg) \
+  V(Div,                         A_B_C, reg, reg, reg) \
+  V(Mod,                         A_B_C, reg, reg, reg) \
+  V(Shl,                         A_B_C, reg, reg, reg) \
+  V(Shr,                         A_B_C, reg, reg, reg) \
+  V(ShlImm,                      A_B_C, reg, reg, num) \
+  V(Neg,                           A_D, reg, reg, ___) \
+  V(BitOr,                       A_B_C, reg, reg, reg) \
+  V(BitAnd,                      A_B_C, reg, reg, reg) \
+  V(BitXor,                      A_B_C, reg, reg, reg) \
+  V(BitNot,                        A_D, reg, reg, ___) \
+  V(Min,                         A_B_C, reg, reg, reg) \
+  V(Max,                         A_B_C, reg, reg, reg) \
+  V(WriteIntoDouble,               A_D, reg, reg, ___) \
+  V(UnboxDouble,                   A_D, reg, reg, ___) \
+  V(CheckedUnboxDouble,            A_D, reg, reg, ___) \
+  V(UnboxInt32,                  A_B_C, reg, reg, num) \
+  V(BoxInt32,                      A_D, reg, reg, ___) \
+  V(BoxUint32,                     A_D, reg, reg, ___) \
+  V(SmiToDouble,                   A_D, reg, reg, ___) \
+  V(DoubleToSmi,                   A_D, reg, reg, ___) \
+  V(DAdd,                        A_B_C, reg, reg, reg) \
+  V(DSub,                        A_B_C, reg, reg, reg) \
+  V(DMul,                        A_B_C, reg, reg, reg) \
+  V(DDiv,                        A_B_C, reg, reg, reg) \
+  V(DNeg,                          A_D, reg, reg, ___) \
+  V(DSqrt,                         A_D, reg, reg, ___) \
+  V(DMin,                        A_B_C, reg, reg, reg) \
+  V(DMax,                        A_B_C, reg, reg, reg) \
+  V(DCos,                          A_D, reg, reg, ___) \
+  V(DSin,                          A_D, reg, reg, ___) \
+  V(DPow,                        A_B_C, reg, reg, reg) \
+  V(DMod,                        A_B_C, reg, reg, reg) \
+  V(DTruncate,                     A_D, reg, reg, ___) \
+  V(DFloor,                        A_D, reg, reg, ___) \
+  V(DCeil,                         A_D, reg, reg, ___) \
+  V(DoubleToFloat,                 A_D, reg, reg, ___) \
+  V(FloatToDouble,                 A_D, reg, reg, ___) \
+  V(DoubleIsNaN,                     A, reg, ___, ___) \
+  V(DoubleIsInfinite,                A, reg, ___, ___) \
   V(StoreStaticTOS,                  D, lit, ___, ___) \
   V(PushStatic,                      D, lit, ___, ___) \
   V(InitStaticTOS,                   0, ___, ___, ___) \
@@ -427,16 +741,59 @@ namespace dart {
   V(IfEqStrictNumTOS,                0, ___, ___, ___) \
   V(IfNeStrict,                    A_D, reg, reg, ___) \
   V(IfEqStrict,                    A_D, reg, reg, ___) \
+  V(IfLe,                          A_D, reg, reg, ___) \
+  V(IfLt,                          A_D, reg, reg, ___) \
+  V(IfGe,                          A_D, reg, reg, ___) \
+  V(IfGt,                          A_D, reg, reg, ___) \
+  V(IfULe,                         A_D, reg, reg, ___) \
+  V(IfULt,                         A_D, reg, reg, ___) \
+  V(IfUGe,                         A_D, reg, reg, ___) \
+  V(IfUGt,                         A_D, reg, reg, ___) \
+  V(IfDNe,                         A_D, reg, reg, ___) \
+  V(IfDEq,                         A_D, reg, reg, ___) \
+  V(IfDLe,                         A_D, reg, reg, ___) \
+  V(IfDLt,                         A_D, reg, reg, ___) \
+  V(IfDGe,                         A_D, reg, reg, ___) \
+  V(IfDGt,                         A_D, reg, reg, ___) \
   V(IfNeStrictNum,                 A_D, reg, reg, ___) \
   V(IfEqStrictNum,                 A_D, reg, reg, ___) \
+  V(IfEqNull,                        A, reg, ___, ___) \
+  V(IfNeNull,                        A, reg, ___, ___) \
   V(CreateArrayTOS,                  0, ___, ___, ___) \
+  V(CreateArrayOpt,              A_B_C, reg, reg, reg) \
   V(Allocate,                        D, lit, ___, ___) \
   V(AllocateT,                       0, ___, ___, ___) \
+  V(AllocateOpt,                   A_D, reg, lit, ___) \
+  V(AllocateTOpt,                  A_D, reg, lit, ___) \
   V(StoreIndexedTOS,                 0, ___, ___, ___) \
   V(StoreIndexed,                A_B_C, reg, reg, reg) \
+  V(StoreIndexedUint8,           A_B_C, reg, reg, reg) \
+  V(StoreIndexedExternalUint8,   A_B_C, reg, reg, reg) \
+  V(StoreIndexedOneByteString,   A_B_C, reg, reg, reg) \
+  V(StoreIndexedUint32,          A_B_C, reg, reg, reg) \
+  V(StoreIndexedFloat32,         A_B_C, reg, reg, reg) \
+  V(StoreIndexed4Float32,        A_B_C, reg, reg, reg) \
+  V(StoreIndexedFloat64,         A_B_C, reg, reg, reg) \
+  V(StoreIndexed8Float64,        A_B_C, reg, reg, reg) \
+  V(LoadIndexed,                 A_B_C, reg, reg, reg) \
+  V(LoadIndexedUint8,            A_B_C, reg, reg, reg) \
+  V(LoadIndexedInt8,             A_B_C, reg, reg, reg) \
+  V(LoadIndexedInt32,            A_B_C, reg, reg, reg) \
+  V(LoadIndexedUint32,           A_B_C, reg, reg, reg) \
+  V(LoadIndexedExternalUint8,    A_B_C, reg, reg, reg) \
+  V(LoadIndexedExternalInt8,     A_B_C, reg, reg, reg) \
+  V(LoadIndexedFloat32,          A_B_C, reg, reg, reg) \
+  V(LoadIndexed4Float32,         A_B_C, reg, reg, reg) \
+  V(LoadIndexedFloat64,          A_B_C, reg, reg, reg) \
+  V(LoadIndexed8Float64,         A_B_C, reg, reg, reg) \
+  V(LoadIndexedOneByteString,    A_B_C, reg, reg, reg) \
+  V(LoadIndexedTwoByteString,    A_B_C, reg, reg, reg) \
   V(StoreField,                  A_B_C, reg, num, reg) \
+  V(StoreFieldExt,                 A_D, reg, reg, ___) \
   V(StoreFieldTOS,                   D, num, ___, ___) \
   V(LoadField,                   A_B_C, reg, reg, num) \
+  V(LoadFieldExt,                  A_D, reg, reg, ___) \
+  V(LoadUntagged,                A_B_C, reg, reg, num) \
   V(LoadFieldTOS,                    D, num, ___, ___) \
   V(BooleanNegateTOS,                0, ___, ___, ___) \
   V(BooleanNegate,                 A_D, reg, reg, ___) \
@@ -447,16 +804,28 @@ namespace dart {
   V(Frame,                           D, num, ___, ___) \
   V(SetFrame,                        A, num, ___, num) \
   V(AllocateContext,                 D, num, ___, ___) \
+  V(AllocateUninitializedContext,  A_D, reg, num, ___) \
   V(CloneContext,                    0, ___, ___, ___) \
   V(MoveSpecial,                   A_D, reg, num, ___) \
   V(InstantiateType,                 D, lit, ___, ___) \
   V(InstantiateTypeArgumentsTOS,   A_D, num, lit, ___) \
-  V(AssertAssignable,                D, num, lit, ___) \
+  V(InstanceOf,                      A, num, ___, ___) \
+  V(BadTypeError,                    0, ___, ___, ___) \
+  V(AssertAssignable,              A_D, num, lit, ___) \
   V(AssertBoolean,                   A, num, ___, ___) \
+  V(TestSmi,                       A_D, reg, reg, ___) \
+  V(TestCids,                      A_D, reg, num, ___) \
+  V(CheckSmi,                        A, reg, ___, ___) \
+  V(CheckEitherNonSmi,             A_D, reg, reg, ___) \
+  V(CheckClassId,                  A_D, reg, num, ___) \
+  V(CheckDenseSwitch,              A_D, reg, num, ___) \
+  V(CheckCids,                   A_B_C, reg, num, num) \
   V(CheckStack,                      0, ___, ___, ___) \
   V(DebugStep,                       0, ___, ___, ___) \
   V(DebugBreak,                      A, num, ___, ___) \
-  V(Deopt,                         A_D, num, num, ___) \
+  V(Deopt,                         A_D, num, num, ___)
+
+// clang-format on
 
 typedef uint32_t Instr;
 
@@ -464,7 +833,7 @@ class Bytecode {
  public:
   enum Opcode {
 #define DECLARE_BYTECODE(name, encoding, op1, op2, op3) k##name,
-BYTECODES_LIST(DECLARE_BYTECODE)
+    BYTECODES_LIST(DECLARE_BYTECODE)
 #undef DECLARE_BYTECODE
   };
 
@@ -502,9 +871,7 @@ BYTECODES_LIST(DECLARE_BYTECODE)
     return op | (x << kAShift);
   }
 
-  static Instr Encode(Opcode op) {
-    return op;
-  }
+  static Instr Encode(Opcode op) { return op; }
 
   DART_FORCE_INLINE static uint8_t DecodeA(Instr bc) {
     return (bc >> kAShift) & kAMask;
@@ -521,11 +888,29 @@ BYTECODES_LIST(DECLARE_BYTECODE)
   DART_FORCE_INLINE static bool IsCallOpcode(Instr instr) {
     switch (DecodeOpcode(instr)) {
       case Bytecode::kStaticCall:
+      case Bytecode::kIndirectStaticCall:
       case Bytecode::kInstanceCall1:
       case Bytecode::kInstanceCall2:
       case Bytecode::kInstanceCall1Opt:
       case Bytecode::kInstanceCall2Opt:
       case Bytecode::kDebugBreak:
+        return true;
+
+      default:
+        return false;
+    }
+  }
+
+  DART_FORCE_INLINE static bool IsFastSmiOpcode(Instr instr) {
+    switch (DecodeOpcode(instr)) {
+      case Bytecode::kAddTOS:
+      case Bytecode::kSubTOS:
+      case Bytecode::kMulTOS:
+      case Bytecode::kBitOrTOS:
+      case Bytecode::kBitAndTOS:
+      case Bytecode::kEqualTOS:
+      case Bytecode::kLessThanTOS:
+      case Bytecode::kGreaterThanTOS:
         return true;
 
       default:
@@ -552,7 +937,11 @@ typedef int16_t Register;
 
 const int16_t FPREG = 0;
 const int16_t SPREG = 1;
-const intptr_t kNumberOfCpuRegisters = 20;
+#if defined(ARCH_IS_64_BIT)
+const intptr_t kNumberOfCpuRegisters = 64;
+#else
+const intptr_t kNumberOfCpuRegisters = 32;
+#endif
 const intptr_t kDartAvailableCpuRegs = -1;
 const intptr_t kNoRegister = -1;
 const intptr_t kReservedCpuRegisters = 0;
@@ -570,8 +959,12 @@ enum FpuRegister {
 const FpuRegister FpuTMP = kFakeFpuRegister;
 const intptr_t kNumberOfFpuRegisters = 1;
 
-enum Condition { EQ, NE };
+// After a comparison, the condition NEXT_IS_TRUE means the following
+// instruction is executed if the comparision is true and skipped over overwise.
+// Conidition NEXT_IS_FALSE means the following instruction is executed if the
+// comparison is false and skipped over otherwise.
+enum Condition { NEXT_IS_TRUE, NEXT_IS_FALSE };
 
 }  // namespace dart
 
-#endif  // VM_CONSTANTS_DBC_H_
+#endif  // RUNTIME_VM_CONSTANTS_DBC_H_

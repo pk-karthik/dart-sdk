@@ -121,6 +121,7 @@ namespace bin {
   V(Socket_CreateConnect, 3)                                                   \
   V(Socket_CreateBindConnect, 4)                                               \
   V(Socket_CreateBindDatagram, 4)                                              \
+  V(Socket_IsBindError, 2)                                                     \
   V(Socket_Available, 1)                                                       \
   V(Socket_Read, 2)                                                            \
   V(Socket_RecvFrom, 1)                                                        \
@@ -156,9 +157,7 @@ static struct NativeEntries {
   const char* name_;
   Dart_NativeFunction function_;
   int argument_count_;
-} IOEntries[] = {
-  IO_NATIVE_LIST(REGISTER_FUNCTION)
-};
+} IOEntries[] = {IO_NATIVE_LIST(REGISTER_FUNCTION)};
 
 
 Dart_NativeFunction IONativeLookup(Dart_Handle name,

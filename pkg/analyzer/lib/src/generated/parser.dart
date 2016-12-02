@@ -8,480 +8,24 @@ import 'dart:collection';
 import "dart:math" as math;
 
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_ast_factory.dart';
 import 'package:analyzer/dart/ast/token.dart';
-import 'package:analyzer/dart/ast/visitor.dart';
+import 'package:analyzer/error/error.dart';
+import 'package:analyzer/error/listener.dart';
 import 'package:analyzer/src/dart/ast/ast.dart';
 import 'package:analyzer/src/dart/ast/token.dart';
-import 'package:analyzer/src/dart/ast/utilities.dart';
+import 'package:analyzer/src/dart/error/syntactic_errors.dart';
 import 'package:analyzer/src/dart/scanner/reader.dart';
 import 'package:analyzer/src/dart/scanner/scanner.dart';
+import 'package:analyzer/src/error/codes.dart';
 import 'package:analyzer/src/generated/engine.dart' show AnalysisEngine;
-import 'package:analyzer/src/generated/error.dart';
-import 'package:analyzer/src/generated/generated/shared_messages.dart'
-    as shared_messages;
 import 'package:analyzer/src/generated/java_core.dart';
 import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/source.dart';
-import 'package:analyzer/src/generated/utilities_collection.dart' show TokenMap;
 import 'package:analyzer/src/generated/utilities_dart.dart';
 
 export 'package:analyzer/src/dart/ast/utilities.dart' show ResolutionCopier;
-
-Map<String, MethodTrampoline> methodTable_Parser = <String, MethodTrampoline>{
-  'parseCompilationUnit_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target.parseCompilationUnit(arg0)),
-  'parseDirectives_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target.parseDirectives(arg0)),
-  'parseExpression_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target.parseExpression(arg0)),
-  'parseStatement_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target.parseStatement(arg0)),
-  'parseStatements_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target.parseStatements(arg0)),
-  'parseAnnotation_0':
-      new MethodTrampoline(0, (Parser target) => target.parseAnnotation()),
-  'parseArgument_0':
-      new MethodTrampoline(0, (Parser target) => target.parseArgument()),
-  'parseArgumentList_0':
-      new MethodTrampoline(0, (Parser target) => target.parseArgumentList()),
-  'parseBitwiseOrExpression_0': new MethodTrampoline(
-      0, (Parser target) => target.parseBitwiseOrExpression()),
-  'parseBlock_0':
-      new MethodTrampoline(0, (Parser target) => target.parseBlock()),
-  'parseClassMember_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target.parseClassMember(arg0)),
-  'parseCompilationUnit_0': new MethodTrampoline(
-      0, (Parser target) => target.parseCompilationUnit2()),
-  'parseConditionalExpression_0': new MethodTrampoline(
-      0, (Parser target) => target.parseConditionalExpression()),
-  'parseConstructorName_0':
-      new MethodTrampoline(0, (Parser target) => target.parseConstructorName()),
-  'parseExpression_0':
-      new MethodTrampoline(0, (Parser target) => target.parseExpression2()),
-  'parseExpressionWithoutCascade_0': new MethodTrampoline(
-      0, (Parser target) => target.parseExpressionWithoutCascade()),
-  'parseExtendsClause_0':
-      new MethodTrampoline(0, (Parser target) => target.parseExtendsClause()),
-  'parseFormalParameterList_0': new MethodTrampoline(
-      0, (Parser target) => target.parseFormalParameterList()),
-  'parseFunctionExpression_0': new MethodTrampoline(
-      0, (Parser target) => target.parseFunctionExpression()),
-  'parseImplementsClause_0': new MethodTrampoline(
-      0, (Parser target) => target.parseImplementsClause()),
-  'parseLabel_0':
-      new MethodTrampoline(0, (Parser target) => target.parseLabel()),
-  'parseLibraryIdentifier_0': new MethodTrampoline(
-      0, (Parser target) => target.parseLibraryIdentifier()),
-  'parseLogicalOrExpression_0': new MethodTrampoline(
-      0, (Parser target) => target.parseLogicalOrExpression()),
-  'parseMapLiteralEntry_0':
-      new MethodTrampoline(0, (Parser target) => target.parseMapLiteralEntry()),
-  'parseNormalFormalParameter_0': new MethodTrampoline(
-      0, (Parser target) => target.parseNormalFormalParameter()),
-  'parsePrefixedIdentifier_0': new MethodTrampoline(
-      0, (Parser target) => target.parsePrefixedIdentifier()),
-  'parseReturnType_0':
-      new MethodTrampoline(0, (Parser target) => target.parseReturnType()),
-  'parseSimpleIdentifier_0': new MethodTrampoline(
-      0, (Parser target) => target.parseSimpleIdentifier()),
-  'parseStatement_0':
-      new MethodTrampoline(0, (Parser target) => target.parseStatement2()),
-  'parseStringLiteral_0':
-      new MethodTrampoline(0, (Parser target) => target.parseStringLiteral()),
-  'parseTypeArgumentList_0': new MethodTrampoline(
-      0, (Parser target) => target.parseTypeArgumentList()),
-  'parseTypeName_0':
-      new MethodTrampoline(0, (Parser target) => target.parseTypeName()),
-  'parseTypeParameter_0':
-      new MethodTrampoline(0, (Parser target) => target.parseTypeParameter()),
-  'parseTypeParameterList_0': new MethodTrampoline(
-      0, (Parser target) => target.parseTypeParameterList()),
-  'parseWithClause_0':
-      new MethodTrampoline(0, (Parser target) => target.parseWithClause()),
-  'advance_0': new MethodTrampoline(0, (Parser target) => target._advance()),
-  'appendScalarValue_5': new MethodTrampoline(
-      5,
-      (Parser target, arg0, arg1, arg2, arg3, arg4) =>
-          target._appendScalarValue(arg0, arg1, arg2, arg3, arg4)),
-  'computeStringValue_3': new MethodTrampoline(
-      3,
-      (Parser target, arg0, arg1, arg2) =>
-          target._computeStringValue(arg0, arg1, arg2)),
-  'convertToFunctionDeclaration_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._convertToFunctionDeclaration(arg0)),
-  'couldBeStartOfCompilationUnitMember_0': new MethodTrampoline(
-      0, (Parser target) => target._couldBeStartOfCompilationUnitMember()),
-  'createSyntheticIdentifier_0': new MethodTrampoline(
-      0, (Parser target) => target._createSyntheticIdentifier()),
-  'createSyntheticKeyword_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._createSyntheticKeyword(arg0)),
-  'createSyntheticStringLiteral_0': new MethodTrampoline(
-      0, (Parser target) => target._createSyntheticStringLiteral()),
-  'createSyntheticToken_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._createSyntheticToken(arg0)),
-  'ensureAssignable_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._ensureAssignable(arg0)),
-  'expect_1':
-      new MethodTrampoline(1, (Parser target, arg0) => target._expect(arg0)),
-  'expectGt_0': new MethodTrampoline(0, (Parser target) => target._expectGt()),
-  'expectKeyword_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._expectKeyword(arg0)),
-  'findRange_2': new MethodTrampoline(
-      2,
-      (Parser target, List<List<int>> arg0, int arg1) =>
-          target._findRange(arg0, arg1)),
-  'getCodeBlockRanges_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._getCodeBlockRanges(arg0)),
-  'getEndToken_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._getEndToken(arg0)),
-  'injectToken_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._injectToken(arg0)),
-  'isFunctionDeclaration_0': new MethodTrampoline(
-      0, (Parser target) => target._isFunctionDeclaration()),
-  'isFunctionExpression_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._isFunctionExpression(arg0)),
-  'isHexDigit_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._isHexDigit(arg0)),
-  'isInitializedVariableDeclaration_0': new MethodTrampoline(
-      0, (Parser target) => target._isInitializedVariableDeclaration()),
-  'isLinkText_2': new MethodTrampoline(
-      2, (Parser target, arg0, arg1) => target._isLinkText(arg0, arg1)),
-  'isOperator_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._isOperator(arg0)),
-  'isSwitchMember_0':
-      new MethodTrampoline(0, (Parser target) => target._isSwitchMember()),
-  'isTypedIdentifier_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._isTypedIdentifier(arg0)),
-  'lockErrorListener_0':
-      new MethodTrampoline(0, (Parser target) => target._lockErrorListener()),
-  'matches_1':
-      new MethodTrampoline(1, (Parser target, arg0) => target._matches(arg0)),
-  'matchesGt_0':
-      new MethodTrampoline(0, (Parser target) => target._matchesGt()),
-  'matchesIdentifier_0':
-      new MethodTrampoline(0, (Parser target) => target._matchesIdentifier()),
-  'matchesKeyword_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._matchesKeyword(arg0)),
-  'matchesString_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._matchesString(arg0)),
-  'optional_1':
-      new MethodTrampoline(1, (Parser target, arg0) => target._optional(arg0)),
-  'parseAdditiveExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parseAdditiveExpression()),
-  'parseAssertStatement_0': new MethodTrampoline(
-      0, (Parser target) => target._parseAssertStatement()),
-  'parseAssignableExpression_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._parseAssignableExpression(arg0)),
-  'parseAssignableSelector_2': new MethodTrampoline(
-      2,
-      (Parser target, arg0, arg1) =>
-          target._parseAssignableSelector(arg0, arg1)),
-  'parseAwaitExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parseAwaitExpression()),
-  'parseBitwiseAndExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parseBitwiseAndExpression()),
-  'parseBitwiseXorExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parseBitwiseXorExpression()),
-  'parseBreakStatement_0':
-      new MethodTrampoline(0, (Parser target) => target._parseBreakStatement()),
-  'parseCascadeSection_0':
-      new MethodTrampoline(0, (Parser target) => target._parseCascadeSection()),
-  'parseClassDeclaration_2': new MethodTrampoline(2,
-      (Parser target, arg0, arg1) => target._parseClassDeclaration(arg0, arg1)),
-  'parseClassMembers_2': new MethodTrampoline(
-      2, (Parser target, arg0, arg1) => target._parseClassMembers(arg0, arg1)),
-  'parseClassTypeAlias_3': new MethodTrampoline(
-      3,
-      (Parser target, arg0, arg1, arg2) =>
-          target._parseClassTypeAlias(arg0, arg1, arg2)),
-  'parseCombinator_0':
-      new MethodTrampoline(0, (Parser target) => target.parseCombinator()),
-  'parseCombinators_0':
-      new MethodTrampoline(0, (Parser target) => target._parseCombinators()),
-  'parseCommentAndMetadata_0': new MethodTrampoline(
-      0, (Parser target) => target._parseCommentAndMetadata()),
-  'parseCommentReference_2': new MethodTrampoline(2,
-      (Parser target, arg0, arg1) => target._parseCommentReference(arg0, arg1)),
-  'parseCommentReferences_1': new MethodTrampoline(
-      1,
-      (Parser target, List<DocumentationCommentToken> arg0) =>
-          target._parseCommentReferences(arg0)),
-  'parseCompilationUnitMember_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._parseCompilationUnitMember(arg0)),
-  'parseConfiguration_0':
-      new MethodTrampoline(0, (Parser target) => target._parseConfiguration()),
-  'parseConstExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parseConstExpression()),
-  'parseConstructor_8': new MethodTrampoline(
-      8,
-      (Parser target, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7) => target
-          ._parseConstructor(arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7)),
-  'parseConstructorFieldInitializer_0': new MethodTrampoline(
-      0, (Parser target) => target._parseConstructorFieldInitializer()),
-  'parseContinueStatement_0': new MethodTrampoline(
-      0, (Parser target) => target._parseContinueStatement()),
-  'parseDirective_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._parseDirective(arg0)),
-  'parseDirectives_0':
-      new MethodTrampoline(0, (Parser target) => target._parseDirectives()),
-  'parseDocumentationComment_0': new MethodTrampoline(
-      0, (Parser target) => target._parseDocumentationComment()),
-  'parseDoStatement_0':
-      new MethodTrampoline(0, (Parser target) => target._parseDoStatement()),
-  'parseDottedName_0':
-      new MethodTrampoline(0, (Parser target) => target._parseDottedName()),
-  'parseEmptyStatement_0':
-      new MethodTrampoline(0, (Parser target) => target._parseEmptyStatement()),
-  'parseEnumConstantDeclaration_0': new MethodTrampoline(
-      0, (Parser target) => target._parseEnumConstantDeclaration()),
-  'parseEnumDeclaration_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._parseEnumDeclaration(arg0)),
-  'parseEqualityExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parseEqualityExpression()),
-  'parseExportDirective_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._parseExportDirective(arg0)),
-  'parseExpressionList_0':
-      new MethodTrampoline(0, (Parser target) => target._parseExpressionList()),
-  'parseFinalConstVarOrType_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._parseFinalConstVarOrType(arg0)),
-  'parseFormalParameter_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._parseFormalParameter(arg0)),
-  'parseForStatement_0':
-      new MethodTrampoline(0, (Parser target) => target._parseForStatement()),
-  'parseFunctionBody_3': new MethodTrampoline(
-      3,
-      (Parser target, arg0, arg1, arg2) =>
-          target._parseFunctionBody(arg0, arg1, arg2)),
-  'parseFunctionDeclaration_3': new MethodTrampoline(
-      3,
-      (Parser target, arg0, arg1, arg2) =>
-          target._parseFunctionDeclaration(arg0, arg1, arg2)),
-  'parseFunctionDeclarationStatement_0': new MethodTrampoline(
-      0, (Parser target) => target._parseFunctionDeclarationStatement()),
-  'parseFunctionDeclarationStatementAfterReturnType_2': new MethodTrampoline(
-      2,
-      (Parser target, arg0, arg1) =>
-          target._parseFunctionDeclarationStatementAfterReturnType(arg0, arg1)),
-  'parseFunctionTypeAlias_2': new MethodTrampoline(
-      2,
-      (Parser target, arg0, arg1) =>
-          target._parseFunctionTypeAlias(arg0, arg1)),
-  'parseGetter_4': new MethodTrampoline(
-      4,
-      (Parser target, arg0, arg1, arg2, arg3) =>
-          target._parseGetter(arg0, arg1, arg2, arg3)),
-  'parseIdentifierList_0':
-      new MethodTrampoline(0, (Parser target) => target._parseIdentifierList()),
-  'parseIfStatement_0':
-      new MethodTrampoline(0, (Parser target) => target._parseIfStatement()),
-  'parseImportDirective_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._parseImportDirective(arg0)),
-  'parseInitializedIdentifierList_4': new MethodTrampoline(
-      4,
-      (Parser target, arg0, arg1, arg2, arg3) =>
-          target._parseInitializedIdentifierList(arg0, arg1, arg2, arg3)),
-  'parseInstanceCreationExpression_1': new MethodTrampoline(1,
-      (Parser target, arg0) => target._parseInstanceCreationExpression(arg0)),
-  'parseLibraryDirective_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._parseLibraryDirective(arg0)),
-  'parseLibraryName_2': new MethodTrampoline(
-      2, (Parser target, arg0, arg1) => target._parseLibraryName(arg0, arg1)),
-  'parseListLiteral_2': new MethodTrampoline(
-      2, (Parser target, arg0, arg1) => target._parseListLiteral(arg0, arg1)),
-  'parseListOrMapLiteral_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._parseListOrMapLiteral(arg0)),
-  'parseLogicalAndExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parseLogicalAndExpression()),
-  'parseMapLiteral_2': new MethodTrampoline(
-      2, (Parser target, arg0, arg1) => target._parseMapLiteral(arg0, arg1)),
-  'parseMethodDeclarationAfterParameters_7': new MethodTrampoline(
-      7,
-      (Parser target, arg0, arg1, arg2, arg3, arg4, arg5, arg6) =>
-          target._parseMethodDeclarationAfterParameters(
-              arg0, arg1, arg2, arg3, arg4, arg5, arg6)),
-  'parseMethodDeclarationAfterReturnType_4': new MethodTrampoline(
-      4,
-      (Parser target, arg0, arg1, arg2, arg3) => target
-          ._parseMethodDeclarationAfterReturnType(arg0, arg1, arg2, arg3)),
-  'parseModifiers_0':
-      new MethodTrampoline(0, (Parser target) => target._parseModifiers()),
-  'parseMultiplicativeExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parseMultiplicativeExpression()),
-  'parseNativeClause_0':
-      new MethodTrampoline(0, (Parser target) => target._parseNativeClause()),
-  'parseNewExpression_0':
-      new MethodTrampoline(0, (Parser target) => target._parseNewExpression()),
-  'parseNonLabeledStatement_0': new MethodTrampoline(
-      0, (Parser target) => target._parseNonLabeledStatement()),
-  'parseOperator_3': new MethodTrampoline(
-      3,
-      (Parser target, arg0, arg1, arg2) =>
-          target._parseOperator(arg0, arg1, arg2)),
-  'parseOptionalReturnType_0': new MethodTrampoline(
-      0, (Parser target) => target._parseOptionalReturnType()),
-  'parsePartDirective_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._parsePartDirective(arg0)),
-  'parsePostfixExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parsePostfixExpression()),
-  'parsePrimaryExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parsePrimaryExpression()),
-  'parseRedirectingConstructorInvocation_0': new MethodTrampoline(
-      0, (Parser target) => target._parseRedirectingConstructorInvocation()),
-  'parseRelationalExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parseRelationalExpression()),
-  'parseRethrowExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parseRethrowExpression()),
-  'parseReturnStatement_0': new MethodTrampoline(
-      0, (Parser target) => target._parseReturnStatement()),
-  'parseSetter_4': new MethodTrampoline(
-      4,
-      (Parser target, arg0, arg1, arg2, arg3) =>
-          target._parseSetter(arg0, arg1, arg2, arg3)),
-  'parseShiftExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parseShiftExpression()),
-  'parseStatementList_0':
-      new MethodTrampoline(0, (Parser target) => target._parseStatementList()),
-  'parseStringInterpolation_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._parseStringInterpolation(arg0)),
-  'parseSuperConstructorInvocation_0': new MethodTrampoline(
-      0, (Parser target) => target._parseSuperConstructorInvocation()),
-  'parseSwitchStatement_0': new MethodTrampoline(
-      0, (Parser target) => target._parseSwitchStatement()),
-  'parseSymbolLiteral_0':
-      new MethodTrampoline(0, (Parser target) => target._parseSymbolLiteral()),
-  'parseThrowExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parseThrowExpression()),
-  'parseThrowExpressionWithoutCascade_0': new MethodTrampoline(
-      0, (Parser target) => target._parseThrowExpressionWithoutCascade()),
-  'parseTryStatement_0':
-      new MethodTrampoline(0, (Parser target) => target._parseTryStatement()),
-  'parseTypeAlias_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._parseTypeAlias(arg0)),
-  'parseUnaryExpression_0': new MethodTrampoline(
-      0, (Parser target) => target._parseUnaryExpression()),
-  'parseVariableDeclaration_0': new MethodTrampoline(
-      0, (Parser target) => target._parseVariableDeclaration()),
-  'parseVariableDeclarationListAfterMetadata_1': new MethodTrampoline(
-      1,
-      (Parser target, arg0) =>
-          target._parseVariableDeclarationListAfterMetadata(arg0)),
-  'parseVariableDeclarationListAfterType_3': new MethodTrampoline(
-      3,
-      (Parser target, arg0, arg1, arg2) =>
-          target._parseVariableDeclarationListAfterType(arg0, arg1, arg2)),
-  'parseVariableDeclarationStatementAfterMetadata_1': new MethodTrampoline(
-      1,
-      (Parser target, arg0) =>
-          target._parseVariableDeclarationStatementAfterMetadata(arg0)),
-  'parseVariableDeclarationStatementAfterType_3': new MethodTrampoline(
-      3,
-      (Parser target, arg0, arg1, arg2) =>
-          target._parseVariableDeclarationStatementAfterType(arg0, arg1, arg2)),
-  'parseWhileStatement_0':
-      new MethodTrampoline(0, (Parser target) => target._parseWhileStatement()),
-  'parseYieldStatement_0':
-      new MethodTrampoline(0, (Parser target) => target._parseYieldStatement()),
-  'peek_0': new MethodTrampoline(0, (Parser target) => target._peek()),
-  'peekAt_1':
-      new MethodTrampoline(1, (Parser target, arg0) => target._peekAt(arg0)),
-  'reportError_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._reportError(arg0)),
-  'reportErrorForCurrentToken_2': new MethodTrampoline(
-      2,
-      (Parser target, arg0, arg1) =>
-          target._reportErrorForCurrentToken(arg0, arg1)),
-  'reportErrorForNode_3': new MethodTrampoline(
-      3,
-      (Parser target, arg0, arg1, arg2) =>
-          target._reportErrorForNode(arg0, arg1, arg2)),
-  'reportErrorForToken_3': new MethodTrampoline(
-      3,
-      (Parser target, arg0, arg1, arg2) =>
-          target._reportErrorForToken(arg0, arg1, arg2)),
-  'skipBlock_0':
-      new MethodTrampoline(0, (Parser target) => target._skipBlock()),
-  'skipFinalConstVarOrType_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._skipFinalConstVarOrType(arg0)),
-  'skipFormalParameterList_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._skipFormalParameterList(arg0)),
-  'skipPastMatchingToken_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._skipPastMatchingToken(arg0)),
-  'skipPrefixedIdentifier_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._skipPrefixedIdentifier(arg0)),
-  'skipReturnType_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._skipReturnType(arg0)),
-  'skipSimpleIdentifier_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._skipSimpleIdentifier(arg0)),
-  'skipStringInterpolation_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._skipStringInterpolation(arg0)),
-  'skipStringLiteral_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._skipStringLiteral(arg0)),
-  'skipTypeArgumentList_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._skipTypeArgumentList(arg0)),
-  'skipTypeName_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._skipTypeName(arg0)),
-  'skipTypeParameterList_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._skipTypeParameterList(arg0)),
-  'tokenMatches_2': new MethodTrampoline(
-      2, (Parser target, arg0, arg1) => target._tokenMatches(arg0, arg1)),
-  'tokenMatchesIdentifier_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._tokenMatchesIdentifier(arg0)),
-  'tokenMatchesKeyword_2': new MethodTrampoline(2,
-      (Parser target, arg0, arg1) => target._tokenMatchesKeyword(arg0, arg1)),
-  'tokenMatchesString_2': new MethodTrampoline(
-      2, (Parser target, arg0, arg1) => target._tokenMatchesString(arg0, arg1)),
-  'translateCharacter_3': new MethodTrampoline(
-      3,
-      (Parser target, arg0, arg1, arg2) =>
-          target._translateCharacter(arg0, arg1, arg2)),
-  'unlockErrorListener_0':
-      new MethodTrampoline(0, (Parser target) => target._unlockErrorListener()),
-  'validateFormalParameterList_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._validateFormalParameterList(arg0)),
-  'validateModifiersForClass_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._validateModifiersForClass(arg0)),
-  'validateModifiersForConstructor_1': new MethodTrampoline(1,
-      (Parser target, arg0) => target._validateModifiersForConstructor(arg0)),
-  'validateModifiersForEnum_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._validateModifiersForEnum(arg0)),
-  'validateModifiersForField_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._validateModifiersForField(arg0)),
-  'validateModifiersForFunctionDeclarationStatement_1': new MethodTrampoline(
-      1,
-      (Parser target, arg0) =>
-          target._validateModifiersForFunctionDeclarationStatement(arg0)),
-  'validateModifiersForGetterOrSetterOrMethod_1': new MethodTrampoline(
-      1,
-      (Parser target, arg0) =>
-          target._validateModifiersForGetterOrSetterOrMethod(arg0)),
-  'validateModifiersForOperator_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._validateModifiersForOperator(arg0)),
-  'validateModifiersForTopLevelDeclaration_1': new MethodTrampoline(
-      1,
-      (Parser target, arg0) =>
-          target._validateModifiersForTopLevelDeclaration(arg0)),
-  'validateModifiersForTopLevelFunction_1': new MethodTrampoline(
-      1,
-      (Parser target, arg0) =>
-          target._validateModifiersForTopLevelFunction(arg0)),
-  'validateModifiersForTopLevelVariable_1': new MethodTrampoline(
-      1,
-      (Parser target, arg0) =>
-          target._validateModifiersForTopLevelVariable(arg0)),
-  'validateModifiersForTypedef_1': new MethodTrampoline(
-      1, (Parser target, arg0) => target._validateModifiersForTypedef(arg0)),
-};
-
-Object invokeParserMethodImpl(
-    Parser parser, String methodName, List<Object> objects, Token tokenStream) {
-  parser.currentToken = tokenStream;
-  MethodTrampoline method =
-      methodTable_Parser['${methodName}_${objects.length}'];
-  if (method == null) {
-    throw new IllegalArgumentException('There is no method named $methodName');
-  }
-  return method.invoke(parser, objects);
-}
+export 'package:analyzer/src/dart/error/syntactic_errors.dart';
 
 /**
  * A simple data-holder for a method that needs to return multiple values.
@@ -493,7 +37,7 @@ class CommentAndMetadata {
   final Comment comment;
 
   /**
-   * The metadata that was parsed.
+   * The metadata that was parsed, or `null` if none was given.
    */
   final List<Annotation> metadata;
 
@@ -501,6 +45,11 @@ class CommentAndMetadata {
    * Initialize a newly created holder with the given [comment] and [metadata].
    */
   CommentAndMetadata(this.comment, this.metadata);
+
+  /**
+   * Return `true` if some metadata was parsed.
+   */
+  bool get hasMetadata => metadata != null && metadata.isNotEmpty;
 }
 
 /**
@@ -521,1493 +70,6 @@ class FinalConstVarOrType {
    * Initialize a newly created holder with the given [keyword] and [type].
    */
   FinalConstVarOrType(this.keyword, this.type);
-}
-
-/**
- * A dispatcher that will invoke the right parse method when re-parsing a
- * specified child of the visited node. All of the methods in this class assume
- * that the parser is positioned to parse the replacement for the node. All of
- * the methods will throw an [IncrementalParseException] if the node could not
- * be parsed for some reason.
- */
-@deprecated
-class IncrementalParseDispatcher implements AstVisitor<AstNode> {
-  /**
-   * The parser used to parse the replacement for the node.
-   */
-  final Parser _parser;
-
-  /**
-   * The node that is to be replaced.
-   */
-  final AstNode _oldNode;
-
-  /**
-   * Initialize a newly created dispatcher to parse a single node that will
-   * use the [_parser] to replace the [_oldNode].
-   */
-  IncrementalParseDispatcher(this._parser, this._oldNode);
-
-  @override
-  AstNode visitAdjacentStrings(AdjacentStrings node) {
-    if (node.strings.contains(_oldNode)) {
-      return _parser.parseStringLiteral();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitAnnotation(Annotation node) {
-    if (identical(_oldNode, node.name)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.constructorName)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.arguments)) {
-      return _parser.parseArgumentList();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitArgumentList(ArgumentList node) {
-    if (node.arguments.contains(_oldNode)) {
-      return _parser.parseArgument();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitAsExpression(AsExpression node) {
-    if (identical(_oldNode, node.expression)) {
-      return _parser.parseBitwiseOrExpression();
-    } else if (identical(_oldNode, node.type)) {
-      return _parser.parseTypeName();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitAssertStatement(AssertStatement node) {
-    if (identical(_oldNode, node.condition)) {
-      return _parser.parseExpression2();
-    }
-    if (identical(_oldNode, node.message)) {
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitAssignmentExpression(AssignmentExpression node) {
-    if (identical(_oldNode, node.leftHandSide)) {
-      // TODO(brianwilkerson) If the assignment is part of a cascade section,
-      // then we don't have a single parse method that will work.
-      // Otherwise, we can parse a conditional expression, but need to ensure
-      // that the resulting expression is assignable.
-//      return parser.parseConditionalExpression();
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.rightHandSide)) {
-      if (_isCascadeAllowedInAssignment(node)) {
-        return _parser.parseExpression2();
-      }
-      return _parser.parseExpressionWithoutCascade();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitAwaitExpression(AwaitExpression node) {
-    if (identical(_oldNode, node.expression)) {
-      // TODO(brianwilkerson) Depending on precedence,
-      // this might not be sufficient.
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitBinaryExpression(BinaryExpression node) {
-    if (identical(_oldNode, node.leftOperand)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.rightOperand)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitBlock(Block node) {
-    if (node.statements.contains(_oldNode)) {
-      return _parser.parseStatement2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitBlockFunctionBody(BlockFunctionBody node) {
-    if (identical(_oldNode, node.block)) {
-      return _parser.parseBlock();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitBooleanLiteral(BooleanLiteral node) => _notAChild(node);
-
-  @override
-  AstNode visitBreakStatement(BreakStatement node) {
-    if (identical(_oldNode, node.label)) {
-      return _parser.parseSimpleIdentifier();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitCascadeExpression(CascadeExpression node) {
-    if (identical(_oldNode, node.target)) {
-      return _parser.parseConditionalExpression();
-    } else if (node.cascadeSections.contains(_oldNode)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitCatchClause(CatchClause node) {
-    if (identical(_oldNode, node.exceptionType)) {
-      return _parser.parseTypeName();
-    } else if (identical(_oldNode, node.exceptionParameter)) {
-      return _parser.parseSimpleIdentifier(isDeclaration: true);
-    } else if (identical(_oldNode, node.stackTraceParameter)) {
-      return _parser.parseSimpleIdentifier(isDeclaration: true);
-    } else if (identical(_oldNode, node.body)) {
-      return _parser.parseBlock();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitClassDeclaration(ClassDeclaration node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.name)) {
-      // Changing the class name changes whether a member is interpreted as a
-      // constructor or not, so we'll just have to re-parse the entire class.
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.typeParameters)) {
-      return _parser.parseTypeParameterList();
-    } else if (identical(_oldNode, node.extendsClause)) {
-      return _parser.parseExtendsClause();
-    } else if (identical(_oldNode, node.withClause)) {
-      return _parser.parseWithClause();
-    } else if (identical(_oldNode, node.implementsClause)) {
-      return _parser.parseImplementsClause();
-    } else if (node.members.contains(_oldNode)) {
-      ClassMember member = _parser.parseClassMember(node.name.name);
-      if (member == null) {
-        throw new InsufficientContextException();
-      }
-      return member;
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitClassTypeAlias(ClassTypeAlias node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.name)) {
-      return _parser.parseSimpleIdentifier(isDeclaration: true);
-    } else if (identical(_oldNode, node.typeParameters)) {
-      return _parser.parseTypeParameterList();
-    } else if (identical(_oldNode, node.superclass)) {
-      return _parser.parseTypeName();
-    } else if (identical(_oldNode, node.withClause)) {
-      return _parser.parseWithClause();
-    } else if (identical(_oldNode, node.implementsClause)) {
-      return _parser.parseImplementsClause();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitComment(Comment node) {
-    throw new InsufficientContextException();
-  }
-
-  @override
-  AstNode visitCommentReference(CommentReference node) {
-    if (identical(_oldNode, node.identifier)) {
-      return _parser.parsePrefixedIdentifier();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitCompilationUnit(CompilationUnit node) {
-    throw new InsufficientContextException();
-  }
-
-  @override
-  AstNode visitConditionalExpression(ConditionalExpression node) {
-    if (identical(_oldNode, node.condition)) {
-      return _parser.parseIfNullExpression();
-    } else if (identical(_oldNode, node.thenExpression)) {
-      return _parser.parseExpressionWithoutCascade();
-    } else if (identical(_oldNode, node.elseExpression)) {
-      return _parser.parseExpressionWithoutCascade();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitConfiguration(Configuration node) {
-    if (identical(_oldNode, node.name)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.value)) {
-      return _parser.parseStringLiteral();
-    } else if (identical(_oldNode, node.libraryUri)) {
-      return _parser.parseStringLiteral();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitConstructorDeclaration(ConstructorDeclaration node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.returnType)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.name)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.parameters)) {
-      return _parser.parseFormalParameterList();
-    } else if (identical(_oldNode, node.redirectedConstructor)) {
-      throw new InsufficientContextException();
-    } else if (node.initializers.contains(_oldNode)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.body)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitConstructorFieldInitializer(ConstructorFieldInitializer node) {
-    if (identical(_oldNode, node.fieldName)) {
-      return _parser.parseSimpleIdentifier();
-    } else if (identical(_oldNode, node.expression)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitConstructorName(ConstructorName node) {
-    if (identical(_oldNode, node.type)) {
-      return _parser.parseTypeName();
-    } else if (identical(_oldNode, node.name)) {
-      return _parser.parseSimpleIdentifier();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitContinueStatement(ContinueStatement node) {
-    if (identical(_oldNode, node.label)) {
-      return _parser.parseSimpleIdentifier();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitDeclaredIdentifier(DeclaredIdentifier node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.type)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.identifier)) {
-      return _parser.parseSimpleIdentifier();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitDefaultFormalParameter(DefaultFormalParameter node) {
-    if (identical(_oldNode, node.parameter)) {
-      return _parser.parseNormalFormalParameter();
-    } else if (identical(_oldNode, node.defaultValue)) {
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitDoStatement(DoStatement node) {
-    if (identical(_oldNode, node.body)) {
-      return _parser.parseStatement2();
-    } else if (identical(_oldNode, node.condition)) {
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitDottedName(DottedName node) {
-    if (node.components.contains(_oldNode)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitDoubleLiteral(DoubleLiteral node) => _notAChild(node);
-
-  @override
-  AstNode visitEmptyFunctionBody(EmptyFunctionBody node) => _notAChild(node);
-
-  @override
-  AstNode visitEmptyStatement(EmptyStatement node) => _notAChild(node);
-
-  @override
-  AstNode visitEnumConstantDeclaration(EnumConstantDeclaration node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.name)) {
-      return _parser.parseSimpleIdentifier(isDeclaration: true);
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitEnumDeclaration(EnumDeclaration node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.name)) {
-      return _parser.parseSimpleIdentifier(isDeclaration: true);
-    } else if (node.constants.contains(_oldNode)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitExportDirective(ExportDirective node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.uri)) {
-      return _parser.parseStringLiteral();
-    } else if (node.combinators.contains(_oldNode)) {
-      throw new IncrementalParseException();
-      //return parser.parseCombinator();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitExpressionFunctionBody(ExpressionFunctionBody node) {
-    if (identical(_oldNode, node.expression)) {
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitExpressionStatement(ExpressionStatement node) {
-    if (identical(_oldNode, node.expression)) {
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitExtendsClause(ExtendsClause node) {
-    if (identical(_oldNode, node.superclass)) {
-      return _parser.parseTypeName();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitFieldDeclaration(FieldDeclaration node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.fields)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitFieldFormalParameter(FieldFormalParameter node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.type)) {
-      return _parser.parseTypeName();
-    } else if (identical(_oldNode, node.identifier)) {
-      return _parser.parseSimpleIdentifier();
-    } else if (identical(_oldNode, node.parameters)) {
-      return _parser.parseFormalParameterList();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitForEachStatement(ForEachStatement node) {
-    if (identical(_oldNode, node.loopVariable)) {
-      throw new InsufficientContextException();
-      //return parser.parseDeclaredIdentifier();
-    } else if (identical(_oldNode, node.identifier)) {
-      return _parser.parseSimpleIdentifier(isDeclaration: true);
-    } else if (identical(_oldNode, node.body)) {
-      return _parser.parseStatement2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitFormalParameterList(FormalParameterList node) {
-    // We don't know which kind of parameter to parse.
-    throw new InsufficientContextException();
-  }
-
-  @override
-  AstNode visitForStatement(ForStatement node) {
-    if (identical(_oldNode, node.variables)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.initialization)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.condition)) {
-      return _parser.parseExpression2();
-    } else if (node.updaters.contains(_oldNode)) {
-      return _parser.parseExpression2();
-    } else if (identical(_oldNode, node.body)) {
-      return _parser.parseStatement2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitFunctionDeclaration(FunctionDeclaration node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.returnType)) {
-      return _parser.parseReturnType();
-    } else if (identical(_oldNode, node.name)) {
-      return _parser.parseSimpleIdentifier(isDeclaration: true);
-    } else if (identical(_oldNode, node.functionExpression)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitFunctionDeclarationStatement(FunctionDeclarationStatement node) {
-    if (identical(_oldNode, node.functionDeclaration)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitFunctionExpression(FunctionExpression node) {
-    if (identical(_oldNode, node.parameters)) {
-      return _parser.parseFormalParameterList();
-    } else if (identical(_oldNode, node.body)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitFunctionExpressionInvocation(FunctionExpressionInvocation node) {
-    if (identical(_oldNode, node.function)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.argumentList)) {
-      return _parser.parseArgumentList();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitFunctionTypeAlias(FunctionTypeAlias node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.returnType)) {
-      return _parser.parseReturnType();
-    } else if (identical(_oldNode, node.name)) {
-      return _parser.parseSimpleIdentifier(isDeclaration: true);
-    } else if (identical(_oldNode, node.typeParameters)) {
-      return _parser.parseTypeParameterList();
-    } else if (identical(_oldNode, node.parameters)) {
-      return _parser.parseFormalParameterList();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitFunctionTypedFormalParameter(FunctionTypedFormalParameter node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.returnType)) {
-      return _parser.parseReturnType();
-    } else if (identical(_oldNode, node.identifier)) {
-      return _parser.parseSimpleIdentifier(isDeclaration: true);
-    } else if (identical(_oldNode, node.parameters)) {
-      return _parser.parseFormalParameterList();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitHideCombinator(HideCombinator node) {
-    if (node.hiddenNames.contains(_oldNode)) {
-      return _parser.parseSimpleIdentifier();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitIfStatement(IfStatement node) {
-    if (identical(_oldNode, node.condition)) {
-      return _parser.parseExpression2();
-    } else if (identical(_oldNode, node.thenStatement)) {
-      return _parser.parseStatement2();
-    } else if (identical(_oldNode, node.elseStatement)) {
-      return _parser.parseStatement2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitImplementsClause(ImplementsClause node) {
-    if (node.interfaces.contains(node)) {
-      return _parser.parseTypeName();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitImportDirective(ImportDirective node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.uri)) {
-      return _parser.parseStringLiteral();
-    } else if (identical(_oldNode, node.prefix)) {
-      return _parser.parseSimpleIdentifier(isDeclaration: true);
-    } else if (node.combinators.contains(_oldNode)) {
-      return _parser.parseCombinator();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitIndexExpression(IndexExpression node) {
-    if (identical(_oldNode, node.target)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.index)) {
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitInstanceCreationExpression(InstanceCreationExpression node) {
-    if (identical(_oldNode, node.constructorName)) {
-      return _parser.parseConstructorName();
-    } else if (identical(_oldNode, node.argumentList)) {
-      return _parser.parseArgumentList();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitIntegerLiteral(IntegerLiteral node) => _notAChild(node);
-
-  @override
-  AstNode visitInterpolationExpression(InterpolationExpression node) {
-    if (identical(_oldNode, node.expression)) {
-      if (node.leftBracket == null) {
-        throw new InsufficientContextException();
-        //return parser.parseThisOrSimpleIdentifier();
-      }
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitInterpolationString(InterpolationString node) {
-    throw new InsufficientContextException();
-  }
-
-  @override
-  AstNode visitIsExpression(IsExpression node) {
-    if (identical(_oldNode, node.expression)) {
-      return _parser.parseBitwiseOrExpression();
-    } else if (identical(_oldNode, node.type)) {
-      return _parser.parseTypeName();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitLabel(Label node) {
-    if (identical(_oldNode, node.label)) {
-      return _parser.parseSimpleIdentifier(
-          isDeclaration: node.parent is LabeledStatement);
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitLabeledStatement(LabeledStatement node) {
-    if (node.labels.contains(_oldNode)) {
-      return _parser.parseLabel(isDeclaration: true);
-    } else if (identical(_oldNode, node.statement)) {
-      return _parser.parseStatement2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitLibraryDirective(LibraryDirective node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.name)) {
-      return _parser.parseLibraryIdentifier();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitLibraryIdentifier(LibraryIdentifier node) {
-    if (node.components.contains(_oldNode)) {
-      return _parser.parseSimpleIdentifier();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitListLiteral(ListLiteral node) {
-    if (identical(_oldNode, node.typeArguments)) {
-      return _parser.parseTypeArgumentList();
-    } else if (node.elements.contains(_oldNode)) {
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitMapLiteral(MapLiteral node) {
-    if (identical(_oldNode, node.typeArguments)) {
-      return _parser.parseTypeArgumentList();
-    } else if (node.entries.contains(_oldNode)) {
-      return _parser.parseMapLiteralEntry();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitMapLiteralEntry(MapLiteralEntry node) {
-    if (identical(_oldNode, node.key)) {
-      return _parser.parseExpression2();
-    } else if (identical(_oldNode, node.value)) {
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitMethodDeclaration(MethodDeclaration node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.returnType)) {
-      throw new InsufficientContextException();
-      //return parser.parseTypeName();
-      //return parser.parseReturnType();
-    } else if (identical(_oldNode, node.name)) {
-      if (node.operatorKeyword != null) {
-        throw new InsufficientContextException();
-      }
-      return _parser.parseSimpleIdentifier(isDeclaration: true);
-    } else if (identical(_oldNode, node.body)) {
-      //return parser.parseFunctionBody();
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.parameters)) {
-      // TODO(paulberry): if we want errors to be correct, we'll need to also
-      // call _validateFormalParameterList, and sometimes
-      // _validateModifiersForGetterOrSetterOrMethod.
-      return _parser.parseFormalParameterList();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitMethodInvocation(MethodInvocation node) {
-    if (identical(_oldNode, node.target)) {
-      throw new IncrementalParseException();
-    } else if (identical(_oldNode, node.methodName)) {
-      return _parser.parseSimpleIdentifier();
-    } else if (identical(_oldNode, node.argumentList)) {
-      return _parser.parseArgumentList();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitNamedExpression(NamedExpression node) {
-    if (identical(_oldNode, node.name)) {
-      return _parser.parseLabel();
-    } else if (identical(_oldNode, node.expression)) {
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitNativeClause(NativeClause node) {
-    if (identical(_oldNode, node.name)) {
-      return _parser.parseStringLiteral();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitNativeFunctionBody(NativeFunctionBody node) {
-    if (identical(_oldNode, node.stringLiteral)) {
-      return _parser.parseStringLiteral();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitNullLiteral(NullLiteral node) => _notAChild(node);
-
-  @override
-  AstNode visitParenthesizedExpression(ParenthesizedExpression node) {
-    if (identical(_oldNode, node.expression)) {
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitPartDirective(PartDirective node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.uri)) {
-      return _parser.parseStringLiteral();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitPartOfDirective(PartOfDirective node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.libraryName)) {
-      return _parser.parseLibraryIdentifier();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitPostfixExpression(PostfixExpression node) {
-    if (identical(_oldNode, node.operand)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitPrefixedIdentifier(PrefixedIdentifier node) {
-    if (identical(_oldNode, node.prefix)) {
-      return _parser.parseSimpleIdentifier();
-    } else if (identical(_oldNode, node.identifier)) {
-      return _parser.parseSimpleIdentifier();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitPrefixExpression(PrefixExpression node) {
-    if (identical(_oldNode, node.operand)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitPropertyAccess(PropertyAccess node) {
-    if (identical(_oldNode, node.target)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.propertyName)) {
-      return _parser.parseSimpleIdentifier();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitRedirectingConstructorInvocation(
-      RedirectingConstructorInvocation node) {
-    if (identical(_oldNode, node.constructorName)) {
-      return _parser.parseSimpleIdentifier();
-    } else if (identical(_oldNode, node.argumentList)) {
-      return _parser.parseArgumentList();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitRethrowExpression(RethrowExpression node) => _notAChild(node);
-
-  @override
-  AstNode visitReturnStatement(ReturnStatement node) {
-    if (identical(_oldNode, node.expression)) {
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitScriptTag(ScriptTag node) => _notAChild(node);
-
-  @override
-  AstNode visitShowCombinator(ShowCombinator node) {
-    if (node.shownNames.contains(_oldNode)) {
-      return _parser.parseSimpleIdentifier();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitSimpleFormalParameter(SimpleFormalParameter node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.type)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.identifier)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitSimpleIdentifier(SimpleIdentifier node) => _notAChild(node);
-
-  @override
-  AstNode visitSimpleStringLiteral(SimpleStringLiteral node) =>
-      _notAChild(node);
-
-  @override
-  AstNode visitStringInterpolation(StringInterpolation node) {
-    if (node.elements.contains(_oldNode)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitSuperConstructorInvocation(SuperConstructorInvocation node) {
-    if (identical(_oldNode, node.constructorName)) {
-      return _parser.parseSimpleIdentifier();
-    } else if (identical(_oldNode, node.argumentList)) {
-      return _parser.parseArgumentList();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitSuperExpression(SuperExpression node) => _notAChild(node);
-
-  @override
-  AstNode visitSwitchCase(SwitchCase node) {
-    if (node.labels.contains(_oldNode)) {
-      return _parser.parseLabel();
-    } else if (identical(_oldNode, node.expression)) {
-      return _parser.parseExpression2();
-    } else if (node.statements.contains(_oldNode)) {
-      return _parser.parseStatement2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitSwitchDefault(SwitchDefault node) {
-    if (node.labels.contains(_oldNode)) {
-      return _parser.parseLabel();
-    } else if (node.statements.contains(_oldNode)) {
-      return _parser.parseStatement2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitSwitchStatement(SwitchStatement node) {
-    if (identical(_oldNode, node.expression)) {
-      return _parser.parseExpression2();
-    } else if (node.members.contains(_oldNode)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitSymbolLiteral(SymbolLiteral node) => _notAChild(node);
-
-  @override
-  AstNode visitThisExpression(ThisExpression node) => _notAChild(node);
-
-  @override
-  AstNode visitThrowExpression(ThrowExpression node) {
-    if (identical(_oldNode, node.expression)) {
-      if (_isCascadeAllowedInThrow(node)) {
-        return _parser.parseExpression2();
-      }
-      return _parser.parseExpressionWithoutCascade();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitTopLevelVariableDeclaration(TopLevelVariableDeclaration node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.variables)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitTryStatement(TryStatement node) {
-    if (identical(_oldNode, node.body)) {
-      return _parser.parseBlock();
-    } else if (node.catchClauses.contains(_oldNode)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.finallyBlock)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitTypeArgumentList(TypeArgumentList node) {
-    if (node.arguments.contains(_oldNode)) {
-      return _parser.parseTypeName();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitTypeName(TypeName node) {
-    if (identical(_oldNode, node.name)) {
-      return _parser.parsePrefixedIdentifier();
-    } else if (identical(_oldNode, node.typeArguments)) {
-      return _parser.parseTypeArgumentList();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitTypeParameter(TypeParameter node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.name)) {
-      return _parser.parseSimpleIdentifier(isDeclaration: true);
-    } else if (identical(_oldNode, node.bound)) {
-      return _parser.parseTypeName();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitTypeParameterList(TypeParameterList node) {
-    if (node.typeParameters.contains(node)) {
-      return _parser.parseTypeParameter();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitVariableDeclaration(VariableDeclaration node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.name)) {
-      throw new InsufficientContextException();
-    } else if (identical(_oldNode, node.initializer)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitVariableDeclarationList(VariableDeclarationList node) {
-    if (identical(_oldNode, node.documentationComment)) {
-      throw new InsufficientContextException();
-    } else if (node.metadata.contains(_oldNode)) {
-      return _parser.parseAnnotation();
-    } else if (identical(_oldNode, node.type)) {
-      // There is not enough context to know whether we should reparse the type
-      // using parseReturnType() (which allows 'void') or parseTypeName()
-      // (which doesn't).  Note that even though the language disallows
-      // variables of type 'void', the parser sometimes accepts them in the
-      // course of error recovery (e.g. "class C { void v; }"
-      throw new InsufficientContextException();
-    } else if (node.variables.contains(_oldNode)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitVariableDeclarationStatement(VariableDeclarationStatement node) {
-    if (identical(_oldNode, node.variables)) {
-      throw new InsufficientContextException();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitWhileStatement(WhileStatement node) {
-    if (identical(_oldNode, node.condition)) {
-      return _parser.parseExpression2();
-    } else if (identical(_oldNode, node.body)) {
-      return _parser.parseStatement2();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitWithClause(WithClause node) {
-    if (node.mixinTypes.contains(node)) {
-      return _parser.parseTypeName();
-    }
-    return _notAChild(node);
-  }
-
-  @override
-  AstNode visitYieldStatement(YieldStatement node) {
-    if (identical(_oldNode, node.expression)) {
-      return _parser.parseExpression2();
-    }
-    return _notAChild(node);
-  }
-
-  /**
-   * Return `true` if the given assignment [expression] can have a cascade
-   * expression on the right-hand side.
-   */
-  bool _isCascadeAllowedInAssignment(AssignmentExpression expression) {
-    // TODO(brianwilkerson) Implement this method.
-    throw new InsufficientContextException();
-  }
-
-  /**
-   * Return `true` if the given throw [expression] can have a cascade
-   * expression.
-   */
-  bool _isCascadeAllowedInThrow(ThrowExpression expression) {
-    // TODO(brianwilkerson) Implement this method.
-    throw new InsufficientContextException();
-  }
-
-  /**
-   * Throw an exception indicating that the visited [node] was not the parent of
-   * the node to be replaced.
-   */
-  AstNode _notAChild(AstNode node) {
-    throw new IncrementalParseException.con1(
-        "Internal error: the visited node (a ${node.runtimeType}) was not the parent of the node to be replaced (a ${_oldNode.runtimeType})");
-  }
-}
-
-/**
- * An exception that occurred while attempting to parse a replacement for a
- * specified node in an existing AST structure.
- */
-@deprecated
-class IncrementalParseException extends RuntimeException {
-  /**
-   * Initialize a newly created exception to have no message and to be its own
-   * cause.
-   */
-  IncrementalParseException() : super();
-
-  /**
-   * Initialize a newly created exception to have the given [message] and to be
-   * its own cause.
-   */
-  IncrementalParseException.con1(String message) : super(message: message);
-
-  /**
-   * Initialize a newly created exception to have no message and to have the
-   * given [cause].
-   */
-  IncrementalParseException.con2(Exception cause) : super(cause: cause);
-}
-
-/**
- * An object used to re-parse a single AST structure within a larger AST
- * structure.
- */
-@deprecated
-class IncrementalParser {
-  /**
-   * The source being parsed.
-   */
-  final Source _source;
-
-  /**
-   * A map from old tokens to new tokens used during the cloning process.
-   */
-  final TokenMap _tokenMap;
-
-  /**
-   * The error listener that will be informed of any errors that are found
-   * during the parse.
-   */
-  final AnalysisErrorListener _errorListener;
-
-  /**
-   * The node in the AST structure that contains the revised content.
-   */
-  AstNode _updatedNode;
-
-  /**
-   * Initialize a newly created incremental parser to parse a portion of the
-   * content of the given [_source]. The [_tokenMap] is a map from old tokens to
-   * new tokens that is used during the cloning process. The [_errorListener]
-   * will be informed of any errors that are found during the parse.
-   */
-  IncrementalParser(this._source, this._tokenMap, this._errorListener);
-
-  /**
-   * Return the node in the AST structure that contains the revised content.
-   */
-  AstNode get updatedNode => _updatedNode;
-
-  /**
-   * Given a range of tokens that were re-scanned, re-parse the minimum number
-   * of tokens to produce a consistent AST structure. The range is represented
-   * by the first and last tokens in the range.
-   *
-   * More specifically, the [leftToken] is the token in the new token stream
-   * immediately to the left of the range of tokens that were inserted and the
-   * [rightToken] is the token in the new token stream immediately to the right
-   * of the range of tokens that were inserted. The [originalStart] and
-   * [originalEnd] are the offsets in the original source of the first and last
-   * characters that were modified.
-   *
-   * The tokens are assumed to be contained in the same token stream.
-   */
-  AstNode reparse(AstNode originalStructure, Token leftToken, Token rightToken,
-      int originalStart, int originalEnd) {
-    AstNode oldNode = null;
-    AstNode newNode = null;
-    //
-    // Find the first token that needs to be re-parsed.
-    //
-    Token firstToken = leftToken.next;
-    if (identical(firstToken, rightToken)) {
-      // If there are no new tokens, then we need to include at least one copied
-      // node in the range.
-      firstToken = leftToken;
-    }
-    //
-    // Find the smallest AST node that encompasses the range of re-scanned
-    // tokens.
-    //
-    if (originalEnd < originalStart) {
-      oldNode = new NodeLocator(originalStart).searchWithin(originalStructure);
-    } else {
-      oldNode = new NodeLocator(originalStart, originalEnd)
-          .searchWithin(originalStructure);
-    }
-    //
-    // Find the token at which parsing is to begin.
-    //
-    int originalOffset = oldNode.offset;
-    Token parseToken = _findTokenAt(firstToken, originalOffset);
-    if (parseToken == null) {
-      return null;
-    }
-    //
-    // Parse the appropriate AST structure starting at the appropriate place.
-    //
-    Parser parser = new Parser(_source, _errorListener);
-    parser.currentToken = parseToken;
-    while (newNode == null) {
-      AstNode parent = oldNode.parent;
-      if (parent == null) {
-        parseToken = _findFirstToken(parseToken);
-        parser.currentToken = parseToken;
-        return parser.parseCompilationUnit2();
-      }
-      bool advanceToParent = false;
-      try {
-        IncrementalParseDispatcher dispatcher =
-            new IncrementalParseDispatcher(parser, oldNode);
-        IncrementalParseStateBuilder contextBuilder =
-            new IncrementalParseStateBuilder(parser);
-        contextBuilder.buildState(oldNode);
-        newNode = parent.accept(dispatcher);
-        //
-        // Validate that the new node can replace the old node.
-        //
-        Token mappedToken = _tokenMap.get(oldNode.endToken.next);
-        if (mappedToken == null ||
-            newNode == null ||
-            mappedToken.offset != newNode.endToken.next.offset ||
-            newNode.offset != oldNode.offset) {
-          advanceToParent = true;
-        }
-      } on InsufficientContextException {
-        advanceToParent = true;
-      } catch (exception) {
-        return null;
-      }
-      if (advanceToParent) {
-        newNode = null;
-        oldNode = parent;
-        originalOffset = oldNode.offset;
-        parseToken = _findTokenAt(parseToken, originalOffset);
-        parser.currentToken = parseToken;
-      }
-    }
-    _updatedNode = newNode;
-    //
-    // Replace the old node with the new node in a copy of the original AST
-    // structure.
-    //
-    if (identical(oldNode, originalStructure)) {
-      // We ended up re-parsing the whole structure, so there's no need for a
-      // copy.
-      ResolutionCopier.copyResolutionData(oldNode, newNode);
-      return newNode;
-    }
-    ResolutionCopier.copyResolutionData(oldNode, newNode);
-    IncrementalAstCloner cloner =
-        new IncrementalAstCloner(oldNode, newNode, _tokenMap);
-    return originalStructure.accept(cloner);
-  }
-
-  /**
-   * Return the first (non-EOF) token in the token stream containing the
-   * [firstToken].
-   */
-  Token _findFirstToken(Token firstToken) {
-    while (firstToken.type != TokenType.EOF) {
-      firstToken = firstToken.previous;
-    }
-    return firstToken.next;
-  }
-
-  /**
-   * Find the token at or before the [firstToken] with the given [offset], or
-   * `null` if there is no such token.
-   */
-  Token _findTokenAt(Token firstToken, int offset) {
-    while (firstToken.offset > offset && firstToken.type != TokenType.EOF) {
-      firstToken = firstToken.previous;
-    }
-    return firstToken;
-  }
-}
-
-/**
- * A visitor capable of inferring the correct parser state for incremental
- * parsing.  This visitor visits each parent/child relationship in the chain of
- * ancestors of the node to be replaced (starting with the root of the parse
- * tree), updating the parser to the correct state for parsing the child of the
- * given parent.  Once it has visited all of these relationships, the parser
- * will be in the correct state for reparsing the node to be replaced.
- */
-@deprecated
-class IncrementalParseStateBuilder extends SimpleAstVisitor {
-  // TODO(paulberry): add support for other pieces of parser state (_inAsync,
-  // _inGenerator, _inLoop, and _inSwitch).  Note that _inLoop and _inSwitch
-  // only affect error message generation.
-
-  /**
-   * The parser whose state should be built.
-   */
-  final Parser _parser;
-
-  /**
-   * The child node in the parent/child relationship currently being visited.
-   * (The corresponding parent is the node passed to the visit...() function.)
-   */
-  AstNode _childNode;
-
-  /**
-   * Create an IncrementalParseStateBuilder which will build the correct state
-   * for [_parser].
-   */
-  IncrementalParseStateBuilder(this._parser);
-
-  /**
-   * Build the correct parser state for parsing a replacement for [node].
-   */
-  void buildState(AstNode node) {
-    List<AstNode> ancestors = <AstNode>[];
-    while (node != null) {
-      ancestors.add(node);
-      node = node.parent;
-    }
-    _parser._inInitializer = false;
-    for (int i = ancestors.length - 2; i >= 0; i--) {
-      _childNode = ancestors[i];
-      ancestors[i + 1].accept(this);
-    }
-  }
-
-  @override
-  void visitArgumentList(ArgumentList node) {
-    _parser._inInitializer = false;
-  }
-
-  @override
-  void visitConstructorFieldInitializer(ConstructorFieldInitializer node) {
-    if (identical(_childNode, node.expression)) {
-      _parser._inInitializer = true;
-    }
-  }
-
-  @override
-  void visitIndexExpression(IndexExpression node) {
-    if (identical(_childNode, node.index)) {
-      _parser._inInitializer = false;
-    }
-  }
-
-  @override
-  void visitInterpolationExpression(InterpolationExpression node) {
-    if (identical(_childNode, node.expression)) {
-      _parser._inInitializer = false;
-    }
-  }
-
-  @override
-  void visitListLiteral(ListLiteral node) {
-    if (node.elements.contains(_childNode)) {
-      _parser._inInitializer = false;
-    }
-  }
-
-  @override
-  void visitMapLiteral(MapLiteral node) {
-    if (node.entries.contains(_childNode)) {
-      _parser._inInitializer = false;
-    }
-  }
-
-  @override
-  void visitParenthesizedExpression(ParenthesizedExpression node) {
-    if (identical(_childNode, node.expression)) {
-      _parser._inInitializer = false;
-    }
-  }
-}
-
-/**
- * An exception indicating that an AST node cannot be re-parsed because there is
- * not enough context to know how to re-parse the node. Clients can attempt to
- * re-parse the parent of the node.
- */
-@deprecated
-class InsufficientContextException extends IncrementalParseException {
-  /**
-   * Initialize a newly created exception to have no message and to be its own
-   * cause.
-   */
-  InsufficientContextException() : super();
-
-  /**
-   * Initialize a newly created exception to have the given [message] and to be
-   * its own cause.
-   */
-  InsufficientContextException.con1(String message) : super.con1(message);
-
-  /**
-   * Initialize a newly created exception to have no message and to have the
-   * given [cause].
-   */
-  InsufficientContextException.con2(Exception cause) : super.con2(cause);
-}
-
-/**
- * Wrapper around [Function] which should be called with "target" and
- * "arguments".
- */
-class MethodTrampoline {
-  int parameterCount;
-  Function trampoline;
-  MethodTrampoline(this.parameterCount, this.trampoline);
-  Object invoke(target, List arguments) {
-    if (arguments.length != parameterCount) {
-      throw new IllegalArgumentException(
-          "${arguments.length} != $parameterCount");
-    }
-    switch (parameterCount) {
-      case 0:
-        return trampoline(target);
-      case 1:
-        return trampoline(target, arguments[0]);
-      case 2:
-        return trampoline(target, arguments[0], arguments[1]);
-      case 3:
-        return trampoline(target, arguments[0], arguments[1], arguments[2]);
-      case 4:
-        return trampoline(
-            target, arguments[0], arguments[1], arguments[2], arguments[3]);
-      default:
-        throw new IllegalArgumentException("Not implemented for > 4 arguments");
-    }
-  }
 }
 
 /**
@@ -2125,9 +187,22 @@ class Parser {
   int _errorListenerLock = 0;
 
   /**
-   * A flag indicating whether the parser is to parse the async support.
+   * A flag indicating whether the parser is to parse asserts in the initializer
+   * list of a constructor.
    */
-  bool _parseAsync = true;
+  bool _enableAssertInitializer = false;
+
+  /**
+   * A flag indicating whether the parser is to parse the non-nullable modifier
+   * in type names.
+   */
+  bool _enableNnbd = false;
+
+  /**
+   * A flag indicating whether the parser is to allow URI's in part-of
+   * directives.
+   */
+  bool _enableUriInPartOf = false;
 
   /**
    * A flag indicating whether parser is to parse function bodies.
@@ -2147,7 +222,7 @@ class Parser {
 
   /**
    * A flag indicating whether the parser is currently in a function body marked
-   * as being 'async'.
+   * (by a star) as being a generator.
    */
   bool _inGenerator = false;
 
@@ -2163,13 +238,14 @@ class Parser {
 
   /**
    * A flag indicating whether the parser is currently in a constructor field
-   * initializer, with no intervening parens, braces, or brackets.
+   * initializer, with no intervening parentheses, braces, or brackets.
    */
   bool _inInitializer = false;
 
   /**
    * A flag indicating whether the parser is to parse generic method syntax.
    */
+  @deprecated
   bool parseGenericMethods = false;
 
   /**
@@ -2179,24 +255,74 @@ class Parser {
   bool parseGenericMethodComments = false;
 
   /**
-   * Initialize a newly created parser to parse the content of the given
-   * [_source] and to report any errors that are found to the given
-   * [_errorListener].
+   * Initialize a newly created parser to parse tokens in the given [_source]
+   * and to report any errors that are found to the given [_errorListener].
    */
   Parser(this._source, this._errorListener);
 
-  void set currentToken(Token currentToken) {
-    this._currentToken = currentToken;
+  /**
+   * Return the current token.
+   */
+  Token get currentToken => _currentToken;
+
+  /**
+   * Set the token with which the parse is to begin to the given [token].
+   */
+  void set currentToken(Token token) {
+    this._currentToken = token;
+  }
+
+  /**
+   * Return `true` if the parser is to parse asserts in the initializer list of
+   * a constructor.
+   */
+  bool get enableAssertInitializer => _enableAssertInitializer;
+
+  /**
+   * Set whether the parser is to parse asserts in the initializer list of a
+   * constructor to match the given [enable] flag.
+   */
+  void set enableAssertInitializer(bool enable) {
+    _enableAssertInitializer = enable;
+  }
+
+  /**
+   * Return `true` if the parser is to parse the non-nullable modifier in type
+   * names.
+   */
+  bool get enableNnbd => _enableNnbd;
+
+  /**
+   * Set whether the parser is to parse the non-nullable modifier in type names
+   * to match the given [enable] flag.
+   */
+  void set enableNnbd(bool enable) {
+    _enableNnbd = enable;
+  }
+
+  /**
+   * Return `true` if the parser is to allow URI's in part-of directives.
+   */
+  bool get enableUriInPartOf => _enableUriInPartOf;
+
+  /**
+   * Set whether the parser is to allow URI's in part-of directives to the given
+   * [enable] flag.
+   */
+  void set enableUriInPartOf(bool enable) {
+    _enableUriInPartOf = enable;
   }
 
   /**
    * Return `true` if the current token is the first token of a return type that
    * is followed by an identifier, possibly followed by a list of type
    * parameters, followed by a left-parenthesis. This is used by
-   * [_parseTypeAlias] to determine whether or not to parse a return type.
+   * [parseTypeAlias] to determine whether or not to parse a return type.
    */
   bool get hasReturnTypeInTypeAlias {
-    Token next = _skipReturnType(_currentToken);
+    // TODO(brianwilkerson) This is too expensive as implemented and needs to be
+    // re-implemented or removed.
+    Token next = skipReturnType(_currentToken);
     if (next == null) {
       return false;
     }
@@ -2205,10 +331,11 @@ class Parser {
 
   /**
    * Set whether the parser is to parse the async support.
+   *
+   * Support for removing the 'async' library has been removed.
    */
-  void set parseAsync(bool parseAsync) {
-    this._parseAsync = parseAsync;
-  }
+  @deprecated
+  void set parseAsync(bool parseAsync) {}
 
   @deprecated
   bool get parseConditionalDirectives => true;
@@ -2224,24 +351,277 @@ class Parser {
   }
 
   /**
+   * Return the content of a string with the given literal representation. The
+   * [lexeme] is the literal representation of the string. The flag [isFirst] is
+   * `true` if this is the first token in a string literal. The flag [isLast] is
+   * `true` if this is the last token in a string literal.
+   */
+  String computeStringValue(String lexeme, bool isFirst, bool isLast) {
+    StringLexemeHelper helper = new StringLexemeHelper(lexeme, isFirst, isLast);
+    int start = helper.start;
+    int end = helper.end;
+    bool stringEndsAfterStart = end >= start;
+    assert(stringEndsAfterStart);
+    if (!stringEndsAfterStart) {
+      AnalysisEngine.instance.logger.logError(
+          "Internal error: computeStringValue($lexeme, $isFirst, $isLast)");
+      return "";
+    }
+    if (helper.isRaw) {
+      return lexeme.substring(start, end);
+    }
+    StringBuffer buffer = new StringBuffer();
+    int index = start;
+    while (index < end) {
+      index = _translateCharacter(buffer, lexeme, index);
+    }
+    return buffer.toString();
+  }
+
+  /**
+   * Return a synthetic identifier.
+   */
+  SimpleIdentifier createSyntheticIdentifier({bool isDeclaration: false}) {
+    Token syntheticToken;
+    if (_currentToken.type == TokenType.KEYWORD) {
+      // Consider current keyword token as an identifier.
+      // It is not always true, e.g. "^is T" where "^" is place the place for
+      // synthetic identifier. By creating SyntheticStringToken we can
+      // distinguish a real identifier from synthetic. In the code completion
+      // behavior will depend on a cursor position - before or on "is".
+      syntheticToken = _injectToken(new SyntheticStringToken(
+          TokenType.IDENTIFIER, _currentToken.lexeme, _currentToken.offset));
+    } else {
+      syntheticToken = _createSyntheticToken(TokenType.IDENTIFIER);
+    }
+    return astFactory.simpleIdentifier(syntheticToken,
+        isDeclaration: isDeclaration);
+  }
+
+  /**
+   * Return a synthetic string literal.
+   */
+  SimpleStringLiteral createSyntheticStringLiteral() => astFactory
+      .simpleStringLiteral(_createSyntheticToken(TokenType.STRING), "");
+
+  /**
    * Advance to the next token in the token stream, making it the new current
    * token and return the token that was current before this method was invoked.
    */
   Token getAndAdvance() {
     Token token = _currentToken;
-    _advance();
+    _currentToken = _currentToken.next;
     return token;
+  }
+
+  /**
+   * Return `true` if the current token appears to be the beginning of a
+   * function declaration.
+   */
+  bool isFunctionDeclaration() {
+    Keyword keyword = _currentToken.keyword;
+    if (keyword == Keyword.VOID) {
+      return true;
+    }
+    Token afterReturnType = skipTypeName(_currentToken);
+    if (afterReturnType == null) {
+      // There was no return type, but it is optional, so go back to where we
+      // started.
+      afterReturnType = _currentToken;
+    }
+    Token afterIdentifier = skipSimpleIdentifier(afterReturnType);
+    if (afterIdentifier == null) {
+      // It's possible that we parsed the function name as if it were a type
+      // name, so see whether it makes sense if we assume that there is no type.
+      afterIdentifier = skipSimpleIdentifier(_currentToken);
+    }
+    if (afterIdentifier == null) {
+      return false;
+    }
+    if (isFunctionExpression(afterIdentifier)) {
+      return true;
+    }
+    // It's possible that we have found a getter. While this isn't valid at this
+    // point we test for it in order to recover better.
+    if (keyword == Keyword.GET) {
+      Token afterName = skipSimpleIdentifier(_currentToken.next);
+      if (afterName == null) {
+        return false;
+      }
+      TokenType type = afterName.type;
+      return type == TokenType.FUNCTION || type == TokenType.OPEN_CURLY_BRACKET;
+    } else if (_tokenMatchesKeyword(afterReturnType, Keyword.GET)) {
+      Token afterName = skipSimpleIdentifier(afterReturnType.next);
+      if (afterName == null) {
+        return false;
+      }
+      TokenType type = afterName.type;
+      return type == TokenType.FUNCTION || type == TokenType.OPEN_CURLY_BRACKET;
+    }
+    return false;
+  }
+
+  /**
+   * Return `true` if the given [token] appears to be the beginning of a
+   * function expression.
+   */
+  bool isFunctionExpression(Token token) {
+    // Function expressions aren't allowed in initializer lists.
+    if (_inInitializer) {
+      return false;
+    }
+    Token afterTypeParameters = _skipTypeParameterList(token);
+    if (afterTypeParameters == null) {
+      afterTypeParameters = token;
+    }
+    Token afterParameters = _skipFormalParameterList(afterTypeParameters);
+    if (afterParameters == null) {
+      return false;
+    }
+    if (afterParameters.matchesAny(
+        const <TokenType>[TokenType.OPEN_CURLY_BRACKET, TokenType.FUNCTION])) {
+      return true;
+    }
+    String lexeme = afterParameters.lexeme;
+    return lexeme == ASYNC || lexeme == SYNC;
+  }
+
+  /**
+   * Return `true` if the current token is the first token in an initialized
+   * variable declaration rather than an expression. This method assumes that we
+   * have already skipped past any metadata that might be associated with the
+   * declaration.
+   *
+   *     initializedVariableDeclaration ::=
+   *         declaredIdentifier ('=' expression)? (',' initializedIdentifier)*
+   *
+   *     declaredIdentifier ::=
+   *         metadata finalConstVarOrType identifier
+   *
+   *     finalConstVarOrType ::=
+   *         'final' type?
+   *       | 'const' type?
+   *       | 'var'
+   *       | type
+   *
+   *     type ::=
+   *         qualified typeArguments?
+   *
+   *     initializedIdentifier ::=
+   *         identifier ('=' expression)?
+   */
+  bool isInitializedVariableDeclaration() {
+    Keyword keyword = _currentToken.keyword;
+    if (keyword == Keyword.FINAL || keyword == Keyword.VAR) {
+      // An expression cannot start with a keyword other than 'const',
+      // 'rethrow', or 'throw'.
+      return true;
+    }
+    if (keyword == Keyword.CONST) {
+      // Look to see whether we might be at the start of a list or map literal,
+      // otherwise this should be the start of a variable declaration.
+      return !_peek().matchesAny(const <TokenType>[
+        TokenType.LT,
+        TokenType.OPEN_CURLY_BRACKET,
+        TokenType.OPEN_SQUARE_BRACKET,
+        TokenType.INDEX
+      ]);
+    }
+    bool allowAdditionalTokens = true;
+    // We know that we have an identifier, and need to see whether it might be
+    // a type name.
+    if (_currentToken.type != TokenType.IDENTIFIER) {
+      allowAdditionalTokens = false;
+    }
+    Token token = skipTypeName(_currentToken);
+    if (token == null) {
+      // There was no type name, so this can't be a declaration.
+      return false;
+    }
+    if (token.type != TokenType.IDENTIFIER) {
+      allowAdditionalTokens = false;
+    }
+    token = skipSimpleIdentifier(token);
+    if (token == null) {
+      return false;
+    }
+    TokenType type = token.type;
+    // Usual cases in valid code:
+    //     String v = '';
+    //     String v, v2;
+    //     String v;
+    //     for (String item in items) {}
+    if (type == TokenType.EQ ||
+        type == TokenType.COMMA ||
+        type == TokenType.SEMICOLON ||
+        token.keyword == Keyword.IN) {
+      return true;
+    }
+    // It is OK to parse as a variable declaration in these cases:
+    //     String v }
+    //     String v if (true) print('OK');
+    //     String v { print(42); }
+    // ...but not in these cases:
+    //     get getterName {
+    //     String get getterName
+    if (allowAdditionalTokens) {
+      if (type == TokenType.CLOSE_CURLY_BRACKET ||
+          type == TokenType.KEYWORD ||
+          type == TokenType.IDENTIFIER ||
+          type == TokenType.OPEN_CURLY_BRACKET) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Return `true` if the current token appears to be the beginning of a switch
+   * member.
+   */
+  bool isSwitchMember() {
+    Token token = _currentToken;
+    while (_tokenMatches(token, TokenType.IDENTIFIER) &&
+        _tokenMatches(token.next, TokenType.COLON)) {
+      token = token.next.next;
+    }
+    Keyword keyword = token.keyword;
+    return keyword == Keyword.CASE || keyword == Keyword.DEFAULT;
+  }
+
+  /**
+   * Parse an additive expression. Return the additive expression that was
+   * parsed.
+   *
+   *     additiveExpression ::=
+   *         multiplicativeExpression (additiveOperator multiplicativeExpression)*
+   *       | 'super' (additiveOperator multiplicativeExpression)+
+   */
+  Expression parseAdditiveExpression() {
+    Expression expression;
+    if (_currentToken.keyword == Keyword.SUPER &&
+        _currentToken.next.type.isAdditiveOperator) {
+      expression = astFactory.superExpression(getAndAdvance());
+    } else {
+      expression = parseMultiplicativeExpression();
+    }
+    while (_currentToken.type.isAdditiveOperator) {
+      expression = astFactory.binaryExpression(
+          expression, getAndAdvance(), parseMultiplicativeExpression());
+    }
+    return expression;
   }
 
   /**
    * Parse an annotation. Return the annotation that was parsed.
    *
+   * This method assumes that the current token matches [TokenType.AT].
+   *
    *     annotation ::=
    *         '@' qualified ('.' identifier)? arguments?
-   *
    */
   Annotation parseAnnotation() {
-    Token atSign = _expect(TokenType.AT);
+    Token atSign = getAndAdvance();
     Identifier name = parsePrefixedIdentifier();
     Token period = null;
     SimpleIdentifier constructorName = null;
@@ -2253,7 +633,8 @@ class Parser {
     if (_matches(TokenType.OPEN_PAREN)) {
       arguments = parseArgumentList();
     }
-    return new Annotation(atSign, name, period, constructorName, arguments);
+    return astFactory.annotation(
+        atSign, name, period, constructorName, arguments);
   }
 
   /**
@@ -2267,12 +648,15 @@ class Parser {
    *         label expression
    */
   Expression parseArgument() {
+    // TODO(brianwilkerson) Consider returning a wrapper indicating whether the
+    // expression is a named expression in order to remove the 'is' check in
+    // 'parseArgumentList'.
     //
     // Both namedArgument and expression can start with an identifier, but only
     // namedArgument can have an identifier followed by a colon.
     //
     if (_matchesIdentifier() && _tokenMatches(_peek(), TokenType.COLON)) {
-      return new NamedExpression(parseLabel(), parseExpression2());
+      return astFactory.namedExpression(parseLabel(), parseExpression2());
     } else {
       return parseExpression2();
     }
@@ -2280,6 +664,8 @@ class Parser {
 
   /**
    * Parse a list of arguments. Return the argument list that was parsed.
+   *
+   * This method assumes that the current token matches [TokenType.OPEN_PAREN].
    *
    *     arguments ::=
    *         '(' argumentList? ')'
@@ -2289,10 +675,9 @@ class Parser {
    *       | expressionList (',' namedArgument)*
    */
   ArgumentList parseArgumentList() {
-    Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
-    List<Expression> arguments = new List<Expression>();
+    Token leftParenthesis = getAndAdvance();
     if (_matches(TokenType.CLOSE_PAREN)) {
-      return new ArgumentList(leftParenthesis, arguments, getAndAdvance());
+      return astFactory.argumentList(leftParenthesis, null, getAndAdvance());
     }
     //
     // Even though unnamed arguments must all appear before any named arguments,
@@ -2302,35 +687,178 @@ class Parser {
     _inInitializer = false;
     try {
       Expression argument = parseArgument();
-      arguments.add(argument);
+      List<Expression> arguments = <Expression>[argument];
       bool foundNamedArgument = argument is NamedExpression;
       bool generatedError = false;
       while (_optional(TokenType.COMMA)) {
+        if (_matches(TokenType.CLOSE_PAREN)) {
+          break;
+        }
         argument = parseArgument();
         arguments.add(argument);
-        if (foundNamedArgument) {
-          bool blankArgument =
-              argument is SimpleIdentifier && argument.name.isEmpty;
-          if (!generatedError &&
-              !(argument is NamedExpression && !blankArgument)) {
-            // Report the error, once, but allow the arguments to be in any
-            // order in the AST.
-            _reportErrorForCurrentToken(
-                ParserErrorCode.POSITIONAL_AFTER_NAMED_ARGUMENT);
-            generatedError = true;
-          }
-        } else if (argument is NamedExpression) {
+        if (argument is NamedExpression) {
           foundNamedArgument = true;
+        } else if (foundNamedArgument) {
+          if (!generatedError) {
+            if (!argument.isSynthetic) {
+              // Report the error, once, but allow the arguments to be in any
+              // order in the AST.
+              _reportErrorForCurrentToken(
+                  ParserErrorCode.POSITIONAL_AFTER_NAMED_ARGUMENT);
+              generatedError = true;
+            }
+          }
         }
       }
-      // TODO(brianwilkerson) Recovery: Look at the left parenthesis to see
-      // whether there is a matching right parenthesis. If there is, then we're
-      // more likely missing a comma and should go back to parsing arguments.
+      // Recovery: If the next token is not a right parenthesis, look at the
+      // left parenthesis to see whether there is a matching right parenthesis.
+      // If there is, then we're more likely missing a comma and should go back
+      // to parsing arguments.
       Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
-      return new ArgumentList(leftParenthesis, arguments, rightParenthesis);
+      return astFactory.argumentList(
+          leftParenthesis, arguments, rightParenthesis);
     } finally {
       _inInitializer = wasInInitializer;
     }
+  }
+
+  /**
+   * Parse an assert statement. Return the assert statement.
+   *
+   * This method assumes that the current token matches `Keyword.ASSERT`.
+   *
+   *     assertStatement ::=
+   *         'assert' '(' expression [',' expression] ')' ';'
+   */
+  AssertStatement parseAssertStatement() {
+    Token keyword = getAndAdvance();
+    Token leftParen = _expect(TokenType.OPEN_PAREN);
+    Expression expression = parseExpression2();
+    Token comma;
+    Expression message;
+    if (_matches(TokenType.COMMA)) {
+      comma = getAndAdvance();
+      message = parseExpression2();
+    }
+    Token rightParen = _expect(TokenType.CLOSE_PAREN);
+    Token semicolon = _expect(TokenType.SEMICOLON);
+    return astFactory.assertStatement(
+        keyword, leftParen, expression, comma, message, rightParen, semicolon);
+  }
+
+  /**
+   * Parse an assignable expression. The [primaryAllowed] is `true` if the
+   * expression is allowed to be a primary without any assignable selector.
+   * Return the assignable expression that was parsed.
+   *
+   *     assignableExpression ::=
+   *         primary (arguments* assignableSelector)+
+   *       | 'super' unconditionalAssignableSelector
+   *       | identifier
+   */
+  Expression parseAssignableExpression(bool primaryAllowed) {
+    if (_matchesKeyword(Keyword.SUPER)) {
+      return parseAssignableSelector(
+          astFactory.superExpression(getAndAdvance()), false,
+          allowConditional: false);
+    }
+    return _parseAssignableExpressionNotStartingWithSuper(primaryAllowed);
+  }
+
+  /**
+   * Parse an assignable selector. The [prefix] is the expression preceding the
+   * selector. The [optional] is `true` if the selector is optional. Return the
+   * assignable selector that was parsed, or the original prefix if there was no
+   * assignable selector.  If [allowConditional] is false, then the '?.'
+   * operator will still be parsed, but a parse error will be generated.
+   *
+   *     unconditionalAssignableSelector ::=
+   *         '[' expression ']'
+   *       | '.' identifier
+   *
+   *     assignableSelector ::=
+   *         unconditionalAssignableSelector
+   *       | '?.' identifier
+   */
+  Expression parseAssignableSelector(Expression prefix, bool optional,
+      {bool allowConditional: true}) {
+    TokenType type = _currentToken.type;
+    if (type == TokenType.OPEN_SQUARE_BRACKET) {
+      Token leftBracket = getAndAdvance();
+      bool wasInInitializer = _inInitializer;
+      _inInitializer = false;
+      try {
+        Expression index = parseExpression2();
+        Token rightBracket = _expect(TokenType.CLOSE_SQUARE_BRACKET);
+        return astFactory.indexExpressionForTarget(
+            prefix, leftBracket, index, rightBracket);
+      } finally {
+        _inInitializer = wasInInitializer;
+      }
+    } else {
+      bool isQuestionPeriod = type == TokenType.QUESTION_PERIOD;
+      if (type == TokenType.PERIOD || isQuestionPeriod) {
+        if (isQuestionPeriod && !allowConditional) {
+          _reportErrorForCurrentToken(
+              ParserErrorCode.INVALID_OPERATOR_FOR_SUPER,
+              [_currentToken.lexeme]);
+        }
+        Token operator = getAndAdvance();
+        return astFactory.propertyAccess(
+            prefix, operator, parseSimpleIdentifier());
+      } else if (type == TokenType.INDEX) {
+        _splitIndex();
+        Token leftBracket = getAndAdvance();
+        Expression index = parseSimpleIdentifier();
+        Token rightBracket = getAndAdvance();
+        return astFactory.indexExpressionForTarget(
+            prefix, leftBracket, index, rightBracket);
+      } else {
+        if (!optional) {
+          // Report the missing selector.
+          _reportErrorForCurrentToken(
+              ParserErrorCode.MISSING_ASSIGNABLE_SELECTOR);
+        }
+        return prefix;
+      }
+    }
+  }
+
+  /**
+   * Parse a await expression. Return the await expression that was parsed.
+   *
+   * This method assumes that the current token matches `_AWAIT`.
+   *
+   *     awaitExpression ::=
+   *         'await' unaryExpression
+   */
+  AwaitExpression parseAwaitExpression() {
+    Token awaitToken = getAndAdvance();
+    Expression expression = parseUnaryExpression();
+    return astFactory.awaitExpression(awaitToken, expression);
+  }
+
+  /**
+   * Parse a bitwise and expression. Return the bitwise and expression that was
+   * parsed.
+   *
+   *     bitwiseAndExpression ::=
+   *         shiftExpression ('&' shiftExpression)*
+   *       | 'super' ('&' shiftExpression)+
+   */
+  Expression parseBitwiseAndExpression() {
+    Expression expression;
+    if (_currentToken.keyword == Keyword.SUPER &&
+        _currentToken.next.type == TokenType.AMPERSAND) {
+      expression = astFactory.superExpression(getAndAdvance());
+    } else {
+      expression = parseShiftExpression();
+    }
+    while (_currentToken.type == TokenType.AMPERSAND) {
+      expression = astFactory.binaryExpression(
+          expression, getAndAdvance(), parseShiftExpression());
+    }
+    return expression;
   }
 
   /**
@@ -2343,16 +871,38 @@ class Parser {
    */
   Expression parseBitwiseOrExpression() {
     Expression expression;
-    if (_matchesKeyword(Keyword.SUPER) &&
-        _tokenMatches(_peek(), TokenType.BAR)) {
-      expression = new SuperExpression(getAndAdvance());
+    if (_currentToken.keyword == Keyword.SUPER &&
+        _currentToken.next.type == TokenType.BAR) {
+      expression = astFactory.superExpression(getAndAdvance());
     } else {
-      expression = _parseBitwiseXorExpression();
+      expression = parseBitwiseXorExpression();
     }
-    while (_matches(TokenType.BAR)) {
-      Token operator = getAndAdvance();
-      expression = new BinaryExpression(
-          expression, operator, _parseBitwiseXorExpression());
+    while (_currentToken.type == TokenType.BAR) {
+      expression = astFactory.binaryExpression(
+          expression, getAndAdvance(), parseBitwiseXorExpression());
+    }
+    return expression;
+  }
+
+  /**
+   * Parse a bitwise exclusive-or expression. Return the bitwise exclusive-or
+   * expression that was parsed.
+   *
+   *     bitwiseXorExpression ::=
+   *         bitwiseAndExpression ('^' bitwiseAndExpression)*
+   *       | 'super' ('^' bitwiseAndExpression)+
+   */
+  Expression parseBitwiseXorExpression() {
+    Expression expression;
+    if (_currentToken.keyword == Keyword.SUPER &&
+        _currentToken.next.type == TokenType.CARET) {
+      expression = astFactory.superExpression(getAndAdvance());
+    } else {
+      expression = parseBitwiseAndExpression();
+    }
+    while (_currentToken.type == TokenType.CARET) {
+      expression = astFactory.binaryExpression(
+          expression, getAndAdvance(), parseBitwiseAndExpression());
     }
     return expression;
   }
@@ -2360,29 +910,292 @@ class Parser {
   /**
    * Parse a block. Return the block that was parsed.
    *
+   * This method assumes that the current token matches
+   * [TokenType.OPEN_CURLY_BRACKET].
+   *
    *     block ::=
    *         '{' statements '}'
    */
   Block parseBlock() {
-    Token leftBracket = _expect(TokenType.OPEN_CURLY_BRACKET);
-    List<Statement> statements = new List<Statement>();
+    bool isEndOfBlock() {
+      TokenType type = _currentToken.type;
+      return type == TokenType.EOF || type == TokenType.CLOSE_CURLY_BRACKET;
+    }
+
+    Token leftBracket = getAndAdvance();
+    List<Statement> statements = <Statement>[];
     Token statementStart = _currentToken;
-    while (
-        !_matches(TokenType.EOF) && !_matches(TokenType.CLOSE_CURLY_BRACKET)) {
+    while (!isEndOfBlock()) {
       Statement statement = parseStatement2();
-      if (statement != null) {
-        statements.add(statement);
-      }
       if (identical(_currentToken, statementStart)) {
         // Ensure that we are making progress and report an error if we're not.
         _reportErrorForToken(ParserErrorCode.UNEXPECTED_TOKEN, _currentToken,
             [_currentToken.lexeme]);
         _advance();
+      } else if (statement != null) {
+        statements.add(statement);
       }
       statementStart = _currentToken;
     }
+    // Recovery: If the next token is not a right curly bracket, look at the
+    // left curly bracket to see whether there is a matching right bracket. If
+    // there is, then we're more likely missing a semi-colon and should go back
+    // to parsing statements.
     Token rightBracket = _expect(TokenType.CLOSE_CURLY_BRACKET);
-    return new Block(leftBracket, statements, rightBracket);
+    return astFactory.block(leftBracket, statements, rightBracket);
+  }
+
+  /**
+   * Parse a break statement. Return the break statement that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.BREAK`.
+   *
+   *     breakStatement ::=
+   *         'break' identifier? ';'
+   */
+  Statement parseBreakStatement() {
+    Token breakKeyword = getAndAdvance();
+    SimpleIdentifier label = null;
+    if (_matchesIdentifier()) {
+      label = _parseSimpleIdentifierUnchecked();
+    }
+    if (!_inLoop && !_inSwitch && label == null) {
+      _reportErrorForToken(ParserErrorCode.BREAK_OUTSIDE_OF_LOOP, breakKeyword);
+    }
+    Token semicolon = _expect(TokenType.SEMICOLON);
+    return astFactory.breakStatement(breakKeyword, label, semicolon);
+  }
+
+  /**
+   * Parse a cascade section. Return the expression representing the cascaded
+   * method invocation.
+   *
+   * This method assumes that the current token matches
+   * `TokenType.PERIOD_PERIOD`.
+   *
+   *     cascadeSection ::=
+   *         '..' (cascadeSelector typeArguments? arguments*)
+   *         (assignableSelector typeArguments? arguments*)* cascadeAssignment?
+   *
+   *     cascadeSelector ::=
+   *         '[' expression ']'
+   *       | identifier
+   *
+   *     cascadeAssignment ::=
+   *         assignmentOperator expressionWithoutCascade
+   */
+  Expression parseCascadeSection() {
+    Token period = getAndAdvance();
+    Expression expression = null;
+    SimpleIdentifier functionName = null;
+    if (_matchesIdentifier()) {
+      functionName = _parseSimpleIdentifierUnchecked();
+    } else if (_currentToken.type == TokenType.OPEN_SQUARE_BRACKET) {
+      Token leftBracket = getAndAdvance();
+      bool wasInInitializer = _inInitializer;
+      _inInitializer = false;
+      try {
+        Expression index = parseExpression2();
+        Token rightBracket = _expect(TokenType.CLOSE_SQUARE_BRACKET);
+        expression = astFactory.indexExpressionForCascade(
+            period, leftBracket, index, rightBracket);
+        period = null;
+      } finally {
+        _inInitializer = wasInInitializer;
+      }
+    } else {
+      _reportErrorForToken(ParserErrorCode.MISSING_IDENTIFIER, _currentToken,
+          [_currentToken.lexeme]);
+      functionName = createSyntheticIdentifier();
+    }
+    assert((expression == null && functionName != null) ||
+        (expression != null && functionName == null));
+    if (_isLikelyArgumentList()) {
+      do {
+        TypeArgumentList typeArguments = _parseOptionalTypeArguments();
+        if (functionName != null) {
+          expression = astFactory.methodInvocation(expression, period,
+              functionName, typeArguments, parseArgumentList());
+          period = null;
+          functionName = null;
+        } else if (expression == null) {
+          // It should not be possible to get here.
+          expression = astFactory.methodInvocation(expression, period,
+              createSyntheticIdentifier(), typeArguments, parseArgumentList());
+        } else {
+          expression = astFactory.functionExpressionInvocation(
+              expression, typeArguments, parseArgumentList());
+        }
+      } while (_isLikelyArgumentList());
+    } else if (functionName != null) {
+      expression = astFactory.propertyAccess(expression, period, functionName);
+      period = null;
+    }
+    assert(expression != null);
+    bool progress = true;
+    while (progress) {
+      progress = false;
+      Expression selector = parseAssignableSelector(expression, true);
+      if (!identical(selector, expression)) {
+        expression = selector;
+        progress = true;
+        while (_isLikelyArgumentList()) {
+          TypeArgumentList typeArguments = _parseOptionalTypeArguments();
+          Expression currentExpression = expression;
+          if (currentExpression is PropertyAccess) {
+            expression = astFactory.methodInvocation(
+                currentExpression.target,
+                currentExpression.operator,
+                currentExpression.propertyName,
+                typeArguments,
+                parseArgumentList());
+          } else {
+            expression = astFactory.functionExpressionInvocation(
+                expression, typeArguments, parseArgumentList());
+          }
+        }
+      }
+    }
+    if (_currentToken.type.isAssignmentOperator) {
+      Token operator = getAndAdvance();
+      _ensureAssignable(expression);
+      expression = astFactory.assignmentExpression(
+          expression, operator, parseExpressionWithoutCascade());
+    }
+    return expression;
+  }
+
+  /**
+   * Parse a class declaration. The [commentAndMetadata] is the metadata to be
+   * associated with the member. The [abstractKeyword] is the token for the
+   * keyword 'abstract', or `null` if the keyword was not given. Return the
+   * class declaration that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.CLASS`.
+   *
+   *     classDeclaration ::=
+   *         metadata 'abstract'? 'class' name typeParameterList? (extendsClause withClause?)? implementsClause? '{' classMembers '}' |
+   *         metadata 'abstract'? 'class' mixinApplicationClass
+   */
+  CompilationUnitMember parseClassDeclaration(
+      CommentAndMetadata commentAndMetadata, Token abstractKeyword) {
+    //
+    // Parse the name and type parameters.
+    //
+    Token keyword = getAndAdvance();
+    SimpleIdentifier name = parseSimpleIdentifier(isDeclaration: true);
+    String className = name.name;
+    TypeParameterList typeParameters = null;
+    TokenType type = _currentToken.type;
+    if (type == TokenType.LT) {
+      typeParameters = parseTypeParameterList();
+      type = _currentToken.type;
+    }
+    //
+    // Check to see whether this might be a class type alias rather than a class
+    // declaration.
+    //
+    if (type == TokenType.EQ) {
+      return _parseClassTypeAliasAfterName(
+          commentAndMetadata, abstractKeyword, keyword, name, typeParameters);
+    }
+    //
+    // Parse the clauses. The parser accepts clauses in any order, but will
+    // generate errors if they are not in the order required by the
+    // specification.
+    //
+    ExtendsClause extendsClause = null;
+    WithClause withClause = null;
+    ImplementsClause implementsClause = null;
+    bool foundClause = true;
+    while (foundClause) {
+      Keyword keyword = _currentToken.keyword;
+      if (keyword == Keyword.EXTENDS) {
+        if (extendsClause == null) {
+          extendsClause = parseExtendsClause();
+          if (withClause != null) {
+            _reportErrorForToken(
+                ParserErrorCode.WITH_BEFORE_EXTENDS, withClause.withKeyword);
+          } else if (implementsClause != null) {
+            _reportErrorForToken(ParserErrorCode.IMPLEMENTS_BEFORE_EXTENDS,
+                implementsClause.implementsKeyword);
+          }
+        } else {
+          _reportErrorForToken(ParserErrorCode.MULTIPLE_EXTENDS_CLAUSES,
+              extendsClause.extendsKeyword);
+          parseExtendsClause();
+        }
+      } else if (keyword == Keyword.WITH) {
+        if (withClause == null) {
+          withClause = parseWithClause();
+          if (implementsClause != null) {
+            _reportErrorForToken(ParserErrorCode.IMPLEMENTS_BEFORE_WITH,
+                implementsClause.implementsKeyword);
+          }
+        } else {
+          _reportErrorForToken(
+              ParserErrorCode.MULTIPLE_WITH_CLAUSES, withClause.withKeyword);
+          parseWithClause();
+          // TODO(brianwilkerson) Should we merge the list of applied mixins
+          // into a single list?
+        }
+      } else if (keyword == Keyword.IMPLEMENTS) {
+        if (implementsClause == null) {
+          implementsClause = parseImplementsClause();
+        } else {
+          _reportErrorForToken(ParserErrorCode.MULTIPLE_IMPLEMENTS_CLAUSES,
+              implementsClause.implementsKeyword);
+          parseImplementsClause();
+          // TODO(brianwilkerson) Should we merge the list of implemented
+          // classes into a single list?
+        }
+      } else {
+        foundClause = false;
+      }
+    }
+    if (withClause != null && extendsClause == null) {
+      _reportErrorForToken(
+          ParserErrorCode.WITH_WITHOUT_EXTENDS, withClause.withKeyword);
+    }
+    //
+    // Look for and skip over the extra-lingual 'native' specification.
+    //
+    NativeClause nativeClause = null;
+    if (_matchesString(_NATIVE) && _tokenMatches(_peek(), TokenType.STRING)) {
+      nativeClause = _parseNativeClause();
+    }
+    //
+    // Parse the body of the class.
+    //
+    Token leftBracket = null;
+    List<ClassMember> members = null;
+    Token rightBracket = null;
+    if (_matches(TokenType.OPEN_CURLY_BRACKET)) {
+      leftBracket = getAndAdvance();
+      members = _parseClassMembers(className, _getEndToken(leftBracket));
+      rightBracket = _expect(TokenType.CLOSE_CURLY_BRACKET);
+    } else {
+      // Recovery: Check for an unmatched closing curly bracket and parse
+      // members until it is reached.
+      leftBracket = _createSyntheticToken(TokenType.OPEN_CURLY_BRACKET);
+      rightBracket = _createSyntheticToken(TokenType.CLOSE_CURLY_BRACKET);
+      _reportErrorForCurrentToken(ParserErrorCode.MISSING_CLASS_BODY);
+    }
+    ClassDeclaration classDeclaration = astFactory.classDeclaration(
+        commentAndMetadata.comment,
+        commentAndMetadata.metadata,
+        abstractKeyword,
+        keyword,
+        name,
+        typeParameters,
+        extendsClause,
+        withClause,
+        implementsClause,
+        leftBracket,
+        members,
+        rightBracket);
+    classDeclaration.nativeClause = nativeClause;
+    return classDeclaration;
   }
 
   /**
@@ -2395,23 +1208,27 @@ class Parser {
    *       | methodSignature functionBody
    */
   ClassMember parseClassMember(String className) {
-    CommentAndMetadata commentAndMetadata = _parseCommentAndMetadata();
-    Modifiers modifiers = _parseModifiers();
-    if (_matchesKeyword(Keyword.VOID)) {
-      TypeName returnType = parseReturnType();
-      if (_matchesKeyword(Keyword.GET) && _tokenMatchesIdentifier(_peek())) {
+    CommentAndMetadata commentAndMetadata = parseCommentAndMetadata();
+    Modifiers modifiers = parseModifiers();
+    Keyword keyword = _currentToken.keyword;
+    if (keyword == Keyword.VOID) {
+      TypeName returnType = astFactory.typeName(
+          astFactory.simpleIdentifier(getAndAdvance()), null);
+      keyword = _currentToken.keyword;
+      Token next = _peek();
+      bool isFollowedByIdentifier = _tokenMatchesIdentifier(next);
+      if (keyword == Keyword.GET && isFollowedByIdentifier) {
         _validateModifiersForGetterOrSetterOrMethod(modifiers);
-        return _parseGetter(commentAndMetadata, modifiers.externalKeyword,
+        return parseGetter(commentAndMetadata, modifiers.externalKeyword,
             modifiers.staticKeyword, returnType);
-      } else if (_matchesKeyword(Keyword.SET) &&
-          _tokenMatchesIdentifier(_peek())) {
+      } else if (keyword == Keyword.SET && isFollowedByIdentifier) {
         _validateModifiersForGetterOrSetterOrMethod(modifiers);
-        return _parseSetter(commentAndMetadata, modifiers.externalKeyword,
+        return parseSetter(commentAndMetadata, modifiers.externalKeyword,
             modifiers.staticKeyword, returnType);
-      } else if (_matchesKeyword(Keyword.OPERATOR) && _isOperator(_peek())) {
+      } else if (keyword == Keyword.OPERATOR && _isOperator(next)) {
         _validateModifiersForOperator(modifiers);
-        return _parseOperator(
-            commentAndMetadata, modifiers.externalKeyword, returnType);
+        return _parseOperatorAfterKeyword(commentAndMetadata,
+            modifiers.externalKeyword, returnType, getAndAdvance());
       } else if (_matchesIdentifier() &&
           _peek().matchesAny(const <TokenType>[
             TokenType.OPEN_PAREN,
@@ -2436,7 +1253,7 @@ class Parser {
             // We appear to have a variable declaration with a type of "void".
             //
             _reportErrorForNode(ParserErrorCode.VOID_VARIABLE, returnType);
-            return _parseInitializedIdentifierList(
+            return parseInitializedIdentifierList(
                 commentAndMetadata,
                 modifiers.staticKeyword,
                 _validateModifiersForField(modifiers),
@@ -2449,27 +1266,28 @@ class Parser {
           // 'operator' keyword.
           //
           _validateModifiersForOperator(modifiers);
-          return _parseOperator(
+          return parseOperator(
               commentAndMetadata, modifiers.externalKeyword, returnType);
         }
         _reportErrorForToken(
             ParserErrorCode.EXPECTED_EXECUTABLE, _currentToken);
         return null;
       }
-    } else if (_matchesKeyword(Keyword.GET) &&
-        _tokenMatchesIdentifier(_peek())) {
+    }
+    Token next = _peek();
+    bool isFollowedByIdentifier = _tokenMatchesIdentifier(next);
+    if (keyword == Keyword.GET && isFollowedByIdentifier) {
       _validateModifiersForGetterOrSetterOrMethod(modifiers);
-      return _parseGetter(commentAndMetadata, modifiers.externalKeyword,
+      return parseGetter(commentAndMetadata, modifiers.externalKeyword,
           modifiers.staticKeyword, null);
-    } else if (_matchesKeyword(Keyword.SET) &&
-        _tokenMatchesIdentifier(_peek())) {
+    } else if (keyword == Keyword.SET && isFollowedByIdentifier) {
       _validateModifiersForGetterOrSetterOrMethod(modifiers);
-      return _parseSetter(commentAndMetadata, modifiers.externalKeyword,
+      return parseSetter(commentAndMetadata, modifiers.externalKeyword,
           modifiers.staticKeyword, null);
-    } else if (_matchesKeyword(Keyword.OPERATOR) && _isOperator(_peek())) {
+    } else if (keyword == Keyword.OPERATOR && _isOperator(next)) {
       _validateModifiersForOperator(modifiers);
-      return _parseOperator(
-          commentAndMetadata, modifiers.externalKeyword, null);
+      return _parseOperatorAfterKeyword(
+          commentAndMetadata, modifiers.externalKeyword, null, getAndAdvance());
     } else if (!_matchesIdentifier()) {
       //
       // Recover from an error.
@@ -2478,20 +1296,20 @@ class Parser {
         _reportErrorForCurrentToken(ParserErrorCode.CLASS_IN_CLASS);
         // TODO(brianwilkerson) We don't currently have any way to capture the
         // class that was parsed.
-        _parseClassDeclaration(commentAndMetadata, null);
+        parseClassDeclaration(commentAndMetadata, null);
         return null;
       } else if (_matchesKeyword(Keyword.ABSTRACT) &&
           _tokenMatchesKeyword(_peek(), Keyword.CLASS)) {
         _reportErrorForToken(ParserErrorCode.CLASS_IN_CLASS, _peek());
         // TODO(brianwilkerson) We don't currently have any way to capture the
         // class that was parsed.
-        _parseClassDeclaration(commentAndMetadata, getAndAdvance());
+        parseClassDeclaration(commentAndMetadata, getAndAdvance());
         return null;
       } else if (_matchesKeyword(Keyword.ENUM)) {
         _reportErrorForToken(ParserErrorCode.ENUM_IN_CLASS, _peek());
         // TODO(brianwilkerson) We don't currently have any way to capture the
         // enum that was parsed.
-        _parseEnumDeclaration(commentAndMetadata);
+        parseEnumDeclaration(commentAndMetadata);
         return null;
       } else if (_isOperator(_currentToken)) {
         //
@@ -2499,7 +1317,7 @@ class Parser {
         // 'operator' keyword.
         //
         _validateModifiersForOperator(modifiers);
-        return _parseOperator(
+        return parseOperator(
             commentAndMetadata, modifiers.externalKeyword, null);
       }
       Token keyword = modifiers.varKeyword;
@@ -2514,27 +1332,28 @@ class Parser {
         // We appear to have found an incomplete field declaration.
         //
         _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
-        List<VariableDeclaration> variables = new List<VariableDeclaration>();
-        variables.add(
-            new VariableDeclaration(_createSyntheticIdentifier(), null, null));
-        return new FieldDeclaration(
+        VariableDeclaration variable = astFactory.variableDeclaration(
+            createSyntheticIdentifier(), null, null);
+        List<VariableDeclaration> variables = <VariableDeclaration>[variable];
+        return astFactory.fieldDeclaration(
             commentAndMetadata.comment,
             commentAndMetadata.metadata,
             null,
-            new VariableDeclarationList(null, null, keyword, null, variables),
+            astFactory.variableDeclarationList(
+                null, null, keyword, null, variables),
             _expect(TokenType.SEMICOLON));
       }
       _reportErrorForToken(
           ParserErrorCode.EXPECTED_CLASS_MEMBER, _currentToken);
       if (commentAndMetadata.comment != null ||
-          !commentAndMetadata.metadata.isEmpty) {
+          commentAndMetadata.hasMetadata) {
         //
         // We appear to have found an incomplete declaration at the end of the
         // class. At this point it consists of a metadata, which we don't want
         // to loose, so we'll treat it as a method declaration with a missing
         // name, parameters and empty body.
         //
-        return new MethodDeclaration(
+        return astFactory.methodDeclaration(
             commentAndMetadata.comment,
             commentAndMetadata.metadata,
             null,
@@ -2542,14 +1361,15 @@ class Parser {
             null,
             null,
             null,
-            _createSyntheticIdentifier(isDeclaration: true),
+            createSyntheticIdentifier(isDeclaration: true),
             null,
-            new FormalParameterList(
+            astFactory.formalParameterList(
                 null, <FormalParameter>[], null, null, null),
-            new EmptyFunctionBody(_createSyntheticToken(TokenType.SEMICOLON)));
+            astFactory
+                .emptyFunctionBody(_createSyntheticToken(TokenType.SEMICOLON)));
       }
       return null;
-    } else if (_tokenMatches(_peek(), TokenType.PERIOD) &&
+    } else if (_tokenMatches(next, TokenType.PERIOD) &&
         _tokenMatchesIdentifier(_peekAt(2)) &&
         _tokenMatches(_peekAt(3), TokenType.OPEN_PAREN)) {
       return _parseConstructor(
@@ -2561,7 +1381,7 @@ class Parser {
           getAndAdvance(),
           parseSimpleIdentifier(isDeclaration: true),
           parseFormalParameterList());
-    } else if (_tokenMatches(_peek(), TokenType.OPEN_PAREN)) {
+    } else if (_tokenMatches(next, TokenType.OPEN_PAREN)) {
       TypeName returnType = _parseOptionalTypeNameComment();
       SimpleIdentifier methodName = parseSimpleIdentifier(isDeclaration: true);
       TypeParameterList typeParameters = _parseGenericCommentTypeParameters();
@@ -2574,7 +1394,7 @@ class Parser {
             modifiers.externalKeyword,
             _validateModifiersForConstructor(modifiers),
             modifiers.factoryKeyword,
-            new SimpleIdentifier(methodName.token, isDeclaration: false),
+            astFactory.simpleIdentifier(methodName.token, isDeclaration: false),
             null,
             null,
             parameters);
@@ -2589,7 +1409,7 @@ class Parser {
           methodName,
           typeParameters,
           parameters);
-    } else if (_peek().matchesAny(const <TokenType>[
+    } else if (next.matchesAny(const <TokenType>[
       TokenType.EQ,
       TokenType.COMMA,
       TokenType.SEMICOLON
@@ -2600,35 +1420,37 @@ class Parser {
         _reportErrorForCurrentToken(
             ParserErrorCode.MISSING_CONST_FINAL_VAR_OR_TYPE);
       }
-      return _parseInitializedIdentifierList(commentAndMetadata,
+      return parseInitializedIdentifierList(commentAndMetadata,
           modifiers.staticKeyword, _validateModifiersForField(modifiers), null);
-    } else if (_matchesKeyword(Keyword.TYPEDEF)) {
+    } else if (keyword == Keyword.TYPEDEF) {
       _reportErrorForCurrentToken(ParserErrorCode.TYPEDEF_IN_CLASS);
       // TODO(brianwilkerson) We don't currently have any way to capture the
       // function type alias that was parsed.
       _parseFunctionTypeAlias(commentAndMetadata, getAndAdvance());
       return null;
-    } else if (parseGenericMethods) {
+    } else {
       Token token = _skipTypeParameterList(_peek());
       if (token != null && _tokenMatches(token, TokenType.OPEN_PAREN)) {
         return _parseMethodDeclarationAfterReturnType(commentAndMetadata,
             modifiers.externalKeyword, modifiers.staticKeyword, null);
       }
     }
-    TypeName type = parseTypeName();
-    if (_matchesKeyword(Keyword.GET) && _tokenMatchesIdentifier(_peek())) {
+    TypeName type = _parseTypeNameAfterIdentifier();
+    keyword = _currentToken.keyword;
+    next = _peek();
+    isFollowedByIdentifier = _tokenMatchesIdentifier(next);
+    if (keyword == Keyword.GET && isFollowedByIdentifier) {
       _validateModifiersForGetterOrSetterOrMethod(modifiers);
-      return _parseGetter(commentAndMetadata, modifiers.externalKeyword,
+      return parseGetter(commentAndMetadata, modifiers.externalKeyword,
           modifiers.staticKeyword, type);
-    } else if (_matchesKeyword(Keyword.SET) &&
-        _tokenMatchesIdentifier(_peek())) {
+    } else if (keyword == Keyword.SET && isFollowedByIdentifier) {
       _validateModifiersForGetterOrSetterOrMethod(modifiers);
-      return _parseSetter(commentAndMetadata, modifiers.externalKeyword,
+      return parseSetter(commentAndMetadata, modifiers.externalKeyword,
           modifiers.staticKeyword, type);
-    } else if (_matchesKeyword(Keyword.OPERATOR) && _isOperator(_peek())) {
+    } else if (keyword == Keyword.OPERATOR && _isOperator(next)) {
       _validateModifiersForOperator(modifiers);
-      return _parseOperator(
-          commentAndMetadata, modifiers.externalKeyword, type);
+      return _parseOperatorAfterKeyword(
+          commentAndMetadata, modifiers.externalKeyword, type, getAndAdvance());
     } else if (!_matchesIdentifier()) {
       if (_matches(TokenType.CLOSE_CURLY_BRACKET)) {
         //
@@ -2636,7 +1458,7 @@ class Parser {
         // class. At this point it consists of a type name, so we'll treat it as
         // a field declaration with a missing field name and semicolon.
         //
-        return _parseInitializedIdentifierList(
+        return parseInitializedIdentifierList(
             commentAndMetadata,
             modifiers.staticKeyword,
             _validateModifiersForField(modifiers),
@@ -2648,7 +1470,7 @@ class Parser {
         // 'operator' keyword.
         //
         _validateModifiersForOperator(modifiers);
-        return _parseOperator(
+        return parseOperator(
             commentAndMetadata, modifiers.externalKeyword, type);
       }
       //
@@ -2660,7 +1482,7 @@ class Parser {
           ParserErrorCode.EXPECTED_CLASS_MEMBER, _currentToken);
       try {
         _lockErrorListener();
-        return _parseInitializedIdentifierList(
+        return parseInitializedIdentifierList(
             commentAndMetadata,
             modifiers.staticKeyword,
             _validateModifiersForField(modifiers),
@@ -2668,8 +1490,9 @@ class Parser {
       } finally {
         _unlockErrorListener();
       }
-    } else if (_tokenMatches(_peek(), TokenType.OPEN_PAREN)) {
-      SimpleIdentifier methodName = parseSimpleIdentifier(isDeclaration: true);
+    } else if (_tokenMatches(next, TokenType.OPEN_PAREN)) {
+      SimpleIdentifier methodName =
+          _parseSimpleIdentifierUnchecked(isDeclaration: true);
       TypeParameterList typeParameters = _parseGenericCommentTypeParameters();
       FormalParameterList parameters = parseFormalParameterList();
       if (methodName.name == className) {
@@ -2679,7 +1502,7 @@ class Parser {
             modifiers.externalKeyword,
             _validateModifiersForConstructor(modifiers),
             modifiers.factoryKeyword,
-            new SimpleIdentifier(methodName.token, isDeclaration: true),
+            astFactory.simpleIdentifier(methodName.token, isDeclaration: true),
             null,
             null,
             parameters);
@@ -2694,21 +1517,47 @@ class Parser {
           methodName,
           typeParameters,
           parameters);
-    } else if (parseGenericMethods && _tokenMatches(_peek(), TokenType.LT)) {
+    } else if (_tokenMatches(next, TokenType.LT)) {
       return _parseMethodDeclarationAfterReturnType(commentAndMetadata,
           modifiers.externalKeyword, modifiers.staticKeyword, type);
-    } else if (_tokenMatches(_peek(), TokenType.OPEN_CURLY_BRACKET)) {
+    } else if (_tokenMatches(next, TokenType.OPEN_CURLY_BRACKET)) {
       // We have found "TypeName identifier {", and are guessing that this is a
       // getter without the keyword 'get'.
       _validateModifiersForGetterOrSetterOrMethod(modifiers);
       _reportErrorForCurrentToken(ParserErrorCode.MISSING_GET);
       _currentToken = _injectToken(
           new Parser_SyntheticKeywordToken(Keyword.GET, _currentToken.offset));
-      return _parseGetter(commentAndMetadata, modifiers.externalKeyword,
+      return parseGetter(commentAndMetadata, modifiers.externalKeyword,
           modifiers.staticKeyword, type);
     }
-    return _parseInitializedIdentifierList(commentAndMetadata,
+    return parseInitializedIdentifierList(commentAndMetadata,
         modifiers.staticKeyword, _validateModifiersForField(modifiers), type);
+  }
+
+  /**
+   * Parse a class type alias. The [commentAndMetadata] is the metadata to be
+   * associated with the member. The [abstractKeyword] is the token representing
+   * the 'abstract' keyword. The [classKeyword] is the token representing the
+   * 'class' keyword. Return the class type alias that was parsed.
+   *
+   * This method assumes that the current token matches an identifier.
+   *
+   *     classTypeAlias ::=
+   *         identifier typeParameters? '=' 'abstract'? mixinApplication
+   *
+   *     mixinApplication ::=
+   *         type withClause implementsClause? ';'
+   */
+  ClassTypeAlias parseClassTypeAlias(CommentAndMetadata commentAndMetadata,
+      Token abstractKeyword, Token classKeyword) {
+    SimpleIdentifier className =
+        _parseSimpleIdentifierUnchecked(isDeclaration: true);
+    TypeParameterList typeParameters = null;
+    if (_matches(TokenType.LT)) {
+      typeParameters = parseTypeParameterList();
+    }
+    return _parseClassTypeAliasAfterName(commentAndMetadata, abstractKeyword,
+        classKeyword, className, typeParameters);
   }
 
   /**
@@ -2720,16 +1569,253 @@ class Parser {
    *       | 'hide' identifier (',' identifier)*
    */
   Combinator parseCombinator() {
-    if (_matchesString(_SHOW) || _matchesString(_HIDE)) {
-      Token keyword = getAndAdvance();
-      List<SimpleIdentifier> names = _parseIdentifierList();
-      if (keyword.lexeme == _SHOW) {
-        return new ShowCombinator(keyword, names);
-      } else {
-        return new HideCombinator(keyword, names);
-      }
+    if (_matchesString(_SHOW)) {
+      return astFactory.showCombinator(getAndAdvance(), parseIdentifierList());
+    } else if (_matchesString(_HIDE)) {
+      return astFactory.hideCombinator(getAndAdvance(), parseIdentifierList());
     }
     return null;
+  }
+
+  /**
+   * Parse a list of combinators in a directive. Return the combinators that
+   * were parsed, or `null` if there are no combinators.
+   *
+   *     combinator ::=
+   *         'show' identifier (',' identifier)*
+   *       | 'hide' identifier (',' identifier)*
+   */
+  List<Combinator> parseCombinators() {
+    List<Combinator> combinators = null;
+    while (true) {
+      Combinator combinator = parseCombinator();
+      if (combinator == null) {
+        break;
+      }
+      combinators ??= <Combinator>[];
+      combinators.add(combinator);
+    }
+    return combinators;
+  }
+
+  /**
+   * Parse the documentation comment and metadata preceding a declaration. This
+   * method allows any number of documentation comments to occur before, after
+   * or between the metadata, but only returns the last (right-most)
+   * documentation comment that is found. Return the documentation comment and
+   * metadata that were parsed.
+   *
+   *     metadata ::=
+   *         annotation*
+   */
+  CommentAndMetadata parseCommentAndMetadata() {
+    // TODO(brianwilkerson) Consider making the creation of documentation
+    // comments be lazy.
+    List<DocumentationCommentToken> tokens = parseDocumentationCommentTokens();
+    List<Annotation> metadata = null;
+    while (_matches(TokenType.AT)) {
+      metadata ??= <Annotation>[];
+      metadata.add(parseAnnotation());
+      List<DocumentationCommentToken> optionalTokens =
+          parseDocumentationCommentTokens();
+      if (optionalTokens != null) {
+        tokens = optionalTokens;
+      }
+    }
+    return new CommentAndMetadata(parseDocumentationComment(tokens), metadata);
+  }
+
+  /**
+   * Parse a comment reference from the source between square brackets. The
+   * [referenceSource] is the source occurring between the square brackets
+   * within a documentation comment. The [sourceOffset] is the offset of the
+   * first character of the reference source. Return the comment reference that
+   * was parsed, or `null` if no reference could be found.
+   *
+   *     commentReference ::=
+   *         'new'? prefixedIdentifier
+   */
+  CommentReference parseCommentReference(
+      String referenceSource, int sourceOffset) {
+    // TODO(brianwilkerson) The errors are not getting the right offset/length
+    // and are being duplicated.
+    try {
+      BooleanErrorListener listener = new BooleanErrorListener();
+      Scanner scanner = new Scanner(
+          null, new SubSequenceReader(referenceSource, sourceOffset), listener);
+      scanner.setSourceStart(1, 1);
+      Token firstToken = scanner.tokenize();
+      if (listener.errorReported) {
+        return null;
+      }
+      if (firstToken.type == TokenType.EOF) {
+        Token syntheticToken =
+            new SyntheticStringToken(TokenType.IDENTIFIER, "", sourceOffset);
+        syntheticToken.setNext(firstToken);
+        return astFactory.commentReference(
+            null, astFactory.simpleIdentifier(syntheticToken));
+      }
+      Token newKeyword = null;
+      if (_tokenMatchesKeyword(firstToken, Keyword.NEW)) {
+        newKeyword = firstToken;
+        firstToken = firstToken.next;
+      }
+      if (firstToken.isUserDefinableOperator) {
+        if (firstToken.next.type != TokenType.EOF) {
+          return null;
+        }
+        Identifier identifier = astFactory.simpleIdentifier(firstToken);
+        return astFactory.commentReference(null, identifier);
+      } else if (_tokenMatchesKeyword(firstToken, Keyword.OPERATOR)) {
+        Token secondToken = firstToken.next;
+        if (secondToken.isUserDefinableOperator) {
+          if (secondToken.next.type != TokenType.EOF) {
+            return null;
+          }
+          Identifier identifier = astFactory.simpleIdentifier(secondToken);
+          return astFactory.commentReference(null, identifier);
+        }
+        return null;
+      } else if (_tokenMatchesIdentifier(firstToken)) {
+        Token secondToken = firstToken.next;
+        Token thirdToken = secondToken.next;
+        Token nextToken;
+        Identifier identifier;
+        if (_tokenMatches(secondToken, TokenType.PERIOD)) {
+          if (thirdToken.isUserDefinableOperator) {
+            identifier = astFactory.prefixedIdentifier(
+                astFactory.simpleIdentifier(firstToken),
+                secondToken,
+                astFactory.simpleIdentifier(thirdToken));
+            nextToken = thirdToken.next;
+          } else if (_tokenMatchesKeyword(thirdToken, Keyword.OPERATOR)) {
+            Token fourthToken = thirdToken.next;
+            if (fourthToken.isUserDefinableOperator) {
+              identifier = astFactory.prefixedIdentifier(
+                  astFactory.simpleIdentifier(firstToken),
+                  secondToken,
+                  astFactory.simpleIdentifier(fourthToken));
+              nextToken = fourthToken.next;
+            } else {
+              return null;
+            }
+          } else if (_tokenMatchesIdentifier(thirdToken)) {
+            identifier = astFactory.prefixedIdentifier(
+                astFactory.simpleIdentifier(firstToken),
+                secondToken,
+                astFactory.simpleIdentifier(thirdToken));
+            nextToken = thirdToken.next;
+          }
+        } else {
+          identifier = astFactory.simpleIdentifier(firstToken);
+          nextToken = firstToken.next;
+        }
+        if (nextToken.type != TokenType.EOF) {
+          return null;
+        }
+        return astFactory.commentReference(newKeyword, identifier);
+      } else {
+        Keyword keyword = firstToken.keyword;
+        if (keyword == Keyword.THIS ||
+            keyword == Keyword.NULL ||
+            keyword == Keyword.TRUE ||
+            keyword == Keyword.FALSE) {
+          // TODO(brianwilkerson) If we want to support this we will need to
+          // extend the definition of CommentReference to take an expression
+          // rather than an identifier. For now we just ignore it to reduce the
+          // number of errors produced, but that's probably not a valid long term
+          // approach.
+          return null;
+        }
+      }
+    } catch (exception) {
+      // Ignored because we assume that it wasn't a real comment reference.
+    }
+    return null;
+  }
+
+  /**
+   * Parse all of the comment references occurring in the given array of
+   * documentation comments. The [tokens] are the comment tokens representing
+   * the documentation comments to be parsed. Return the comment references that
+   * were parsed.
+   *
+   *     commentReference ::=
+   *         '[' 'new'? qualified ']' libraryReference?
+   *
+   *     libraryReference ::=
+   *          '(' stringLiteral ')'
+   */
+  List<CommentReference> parseCommentReferences(
+      List<DocumentationCommentToken> tokens) {
+    List<CommentReference> references = <CommentReference>[];
+    bool isInGitHubCodeBlock = false;
+    for (DocumentationCommentToken token in tokens) {
+      String comment = token.lexeme;
+      // Skip GitHub code blocks.
+      // https://help.github.com/articles/creating-and-highlighting-code-blocks/
+      if (tokens.length != 1) {
+        if (comment.indexOf('```') != -1) {
+          isInGitHubCodeBlock = !isInGitHubCodeBlock;
+        }
+        if (isInGitHubCodeBlock) {
+          continue;
+        }
+      }
+      // Remove GitHub include code.
+      comment = _removeGitHubInlineCode(comment);
+      // Find references.
+      int length = comment.length;
+      List<List<int>> codeBlockRanges = _getCodeBlockRanges(comment);
+      int leftIndex = comment.indexOf('[');
+      while (leftIndex >= 0 && leftIndex + 1 < length) {
+        List<int> range = _findRange(codeBlockRanges, leftIndex);
+        if (range == null) {
+          int nameOffset = token.offset + leftIndex + 1;
+          int rightIndex = comment.indexOf(']', leftIndex);
+          if (rightIndex >= 0) {
+            int firstChar = comment.codeUnitAt(leftIndex + 1);
+            if (firstChar != 0x27 && firstChar != 0x22) {
+              if (_isLinkText(comment, rightIndex)) {
+                // TODO(brianwilkerson) Handle the case where there's a library
+                // URI in the link text.
+              } else {
+                CommentReference reference = parseCommentReference(
+                    comment.substring(leftIndex + 1, rightIndex), nameOffset);
+                if (reference != null) {
+                  references.add(reference);
+                  token.references.add(reference.beginToken);
+                }
+              }
+            }
+          } else {
+            // terminating ']' is not typed yet
+            int charAfterLeft = comment.codeUnitAt(leftIndex + 1);
+            Token nameToken;
+            if (Character.isLetterOrDigit(charAfterLeft)) {
+              int nameEnd = StringUtilities.indexOfFirstNotLetterDigit(
+                  comment, leftIndex + 1);
+              String name = comment.substring(leftIndex + 1, nameEnd);
+              nameToken =
+                  new StringToken(TokenType.IDENTIFIER, name, nameOffset);
+            } else {
+              nameToken = new SyntheticStringToken(
+                  TokenType.IDENTIFIER, '', nameOffset);
+            }
+            nameToken.setNext(new SimpleToken(TokenType.EOF, nameToken.end));
+            references.add(astFactory.commentReference(
+                null, astFactory.simpleIdentifier(nameToken)));
+            token.references.add(nameToken);
+            // next character
+            rightIndex = leftIndex + 1;
+          }
+          leftIndex = comment.indexOf('[', rightIndex);
+        } else {
+          leftIndex = comment.indexOf('[', range[1]);
+        }
+      }
+    }
+    return references;
   }
 
   /**
@@ -2762,7 +1848,7 @@ class Parser {
     Token firstToken = _currentToken;
     ScriptTag scriptTag = null;
     if (_matches(TokenType.SCRIPT_TAG)) {
-      scriptTag = new ScriptTag(getAndAdvance());
+      scriptTag = astFactory.scriptTag(getAndAdvance());
     }
     //
     // Even though all directives must appear before declarations and must occur
@@ -2773,76 +1859,79 @@ class Parser {
     bool partOfDirectiveFound = false;
     bool partDirectiveFound = false;
     bool directiveFoundAfterDeclaration = false;
-    List<Directive> directives = new List<Directive>();
-    List<CompilationUnitMember> declarations =
-        new List<CompilationUnitMember>();
+    List<Directive> directives = <Directive>[];
+    List<CompilationUnitMember> declarations = <CompilationUnitMember>[];
     Token memberStart = _currentToken;
-    while (!_matches(TokenType.EOF)) {
-      CommentAndMetadata commentAndMetadata = _parseCommentAndMetadata();
-      if ((_matchesKeyword(Keyword.IMPORT) ||
-              _matchesKeyword(Keyword.EXPORT) ||
-              _matchesKeyword(Keyword.LIBRARY) ||
-              _matchesKeyword(Keyword.PART)) &&
-          !_tokenMatches(_peek(), TokenType.PERIOD) &&
-          !_tokenMatches(_peek(), TokenType.LT) &&
-          !_tokenMatches(_peek(), TokenType.OPEN_PAREN)) {
-        Directive directive = _parseDirective(commentAndMetadata);
+    TokenType type = _currentToken.type;
+    while (type != TokenType.EOF) {
+      CommentAndMetadata commentAndMetadata = parseCommentAndMetadata();
+      Keyword keyword = _currentToken.keyword;
+      TokenType nextType = _currentToken.next.type;
+      if ((keyword == Keyword.IMPORT ||
+              keyword == Keyword.EXPORT ||
+              keyword == Keyword.LIBRARY ||
+              keyword == Keyword.PART) &&
+          nextType != TokenType.PERIOD &&
+          nextType != TokenType.LT &&
+          nextType != TokenType.OPEN_PAREN) {
+        Directive parseDirective() {
+          if (keyword == Keyword.IMPORT) {
+            if (partDirectiveFound) {
+              _reportErrorForCurrentToken(
+                  ParserErrorCode.IMPORT_DIRECTIVE_AFTER_PART_DIRECTIVE);
+            }
+            return parseImportDirective(commentAndMetadata);
+          } else if (keyword == Keyword.EXPORT) {
+            if (partDirectiveFound) {
+              _reportErrorForCurrentToken(
+                  ParserErrorCode.EXPORT_DIRECTIVE_AFTER_PART_DIRECTIVE);
+            }
+            return parseExportDirective(commentAndMetadata);
+          } else if (keyword == Keyword.LIBRARY) {
+            if (libraryDirectiveFound) {
+              _reportErrorForCurrentToken(
+                  ParserErrorCode.MULTIPLE_LIBRARY_DIRECTIVES);
+            } else {
+              if (directives.length > 0) {
+                _reportErrorForCurrentToken(
+                    ParserErrorCode.LIBRARY_DIRECTIVE_NOT_FIRST);
+              }
+              libraryDirectiveFound = true;
+            }
+            return parseLibraryDirective(commentAndMetadata);
+          } else if (keyword == Keyword.PART) {
+            if (_tokenMatchesString(_peek(), _OF)) {
+              partOfDirectiveFound = true;
+              return _parsePartOfDirective(commentAndMetadata);
+            } else {
+              partDirectiveFound = true;
+              return _parsePartDirective(commentAndMetadata);
+            }
+          } else {
+            // Internal error: this method should not have been invoked if the
+            // current token was something other than one of the above.
+            throw new StateError(
+                "parseDirective invoked in an invalid state (currentToken = $_currentToken)");
+          }
+        }
+
+        Directive directive = parseDirective();
         if (declarations.length > 0 && !directiveFoundAfterDeclaration) {
           _reportErrorForToken(ParserErrorCode.DIRECTIVE_AFTER_DECLARATION,
               directive.beginToken);
           directiveFoundAfterDeclaration = true;
         }
-        if (directive is LibraryDirective) {
-          if (libraryDirectiveFound) {
-            _reportErrorForCurrentToken(
-                ParserErrorCode.MULTIPLE_LIBRARY_DIRECTIVES);
-          } else {
-            if (directives.length > 0) {
-              _reportErrorForToken(ParserErrorCode.LIBRARY_DIRECTIVE_NOT_FIRST,
-                  directive.libraryKeyword);
-            }
-            libraryDirectiveFound = true;
-          }
-        } else if (directive is PartDirective) {
-          partDirectiveFound = true;
-        } else if (partDirectiveFound) {
-          if (directive is ExportDirective) {
-            _reportErrorForToken(
-                ParserErrorCode.EXPORT_DIRECTIVE_AFTER_PART_DIRECTIVE,
-                directive.keyword);
-          } else if (directive is ImportDirective) {
-            _reportErrorForToken(
-                ParserErrorCode.IMPORT_DIRECTIVE_AFTER_PART_DIRECTIVE,
-                directive.keyword);
-          }
-        }
-        if (directive is PartOfDirective) {
-          if (partOfDirectiveFound) {
-            _reportErrorForCurrentToken(
-                ParserErrorCode.MULTIPLE_PART_OF_DIRECTIVES);
-          } else {
-            int directiveCount = directives.length;
-            for (int i = 0; i < directiveCount; i++) {
-              _reportErrorForToken(
-                  ParserErrorCode.NON_PART_OF_DIRECTIVE_IN_PART,
-                  directives[i].keyword);
-            }
-            partOfDirectiveFound = true;
-          }
-        } else {
-          if (partOfDirectiveFound) {
-            _reportErrorForToken(ParserErrorCode.NON_PART_OF_DIRECTIVE_IN_PART,
-                directive.keyword);
-          }
-        }
         directives.add(directive);
-      } else if (_matches(TokenType.SEMICOLON)) {
+      } else if (type == TokenType.SEMICOLON) {
+        // TODO(brianwilkerson) Consider moving this error detection into
+        // _parseCompilationUnitMember (in the places where EXPECTED_EXECUTABLE
+        // is being generated).
         _reportErrorForToken(ParserErrorCode.UNEXPECTED_TOKEN, _currentToken,
             [_currentToken.lexeme]);
         _advance();
       } else {
         CompilationUnitMember member =
-            _parseCompilationUnitMember(commentAndMetadata);
+            parseCompilationUnitMember(commentAndMetadata);
         if (member != null) {
           declarations.add(member);
         }
@@ -2857,9 +1946,252 @@ class Parser {
         }
       }
       memberStart = _currentToken;
+      type = _currentToken.type;
     }
-    return new CompilationUnit(
+    if (partOfDirectiveFound && directives.length > 1) {
+      // TODO(brianwilkerson) Improve error reporting when both a library and
+      // part-of directive are found.
+//      if (libraryDirectiveFound) {
+//        int directiveCount = directives.length;
+//        for (int i = 0; i < directiveCount; i++) {
+//          Directive directive = directives[i];
+//          if (directive is PartOfDirective) {
+//            _reportErrorForToken(
+//                ParserErrorCode.PART_OF_IN_LIBRARY, directive.partKeyword);
+//          }
+//        }
+//      } else {
+      bool firstPartOf = true;
+      int directiveCount = directives.length;
+      for (int i = 0; i < directiveCount; i++) {
+        Directive directive = directives[i];
+        if (directive is PartOfDirective) {
+          if (firstPartOf) {
+            firstPartOf = false;
+          } else {
+            _reportErrorForToken(ParserErrorCode.MULTIPLE_PART_OF_DIRECTIVES,
+                directive.partKeyword);
+          }
+        } else {
+          _reportErrorForToken(ParserErrorCode.NON_PART_OF_DIRECTIVE_IN_PART,
+              directives[i].keyword);
+        }
+//        }
+      }
+    }
+    return astFactory.compilationUnit(
         firstToken, scriptTag, directives, declarations, _currentToken);
+  }
+
+  /**
+   * Parse a compilation unit member. The [commentAndMetadata] is the metadata
+   * to be associated with the member. Return the compilation unit member that
+   * was parsed, or `null` if what was parsed could not be represented as a
+   * compilation unit member.
+   *
+   *     compilationUnitMember ::=
+   *         classDefinition
+   *       | functionTypeAlias
+   *       | external functionSignature
+   *       | external getterSignature
+   *       | external setterSignature
+   *       | functionSignature functionBody
+   *       | returnType? getOrSet identifier formalParameterList functionBody
+   *       | (final | const) type? staticFinalDeclarationList ';'
+   *       | variableDeclaration ';'
+   */
+  CompilationUnitMember parseCompilationUnitMember(
+      CommentAndMetadata commentAndMetadata) {
+    Modifiers modifiers = parseModifiers();
+    Keyword keyword = _currentToken.keyword;
+    if (keyword == Keyword.CLASS) {
+      return parseClassDeclaration(
+          commentAndMetadata, _validateModifiersForClass(modifiers));
+    }
+    Token next = _peek();
+    TokenType nextType = next.type;
+    if (keyword == Keyword.TYPEDEF &&
+        nextType != TokenType.PERIOD &&
+        nextType != TokenType.LT &&
+        nextType != TokenType.OPEN_PAREN) {
+      _validateModifiersForTypedef(modifiers);
+      return parseTypeAlias(commentAndMetadata);
+    } else if (keyword == Keyword.ENUM) {
+      _validateModifiersForEnum(modifiers);
+      return parseEnumDeclaration(commentAndMetadata);
+    } else if (keyword == Keyword.VOID) {
+      TypeName returnType = astFactory.typeName(
+          astFactory.simpleIdentifier(getAndAdvance()), null);
+      keyword = _currentToken.keyword;
+      next = _peek();
+      if ((keyword == Keyword.GET || keyword == Keyword.SET) &&
+          _tokenMatchesIdentifier(next)) {
+        _validateModifiersForTopLevelFunction(modifiers);
+        return parseFunctionDeclaration(
+            commentAndMetadata, modifiers.externalKeyword, returnType);
+      } else if (keyword == Keyword.OPERATOR && _isOperator(next)) {
+        _reportErrorForToken(ParserErrorCode.TOP_LEVEL_OPERATOR, _currentToken);
+        return _convertToFunctionDeclaration(_parseOperatorAfterKeyword(
+            commentAndMetadata,
+            modifiers.externalKeyword,
+            returnType,
+            getAndAdvance()));
+      } else if (_matchesIdentifier() &&
+          next.matchesAny(const <TokenType>[
+            TokenType.OPEN_PAREN,
+            TokenType.OPEN_CURLY_BRACKET,
+            TokenType.FUNCTION,
+            TokenType.LT
+          ])) {
+        _validateModifiersForTopLevelFunction(modifiers);
+        return parseFunctionDeclaration(
+            commentAndMetadata, modifiers.externalKeyword, returnType);
+      } else {
+        //
+        // We have found an error of some kind. Try to recover.
+        //
+        if (_matchesIdentifier()) {
+          if (next.matchesAny(const <TokenType>[
+            TokenType.EQ,
+            TokenType.COMMA,
+            TokenType.SEMICOLON
+          ])) {
+            //
+            // We appear to have a variable declaration with a type of "void".
+            //
+            _reportErrorForNode(ParserErrorCode.VOID_VARIABLE, returnType);
+            return astFactory.topLevelVariableDeclaration(
+                commentAndMetadata.comment,
+                commentAndMetadata.metadata,
+                parseVariableDeclarationListAfterType(null,
+                    _validateModifiersForTopLevelVariable(modifiers), null),
+                _expect(TokenType.SEMICOLON));
+          }
+        }
+        _reportErrorForToken(
+            ParserErrorCode.EXPECTED_EXECUTABLE, _currentToken);
+        return null;
+      }
+    } else if ((keyword == Keyword.GET || keyword == Keyword.SET) &&
+        _tokenMatchesIdentifier(next)) {
+      _validateModifiersForTopLevelFunction(modifiers);
+      return parseFunctionDeclaration(
+          commentAndMetadata, modifiers.externalKeyword, null);
+    } else if (keyword == Keyword.OPERATOR && _isOperator(next)) {
+      _reportErrorForToken(ParserErrorCode.TOP_LEVEL_OPERATOR, _currentToken);
+      return _convertToFunctionDeclaration(_parseOperatorAfterKeyword(
+          commentAndMetadata,
+          modifiers.externalKeyword,
+          null,
+          getAndAdvance()));
+    } else if (!_matchesIdentifier()) {
+      Token keyword = modifiers.varKeyword;
+      if (keyword == null) {
+        keyword = modifiers.finalKeyword;
+      }
+      if (keyword == null) {
+        keyword = modifiers.constKeyword;
+      }
+      if (keyword != null) {
+        //
+        // We appear to have found an incomplete top-level variable declaration.
+        //
+        _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
+        VariableDeclaration variable = astFactory.variableDeclaration(
+            createSyntheticIdentifier(), null, null);
+        List<VariableDeclaration> variables = <VariableDeclaration>[variable];
+        return astFactory.topLevelVariableDeclaration(
+            commentAndMetadata.comment,
+            commentAndMetadata.metadata,
+            astFactory.variableDeclarationList(
+                null, null, keyword, null, variables),
+            _expect(TokenType.SEMICOLON));
+      }
+      _reportErrorForToken(ParserErrorCode.EXPECTED_EXECUTABLE, _currentToken);
+      return null;
+    } else if (_isPeekGenericTypeParametersAndOpenParen()) {
+      return parseFunctionDeclaration(
+          commentAndMetadata, modifiers.externalKeyword, null);
+    } else if (_tokenMatches(next, TokenType.OPEN_PAREN)) {
+      TypeName returnType = _parseOptionalTypeNameComment();
+      _validateModifiersForTopLevelFunction(modifiers);
+      return parseFunctionDeclaration(
+          commentAndMetadata, modifiers.externalKeyword, returnType);
+    } else if (next.matchesAny(const <TokenType>[
+      TokenType.EQ,
+      TokenType.COMMA,
+      TokenType.SEMICOLON
+    ])) {
+      if (modifiers.constKeyword == null &&
+          modifiers.finalKeyword == null &&
+          modifiers.varKeyword == null) {
+        _reportErrorForCurrentToken(
+            ParserErrorCode.MISSING_CONST_FINAL_VAR_OR_TYPE);
+      }
+      return astFactory.topLevelVariableDeclaration(
+          commentAndMetadata.comment,
+          commentAndMetadata.metadata,
+          parseVariableDeclarationListAfterType(
+              null, _validateModifiersForTopLevelVariable(modifiers), null),
+          _expect(TokenType.SEMICOLON));
+    }
+    TypeName returnType = parseReturnType();
+    keyword = _currentToken.keyword;
+    next = _peek();
+    if ((keyword == Keyword.GET || keyword == Keyword.SET) &&
+        _tokenMatchesIdentifier(next)) {
+      _validateModifiersForTopLevelFunction(modifiers);
+      return parseFunctionDeclaration(
+          commentAndMetadata, modifiers.externalKeyword, returnType);
+    } else if (keyword == Keyword.OPERATOR && _isOperator(next)) {
+      _reportErrorForToken(ParserErrorCode.TOP_LEVEL_OPERATOR, _currentToken);
+      return _convertToFunctionDeclaration(_parseOperatorAfterKeyword(
+          commentAndMetadata,
+          modifiers.externalKeyword,
+          returnType,
+          getAndAdvance()));
+    } else if (_matches(TokenType.AT)) {
+      return astFactory.topLevelVariableDeclaration(
+          commentAndMetadata.comment,
+          commentAndMetadata.metadata,
+          parseVariableDeclarationListAfterType(null,
+              _validateModifiersForTopLevelVariable(modifiers), returnType),
+          _expect(TokenType.SEMICOLON));
+    } else if (!_matchesIdentifier()) {
+      // TODO(brianwilkerson) Generalize this error. We could also be parsing a
+      // top-level variable at this point.
+      _reportErrorForToken(ParserErrorCode.EXPECTED_EXECUTABLE, _currentToken);
+      Token semicolon;
+      if (_matches(TokenType.SEMICOLON)) {
+        semicolon = getAndAdvance();
+      } else {
+        semicolon = _createSyntheticToken(TokenType.SEMICOLON);
+      }
+      VariableDeclaration variable = astFactory.variableDeclaration(
+          createSyntheticIdentifier(), null, null);
+      List<VariableDeclaration> variables = <VariableDeclaration>[variable];
+      return astFactory.topLevelVariableDeclaration(
+          commentAndMetadata.comment,
+          commentAndMetadata.metadata,
+          astFactory.variableDeclarationList(
+              null, null, null, returnType, variables),
+          semicolon);
+    } else if (next.matchesAny(const <TokenType>[
+      TokenType.OPEN_PAREN,
+      TokenType.FUNCTION,
+      TokenType.OPEN_CURLY_BRACKET,
+      TokenType.LT
+    ])) {
+      _validateModifiersForTopLevelFunction(modifiers);
+      return parseFunctionDeclaration(
+          commentAndMetadata, modifiers.externalKeyword, returnType);
+    }
+    return astFactory.topLevelVariableDeclaration(
+        commentAndMetadata.comment,
+        commentAndMetadata.metadata,
+        parseVariableDeclarationListAfterType(
+            null, _validateModifiersForTopLevelVariable(modifiers), returnType),
+        _expect(TokenType.SEMICOLON));
   }
 
   /**
@@ -2871,15 +2203,132 @@ class Parser {
    */
   Expression parseConditionalExpression() {
     Expression condition = parseIfNullExpression();
-    if (!_matches(TokenType.QUESTION)) {
+    if (_currentToken.type != TokenType.QUESTION) {
       return condition;
     }
     Token question = getAndAdvance();
     Expression thenExpression = parseExpressionWithoutCascade();
     Token colon = _expect(TokenType.COLON);
     Expression elseExpression = parseExpressionWithoutCascade();
-    return new ConditionalExpression(
+    return astFactory.conditionalExpression(
         condition, question, thenExpression, colon, elseExpression);
+  }
+
+  /**
+   * Parse a configuration in either an import or export directive.
+   *
+   * This method assumes that the current token matches `Keyword.IF`.
+   *
+   *     configuration ::=
+   *         'if' '(' test ')' uri
+   *
+   *     test ::=
+   *         dottedName ('==' stringLiteral)?
+   *
+   *     dottedName ::=
+   *         identifier ('.' identifier)*
+   */
+  Configuration parseConfiguration() {
+    Token ifKeyword = getAndAdvance();
+    Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
+    DottedName name = parseDottedName();
+    Token equalToken = null;
+    StringLiteral value = null;
+    if (_matches(TokenType.EQ_EQ)) {
+      equalToken = getAndAdvance();
+      value = parseStringLiteral();
+      if (value is StringInterpolation) {
+        _reportErrorForNode(
+            ParserErrorCode.INVALID_LITERAL_IN_CONFIGURATION, value);
+      }
+    }
+    Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
+    StringLiteral libraryUri = _parseUri();
+    return astFactory.configuration(ifKeyword, leftParenthesis, name,
+        equalToken, value, rightParenthesis, libraryUri);
+  }
+
+  /**
+   * Parse a const expression. Return the const expression that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.CONST`.
+   *
+   *     constExpression ::=
+   *         instanceCreationExpression
+   *       | listLiteral
+   *       | mapLiteral
+   */
+  Expression parseConstExpression() {
+    Token keyword = getAndAdvance();
+    TokenType type = _currentToken.type;
+    if (type == TokenType.LT || _injectGenericCommentTypeList()) {
+      return parseListOrMapLiteral(keyword);
+    } else if (type == TokenType.OPEN_SQUARE_BRACKET ||
+        type == TokenType.INDEX) {
+      return parseListLiteral(keyword, null);
+    } else if (type == TokenType.OPEN_CURLY_BRACKET) {
+      return parseMapLiteral(keyword, null);
+    }
+    return parseInstanceCreationExpression(keyword);
+  }
+
+  /**
+   * Parse a field initializer within a constructor. The flag [hasThis] should
+   * be true if the current token is `this`. Return the field initializer that
+   * was parsed.
+   *
+   *     fieldInitializer:
+   *         ('this' '.')? identifier '=' conditionalExpression cascadeSection*
+   */
+  ConstructorFieldInitializer parseConstructorFieldInitializer(bool hasThis) {
+    Token keywordToken = null;
+    Token period = null;
+    if (hasThis) {
+      keywordToken = getAndAdvance();
+      period = _expect(TokenType.PERIOD);
+    }
+    SimpleIdentifier fieldName = parseSimpleIdentifier();
+    Token equals = null;
+    TokenType type = _currentToken.type;
+    if (type == TokenType.EQ) {
+      equals = getAndAdvance();
+    } else {
+      _reportErrorForCurrentToken(
+          ParserErrorCode.MISSING_ASSIGNMENT_IN_INITIALIZER);
+      Keyword keyword = _currentToken.keyword;
+      if (keyword != Keyword.THIS &&
+          keyword != Keyword.SUPER &&
+          type != TokenType.OPEN_CURLY_BRACKET &&
+          type != TokenType.FUNCTION) {
+        equals = _createSyntheticToken(TokenType.EQ);
+      } else {
+        return astFactory.constructorFieldInitializer(
+            keywordToken,
+            period,
+            fieldName,
+            _createSyntheticToken(TokenType.EQ),
+            createSyntheticIdentifier());
+      }
+    }
+    bool wasInInitializer = _inInitializer;
+    _inInitializer = true;
+    try {
+      Expression expression = parseConditionalExpression();
+      if (_matches(TokenType.PERIOD_PERIOD)) {
+        List<Expression> cascadeSections = <Expression>[];
+        do {
+          Expression section = parseCascadeSection();
+          if (section != null) {
+            cascadeSections.add(section);
+          }
+        } while (_matches(TokenType.PERIOD_PERIOD));
+        expression = astFactory.cascadeExpression(expression, cascadeSections);
+      }
+      return astFactory.constructorFieldInitializer(
+          keywordToken, period, fieldName, equals, expression);
+    } finally {
+      _inInitializer = wasInInitializer;
+    }
   }
 
   /**
@@ -2890,14 +2339,67 @@ class Parser {
    *         type ('.' identifier)?
    */
   ConstructorName parseConstructorName() {
-    TypeName type = parseTypeName();
+    TypeName type = parseTypeName(false);
     Token period = null;
     SimpleIdentifier name = null;
     if (_matches(TokenType.PERIOD)) {
       period = getAndAdvance();
       name = parseSimpleIdentifier();
     }
-    return new ConstructorName(type, period, name);
+    return astFactory.constructorName(type, period, name);
+  }
+
+  /**
+   * Parse a continue statement. Return the continue statement that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.CONTINUE`.
+   *
+   *     continueStatement ::=
+   *         'continue' identifier? ';'
+   */
+  Statement parseContinueStatement() {
+    Token continueKeyword = getAndAdvance();
+    if (!_inLoop && !_inSwitch) {
+      _reportErrorForToken(
+          ParserErrorCode.CONTINUE_OUTSIDE_OF_LOOP, continueKeyword);
+    }
+    SimpleIdentifier label = null;
+    if (_matchesIdentifier()) {
+      label = _parseSimpleIdentifierUnchecked();
+    }
+    if (_inSwitch && !_inLoop && label == null) {
+      _reportErrorForToken(
+          ParserErrorCode.CONTINUE_WITHOUT_LABEL_IN_CASE, continueKeyword);
+    }
+    Token semicolon = _expect(TokenType.SEMICOLON);
+    return astFactory.continueStatement(continueKeyword, label, semicolon);
+  }
+
+  /**
+   * Parse a directive. The [commentAndMetadata] is the metadata to be
+   * associated with the directive. Return the directive that was parsed.
+   *
+   *     directive ::=
+   *         exportDirective
+   *       | libraryDirective
+   *       | importDirective
+   *       | partDirective
+   */
+  Directive parseDirective(CommentAndMetadata commentAndMetadata) {
+    if (_matchesKeyword(Keyword.IMPORT)) {
+      return parseImportDirective(commentAndMetadata);
+    } else if (_matchesKeyword(Keyword.EXPORT)) {
+      return parseExportDirective(commentAndMetadata);
+    } else if (_matchesKeyword(Keyword.LIBRARY)) {
+      return parseLibraryDirective(commentAndMetadata);
+    } else if (_matchesKeyword(Keyword.PART)) {
+      return parsePartOrPartOfDirective(commentAndMetadata);
+    } else {
+      // Internal error: this method should not have been invoked if the current
+      // token was something other than one of the above.
+      throw new StateError(
+          "parseDirective invoked in an invalid state; currentToken = $_currentToken");
+    }
   }
 
   /**
@@ -2909,7 +2411,248 @@ class Parser {
    */
   CompilationUnit parseDirectives(Token token) {
     _currentToken = token;
-    return _parseDirectives();
+    return parseDirectives2();
+  }
+
+  /**
+   * Parse the script tag and directives in a compilation unit until the first
+   * non-directive is encountered. Return the compilation unit that was parsed.
+   *
+   *     compilationUnit ::=
+   *         scriptTag? directive*
+   */
+  CompilationUnit parseDirectives2() {
+    Token firstToken = _currentToken;
+    ScriptTag scriptTag = null;
+    if (_matches(TokenType.SCRIPT_TAG)) {
+      scriptTag = astFactory.scriptTag(getAndAdvance());
+    }
+    List<Directive> directives = <Directive>[];
+    while (!_matches(TokenType.EOF)) {
+      CommentAndMetadata commentAndMetadata = parseCommentAndMetadata();
+      Keyword keyword = _currentToken.keyword;
+      TokenType type = _peek().type;
+      if ((keyword == Keyword.IMPORT ||
+              keyword == Keyword.EXPORT ||
+              keyword == Keyword.LIBRARY ||
+              keyword == Keyword.PART) &&
+          type != TokenType.PERIOD &&
+          type != TokenType.LT &&
+          type != TokenType.OPEN_PAREN) {
+        directives.add(parseDirective(commentAndMetadata));
+      } else if (_matches(TokenType.SEMICOLON)) {
+        _advance();
+      } else {
+        while (!_matches(TokenType.EOF)) {
+          _advance();
+        }
+        return astFactory.compilationUnit(
+            firstToken, scriptTag, directives, null, _currentToken);
+      }
+    }
+    return astFactory.compilationUnit(
+        firstToken, scriptTag, directives, null, _currentToken);
+  }
+
+  /**
+   * Parse a documentation comment based on the given list of documentation
+   * comment tokens. Return the documentation comment that was parsed, or `null`
+   * if there was no comment.
+   *
+   *     documentationComment ::=
+   *         multiLineComment?
+   *       | singleLineComment*
+   */
+  Comment parseDocumentationComment(List<DocumentationCommentToken> tokens) {
+    if (tokens == null) {
+      return null;
+    }
+    List<CommentReference> references = parseCommentReferences(tokens);
+    return astFactory.documentationComment(tokens, references);
+  }
+
+  /**
+   * Parse a documentation comment. Return the documentation comment that was
+   * parsed, or `null` if there was no comment.
+   *
+   *     documentationComment ::=
+   *         multiLineComment?
+   *       | singleLineComment*
+   */
+  List<DocumentationCommentToken> parseDocumentationCommentTokens() {
+    List<DocumentationCommentToken> tokens = <DocumentationCommentToken>[];
+    CommentToken commentToken = _currentToken.precedingComments;
+    while (commentToken != null) {
+      if (commentToken is DocumentationCommentToken) {
+        if (tokens.isNotEmpty) {
+          if (commentToken.type == TokenType.SINGLE_LINE_COMMENT) {
+            if (tokens[0].type != TokenType.SINGLE_LINE_COMMENT) {
+              tokens.clear();
+            }
+          } else {
+            tokens.clear();
+          }
+        }
+        tokens.add(commentToken);
+      }
+      commentToken = commentToken.next;
+    }
+    return tokens.isEmpty ? null : tokens;
+  }
+
+  /**
+   * Parse a do statement. Return the do statement that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.DO`.
+   *
+   *     doStatement ::=
+   *         'do' statement 'while' '(' expression ')' ';'
+   */
+  Statement parseDoStatement() {
+    bool wasInLoop = _inLoop;
+    _inLoop = true;
+    try {
+      Token doKeyword = getAndAdvance();
+      Statement body = parseStatement2();
+      Token whileKeyword = _expectKeyword(Keyword.WHILE);
+      Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
+      Expression condition = parseExpression2();
+      Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
+      Token semicolon = _expect(TokenType.SEMICOLON);
+      return astFactory.doStatement(doKeyword, body, whileKeyword,
+          leftParenthesis, condition, rightParenthesis, semicolon);
+    } finally {
+      _inLoop = wasInLoop;
+    }
+  }
+
+  /**
+   * Parse a dotted name. Return the dotted name that was parsed.
+   *
+   *     dottedName ::=
+   *         identifier ('.' identifier)*
+   */
+  DottedName parseDottedName() {
+    List<SimpleIdentifier> components = <SimpleIdentifier>[
+      parseSimpleIdentifier()
+    ];
+    while (_optional(TokenType.PERIOD)) {
+      components.add(parseSimpleIdentifier());
+    }
+    return astFactory.dottedName(components);
+  }
+
+  /**
+   * Parse an empty statement. Return the empty statement that was parsed.
+   *
+   * This method assumes that the current token matches `TokenType.SEMICOLON`.
+   *
+   *     emptyStatement ::=
+   *         ';'
+   */
+  Statement parseEmptyStatement() => astFactory.emptyStatement(getAndAdvance());
+
+  /**
+   * Parse an enum declaration. The [commentAndMetadata] is the metadata to be
+   * associated with the member. Return the enum declaration that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.ENUM`.
+   *
+   *     enumType ::=
+   *         metadata 'enum' id '{' id (',' id)* (',')? '}'
+   */
+  EnumDeclaration parseEnumDeclaration(CommentAndMetadata commentAndMetadata) {
+    Token keyword = getAndAdvance();
+    SimpleIdentifier name = parseSimpleIdentifier(isDeclaration: true);
+    Token leftBracket = null;
+    List<EnumConstantDeclaration> constants = <EnumConstantDeclaration>[];
+    Token rightBracket = null;
+    if (_matches(TokenType.OPEN_CURLY_BRACKET)) {
+      leftBracket = getAndAdvance();
+      if (_matchesIdentifier() || _matches(TokenType.AT)) {
+        constants.add(_parseEnumConstantDeclaration());
+      } else if (_matches(TokenType.COMMA) &&
+          _tokenMatchesIdentifier(_peek())) {
+        constants.add(_parseEnumConstantDeclaration());
+        _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
+      } else {
+        constants.add(_parseEnumConstantDeclaration());
+        _reportErrorForCurrentToken(ParserErrorCode.EMPTY_ENUM_BODY);
+      }
+      while (_optional(TokenType.COMMA)) {
+        if (_matches(TokenType.CLOSE_CURLY_BRACKET)) {
+          break;
+        }
+        constants.add(_parseEnumConstantDeclaration());
+      }
+      rightBracket = _expect(TokenType.CLOSE_CURLY_BRACKET);
+    } else {
+      leftBracket = _createSyntheticToken(TokenType.OPEN_CURLY_BRACKET);
+      rightBracket = _createSyntheticToken(TokenType.CLOSE_CURLY_BRACKET);
+      _reportErrorForCurrentToken(ParserErrorCode.MISSING_ENUM_BODY);
+    }
+    return astFactory.enumDeclaration(
+        commentAndMetadata.comment,
+        commentAndMetadata.metadata,
+        keyword,
+        name,
+        leftBracket,
+        constants,
+        rightBracket);
+  }
+
+  /**
+   * Parse an equality expression. Return the equality expression that was
+   * parsed.
+   *
+   *     equalityExpression ::=
+   *         relationalExpression (equalityOperator relationalExpression)?
+   *       | 'super' equalityOperator relationalExpression
+   */
+  Expression parseEqualityExpression() {
+    Expression expression;
+    if (_currentToken.keyword == Keyword.SUPER &&
+        _currentToken.next.type.isEqualityOperator) {
+      expression = astFactory.superExpression(getAndAdvance());
+    } else {
+      expression = parseRelationalExpression();
+    }
+    bool leftEqualityExpression = false;
+    while (_currentToken.type.isEqualityOperator) {
+      if (leftEqualityExpression) {
+        _reportErrorForNode(
+            ParserErrorCode.EQUALITY_CANNOT_BE_EQUALITY_OPERAND, expression);
+      }
+      expression = astFactory.binaryExpression(
+          expression, getAndAdvance(), parseRelationalExpression());
+      leftEqualityExpression = true;
+    }
+    return expression;
+  }
+
+  /**
+   * Parse an export directive. The [commentAndMetadata] is the metadata to be
+   * associated with the directive. Return the export directive that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.EXPORT`.
+   *
+   *     exportDirective ::=
+   *         metadata 'export' stringLiteral configuration* combinator*';'
+   */
+  ExportDirective parseExportDirective(CommentAndMetadata commentAndMetadata) {
+    Token exportKeyword = getAndAdvance();
+    StringLiteral libraryUri = _parseUri();
+    List<Configuration> configurations = _parseConfigurations();
+    List<Combinator> combinators = parseCombinators();
+    Token semicolon = _expect(TokenType.SEMICOLON);
+    return astFactory.exportDirective(
+        commentAndMetadata.comment,
+        commentAndMetadata.metadata,
+        exportKeyword,
+        libraryUri,
+        configurations,
+        combinators,
+        semicolon);
   }
 
   /**
@@ -2932,11 +2675,12 @@ class Parser {
    *       | throwExpression
    */
   Expression parseExpression2() {
-    if (_matchesKeyword(Keyword.THROW)) {
-      return _parseThrowExpression();
-    } else if (_matchesKeyword(Keyword.RETHROW)) {
+    Keyword keyword = _currentToken.keyword;
+    if (keyword == Keyword.THROW) {
+      return parseThrowExpression();
+    } else if (keyword == Keyword.RETHROW) {
       // TODO(brianwilkerson) Rethrow is a statement again.
-      return _parseRethrowExpression();
+      return parseRethrowExpression();
     }
     //
     // assignableExpression is a subset of conditionalExpression, so we can
@@ -2945,23 +2689,37 @@ class Parser {
     // grammar after making that determination.
     //
     Expression expression = parseConditionalExpression();
-    TokenType tokenType = _currentToken.type;
-    if (tokenType == TokenType.PERIOD_PERIOD) {
-      List<Expression> cascadeSections = new List<Expression>();
-      while (tokenType == TokenType.PERIOD_PERIOD) {
-        Expression section = _parseCascadeSection();
+    TokenType type = _currentToken.type;
+    if (type == TokenType.PERIOD_PERIOD) {
+      List<Expression> cascadeSections = <Expression>[];
+      do {
+        Expression section = parseCascadeSection();
         if (section != null) {
           cascadeSections.add(section);
         }
-        tokenType = _currentToken.type;
-      }
-      return new CascadeExpression(expression, cascadeSections);
-    } else if (tokenType.isAssignmentOperator) {
+      } while (_currentToken.type == TokenType.PERIOD_PERIOD);
+      return astFactory.cascadeExpression(expression, cascadeSections);
+    } else if (type.isAssignmentOperator) {
       Token operator = getAndAdvance();
       _ensureAssignable(expression);
-      return new AssignmentExpression(expression, operator, parseExpression2());
+      return astFactory.assignmentExpression(
+          expression, operator, parseExpression2());
     }
     return expression;
+  }
+
+  /**
+   * Parse a list of expressions. Return the expression that was parsed.
+   *
+   *     expressionList ::=
+   *         expression (',' expression)*
+   */
+  List<Expression> parseExpressionList() {
+    List<Expression> expressions = <Expression>[parseExpression2()];
+    while (_optional(TokenType.COMMA)) {
+      expressions.add(parseExpression2());
+    }
+    return expressions;
   }
 
   /**
@@ -2975,9 +2733,9 @@ class Parser {
    */
   Expression parseExpressionWithoutCascade() {
     if (_matchesKeyword(Keyword.THROW)) {
-      return _parseThrowExpressionWithoutCascade();
+      return parseThrowExpressionWithoutCascade();
     } else if (_matchesKeyword(Keyword.RETHROW)) {
-      return _parseRethrowExpression();
+      return parseRethrowExpression();
     }
     //
     // assignableExpression is a subset of conditionalExpression, so we can
@@ -2989,7 +2747,7 @@ class Parser {
     if (_currentToken.type.isAssignmentOperator) {
       Token operator = getAndAdvance();
       _ensureAssignable(expression);
-      expression = new AssignmentExpression(
+      expression = astFactory.assignmentExpression(
           expression, operator, parseExpressionWithoutCascade());
     }
     return expression;
@@ -2999,13 +2757,106 @@ class Parser {
    * Parse a class extends clause. Return the class extends clause that was
    * parsed.
    *
+   * This method assumes that the current token matches `Keyword.EXTENDS`.
+   *
    *     classExtendsClause ::=
    *         'extends' type
    */
   ExtendsClause parseExtendsClause() {
-    Token keyword = _expectKeyword(Keyword.EXTENDS);
-    TypeName superclass = parseTypeName();
-    return new ExtendsClause(keyword, superclass);
+    Token keyword = getAndAdvance();
+    TypeName superclass = parseTypeName(false);
+    _mustNotBeNullable(superclass, ParserErrorCode.NULLABLE_TYPE_IN_EXTENDS);
+    return astFactory.extendsClause(keyword, superclass);
+  }
+
+  /**
+   * Parse the 'final', 'const', 'var' or type preceding a variable declaration.
+   * The [optional] is `true` if the keyword and type are optional. Return the
+   * 'final', 'const', 'var' or type that was parsed.
+   *
+   *     finalConstVarOrType ::=
+   *         'final' type?
+   *       | 'const' type?
+   *       | 'var'
+   *       | type
+   */
+  FinalConstVarOrType parseFinalConstVarOrType(bool optional) {
+    Token keywordToken = null;
+    TypeName type = null;
+    Keyword keyword = _currentToken.keyword;
+    if (keyword == Keyword.FINAL || keyword == Keyword.CONST) {
+      keywordToken = getAndAdvance();
+      if (_isTypedIdentifier(_currentToken)) {
+        type = parseTypeName(false);
+      } else {
+        // Support `final/*=T*/ x;`
+        type = _parseOptionalTypeNameComment();
+      }
+    } else if (keyword == Keyword.VAR) {
+      keywordToken = getAndAdvance();
+      // Support `var/*=T*/ x;`
+      type = _parseOptionalTypeNameComment();
+      if (type != null) {
+        // Clear the keyword to prevent an error.
+        keywordToken = null;
+      }
+    } else if (_isTypedIdentifier(_currentToken)) {
+      type = parseReturnType();
+    } else if (!optional) {
+      _reportErrorForCurrentToken(
+          ParserErrorCode.MISSING_CONST_FINAL_VAR_OR_TYPE);
+    } else {
+      // Support parameters such as `(/*=K*/ key, /*=V*/ value)`
+      // This is not supported if the type is required.
+      type = _parseOptionalTypeNameComment();
+    }
+    return new FinalConstVarOrType(keywordToken, type);
+  }
+
+  /**
+   * Parse a formal parameter. At most one of `isOptional` and `isNamed` can be
+   * `true`. The [kind] is the kind of parameter being expected based on the
+   * presence or absence of group delimiters. Return the formal parameter that
+   * was parsed.
+   *
+   *     defaultFormalParameter ::=
+   *         normalFormalParameter ('=' expression)?
+   *
+   *     defaultNamedParameter ::=
+   *         normalFormalParameter ('=' expression)?
+   *         normalFormalParameter (':' expression)?
+   */
+  FormalParameter parseFormalParameter(ParameterKind kind) {
+    NormalFormalParameter parameter = parseNormalFormalParameter();
+    TokenType type = _currentToken.type;
+    if (type == TokenType.EQ) {
+      Token separator = getAndAdvance();
+      Expression defaultValue = parseExpression2();
+      if (kind == ParameterKind.REQUIRED) {
+        _reportErrorForNode(
+            ParserErrorCode.POSITIONAL_PARAMETER_OUTSIDE_GROUP, parameter);
+        kind = ParameterKind.POSITIONAL;
+      }
+      return astFactory.defaultFormalParameter(
+          parameter, kind, separator, defaultValue);
+    } else if (type == TokenType.COLON) {
+      Token separator = getAndAdvance();
+      Expression defaultValue = parseExpression2();
+      if (kind == ParameterKind.POSITIONAL) {
+        _reportErrorForToken(
+            ParserErrorCode.WRONG_SEPARATOR_FOR_POSITIONAL_PARAMETER,
+            separator);
+      } else if (kind == ParameterKind.REQUIRED) {
+        _reportErrorForNode(
+            ParserErrorCode.NAMED_PARAMETER_OUTSIDE_GROUP, parameter);
+        kind = ParameterKind.NAMED;
+      }
+      return astFactory.defaultFormalParameter(
+          parameter, kind, separator, defaultValue);
+    } else if (kind != ParameterKind.REQUIRED) {
+      return astFactory.defaultFormalParameter(parameter, kind, null, null);
+    }
+    return parameter;
   }
 
   /**
@@ -3031,145 +2882,372 @@ class Parser {
    *         '{' defaultNamedParameter (',' defaultNamedParameter)* '}'
    */
   FormalParameterList parseFormalParameterList() {
-    Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
-    if (_matches(TokenType.CLOSE_PAREN)) {
-      return new FormalParameterList(
-          leftParenthesis, null, null, null, getAndAdvance());
+    if (_matches(TokenType.OPEN_PAREN)) {
+      return _parseFormalParameterListUnchecked();
     }
-    //
-    // Even though it is invalid to have default parameters outside of brackets,
-    // required parameters inside of brackets, or multiple groups of default and
-    // named parameters, we allow all of these cases so that we can recover
-    // better.
-    //
-    List<FormalParameter> parameters = new List<FormalParameter>();
-    Token leftSquareBracket = null;
-    Token rightSquareBracket = null;
-    Token leftCurlyBracket = null;
-    Token rightCurlyBracket = null;
-    ParameterKind kind = ParameterKind.REQUIRED;
-    bool firstParameter = true;
-    bool reportedMultiplePositionalGroups = false;
-    bool reportedMultipleNamedGroups = false;
-    bool reportedMixedGroups = false;
-    bool wasOptionalParameter = false;
-    Token initialToken = null;
-    do {
-      if (firstParameter) {
-        firstParameter = false;
-      } else if (!_optional(TokenType.COMMA)) {
-        // TODO(brianwilkerson) The token is wrong, we need to recover from this
-        // case.
-        if (_getEndToken(leftParenthesis) != null) {
-          _reportErrorForCurrentToken(
-              ParserErrorCode.EXPECTED_TOKEN, [TokenType.COMMA.lexeme]);
+    // TODO(brianwilkerson) Improve the error message.
+    _reportErrorForCurrentToken(
+        ParserErrorCode.EXPECTED_TOKEN, [TokenType.OPEN_PAREN.lexeme]);
+    // Recovery: Check for an unmatched closing paren and parse parameters until
+    // it is reached.
+    return _parseFormalParameterListAfterParen(
+        _createSyntheticToken(TokenType.OPEN_PAREN));
+  }
+
+  /**
+   * Parse a for statement. Return the for statement that was parsed.
+   *
+   *     forStatement ::=
+   *         'for' '(' forLoopParts ')' statement
+   *
+   *     forLoopParts ::=
+   *         forInitializerStatement expression? ';' expressionList?
+   *       | declaredIdentifier 'in' expression
+   *       | identifier 'in' expression
+   *
+   *     forInitializerStatement ::=
+   *         localVariableDeclaration ';'
+   *       | expression? ';'
+   */
+  Statement parseForStatement() {
+    bool wasInLoop = _inLoop;
+    _inLoop = true;
+    try {
+      Token awaitKeyword = null;
+      if (_matchesString(_AWAIT)) {
+        awaitKeyword = getAndAdvance();
+      }
+      Token forKeyword = _expectKeyword(Keyword.FOR);
+      Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
+      VariableDeclarationList variableList = null;
+      Expression initialization = null;
+      if (!_matches(TokenType.SEMICOLON)) {
+        CommentAndMetadata commentAndMetadata = parseCommentAndMetadata();
+        if (_matchesIdentifier() &&
+            (_tokenMatchesKeyword(_peek(), Keyword.IN) ||
+                _tokenMatches(_peek(), TokenType.COLON))) {
+          SimpleIdentifier variableName = _parseSimpleIdentifierUnchecked();
+          variableList = astFactory.variableDeclarationList(
+              commentAndMetadata.comment,
+              commentAndMetadata.metadata,
+              null,
+              null, <VariableDeclaration>[
+            astFactory.variableDeclaration(variableName, null, null)
+          ]);
+        } else if (isInitializedVariableDeclaration()) {
+          variableList =
+              parseVariableDeclarationListAfterMetadata(commentAndMetadata);
         } else {
-          _reportErrorForToken(ParserErrorCode.MISSING_CLOSING_PARENTHESIS,
-              _currentToken.previous);
-          break;
+          initialization = parseExpression2();
         }
-      }
-      initialToken = _currentToken;
-      //
-      // Handle the beginning of parameter groups.
-      //
-      if (_matches(TokenType.OPEN_SQUARE_BRACKET)) {
-        wasOptionalParameter = true;
-        if (leftSquareBracket != null && !reportedMultiplePositionalGroups) {
-          _reportErrorForCurrentToken(
-              ParserErrorCode.MULTIPLE_POSITIONAL_PARAMETER_GROUPS);
-          reportedMultiplePositionalGroups = true;
-        }
-        if (leftCurlyBracket != null && !reportedMixedGroups) {
-          _reportErrorForCurrentToken(ParserErrorCode.MIXED_PARAMETER_GROUPS);
-          reportedMixedGroups = true;
-        }
-        leftSquareBracket = getAndAdvance();
-        kind = ParameterKind.POSITIONAL;
-      } else if (_matches(TokenType.OPEN_CURLY_BRACKET)) {
-        wasOptionalParameter = true;
-        if (leftCurlyBracket != null && !reportedMultipleNamedGroups) {
-          _reportErrorForCurrentToken(
-              ParserErrorCode.MULTIPLE_NAMED_PARAMETER_GROUPS);
-          reportedMultipleNamedGroups = true;
-        }
-        if (leftSquareBracket != null && !reportedMixedGroups) {
-          _reportErrorForCurrentToken(ParserErrorCode.MIXED_PARAMETER_GROUPS);
-          reportedMixedGroups = true;
-        }
-        leftCurlyBracket = getAndAdvance();
-        kind = ParameterKind.NAMED;
-      }
-      //
-      // Parse and record the parameter.
-      //
-      FormalParameter parameter = _parseFormalParameter(kind);
-      parameters.add(parameter);
-      if (kind == ParameterKind.REQUIRED && wasOptionalParameter) {
-        _reportErrorForNode(
-            ParserErrorCode.NORMAL_BEFORE_OPTIONAL_PARAMETERS, parameter);
-      }
-      //
-      // Handle the end of parameter groups.
-      //
-      // TODO(brianwilkerson) Improve the detection and reporting of missing and
-      // mismatched delimiters.
-      if (_matches(TokenType.CLOSE_SQUARE_BRACKET)) {
-        rightSquareBracket = getAndAdvance();
-        if (leftSquareBracket == null) {
-          if (leftCurlyBracket != null) {
+        TokenType type = _currentToken.type;
+        if (_matchesKeyword(Keyword.IN) || type == TokenType.COLON) {
+          if (type == TokenType.COLON) {
+            _reportErrorForCurrentToken(ParserErrorCode.COLON_IN_PLACE_OF_IN);
+          }
+          DeclaredIdentifier loopVariable = null;
+          SimpleIdentifier identifier = null;
+          if (variableList == null) {
+            // We found: <expression> 'in'
             _reportErrorForCurrentToken(
-                ParserErrorCode.WRONG_TERMINATOR_FOR_PARAMETER_GROUP, ["}"]);
-            rightCurlyBracket = rightSquareBracket;
-            rightSquareBracket = null;
+                ParserErrorCode.MISSING_VARIABLE_IN_FOR_EACH);
           } else {
-            _reportErrorForCurrentToken(
-                ParserErrorCode.UNEXPECTED_TERMINATOR_FOR_PARAMETER_GROUP,
-                ["["]);
+            NodeList<VariableDeclaration> variables = variableList.variables;
+            if (variables.length > 1) {
+              _reportErrorForCurrentToken(
+                  ParserErrorCode.MULTIPLE_VARIABLES_IN_FOR_EACH,
+                  [variables.length.toString()]);
+            }
+            VariableDeclaration variable = variables[0];
+            if (variable.initializer != null) {
+              _reportErrorForCurrentToken(
+                  ParserErrorCode.INITIALIZED_VARIABLE_IN_FOR_EACH);
+            }
+            Token keyword = variableList.keyword;
+            TypeName type = variableList.type;
+            if (keyword != null || type != null) {
+              loopVariable = astFactory.declaredIdentifier(
+                  commentAndMetadata.comment,
+                  commentAndMetadata.metadata,
+                  keyword,
+                  type,
+                  astFactory.simpleIdentifier(variable.name.token,
+                      isDeclaration: true));
+            } else {
+              if (commentAndMetadata.hasMetadata) {
+                // TODO(jwren) metadata isn't allowed before the identifier in
+                // "identifier in expression", add warning if commentAndMetadata
+                // has content
+              }
+              identifier = variable.name;
+            }
+          }
+          Token inKeyword = getAndAdvance();
+          Expression iterator = parseExpression2();
+          Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
+          Statement body = parseStatement2();
+          if (loopVariable == null) {
+            return astFactory.forEachStatementWithReference(
+                awaitKeyword,
+                forKeyword,
+                leftParenthesis,
+                identifier,
+                inKeyword,
+                iterator,
+                rightParenthesis,
+                body);
+          }
+          return astFactory.forEachStatementWithDeclaration(
+              awaitKeyword,
+              forKeyword,
+              leftParenthesis,
+              loopVariable,
+              inKeyword,
+              iterator,
+              rightParenthesis,
+              body);
+        }
+      }
+      if (awaitKeyword != null) {
+        _reportErrorForToken(
+            ParserErrorCode.INVALID_AWAIT_IN_FOR, awaitKeyword);
+      }
+      Token leftSeparator = _expect(TokenType.SEMICOLON);
+      Expression condition = null;
+      if (!_matches(TokenType.SEMICOLON)) {
+        condition = parseExpression2();
+      }
+      Token rightSeparator = _expect(TokenType.SEMICOLON);
+      List<Expression> updaters = null;
+      if (!_matches(TokenType.CLOSE_PAREN)) {
+        updaters = parseExpressionList();
+      }
+      Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
+      Statement body = parseStatement2();
+      return astFactory.forStatement(
+          forKeyword,
+          leftParenthesis,
+          variableList,
+          initialization,
+          leftSeparator,
+          condition,
+          rightSeparator,
+          updaters,
+          rightParenthesis,
+          body);
+    } finally {
+      _inLoop = wasInLoop;
+    }
+  }
+
+  /**
+   * Parse a function body. The [mayBeEmpty] is `true` if the function body is
+   * allowed to be empty. The [emptyErrorCode] is the error code to report if
+   * function body expected, but not found. The [inExpression] is `true` if the
+   * function body is being parsed as part of an expression and therefore does
+   * not have a terminating semicolon. Return the function body that was parsed.
+   *
+   *     functionBody ::=
+   *         '=>' expression ';'
+   *       | block
+   *
+   *     functionExpressionBody ::=
+   *         '=>' expression
+   *       | block
+   */
+  FunctionBody parseFunctionBody(
+      bool mayBeEmpty, ParserErrorCode emptyErrorCode, bool inExpression) {
+    bool wasInAsync = _inAsync;
+    bool wasInGenerator = _inGenerator;
+    bool wasInLoop = _inLoop;
+    bool wasInSwitch = _inSwitch;
+    _inAsync = false;
+    _inGenerator = false;
+    _inLoop = false;
+    _inSwitch = false;
+    try {
+      TokenType type = _currentToken.type;
+      if (type == TokenType.SEMICOLON) {
+        if (!mayBeEmpty) {
+          _reportErrorForCurrentToken(emptyErrorCode);
+        }
+        return astFactory.emptyFunctionBody(getAndAdvance());
+      }
+      Token keyword = null;
+      Token star = null;
+      bool foundAsync = false;
+      bool foundSync = false;
+      if (type == TokenType.IDENTIFIER) {
+        String lexeme = _currentToken.lexeme;
+        if (lexeme == ASYNC) {
+          foundAsync = true;
+          keyword = getAndAdvance();
+          if (_matches(TokenType.STAR)) {
+            star = getAndAdvance();
+            _inGenerator = true;
+          }
+          type = _currentToken.type;
+          _inAsync = true;
+        } else if (lexeme == SYNC) {
+          foundSync = true;
+          keyword = getAndAdvance();
+          if (_matches(TokenType.STAR)) {
+            star = getAndAdvance();
+            _inGenerator = true;
+          }
+          type = _currentToken.type;
+        }
+      }
+      if (type == TokenType.FUNCTION) {
+        if (keyword != null) {
+          if (!foundAsync) {
+            _reportErrorForToken(ParserErrorCode.INVALID_SYNC, keyword);
+            keyword = null;
+          } else if (star != null) {
+            _reportErrorForToken(
+                ParserErrorCode.INVALID_STAR_AFTER_ASYNC, star);
           }
         }
-        kind = ParameterKind.REQUIRED;
-      } else if (_matches(TokenType.CLOSE_CURLY_BRACKET)) {
-        rightCurlyBracket = getAndAdvance();
-        if (leftCurlyBracket == null) {
-          if (leftSquareBracket != null) {
-            _reportErrorForCurrentToken(
-                ParserErrorCode.WRONG_TERMINATOR_FOR_PARAMETER_GROUP, ["]"]);
-            rightSquareBracket = rightCurlyBracket;
-            rightCurlyBracket = null;
-          } else {
-            _reportErrorForCurrentToken(
-                ParserErrorCode.UNEXPECTED_TERMINATOR_FOR_PARAMETER_GROUP,
-                ["{"]);
+        Token functionDefinition = getAndAdvance();
+        if (_matchesKeyword(Keyword.RETURN)) {
+          _reportErrorForToken(ParserErrorCode.UNEXPECTED_TOKEN, _currentToken,
+              [_currentToken.lexeme]);
+          _advance();
+        }
+        Expression expression = parseExpression2();
+        Token semicolon = null;
+        if (!inExpression) {
+          semicolon = _expect(TokenType.SEMICOLON);
+        }
+        if (!_parseFunctionBodies) {
+          return astFactory
+              .emptyFunctionBody(_createSyntheticToken(TokenType.SEMICOLON));
+        }
+        return astFactory.expressionFunctionBody(
+            keyword, functionDefinition, expression, semicolon);
+      } else if (type == TokenType.OPEN_CURLY_BRACKET) {
+        if (keyword != null) {
+          if (foundSync && star == null) {
+            _reportErrorForToken(
+                ParserErrorCode.MISSING_STAR_AFTER_SYNC, keyword);
           }
         }
-        kind = ParameterKind.REQUIRED;
+        if (!_parseFunctionBodies) {
+          _skipBlock();
+          return astFactory
+              .emptyFunctionBody(_createSyntheticToken(TokenType.SEMICOLON));
+        }
+        return astFactory.blockFunctionBody(keyword, star, parseBlock());
+      } else if (_matchesString(_NATIVE)) {
+        Token nativeToken = getAndAdvance();
+        StringLiteral stringLiteral = null;
+        if (_matches(TokenType.STRING)) {
+          stringLiteral = _parseStringLiteralUnchecked();
+        }
+        return astFactory.nativeFunctionBody(
+            nativeToken, stringLiteral, _expect(TokenType.SEMICOLON));
+      } else {
+        // Invalid function body
+        _reportErrorForCurrentToken(emptyErrorCode);
+        return astFactory
+            .emptyFunctionBody(_createSyntheticToken(TokenType.SEMICOLON));
       }
-    } while (!_matches(TokenType.CLOSE_PAREN) &&
-        !identical(initialToken, _currentToken));
-    Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
-    //
-    // Check that the groups were closed correctly.
-    //
-    if (leftSquareBracket != null && rightSquareBracket == null) {
-      _reportErrorForCurrentToken(
-          ParserErrorCode.MISSING_TERMINATOR_FOR_PARAMETER_GROUP, ["]"]);
+    } finally {
+      _inAsync = wasInAsync;
+      _inGenerator = wasInGenerator;
+      _inLoop = wasInLoop;
+      _inSwitch = wasInSwitch;
     }
-    if (leftCurlyBracket != null && rightCurlyBracket == null) {
-      _reportErrorForCurrentToken(
-          ParserErrorCode.MISSING_TERMINATOR_FOR_PARAMETER_GROUP, ["}"]);
+  }
+
+  /**
+   * Parse a function declaration. The [commentAndMetadata] is the documentation
+   * comment and metadata to be associated with the declaration. The
+   * [externalKeyword] is the 'external' keyword, or `null` if the function is
+   * not external. The [returnType] is the return type, or `null` if there is no
+   * return type. The [isStatement] is `true` if the function declaration is
+   * being parsed as a statement. Return the function declaration that was
+   * parsed.
+   *
+   *     functionDeclaration ::=
+   *         functionSignature functionBody
+   *       | returnType? getOrSet identifier formalParameterList functionBody
+   */
+  FunctionDeclaration parseFunctionDeclaration(
+      CommentAndMetadata commentAndMetadata,
+      Token externalKeyword,
+      TypeName returnType) {
+    Token keywordToken = null;
+    bool isGetter = false;
+    Keyword keyword = _currentToken.keyword;
+    SimpleIdentifier name = null;
+    if (keyword == Keyword.GET) {
+      keywordToken = getAndAdvance();
+      isGetter = true;
+    } else if (keyword == Keyword.SET) {
+      keywordToken = getAndAdvance();
     }
-    //
-    // Build the parameter list.
-    //
-    if (leftSquareBracket == null) {
-      leftSquareBracket = leftCurlyBracket;
+    if (keywordToken != null && _matches(TokenType.OPEN_PAREN)) {
+      name = astFactory.simpleIdentifier(keywordToken, isDeclaration: true);
+      keywordToken = null;
+      isGetter = false;
+    } else {
+      name = parseSimpleIdentifier(isDeclaration: true);
     }
-    if (rightSquareBracket == null) {
-      rightSquareBracket = rightCurlyBracket;
+    TypeParameterList typeParameters = _parseGenericMethodTypeParameters();
+    FormalParameterList parameters = null;
+    if (!isGetter) {
+      if (_matches(TokenType.OPEN_PAREN)) {
+        parameters = _parseFormalParameterListUnchecked();
+        _validateFormalParameterList(parameters);
+      } else {
+        _reportErrorForCurrentToken(
+            ParserErrorCode.MISSING_FUNCTION_PARAMETERS);
+        parameters = astFactory.formalParameterList(
+            _createSyntheticToken(TokenType.OPEN_PAREN),
+            null,
+            null,
+            null,
+            _createSyntheticToken(TokenType.CLOSE_PAREN));
+      }
+    } else if (_matches(TokenType.OPEN_PAREN)) {
+      _reportErrorForCurrentToken(ParserErrorCode.GETTER_WITH_PARAMETERS);
+      _parseFormalParameterListUnchecked();
     }
-    return new FormalParameterList(leftParenthesis, parameters,
-        leftSquareBracket, rightSquareBracket, rightParenthesis);
+    FunctionBody body;
+    if (externalKeyword == null) {
+      body = parseFunctionBody(
+          false, ParserErrorCode.MISSING_FUNCTION_BODY, false);
+    } else {
+      body = astFactory.emptyFunctionBody(_expect(TokenType.SEMICOLON));
+    }
+//        if (!isStatement && matches(TokenType.SEMICOLON)) {
+//          // TODO(brianwilkerson) Improve this error message.
+//          reportError(ParserErrorCode.UNEXPECTED_TOKEN, currentToken.getLexeme());
+//          advance();
+//        }
+    return astFactory.functionDeclaration(
+        commentAndMetadata.comment,
+        commentAndMetadata.metadata,
+        externalKeyword,
+        returnType,
+        keywordToken,
+        name,
+        astFactory.functionExpression(typeParameters, parameters, body));
+  }
+
+  /**
+   * Parse a function declaration statement. Return the function declaration
+   * statement that was parsed.
+   *
+   *     functionDeclarationStatement ::=
+   *         functionSignature functionBody
+   */
+  Statement parseFunctionDeclarationStatement() {
+    Modifiers modifiers = parseModifiers();
+    _validateModifiersForFunctionDeclarationStatement(modifiers);
+    return _parseFunctionDeclarationStatementAfterReturnType(
+        parseCommentAndMetadata(), _parseOptionalReturnType());
   }
 
   /**
@@ -3184,8 +3262,72 @@ class Parser {
     FormalParameterList parameters = parseFormalParameterList();
     _validateFormalParameterList(parameters);
     FunctionBody body =
-        _parseFunctionBody(false, ParserErrorCode.MISSING_FUNCTION_BODY, true);
-    return new FunctionExpression(typeParameters, parameters, body);
+        parseFunctionBody(false, ParserErrorCode.MISSING_FUNCTION_BODY, true);
+    return astFactory.functionExpression(typeParameters, parameters, body);
+  }
+
+  /**
+   * Parse a getter. The [commentAndMetadata] is the documentation comment and
+   * metadata to be associated with the declaration. The externalKeyword] is the
+   * 'external' token. The staticKeyword] is the static keyword, or `null` if
+   * the getter is not static. The [returnType] the return type that has already
+   * been parsed, or `null` if there was no return type. Return the getter that
+   * was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.GET`.
+   *
+   *     getter ::=
+   *         getterSignature functionBody?
+   *
+   *     getterSignature ::=
+   *         'external'? 'static'? returnType? 'get' identifier
+   */
+  MethodDeclaration parseGetter(CommentAndMetadata commentAndMetadata,
+      Token externalKeyword, Token staticKeyword, TypeName returnType) {
+    Token propertyKeyword = getAndAdvance();
+    SimpleIdentifier name = parseSimpleIdentifier(isDeclaration: true);
+    if (_matches(TokenType.OPEN_PAREN) &&
+        _tokenMatches(_peek(), TokenType.CLOSE_PAREN)) {
+      _reportErrorForCurrentToken(ParserErrorCode.GETTER_WITH_PARAMETERS);
+      _advance();
+      _advance();
+    }
+    FunctionBody body = parseFunctionBody(
+        externalKeyword != null || staticKeyword == null,
+        ParserErrorCode.STATIC_GETTER_WITHOUT_BODY,
+        false);
+    if (externalKeyword != null && body is! EmptyFunctionBody) {
+      _reportErrorForCurrentToken(ParserErrorCode.EXTERNAL_GETTER_WITH_BODY);
+    }
+    return astFactory.methodDeclaration(
+        commentAndMetadata.comment,
+        commentAndMetadata.metadata,
+        externalKeyword,
+        staticKeyword,
+        returnType,
+        propertyKeyword,
+        null,
+        name,
+        null,
+        null,
+        body);
+  }
+
+  /**
+   * Parse a list of identifiers. Return the list of identifiers that were
+   * parsed.
+   *
+   *     identifierList ::=
+   *         identifier (',' identifier)*
+   */
+  List<SimpleIdentifier> parseIdentifierList() {
+    List<SimpleIdentifier> identifiers = <SimpleIdentifier>[
+      parseSimpleIdentifier()
+    ];
+    while (_optional(TokenType.COMMA)) {
+      identifiers.add(parseSimpleIdentifier());
+    }
+    return identifiers;
   }
 
   /**
@@ -3196,41 +3338,195 @@ class Parser {
    */
   Expression parseIfNullExpression() {
     Expression expression = parseLogicalOrExpression();
-    while (_matches(TokenType.QUESTION_QUESTION)) {
-      Token operator = getAndAdvance();
-      expression = new BinaryExpression(
-          expression, operator, parseLogicalOrExpression());
+    while (_currentToken.type == TokenType.QUESTION_QUESTION) {
+      expression = astFactory.binaryExpression(
+          expression, getAndAdvance(), parseLogicalOrExpression());
     }
     return expression;
   }
 
   /**
+   * Parse an if statement. Return the if statement that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.IF`.
+   *
+   *     ifStatement ::=
+   *         'if' '(' expression ')' statement ('else' statement)?
+   */
+  Statement parseIfStatement() {
+    Token ifKeyword = getAndAdvance();
+    Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
+    Expression condition = parseExpression2();
+    Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
+    Statement thenStatement = parseStatement2();
+    Token elseKeyword = null;
+    Statement elseStatement = null;
+    if (_matchesKeyword(Keyword.ELSE)) {
+      elseKeyword = getAndAdvance();
+      elseStatement = parseStatement2();
+    }
+    return astFactory.ifStatement(ifKeyword, leftParenthesis, condition,
+        rightParenthesis, thenStatement, elseKeyword, elseStatement);
+  }
+
+  /**
    * Parse an implements clause. Return the implements clause that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.IMPLEMENTS`.
    *
    *     implementsClause ::=
    *         'implements' type (',' type)*
    */
   ImplementsClause parseImplementsClause() {
-    Token keyword = _expectKeyword(Keyword.IMPLEMENTS);
-    List<TypeName> interfaces = new List<TypeName>();
-    interfaces.add(parseTypeName());
-    while (_optional(TokenType.COMMA)) {
-      interfaces.add(parseTypeName());
+    Token keyword = getAndAdvance();
+    List<TypeName> interfaces = <TypeName>[];
+    do {
+      TypeName typeName = parseTypeName(false);
+      _mustNotBeNullable(typeName, ParserErrorCode.NULLABLE_TYPE_IN_IMPLEMENTS);
+      interfaces.add(typeName);
+    } while (_optional(TokenType.COMMA));
+    return astFactory.implementsClause(keyword, interfaces);
+  }
+
+  /**
+   * Parse an import directive. The [commentAndMetadata] is the metadata to be
+   * associated with the directive. Return the import directive that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.IMPORT`.
+   *
+   *     importDirective ::=
+   *         metadata 'import' stringLiteral configuration* (deferred)? ('as' identifier)? combinator*';'
+   */
+  ImportDirective parseImportDirective(CommentAndMetadata commentAndMetadata) {
+    Token importKeyword = getAndAdvance();
+    StringLiteral libraryUri = _parseUri();
+    List<Configuration> configurations = _parseConfigurations();
+    Token deferredToken = null;
+    Token asToken = null;
+    SimpleIdentifier prefix = null;
+    if (_matchesKeyword(Keyword.DEFERRED)) {
+      deferredToken = getAndAdvance();
     }
-    return new ImplementsClause(keyword, interfaces);
+    if (_matchesKeyword(Keyword.AS)) {
+      asToken = getAndAdvance();
+      prefix = parseSimpleIdentifier(isDeclaration: true);
+    } else if (deferredToken != null) {
+      _reportErrorForCurrentToken(
+          ParserErrorCode.MISSING_PREFIX_IN_DEFERRED_IMPORT);
+    } else if (!_matches(TokenType.SEMICOLON) &&
+        !_matchesString(_SHOW) &&
+        !_matchesString(_HIDE)) {
+      Token nextToken = _peek();
+      if (_tokenMatchesKeyword(nextToken, Keyword.AS) ||
+          _tokenMatchesString(nextToken, _SHOW) ||
+          _tokenMatchesString(nextToken, _HIDE)) {
+        _reportErrorForCurrentToken(
+            ParserErrorCode.UNEXPECTED_TOKEN, [_currentToken]);
+        _advance();
+        if (_matchesKeyword(Keyword.AS)) {
+          asToken = getAndAdvance();
+          prefix = parseSimpleIdentifier(isDeclaration: true);
+        }
+      }
+    }
+    List<Combinator> combinators = parseCombinators();
+    Token semicolon = _expect(TokenType.SEMICOLON);
+    return astFactory.importDirective(
+        commentAndMetadata.comment,
+        commentAndMetadata.metadata,
+        importKeyword,
+        libraryUri,
+        configurations,
+        deferredToken,
+        asToken,
+        prefix,
+        combinators,
+        semicolon);
+  }
+
+  /**
+   * Parse a list of initialized identifiers. The [commentAndMetadata] is the
+   * documentation comment and metadata to be associated with the declaration.
+   * The [staticKeyword] is the static keyword, or `null` if the getter is not
+   * static. The [keyword] is the token representing the 'final', 'const' or
+   * 'var' keyword, or `null` if there is no keyword. The [type] is the type
+   * that has already been parsed, or `null` if 'var' was provided. Return the
+   * getter that was parsed.
+   *
+   *     ?? ::=
+   *         'static'? ('var' | type) initializedIdentifierList ';'
+   *       | 'final' type? initializedIdentifierList ';'
+   *
+   *     initializedIdentifierList ::=
+   *         initializedIdentifier (',' initializedIdentifier)*
+   *
+   *     initializedIdentifier ::=
+   *         identifier ('=' expression)?
+   */
+  FieldDeclaration parseInitializedIdentifierList(
+      CommentAndMetadata commentAndMetadata,
+      Token staticKeyword,
+      Token keyword,
+      TypeName type) {
+    VariableDeclarationList fieldList =
+        parseVariableDeclarationListAfterType(null, keyword, type);
+    return astFactory.fieldDeclaration(
+        commentAndMetadata.comment,
+        commentAndMetadata.metadata,
+        staticKeyword,
+        fieldList,
+        _expect(TokenType.SEMICOLON));
+  }
+
+  /**
+   * Parse an instance creation expression. The [keyword] is the 'new' or
+   * 'const' keyword that introduces the expression. Return the instance
+   * creation expression that was parsed.
+   *
+   *     instanceCreationExpression ::=
+   *         ('new' | 'const') type ('.' identifier)? argumentList
+   */
+  InstanceCreationExpression parseInstanceCreationExpression(Token keyword) {
+    ConstructorName constructorName = parseConstructorName();
+    ArgumentList argumentList = _parseArgumentListChecked();
+    return astFactory.instanceCreationExpression(
+        keyword, constructorName, argumentList);
   }
 
   /**
    * Parse a label. Return the label that was parsed.
+   *
+   * This method assumes that the current token matches an identifier and that
+   * the following token matches `TokenType.COLON`.
    *
    *     label ::=
    *         identifier ':'
    */
   Label parseLabel({bool isDeclaration: false}) {
     SimpleIdentifier label =
-        parseSimpleIdentifier(isDeclaration: isDeclaration);
-    Token colon = _expect(TokenType.COLON);
-    return new Label(label, colon);
+        _parseSimpleIdentifierUnchecked(isDeclaration: isDeclaration);
+    Token colon = getAndAdvance();
+    return astFactory.label(label, colon);
+  }
+
+  /**
+   * Parse a library directive. The [commentAndMetadata] is the metadata to be
+   * associated with the directive. Return the library directive that was
+   * parsed.
+   *
+   * This method assumes that the current token matches `Keyword.LIBRARY`.
+   *
+   *     libraryDirective ::=
+   *         metadata 'library' identifier ';'
+   */
+  LibraryDirective parseLibraryDirective(
+      CommentAndMetadata commentAndMetadata) {
+    Token keyword = getAndAdvance();
+    LibraryIdentifier libraryName = _parseLibraryName(
+        ParserErrorCode.MISSING_NAME_IN_LIBRARY_DIRECTIVE, keyword);
+    Token semicolon = _expect(TokenType.SEMICOLON);
+    return astFactory.libraryDirective(commentAndMetadata.comment,
+        commentAndMetadata.metadata, keyword, libraryName, semicolon);
   }
 
   /**
@@ -3240,13 +3536,96 @@ class Parser {
    *         identifier ('.' identifier)*
    */
   LibraryIdentifier parseLibraryIdentifier() {
-    List<SimpleIdentifier> components = new List<SimpleIdentifier>();
+    List<SimpleIdentifier> components = <SimpleIdentifier>[];
     components.add(parseSimpleIdentifier());
-    while (_matches(TokenType.PERIOD)) {
-      _advance();
+    while (_optional(TokenType.PERIOD)) {
       components.add(parseSimpleIdentifier());
     }
-    return new LibraryIdentifier(components);
+    return astFactory.libraryIdentifier(components);
+  }
+
+  /**
+   * Parse a list literal. The [modifier] is the 'const' modifier appearing
+   * before the literal, or `null` if there is no modifier. The [typeArguments]
+   * is the type arguments appearing before the literal, or `null` if there are
+   * no type arguments. Return the list literal that was parsed.
+   *
+   * This method assumes that the current token matches either
+   * `TokenType.OPEN_SQUARE_BRACKET` or `TokenType.INDEX`.
+   *
+   *     listLiteral ::=
+   *         'const'? typeArguments? '[' (expressionList ','?)? ']'
+   */
+  ListLiteral parseListLiteral(Token modifier, TypeArgumentList typeArguments) {
+    if (_matches(TokenType.INDEX)) {
+      _splitIndex();
+      return astFactory.listLiteral(
+          modifier, typeArguments, getAndAdvance(), null, getAndAdvance());
+    }
+    Token leftBracket = getAndAdvance();
+    if (_matches(TokenType.CLOSE_SQUARE_BRACKET)) {
+      return astFactory.listLiteral(
+          modifier, typeArguments, leftBracket, null, getAndAdvance());
+    }
+    bool wasInInitializer = _inInitializer;
+    _inInitializer = false;
+    try {
+      List<Expression> elements = <Expression>[parseExpression2()];
+      while (_optional(TokenType.COMMA)) {
+        if (_matches(TokenType.CLOSE_SQUARE_BRACKET)) {
+          return astFactory.listLiteral(
+              modifier, typeArguments, leftBracket, elements, getAndAdvance());
+        }
+        elements.add(parseExpression2());
+      }
+      Token rightBracket = _expect(TokenType.CLOSE_SQUARE_BRACKET);
+      return astFactory.listLiteral(
+          modifier, typeArguments, leftBracket, elements, rightBracket);
+    } finally {
+      _inInitializer = wasInInitializer;
+    }
+  }
+
+  /**
+   * Parse a list or map literal. The [modifier] is the 'const' modifier
+   * appearing before the literal, or `null` if there is no modifier. Return the
+   * list or map literal that was parsed.
+   *
+   *     listOrMapLiteral ::=
+   *         listLiteral
+   *       | mapLiteral
+   */
+  TypedLiteral parseListOrMapLiteral(Token modifier) {
+    TypeArgumentList typeArguments = _parseOptionalTypeArguments();
+    if (_matches(TokenType.OPEN_CURLY_BRACKET)) {
+      return parseMapLiteral(modifier, typeArguments);
+    } else if (_matches(TokenType.OPEN_SQUARE_BRACKET) ||
+        _matches(TokenType.INDEX)) {
+      return parseListLiteral(modifier, typeArguments);
+    }
+    _reportErrorForCurrentToken(ParserErrorCode.EXPECTED_LIST_OR_MAP_LITERAL);
+    return astFactory.listLiteral(
+        modifier,
+        typeArguments,
+        _createSyntheticToken(TokenType.OPEN_SQUARE_BRACKET),
+        null,
+        _createSyntheticToken(TokenType.CLOSE_SQUARE_BRACKET));
+  }
+
+  /**
+   * Parse a logical and expression. Return the logical and expression that was
+   * parsed.
+   *
+   *     logicalAndExpression ::=
+   *         equalityExpression ('&&' equalityExpression)*
+   */
+  Expression parseLogicalAndExpression() {
+    Expression expression = parseEqualityExpression();
+    while (_currentToken.type == TokenType.AMPERSAND_AMPERSAND) {
+      expression = astFactory.binaryExpression(
+          expression, getAndAdvance(), parseEqualityExpression());
+    }
+    return expression;
   }
 
   /**
@@ -3257,13 +3636,49 @@ class Parser {
    *         logicalAndExpression ('||' logicalAndExpression)*
    */
   Expression parseLogicalOrExpression() {
-    Expression expression = _parseLogicalAndExpression();
-    while (_matches(TokenType.BAR_BAR)) {
-      Token operator = getAndAdvance();
-      expression = new BinaryExpression(
-          expression, operator, _parseLogicalAndExpression());
+    Expression expression = parseLogicalAndExpression();
+    while (_currentToken.type == TokenType.BAR_BAR) {
+      expression = astFactory.binaryExpression(
+          expression, getAndAdvance(), parseLogicalAndExpression());
     }
     return expression;
+  }
+
+  /**
+   * Parse a map literal. The [modifier] is the 'const' modifier appearing
+   * before the literal, or `null` if there is no modifier. The [typeArguments]
+   * is the type arguments that were declared, or `null` if there are no type
+   * arguments. Return the map literal that was parsed.
+   *
+   * This method assumes that the current token matches
+   * `TokenType.OPEN_CURLY_BRACKET`.
+   *
+   *     mapLiteral ::=
+   *         'const'? typeArguments? '{' (mapLiteralEntry (',' mapLiteralEntry)* ','?)? '}'
+   */
+  MapLiteral parseMapLiteral(Token modifier, TypeArgumentList typeArguments) {
+    Token leftBracket = getAndAdvance();
+    if (_matches(TokenType.CLOSE_CURLY_BRACKET)) {
+      return astFactory.mapLiteral(
+          modifier, typeArguments, leftBracket, null, getAndAdvance());
+    }
+    bool wasInInitializer = _inInitializer;
+    _inInitializer = false;
+    try {
+      List<MapLiteralEntry> entries = <MapLiteralEntry>[parseMapLiteralEntry()];
+      while (_optional(TokenType.COMMA)) {
+        if (_matches(TokenType.CLOSE_CURLY_BRACKET)) {
+          return astFactory.mapLiteral(
+              modifier, typeArguments, leftBracket, entries, getAndAdvance());
+        }
+        entries.add(parseMapLiteralEntry());
+      }
+      Token rightBracket = _expect(TokenType.CLOSE_CURLY_BRACKET);
+      return astFactory.mapLiteral(
+          modifier, typeArguments, leftBracket, entries, rightBracket);
+    } finally {
+      _inInitializer = wasInInitializer;
+    }
   }
 
   /**
@@ -3276,7 +3691,309 @@ class Parser {
     Expression key = parseExpression2();
     Token separator = _expect(TokenType.COLON);
     Expression value = parseExpression2();
-    return new MapLiteralEntry(key, separator, value);
+    return astFactory.mapLiteralEntry(key, separator, value);
+  }
+
+  /**
+   * Parse the modifiers preceding a declaration. This method allows the
+   * modifiers to appear in any order but does generate errors for duplicated
+   * modifiers. Checks for other problems, such as having the modifiers appear
+   * in the wrong order or specifying both 'const' and 'final', are reported in
+   * one of the methods whose name is prefixed with `validateModifiersFor`.
+   * Return the modifiers that were parsed.
+   *
+   *     modifiers ::=
+   *         ('abstract' | 'const' | 'external' | 'factory' | 'final' | 'static' | 'var')*
+   */
+  Modifiers parseModifiers() {
+    Modifiers modifiers = new Modifiers();
+    bool progress = true;
+    while (progress) {
+      TokenType nextType = _peek().type;
+      if (nextType == TokenType.PERIOD ||
+          nextType == TokenType.LT ||
+          nextType == TokenType.OPEN_PAREN) {
+        return modifiers;
+      }
+      Keyword keyword = _currentToken.keyword;
+      if (keyword == Keyword.ABSTRACT) {
+        if (modifiers.abstractKeyword != null) {
+          _reportErrorForCurrentToken(
+              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
+          _advance();
+        } else {
+          modifiers.abstractKeyword = getAndAdvance();
+        }
+      } else if (keyword == Keyword.CONST) {
+        if (modifiers.constKeyword != null) {
+          _reportErrorForCurrentToken(
+              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
+          _advance();
+        } else {
+          modifiers.constKeyword = getAndAdvance();
+        }
+      } else if (keyword == Keyword.EXTERNAL) {
+        if (modifiers.externalKeyword != null) {
+          _reportErrorForCurrentToken(
+              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
+          _advance();
+        } else {
+          modifiers.externalKeyword = getAndAdvance();
+        }
+      } else if (keyword == Keyword.FACTORY) {
+        if (modifiers.factoryKeyword != null) {
+          _reportErrorForCurrentToken(
+              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
+          _advance();
+        } else {
+          modifiers.factoryKeyword = getAndAdvance();
+        }
+      } else if (keyword == Keyword.FINAL) {
+        if (modifiers.finalKeyword != null) {
+          _reportErrorForCurrentToken(
+              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
+          _advance();
+        } else {
+          modifiers.finalKeyword = getAndAdvance();
+        }
+      } else if (keyword == Keyword.STATIC) {
+        if (modifiers.staticKeyword != null) {
+          _reportErrorForCurrentToken(
+              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
+          _advance();
+        } else {
+          modifiers.staticKeyword = getAndAdvance();
+        }
+      } else if (keyword == Keyword.VAR) {
+        if (modifiers.varKeyword != null) {
+          _reportErrorForCurrentToken(
+              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
+          _advance();
+        } else {
+          modifiers.varKeyword = getAndAdvance();
+        }
+      } else {
+        progress = false;
+      }
+    }
+    return modifiers;
+  }
+
+  /**
+   * Parse a multiplicative expression. Return the multiplicative expression
+   * that was parsed.
+   *
+   *     multiplicativeExpression ::=
+   *         unaryExpression (multiplicativeOperator unaryExpression)*
+   *       | 'super' (multiplicativeOperator unaryExpression)+
+   */
+  Expression parseMultiplicativeExpression() {
+    Expression expression;
+    if (_currentToken.keyword == Keyword.SUPER &&
+        _currentToken.next.type.isMultiplicativeOperator) {
+      expression = astFactory.superExpression(getAndAdvance());
+    } else {
+      expression = parseUnaryExpression();
+    }
+    while (_currentToken.type.isMultiplicativeOperator) {
+      expression = astFactory.binaryExpression(
+          expression, getAndAdvance(), parseUnaryExpression());
+    }
+    return expression;
+  }
+
+  /**
+   * Parse a new expression. Return the new expression that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.NEW`.
+   *
+   *     newExpression ::=
+   *         instanceCreationExpression
+   */
+  InstanceCreationExpression parseNewExpression() =>
+      parseInstanceCreationExpression(getAndAdvance());
+
+  /**
+   * Parse a non-labeled statement. Return the non-labeled statement that was
+   * parsed.
+   *
+   *     nonLabeledStatement ::=
+   *         block
+   *       | assertStatement
+   *       | breakStatement
+   *       | continueStatement
+   *       | doStatement
+   *       | forStatement
+   *       | ifStatement
+   *       | returnStatement
+   *       | switchStatement
+   *       | tryStatement
+   *       | whileStatement
+   *       | variableDeclarationList ';'
+   *       | expressionStatement
+   *       | functionSignature functionBody
+   */
+  Statement parseNonLabeledStatement() {
+    // TODO(brianwilkerson) Pass the comment and metadata on where appropriate.
+    CommentAndMetadata commentAndMetadata = parseCommentAndMetadata();
+    TokenType type = _currentToken.type;
+    if (type == TokenType.OPEN_CURLY_BRACKET) {
+      if (_tokenMatches(_peek(), TokenType.STRING)) {
+        Token afterString = skipStringLiteral(_currentToken.next);
+        if (afterString != null && afterString.type == TokenType.COLON) {
+          return astFactory.expressionStatement(
+              parseExpression2(), _expect(TokenType.SEMICOLON));
+        }
+      }
+      return parseBlock();
+    } else if (type == TokenType.KEYWORD &&
+        !_currentToken.keyword.isPseudoKeyword) {
+      Keyword keyword = _currentToken.keyword;
+      // TODO(jwren) compute some metrics to figure out a better order for this
+      // if-then sequence to optimize performance
+      if (keyword == Keyword.ASSERT) {
+        return parseAssertStatement();
+      } else if (keyword == Keyword.BREAK) {
+        return parseBreakStatement();
+      } else if (keyword == Keyword.CONTINUE) {
+        return parseContinueStatement();
+      } else if (keyword == Keyword.DO) {
+        return parseDoStatement();
+      } else if (keyword == Keyword.FOR) {
+        return parseForStatement();
+      } else if (keyword == Keyword.IF) {
+        return parseIfStatement();
+      } else if (keyword == Keyword.RETHROW) {
+        return astFactory.expressionStatement(
+            parseRethrowExpression(), _expect(TokenType.SEMICOLON));
+      } else if (keyword == Keyword.RETURN) {
+        return parseReturnStatement();
+      } else if (keyword == Keyword.SWITCH) {
+        return parseSwitchStatement();
+      } else if (keyword == Keyword.THROW) {
+        return astFactory.expressionStatement(
+            parseThrowExpression(), _expect(TokenType.SEMICOLON));
+      } else if (keyword == Keyword.TRY) {
+        return parseTryStatement();
+      } else if (keyword == Keyword.WHILE) {
+        return parseWhileStatement();
+      } else if (keyword == Keyword.VAR || keyword == Keyword.FINAL) {
+        return parseVariableDeclarationStatementAfterMetadata(
+            commentAndMetadata);
+      } else if (keyword == Keyword.VOID) {
+        TypeName returnType = astFactory.typeName(
+            astFactory.simpleIdentifier(getAndAdvance()), null);
+        Token next = _currentToken.next;
+        if (_matchesIdentifier() &&
+            next.matchesAny(const <TokenType>[
+              TokenType.OPEN_PAREN,
+              TokenType.OPEN_CURLY_BRACKET,
+              TokenType.FUNCTION,
+              TokenType.LT
+            ])) {
+          return _parseFunctionDeclarationStatementAfterReturnType(
+              commentAndMetadata, returnType);
+        } else {
+          //
+          // We have found an error of some kind. Try to recover.
+          //
+          if (_matchesIdentifier()) {
+            if (next.matchesAny(const <TokenType>[
+              TokenType.EQ,
+              TokenType.COMMA,
+              TokenType.SEMICOLON
+            ])) {
+              //
+              // We appear to have a variable declaration with a type of "void".
+              //
+              _reportErrorForNode(ParserErrorCode.VOID_VARIABLE, returnType);
+              return parseVariableDeclarationStatementAfterMetadata(
+                  commentAndMetadata);
+            }
+          } else if (_matches(TokenType.CLOSE_CURLY_BRACKET)) {
+            //
+            // We appear to have found an incomplete statement at the end of a
+            // block. Parse it as a variable declaration.
+            //
+            return _parseVariableDeclarationStatementAfterType(
+                commentAndMetadata, null, returnType);
+          }
+          _reportErrorForCurrentToken(ParserErrorCode.MISSING_STATEMENT);
+          // TODO(brianwilkerson) Recover from this error.
+          return astFactory
+              .emptyStatement(_createSyntheticToken(TokenType.SEMICOLON));
+        }
+      } else if (keyword == Keyword.CONST) {
+        Token next = _currentToken.next;
+        if (next.matchesAny(const <TokenType>[
+          TokenType.LT,
+          TokenType.OPEN_CURLY_BRACKET,
+          TokenType.OPEN_SQUARE_BRACKET,
+          TokenType.INDEX
+        ])) {
+          return astFactory.expressionStatement(
+              parseExpression2(), _expect(TokenType.SEMICOLON));
+        } else if (_tokenMatches(next, TokenType.IDENTIFIER)) {
+          Token afterType = skipTypeName(next);
+          if (afterType != null) {
+            if (_tokenMatches(afterType, TokenType.OPEN_PAREN) ||
+                (_tokenMatches(afterType, TokenType.PERIOD) &&
+                    _tokenMatches(afterType.next, TokenType.IDENTIFIER) &&
+                    _tokenMatches(afterType.next.next, TokenType.OPEN_PAREN))) {
+              return astFactory.expressionStatement(
+                  parseExpression2(), _expect(TokenType.SEMICOLON));
+            }
+          }
+        }
+        return parseVariableDeclarationStatementAfterMetadata(
+            commentAndMetadata);
+      } else if (keyword == Keyword.NEW ||
+          keyword == Keyword.TRUE ||
+          keyword == Keyword.FALSE ||
+          keyword == Keyword.NULL ||
+          keyword == Keyword.SUPER ||
+          keyword == Keyword.THIS) {
+        return astFactory.expressionStatement(
+            parseExpression2(), _expect(TokenType.SEMICOLON));
+      } else {
+        //
+        // We have found an error of some kind. Try to recover.
+        //
+        _reportErrorForCurrentToken(ParserErrorCode.MISSING_STATEMENT);
+        return astFactory
+            .emptyStatement(_createSyntheticToken(TokenType.SEMICOLON));
+      }
+    } else if (_inGenerator && _matchesString(_YIELD)) {
+      return parseYieldStatement();
+    } else if (_inAsync && _matchesString(_AWAIT)) {
+      if (_tokenMatchesKeyword(_peek(), Keyword.FOR)) {
+        return parseForStatement();
+      }
+      return astFactory.expressionStatement(
+          parseExpression2(), _expect(TokenType.SEMICOLON));
+    } else if (_matchesString(_AWAIT) &&
+        _tokenMatchesKeyword(_peek(), Keyword.FOR)) {
+      Token awaitToken = _currentToken;
+      Statement statement = parseForStatement();
+      if (statement is! ForStatement) {
+        _reportErrorForToken(
+            CompileTimeErrorCode.ASYNC_FOR_IN_WRONG_CONTEXT, awaitToken);
+      }
+      return statement;
+    } else if (type == TokenType.SEMICOLON) {
+      return parseEmptyStatement();
+    } else if (isInitializedVariableDeclaration()) {
+      return parseVariableDeclarationStatementAfterMetadata(commentAndMetadata);
+    } else if (isFunctionDeclaration()) {
+      return parseFunctionDeclarationStatement();
+    } else if (type == TokenType.CLOSE_CURLY_BRACKET) {
+      _reportErrorForCurrentToken(ParserErrorCode.MISSING_STATEMENT);
+      return astFactory
+          .emptyStatement(_createSyntheticToken(TokenType.SEMICOLON));
+    } else {
+      return astFactory.expressionStatement(
+          parseExpression2(), _expect(TokenType.SEMICOLON));
+    }
   }
 
   /**
@@ -3299,8 +4016,8 @@ class Parser {
    *       | metadata identifier
    */
   NormalFormalParameter parseNormalFormalParameter() {
-    CommentAndMetadata commentAndMetadata = _parseCommentAndMetadata();
-    FinalConstVarOrType holder = _parseFinalConstVarOrType(true);
+    CommentAndMetadata commentAndMetadata = parseCommentAndMetadata();
+    FinalConstVarOrType holder = parseFinalConstVarOrType(true);
     Token thisKeyword = null;
     Token period = null;
     if (_matchesKeyword(Keyword.THIS)) {
@@ -3310,21 +4027,26 @@ class Parser {
     SimpleIdentifier identifier = parseSimpleIdentifier();
     TypeParameterList typeParameters = _parseGenericMethodTypeParameters();
     if (_matches(TokenType.OPEN_PAREN)) {
-      FormalParameterList parameters = parseFormalParameterList();
+      FormalParameterList parameters = _parseFormalParameterListUnchecked();
       if (thisKeyword == null) {
         if (holder.keyword != null) {
           _reportErrorForToken(
               ParserErrorCode.FUNCTION_TYPED_PARAMETER_VAR, holder.keyword);
         }
-        return new FunctionTypedFormalParameter(
+        Token question = null;
+        if (enableNnbd && _matches(TokenType.QUESTION)) {
+          question = getAndAdvance();
+        }
+        return astFactory.functionTypedFormalParameter(
             commentAndMetadata.comment,
             commentAndMetadata.metadata,
             holder.type,
-            new SimpleIdentifier(identifier.token, isDeclaration: true),
+            astFactory.simpleIdentifier(identifier.token, isDeclaration: true),
             typeParameters,
-            parameters);
+            parameters,
+            question: question);
       } else {
-        return new FieldFormalParameter(
+        return astFactory.fieldFormalParameter(
             commentAndMetadata.comment,
             commentAndMetadata.metadata,
             holder.keyword,
@@ -3354,7 +4076,7 @@ class Parser {
       // TODO(brianwilkerson) If there are type parameters but no parameters,
       // should we create a synthetic empty parameter list here so we can
       // capture the type parameters?
-      return new FieldFormalParameter(
+      return astFactory.fieldFormalParameter(
           commentAndMetadata.comment,
           commentAndMetadata.metadata,
           holder.keyword,
@@ -3365,12 +4087,114 @@ class Parser {
           null,
           null);
     }
-    return new SimpleFormalParameter(
+    return astFactory.simpleFormalParameter(
         commentAndMetadata.comment,
         commentAndMetadata.metadata,
         holder.keyword,
         holder.type,
-        new SimpleIdentifier(identifier.token, isDeclaration: true));
+        astFactory.simpleIdentifier(identifier.token, isDeclaration: true));
+  }
+
+  /**
+   * Parse an operator declaration. The [commentAndMetadata] is the
+   * documentation comment and metadata to be associated with the declaration.
+   * The [externalKeyword] is the 'external' token. The [returnType] is the
+   * return type that has already been parsed, or `null` if there was no return
+   * type. Return the operator declaration that was parsed.
+   *
+   *     operatorDeclaration ::=
+   *         operatorSignature (';' | functionBody)
+   *
+   *     operatorSignature ::=
+   *         'external'? returnType? 'operator' operator formalParameterList
+   */
+  MethodDeclaration parseOperator(CommentAndMetadata commentAndMetadata,
+      Token externalKeyword, TypeName returnType) {
+    Token operatorKeyword;
+    if (_matchesKeyword(Keyword.OPERATOR)) {
+      operatorKeyword = getAndAdvance();
+    } else {
+      _reportErrorForToken(
+          ParserErrorCode.MISSING_KEYWORD_OPERATOR, _currentToken);
+      operatorKeyword = _createSyntheticKeyword(Keyword.OPERATOR);
+    }
+    return _parseOperatorAfterKeyword(
+        commentAndMetadata, externalKeyword, returnType, operatorKeyword);
+  }
+
+  /**
+   * Parse a part or part-of directive. The [commentAndMetadata] is the metadata
+   * to be associated with the directive. Return the part or part-of directive
+   * that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.PART`.
+   *
+   *     partDirective ::=
+   *         metadata 'part' stringLiteral ';'
+   *
+   *     partOfDirective ::=
+   *         metadata 'part' 'of' identifier ';'
+   */
+  Directive parsePartOrPartOfDirective(CommentAndMetadata commentAndMetadata) {
+    if (_tokenMatchesString(_peek(), _OF)) {
+      return _parsePartOfDirective(commentAndMetadata);
+    }
+    return _parsePartDirective(commentAndMetadata);
+  }
+
+  /**
+   * Parse a postfix expression. Return the postfix expression that was parsed.
+   *
+   *     postfixExpression ::=
+   *         assignableExpression postfixOperator
+   *       | primary selector*
+   *
+   *     selector ::=
+   *         assignableSelector
+   *       | argumentList
+   */
+  Expression parsePostfixExpression() {
+    Expression operand = parseAssignableExpression(true);
+    TokenType type = _currentToken.type;
+    if (type == TokenType.OPEN_SQUARE_BRACKET ||
+        type == TokenType.PERIOD ||
+        type == TokenType.QUESTION_PERIOD ||
+        type == TokenType.OPEN_PAREN ||
+        type == TokenType.LT ||
+        type == TokenType.INDEX) {
+      do {
+        if (_isLikelyArgumentList()) {
+          TypeArgumentList typeArguments = _parseOptionalTypeArguments();
+          ArgumentList argumentList = parseArgumentList();
+          Expression currentOperand = operand;
+          if (currentOperand is PropertyAccess) {
+            operand = astFactory.methodInvocation(
+                currentOperand.target,
+                currentOperand.operator,
+                currentOperand.propertyName,
+                typeArguments,
+                argumentList);
+          } else {
+            operand = astFactory.functionExpressionInvocation(
+                operand, typeArguments, argumentList);
+          }
+        } else {
+          operand = parseAssignableSelector(operand, true);
+        }
+        type = _currentToken.type;
+      } while (type == TokenType.OPEN_SQUARE_BRACKET ||
+          type == TokenType.PERIOD ||
+          type == TokenType.QUESTION_PERIOD ||
+          type == TokenType.OPEN_PAREN ||
+          type == TokenType.INDEX);
+      return operand;
+    }
+    if (!_currentToken.type.isIncrementOperator) {
+      return operand;
+    }
+    _ensureAssignable(operand);
+    Token operator = getAndAdvance();
+    return astFactory.postfixExpression(operand, operator);
   }
 
   /**
@@ -3381,13 +4205,242 @@ class Parser {
    *         identifier ('.' identifier)?
    */
   Identifier parsePrefixedIdentifier() {
-    SimpleIdentifier qualifier = parseSimpleIdentifier();
-    if (!_matches(TokenType.PERIOD) || _injectGenericCommentTypeList()) {
-      return qualifier;
+    return _parsePrefixedIdentifierAfterIdentifier(parseSimpleIdentifier());
+  }
+
+  /**
+   * Parse a primary expression. Return the primary expression that was parsed.
+   *
+   *     primary ::=
+   *         thisExpression
+   *       | 'super' unconditionalAssignableSelector
+   *       | functionExpression
+   *       | literal
+   *       | identifier
+   *       | newExpression
+   *       | constObjectExpression
+   *       | '(' expression ')'
+   *       | argumentDefinitionTest
+   *
+   *     literal ::=
+   *         nullLiteral
+   *       | booleanLiteral
+   *       | numericLiteral
+   *       | stringLiteral
+   *       | symbolLiteral
+   *       | mapLiteral
+   *       | listLiteral
+   */
+  Expression parsePrimaryExpression() {
+    if (_matchesIdentifier()) {
+      // TODO(brianwilkerson) The code below was an attempt to recover from an
+      // error case, but it needs to be applied as a recovery only after we
+      // know that parsing it as an identifier doesn't work. Leaving the code as
+      // a reminder of how to recover.
+//      if (isFunctionExpression(_peek())) {
+//        //
+//        // Function expressions were allowed to have names at one point, but this is now illegal.
+//        //
+//        reportError(ParserErrorCode.NAMED_FUNCTION_EXPRESSION, getAndAdvance());
+//        return parseFunctionExpression();
+//      }
+      return _parsePrefixedIdentifierUnchecked();
     }
-    Token period = getAndAdvance();
-    SimpleIdentifier qualified = parseSimpleIdentifier();
-    return new PrefixedIdentifier(qualifier, period, qualified);
+    TokenType type = _currentToken.type;
+    if (type == TokenType.STRING) {
+      return parseStringLiteral();
+    } else if (type == TokenType.INT) {
+      Token token = getAndAdvance();
+      int value = null;
+      try {
+        value = int.parse(token.lexeme);
+      } on FormatException {
+        // The invalid format should have been reported by the scanner.
+      }
+      return astFactory.integerLiteral(token, value);
+    }
+    Keyword keyword = _currentToken.keyword;
+    if (keyword == Keyword.NULL) {
+      return astFactory.nullLiteral(getAndAdvance());
+    } else if (keyword == Keyword.NEW) {
+      return parseNewExpression();
+    } else if (keyword == Keyword.THIS) {
+      return astFactory.thisExpression(getAndAdvance());
+    } else if (keyword == Keyword.SUPER) {
+      // TODO(paulberry): verify with Gilad that "super" must be followed by
+      // unconditionalAssignableSelector in this case.
+      return parseAssignableSelector(
+          astFactory.superExpression(getAndAdvance()), false,
+          allowConditional: false);
+    } else if (keyword == Keyword.FALSE) {
+      return astFactory.booleanLiteral(getAndAdvance(), false);
+    } else if (keyword == Keyword.TRUE) {
+      return astFactory.booleanLiteral(getAndAdvance(), true);
+    }
+    if (type == TokenType.DOUBLE) {
+      Token token = getAndAdvance();
+      double value = 0.0;
+      try {
+        value = double.parse(token.lexeme);
+      } on FormatException {
+        // The invalid format should have been reported by the scanner.
+      }
+      return astFactory.doubleLiteral(token, value);
+    } else if (type == TokenType.HEXADECIMAL) {
+      Token token = getAndAdvance();
+      int value = null;
+      try {
+        value = int.parse(token.lexeme.substring(2), radix: 16);
+      } on FormatException {
+        // The invalid format should have been reported by the scanner.
+      }
+      return astFactory.integerLiteral(token, value);
+    } else if (keyword == Keyword.CONST) {
+      return parseConstExpression();
+    } else if (type == TokenType.OPEN_PAREN) {
+      if (isFunctionExpression(_currentToken)) {
+        return parseFunctionExpression();
+      }
+      Token leftParenthesis = getAndAdvance();
+      bool wasInInitializer = _inInitializer;
+      _inInitializer = false;
+      try {
+        Expression expression = parseExpression2();
+        Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
+        return astFactory.parenthesizedExpression(
+            leftParenthesis, expression, rightParenthesis);
+      } finally {
+        _inInitializer = wasInInitializer;
+      }
+    } else if (type == TokenType.LT || _injectGenericCommentTypeList()) {
+      if (isFunctionExpression(currentToken)) {
+        return parseFunctionExpression();
+      }
+      return parseListOrMapLiteral(null);
+    } else if (type == TokenType.OPEN_CURLY_BRACKET) {
+      return parseMapLiteral(null, null);
+    } else if (type == TokenType.OPEN_SQUARE_BRACKET ||
+        type == TokenType.INDEX) {
+      return parseListLiteral(null, null);
+    } else if (type == TokenType.QUESTION &&
+        _tokenMatches(_peek(), TokenType.IDENTIFIER)) {
+      _reportErrorForCurrentToken(
+          ParserErrorCode.UNEXPECTED_TOKEN, [_currentToken.lexeme]);
+      _advance();
+      return parsePrimaryExpression();
+    } else if (keyword == Keyword.VOID) {
+      //
+      // Recover from having a return type of "void" where a return type is not
+      // expected.
+      //
+      // TODO(brianwilkerson) Improve this error message.
+      _reportErrorForCurrentToken(
+          ParserErrorCode.UNEXPECTED_TOKEN, [_currentToken.lexeme]);
+      _advance();
+      return parsePrimaryExpression();
+    } else if (type == TokenType.HASH) {
+      return parseSymbolLiteral();
+    } else {
+      _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
+      return createSyntheticIdentifier();
+    }
+  }
+
+  /**
+   * Parse a redirecting constructor invocation. The flag [hasPeriod] should be
+   * `true` if the `this` is followed by a period. Return the redirecting
+   * constructor invocation that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.THIS`.
+   *
+   *     redirectingConstructorInvocation ::=
+   *         'this' ('.' identifier)? arguments
+   */
+  RedirectingConstructorInvocation parseRedirectingConstructorInvocation(
+      bool hasPeriod) {
+    Token keyword = getAndAdvance();
+    Token period = null;
+    SimpleIdentifier constructorName = null;
+    if (hasPeriod) {
+      period = getAndAdvance();
+      if (_matchesIdentifier()) {
+        constructorName = _parseSimpleIdentifierUnchecked(isDeclaration: false);
+      } else {
+        _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
+        constructorName = createSyntheticIdentifier(isDeclaration: false);
+        _advance();
+      }
+    }
+    ArgumentList argumentList = _parseArgumentListChecked();
+    return astFactory.redirectingConstructorInvocation(
+        keyword, period, constructorName, argumentList);
+  }
+
+  /**
+   * Parse a relational expression. Return the relational expression that was
+   * parsed.
+   *
+   *     relationalExpression ::=
+   *         bitwiseOrExpression ('is' '!'? type | 'as' type | relationalOperator bitwiseOrExpression)?
+   *       | 'super' relationalOperator bitwiseOrExpression
+   */
+  Expression parseRelationalExpression() {
+    if (_currentToken.keyword == Keyword.SUPER &&
+        _currentToken.next.type.isRelationalOperator) {
+      Expression expression = astFactory.superExpression(getAndAdvance());
+      Token operator = getAndAdvance();
+      return astFactory.binaryExpression(
+          expression, operator, parseBitwiseOrExpression());
+    }
+    Expression expression = parseBitwiseOrExpression();
+    Keyword keyword = _currentToken.keyword;
+    if (keyword == Keyword.AS) {
+      Token asOperator = getAndAdvance();
+      return astFactory.asExpression(
+          expression, asOperator, parseTypeName(true));
+    } else if (keyword == Keyword.IS) {
+      Token isOperator = getAndAdvance();
+      Token notOperator = null;
+      if (_matches(TokenType.BANG)) {
+        notOperator = getAndAdvance();
+      }
+      return astFactory.isExpression(
+          expression, isOperator, notOperator, parseTypeName(true));
+    } else if (_currentToken.type.isRelationalOperator) {
+      Token operator = getAndAdvance();
+      return astFactory.binaryExpression(
+          expression, operator, parseBitwiseOrExpression());
+    }
+    return expression;
+  }
+
+  /**
+   * Parse a rethrow expression. Return the rethrow expression that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.RETHROW`.
+   *
+   *     rethrowExpression ::=
+   *         'rethrow'
+   */
+  Expression parseRethrowExpression() =>
+      astFactory.rethrowExpression(getAndAdvance());
+
+  /**
+   * Parse a return statement. Return the return statement that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.RETURN`.
+   *
+   *     returnStatement ::=
+   *         'return' expression? ';'
+   */
+  Statement parseReturnStatement() {
+    Token returnKeyword = getAndAdvance();
+    if (_matches(TokenType.SEMICOLON)) {
+      return astFactory.returnStatement(returnKeyword, null, getAndAdvance());
+    }
+    Expression expression = parseExpression2();
+    Token semicolon = _expect(TokenType.SEMICOLON);
+    return astFactory.returnStatement(returnKeyword, expression, semicolon);
   }
 
   /**
@@ -3398,11 +4451,77 @@ class Parser {
    *       | type
    */
   TypeName parseReturnType() {
-    if (_matchesKeyword(Keyword.VOID)) {
-      return new TypeName(new SimpleIdentifier(getAndAdvance()), null);
+    if (_currentToken.keyword == Keyword.VOID) {
+      return astFactory.typeName(
+          astFactory.simpleIdentifier(getAndAdvance()), null);
     } else {
-      return parseTypeName();
+      return parseTypeName(false);
     }
+  }
+
+  /**
+   * Parse a setter. The [commentAndMetadata] is the documentation comment and
+   * metadata to be associated with the declaration. The [externalKeyword] is
+   * the 'external' token. The [staticKeyword] is the static keyword, or `null`
+   * if the setter is not static. The [returnType] is the return type that has
+   * already been parsed, or `null` if there was no return type. Return the
+   * setter that was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.SET`.
+   *
+   *     setter ::=
+   *         setterSignature functionBody?
+   *
+   *     setterSignature ::=
+   *         'external'? 'static'? returnType? 'set' identifier formalParameterList
+   */
+  MethodDeclaration parseSetter(CommentAndMetadata commentAndMetadata,
+      Token externalKeyword, Token staticKeyword, TypeName returnType) {
+    Token propertyKeyword = getAndAdvance();
+    SimpleIdentifier name = parseSimpleIdentifier(isDeclaration: true);
+    FormalParameterList parameters = parseFormalParameterList();
+    _validateFormalParameterList(parameters);
+    FunctionBody body = parseFunctionBody(
+        externalKeyword != null || staticKeyword == null,
+        ParserErrorCode.STATIC_SETTER_WITHOUT_BODY,
+        false);
+    if (externalKeyword != null && body is! EmptyFunctionBody) {
+      _reportErrorForCurrentToken(ParserErrorCode.EXTERNAL_SETTER_WITH_BODY);
+    }
+    return astFactory.methodDeclaration(
+        commentAndMetadata.comment,
+        commentAndMetadata.metadata,
+        externalKeyword,
+        staticKeyword,
+        returnType,
+        propertyKeyword,
+        null,
+        name,
+        null,
+        parameters,
+        body);
+  }
+
+  /**
+   * Parse a shift expression. Return the shift expression that was parsed.
+   *
+   *     shiftExpression ::=
+   *         additiveExpression (shiftOperator additiveExpression)*
+   *       | 'super' (shiftOperator additiveExpression)+
+   */
+  Expression parseShiftExpression() {
+    Expression expression;
+    if (_currentToken.keyword == Keyword.SUPER &&
+        _currentToken.next.type.isShiftOperator) {
+      expression = astFactory.superExpression(getAndAdvance());
+    } else {
+      expression = parseAdditiveExpression();
+    }
+    while (_currentToken.type.isShiftOperator) {
+      expression = astFactory.binaryExpression(
+          expression, getAndAdvance(), parseAdditiveExpression());
+    }
+    return expression;
   }
 
   /**
@@ -3413,17 +4532,10 @@ class Parser {
    */
   SimpleIdentifier parseSimpleIdentifier({bool isDeclaration: false}) {
     if (_matchesIdentifier()) {
-      String lexeme = _currentToken.lexeme;
-      if ((_inAsync || _inGenerator) &&
-          (lexeme == 'async' || lexeme == 'await' || lexeme == 'yield')) {
-        _reportErrorForCurrentToken(
-            ParserErrorCode.ASYNC_KEYWORD_USED_AS_IDENTIFIER);
-      }
-      return new SimpleIdentifier(getAndAdvance(),
-          isDeclaration: isDeclaration);
+      return _parseSimpleIdentifierUnchecked(isDeclaration: isDeclaration);
     }
     _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
-    return _createSyntheticIdentifier(isDeclaration: isDeclaration);
+    return createSyntheticIdentifier(isDeclaration: isDeclaration);
   }
 
   /**
@@ -3444,7 +4556,7 @@ class Parser {
    */
   Statement parseStatement2() {
     List<Label> labels = null;
-    while (_matchesIdentifier() && _tokenMatches(_peek(), TokenType.COLON)) {
+    while (_matchesIdentifier() && _currentToken.next.type == TokenType.COLON) {
       Label label = parseLabel(isDeclaration: true);
       if (labels == null) {
         labels = <Label>[label];
@@ -3452,11 +4564,11 @@ class Parser {
         labels.add(label);
       }
     }
-    Statement statement = _parseNonLabeledStatement();
+    Statement statement = parseNonLabeledStatement();
     if (labels == null) {
       return statement;
     }
-    return new LabeledStatement(labels, statement);
+    return astFactory.labeledStatement(labels, statement);
   }
 
   /**
@@ -3477,30 +4589,323 @@ class Parser {
    *       | SINGLE_LINE_STRING+
    */
   StringLiteral parseStringLiteral() {
-    List<StringLiteral> strings = new List<StringLiteral>();
-    while (_matches(TokenType.STRING)) {
-      Token string = getAndAdvance();
-      if (_matches(TokenType.STRING_INTERPOLATION_EXPRESSION) ||
-          _matches(TokenType.STRING_INTERPOLATION_IDENTIFIER)) {
-        strings.add(_parseStringInterpolation(string));
-      } else {
-        strings.add(new SimpleStringLiteral(
-            string, _computeStringValue(string.lexeme, true, true)));
+    if (_matches(TokenType.STRING)) {
+      return _parseStringLiteralUnchecked();
+    }
+    _reportErrorForCurrentToken(ParserErrorCode.EXPECTED_STRING_LITERAL);
+    return createSyntheticStringLiteral();
+  }
+
+  /**
+   * Parse a super constructor invocation. Return the super constructor
+   * invocation that was parsed.
+   *
+   * This method assumes that the current token matches [Keyword.SUPER].
+   *
+   *     superConstructorInvocation ::=
+   *         'super' ('.' identifier)? arguments
+   */
+  SuperConstructorInvocation parseSuperConstructorInvocation() {
+    Token keyword = getAndAdvance();
+    Token period = null;
+    SimpleIdentifier constructorName = null;
+    if (_matches(TokenType.PERIOD)) {
+      period = getAndAdvance();
+      constructorName = parseSimpleIdentifier();
+    }
+    ArgumentList argumentList = _parseArgumentListChecked();
+    return astFactory.superConstructorInvocation(
+        keyword, period, constructorName, argumentList);
+  }
+
+  /**
+   * Parse a switch statement. Return the switch statement that was parsed.
+   *
+   *     switchStatement ::=
+   *         'switch' '(' expression ')' '{' switchCase* defaultCase? '}'
+   *
+   *     switchCase ::=
+   *         label* ('case' expression ':') statements
+   *
+   *     defaultCase ::=
+   *         label* 'default' ':' statements
+   */
+  SwitchStatement parseSwitchStatement() {
+    bool wasInSwitch = _inSwitch;
+    _inSwitch = true;
+    try {
+      HashSet<String> definedLabels = new HashSet<String>();
+      Token keyword = _expectKeyword(Keyword.SWITCH);
+      Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
+      Expression expression = parseExpression2();
+      Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
+      Token leftBracket = _expect(TokenType.OPEN_CURLY_BRACKET);
+      Token defaultKeyword = null;
+      List<SwitchMember> members = <SwitchMember>[];
+      TokenType type = _currentToken.type;
+      while (type != TokenType.EOF && type != TokenType.CLOSE_CURLY_BRACKET) {
+        List<Label> labels = <Label>[];
+        while (
+            _matchesIdentifier() && _tokenMatches(_peek(), TokenType.COLON)) {
+          SimpleIdentifier identifier =
+              _parseSimpleIdentifierUnchecked(isDeclaration: true);
+          String label = identifier.token.lexeme;
+          if (definedLabels.contains(label)) {
+            _reportErrorForToken(
+                ParserErrorCode.DUPLICATE_LABEL_IN_SWITCH_STATEMENT,
+                identifier.token,
+                [label]);
+          } else {
+            definedLabels.add(label);
+          }
+          Token colon = getAndAdvance();
+          labels.add(astFactory.label(identifier, colon));
+        }
+        Keyword keyword = _currentToken.keyword;
+        if (keyword == Keyword.CASE) {
+          Token caseKeyword = getAndAdvance();
+          Expression caseExpression = parseExpression2();
+          Token colon = _expect(TokenType.COLON);
+          members.add(astFactory.switchCase(labels, caseKeyword, caseExpression,
+              colon, _parseStatementList()));
+          if (defaultKeyword != null) {
+            _reportErrorForToken(
+                ParserErrorCode.SWITCH_HAS_CASE_AFTER_DEFAULT_CASE,
+                caseKeyword);
+          }
+        } else if (keyword == Keyword.DEFAULT) {
+          if (defaultKeyword != null) {
+            _reportErrorForToken(
+                ParserErrorCode.SWITCH_HAS_MULTIPLE_DEFAULT_CASES, _peek());
+          }
+          defaultKeyword = getAndAdvance();
+          Token colon = _expect(TokenType.COLON);
+          members.add(astFactory.switchDefault(
+              labels, defaultKeyword, colon, _parseStatementList()));
+        } else {
+          // We need to advance, otherwise we could end up in an infinite loop,
+          // but this could be a lot smarter about recovering from the error.
+          _reportErrorForCurrentToken(ParserErrorCode.EXPECTED_CASE_OR_DEFAULT);
+          bool atEndOrNextMember() {
+            TokenType type = _currentToken.type;
+            if (type == TokenType.EOF ||
+                type == TokenType.CLOSE_CURLY_BRACKET) {
+              return true;
+            }
+            Keyword keyword = _currentToken.keyword;
+            return keyword == Keyword.CASE || keyword == Keyword.DEFAULT;
+          }
+
+          while (!atEndOrNextMember()) {
+            _advance();
+          }
+        }
+        type = _currentToken.type;
+      }
+      Token rightBracket = _expect(TokenType.CLOSE_CURLY_BRACKET);
+      return astFactory.switchStatement(keyword, leftParenthesis, expression,
+          rightParenthesis, leftBracket, members, rightBracket);
+    } finally {
+      _inSwitch = wasInSwitch;
+    }
+  }
+
+  /**
+   * Parse a symbol literal. Return the symbol literal that was parsed.
+   *
+   * This method assumes that the current token matches [TokenType.HASH].
+   *
+   *     symbolLiteral ::=
+   *         '#' identifier ('.' identifier)*
+   */
+  SymbolLiteral parseSymbolLiteral() {
+    Token poundSign = getAndAdvance();
+    List<Token> components = <Token>[];
+    if (_matchesIdentifier()) {
+      components.add(getAndAdvance());
+      while (_optional(TokenType.PERIOD)) {
+        if (_matchesIdentifier()) {
+          components.add(getAndAdvance());
+        } else {
+          _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
+          components.add(_createSyntheticToken(TokenType.IDENTIFIER));
+          break;
+        }
+      }
+    } else if (_currentToken.isOperator) {
+      components.add(getAndAdvance());
+    } else if (_matchesKeyword(Keyword.VOID)) {
+      components.add(getAndAdvance());
+    } else {
+      _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
+      components.add(_createSyntheticToken(TokenType.IDENTIFIER));
+    }
+    return astFactory.symbolLiteral(poundSign, components);
+  }
+
+  /**
+   * Parse a throw expression. Return the throw expression that was parsed.
+   *
+   * This method assumes that the current token matches [Keyword.THROW].
+   *
+   *     throwExpression ::=
+   *         'throw' expression
+   */
+  Expression parseThrowExpression() {
+    Token keyword = getAndAdvance();
+    TokenType type = _currentToken.type;
+    if (type == TokenType.SEMICOLON || type == TokenType.CLOSE_PAREN) {
+      _reportErrorForToken(
+          ParserErrorCode.MISSING_EXPRESSION_IN_THROW, _currentToken);
+      return astFactory.throwExpression(keyword, createSyntheticIdentifier());
+    }
+    Expression expression = parseExpression2();
+    return astFactory.throwExpression(keyword, expression);
+  }
+
+  /**
+   * Parse a throw expression. Return the throw expression that was parsed.
+   *
+   * This method assumes that the current token matches [Keyword.THROW].
+   *
+   *     throwExpressionWithoutCascade ::=
+   *         'throw' expressionWithoutCascade
+   */
+  Expression parseThrowExpressionWithoutCascade() {
+    Token keyword = getAndAdvance();
+    TokenType type = _currentToken.type;
+    if (type == TokenType.SEMICOLON || type == TokenType.CLOSE_PAREN) {
+      _reportErrorForToken(
+          ParserErrorCode.MISSING_EXPRESSION_IN_THROW, _currentToken);
+      return astFactory.throwExpression(keyword, createSyntheticIdentifier());
+    }
+    Expression expression = parseExpressionWithoutCascade();
+    return astFactory.throwExpression(keyword, expression);
+  }
+
+  /**
+   * Parse a try statement. Return the try statement that was parsed.
+   *
+   * This method assumes that the current token matches [Keyword.TRY].
+   *
+   *     tryStatement ::=
+   *         'try' block (onPart+ finallyPart? | finallyPart)
+   *
+   *     onPart ::=
+   *         catchPart block
+   *       | 'on' type catchPart? block
+   *
+   *     catchPart ::=
+   *         'catch' '(' identifier (',' identifier)? ')'
+   *
+   *     finallyPart ::=
+   *         'finally' block
+   */
+  Statement parseTryStatement() {
+    Token tryKeyword = getAndAdvance();
+    Block body = _parseBlockChecked();
+    List<CatchClause> catchClauses = <CatchClause>[];
+    Block finallyClause = null;
+    while (_matchesString(_ON) || _matchesKeyword(Keyword.CATCH)) {
+      Token onKeyword = null;
+      TypeName exceptionType = null;
+      if (_matchesString(_ON)) {
+        onKeyword = getAndAdvance();
+        exceptionType = parseTypeName(false);
+      }
+      Token catchKeyword = null;
+      Token leftParenthesis = null;
+      SimpleIdentifier exceptionParameter = null;
+      Token comma = null;
+      SimpleIdentifier stackTraceParameter = null;
+      Token rightParenthesis = null;
+      if (_matchesKeyword(Keyword.CATCH)) {
+        catchKeyword = getAndAdvance();
+        leftParenthesis = _expect(TokenType.OPEN_PAREN);
+        exceptionParameter = parseSimpleIdentifier(isDeclaration: true);
+        if (_matches(TokenType.COMMA)) {
+          comma = getAndAdvance();
+          stackTraceParameter = parseSimpleIdentifier(isDeclaration: true);
+        }
+        rightParenthesis = _expect(TokenType.CLOSE_PAREN);
+      }
+      Block catchBody = _parseBlockChecked();
+      catchClauses.add(astFactory.catchClause(
+          onKeyword,
+          exceptionType,
+          catchKeyword,
+          leftParenthesis,
+          exceptionParameter,
+          comma,
+          stackTraceParameter,
+          rightParenthesis,
+          catchBody));
+    }
+    Token finallyKeyword = null;
+    if (_matchesKeyword(Keyword.FINALLY)) {
+      finallyKeyword = getAndAdvance();
+      finallyClause = _parseBlockChecked();
+    } else if (catchClauses.isEmpty) {
+      _reportErrorForCurrentToken(ParserErrorCode.MISSING_CATCH_OR_FINALLY);
+    }
+    return astFactory.tryStatement(
+        tryKeyword, body, catchClauses, finallyKeyword, finallyClause);
+  }
+
+  /**
+   * Parse a type alias. The [commentAndMetadata] is the metadata to be
+   * associated with the member. Return the type alias that was parsed.
+   *
+   * This method assumes that the current token matches [Keyword.TYPEDEF].
+   *
+   *     typeAlias ::=
+   *         'typedef' typeAliasBody
+   *
+   *     typeAliasBody ::=
+   *         classTypeAlias
+   *       | functionTypeAlias
+   *
+   *     classTypeAlias ::=
+   *         identifier typeParameters? '=' 'abstract'? mixinApplication
+   *
+   *     mixinApplication ::=
+   *         qualified withClause implementsClause? ';'
+   *
+   *     functionTypeAlias ::=
+   *         functionPrefix typeParameterList? formalParameterList ';'
+   *
+   *     functionPrefix ::=
+   *         returnType? name
+   */
+  TypeAlias parseTypeAlias(CommentAndMetadata commentAndMetadata) {
+    Token keyword = getAndAdvance();
+    if (_matchesIdentifier()) {
+      Token next = _peek();
+      if (_tokenMatches(next, TokenType.LT)) {
+        next = _skipTypeParameterList(next);
+        if (next != null && _tokenMatches(next, TokenType.EQ)) {
+          TypeAlias typeAlias =
+              parseClassTypeAlias(commentAndMetadata, null, keyword);
+          _reportErrorForToken(
+              ParserErrorCode.DEPRECATED_CLASS_TYPE_ALIAS, keyword);
+          return typeAlias;
+        }
+      } else if (_tokenMatches(next, TokenType.EQ)) {
+        TypeAlias typeAlias =
+            parseClassTypeAlias(commentAndMetadata, null, keyword);
+        _reportErrorForToken(
+            ParserErrorCode.DEPRECATED_CLASS_TYPE_ALIAS, keyword);
+        return typeAlias;
       }
     }
-    if (strings.length < 1) {
-      _reportErrorForCurrentToken(ParserErrorCode.EXPECTED_STRING_LITERAL);
-      return _createSyntheticStringLiteral();
-    } else if (strings.length == 1) {
-      return strings[0];
-    } else {
-      return new AdjacentStrings(strings);
-    }
+    return _parseFunctionTypeAlias(commentAndMetadata, keyword);
   }
 
   /**
    * Parse a list of type arguments. Return the type argument list that was
    * parsed.
+   *
+   * This method assumes that the current token matches `TokenType.LT`.
    *
    *     typeArguments ::=
    *         '<' typeList '>'
@@ -3509,14 +4914,13 @@ class Parser {
    *         type (',' type)*
    */
   TypeArgumentList parseTypeArgumentList() {
-    Token leftBracket = _expect(TokenType.LT);
-    List<TypeName> arguments = new List<TypeName>();
-    arguments.add(parseTypeName());
+    Token leftBracket = getAndAdvance();
+    List<TypeName> arguments = <TypeName>[parseTypeName(false)];
     while (_optional(TokenType.COMMA)) {
-      arguments.add(parseTypeName());
+      arguments.add(parseTypeName(false));
     }
     Token rightBracket = _expectGt();
-    return new TypeArgumentList(leftBracket, arguments, rightBracket);
+    return astFactory.typeArgumentList(leftBracket, arguments, rightBracket);
   }
 
   /**
@@ -3525,14 +4929,14 @@ class Parser {
    *     type ::=
    *         qualified typeArguments?
    */
-  TypeName parseTypeName() {
-    TypeName realType = _parseTypeName();
+  TypeName parseTypeName(bool inExpression) {
+    TypeName realType = _parseTypeName(inExpression);
     // If this is followed by a generic method type comment, allow the comment
     // type to replace the real type name.
     // TODO(jmesserly): this feels like a big hammer. Can we restrict it to
     // only work inside generic methods?
-    TypeName typeComment = _parseOptionalTypeNameComment();
-    return typeComment ?? realType;
+    TypeName typeFromComment = _parseOptionalTypeNameComment();
+    return typeFromComment ?? realType;
   }
 
   /**
@@ -3542,15 +4946,19 @@ class Parser {
    *         metadata name ('extends' bound)?
    */
   TypeParameter parseTypeParameter() {
-    CommentAndMetadata commentAndMetadata = _parseCommentAndMetadata();
+    CommentAndMetadata commentAndMetadata = parseCommentAndMetadata();
     SimpleIdentifier name = parseSimpleIdentifier(isDeclaration: true);
+    if (_matches(TokenType.QUESTION)) {
+      _reportErrorForCurrentToken(ParserErrorCode.NULLABLE_TYPE_PARAMETER);
+      _advance();
+    }
     if (_matchesKeyword(Keyword.EXTENDS)) {
       Token keyword = getAndAdvance();
-      TypeName bound = parseTypeName();
-      return new TypeParameter(commentAndMetadata.comment,
+      TypeName bound = parseTypeName(false);
+      return astFactory.typeParameter(commentAndMetadata.comment,
           commentAndMetadata.metadata, name, keyword, bound);
     }
-    return new TypeParameter(commentAndMetadata.comment,
+    return astFactory.typeParameter(commentAndMetadata.comment,
         commentAndMetadata.metadata, name, null, null);
   }
 
@@ -3558,34 +4966,420 @@ class Parser {
    * Parse a list of type parameters. Return the list of type parameters that
    * were parsed.
    *
+   * This method assumes that the current token matches `TokenType.LT`.
+   *
    *     typeParameterList ::=
    *         '<' typeParameter (',' typeParameter)* '>'
    */
   TypeParameterList parseTypeParameterList() {
-    Token leftBracket = _expect(TokenType.LT);
-    List<TypeParameter> typeParameters = new List<TypeParameter>();
-    typeParameters.add(parseTypeParameter());
+    Token leftBracket = getAndAdvance();
+    List<TypeParameter> typeParameters = <TypeParameter>[parseTypeParameter()];
     while (_optional(TokenType.COMMA)) {
       typeParameters.add(parseTypeParameter());
     }
     Token rightBracket = _expectGt();
-    return new TypeParameterList(leftBracket, typeParameters, rightBracket);
+    return astFactory.typeParameterList(
+        leftBracket, typeParameters, rightBracket);
+  }
+
+  /**
+   * Parse a unary expression. Return the unary expression that was parsed.
+   *
+   *     unaryExpression ::=
+   *         prefixOperator unaryExpression
+   *       | awaitExpression
+   *       | postfixExpression
+   *       | unaryOperator 'super'
+   *       | '-' 'super'
+   *       | incrementOperator assignableExpression
+   */
+  Expression parseUnaryExpression() {
+    TokenType type = _currentToken.type;
+    if (type == TokenType.MINUS ||
+        type == TokenType.BANG ||
+        type == TokenType.TILDE) {
+      Token operator = getAndAdvance();
+      if (_matchesKeyword(Keyword.SUPER)) {
+        TokenType nextType = _peek().type;
+        if (nextType == TokenType.OPEN_SQUARE_BRACKET ||
+            nextType == TokenType.PERIOD) {
+          //     "prefixOperator unaryExpression"
+          // --> "prefixOperator postfixExpression"
+          // --> "prefixOperator primary                    selector*"
+          // --> "prefixOperator 'super' assignableSelector selector*"
+          return astFactory.prefixExpression(operator, parseUnaryExpression());
+        }
+        return astFactory.prefixExpression(
+            operator, astFactory.superExpression(getAndAdvance()));
+      }
+      return astFactory.prefixExpression(operator, parseUnaryExpression());
+    } else if (_currentToken.type.isIncrementOperator) {
+      Token operator = getAndAdvance();
+      if (_matchesKeyword(Keyword.SUPER)) {
+        TokenType nextType = _peek().type;
+        if (nextType == TokenType.OPEN_SQUARE_BRACKET ||
+            nextType == TokenType.PERIOD) {
+          // --> "prefixOperator 'super' assignableSelector selector*"
+          return astFactory.prefixExpression(operator, parseUnaryExpression());
+        }
+        //
+        // Even though it is not valid to use an incrementing operator
+        // ('++' or '--') before 'super', we can (and therefore must) interpret
+        // "--super" as semantically equivalent to "-(-super)". Unfortunately,
+        // we cannot do the same for "++super" because "+super" is also not
+        // valid.
+        //
+        if (type == TokenType.MINUS_MINUS) {
+          Token firstOperator = _createToken(operator, TokenType.MINUS);
+          Token secondOperator =
+              new Token(TokenType.MINUS, operator.offset + 1);
+          secondOperator.setNext(_currentToken);
+          firstOperator.setNext(secondOperator);
+          operator.previous.setNext(firstOperator);
+          return astFactory.prefixExpression(
+              firstOperator,
+              astFactory.prefixExpression(
+                  secondOperator, astFactory.superExpression(getAndAdvance())));
+        }
+        // Invalid operator before 'super'
+        _reportErrorForCurrentToken(
+            ParserErrorCode.INVALID_OPERATOR_FOR_SUPER, [operator.lexeme]);
+        return astFactory.prefixExpression(
+            operator, astFactory.superExpression(getAndAdvance()));
+      }
+      return astFactory.prefixExpression(
+          operator, _parseAssignableExpressionNotStartingWithSuper(false));
+    } else if (type == TokenType.PLUS) {
+      _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
+      return createSyntheticIdentifier();
+    } else if (_inAsync && _matchesString(_AWAIT)) {
+      return parseAwaitExpression();
+    }
+    return parsePostfixExpression();
+  }
+
+  /**
+   * Parse a variable declaration. Return the variable declaration that was
+   * parsed.
+   *
+   *     variableDeclaration ::=
+   *         identifier ('=' expression)?
+   */
+  VariableDeclaration parseVariableDeclaration() {
+    // TODO(paulberry): prior to the fix for bug 23204, we permitted
+    // annotations before variable declarations (e.g. "String @deprecated s;").
+    // Although such constructions are prohibited by the spec, we may want to
+    // consider handling them anyway to allow for better parser recovery in the
+    // event that the user erroneously tries to use them.  However, as a
+    // counterargument, this would likely degrade parser recovery in the event
+    // of a construct like "class C { int @deprecated foo() {} }" (i.e. the
+    // user is in the middle of inserting "int bar;" prior to
+    // "@deprecated foo() {}").
+    SimpleIdentifier name = parseSimpleIdentifier(isDeclaration: true);
+    Token equals = null;
+    Expression initializer = null;
+    if (_matches(TokenType.EQ)) {
+      equals = getAndAdvance();
+      initializer = parseExpression2();
+    }
+    return astFactory.variableDeclaration(name, equals, initializer);
+  }
+
+  /**
+   * Parse a variable declaration list. The [commentAndMetadata] is the metadata
+   * to be associated with the variable declaration list. Return the variable
+   * declaration list that was parsed.
+   *
+   *     variableDeclarationList ::=
+   *         finalConstVarOrType variableDeclaration (',' variableDeclaration)*
+   */
+  VariableDeclarationList parseVariableDeclarationListAfterMetadata(
+      CommentAndMetadata commentAndMetadata) {
+    FinalConstVarOrType holder = parseFinalConstVarOrType(false);
+    return parseVariableDeclarationListAfterType(
+        commentAndMetadata, holder.keyword, holder.type);
+  }
+
+  /**
+   * Parse a variable declaration list. The [commentAndMetadata] is the metadata
+   * to be associated with the variable declaration list, or `null` if there is
+   * no attempt at parsing the comment and metadata. The [keyword] is the token
+   * representing the 'final', 'const' or 'var' keyword, or `null` if there is
+   * no keyword. The [type] is the type of the variables in the list. Return the
+   * variable declaration list that was parsed.
+   *
+   *     variableDeclarationList ::=
+   *         finalConstVarOrType variableDeclaration (',' variableDeclaration)*
+   */
+  VariableDeclarationList parseVariableDeclarationListAfterType(
+      CommentAndMetadata commentAndMetadata, Token keyword, TypeName type) {
+    if (type != null &&
+        keyword != null &&
+        _tokenMatchesKeyword(keyword, Keyword.VAR)) {
+      _reportErrorForToken(ParserErrorCode.VAR_AND_TYPE, keyword);
+    }
+    List<VariableDeclaration> variables = <VariableDeclaration>[
+      parseVariableDeclaration()
+    ];
+    while (_optional(TokenType.COMMA)) {
+      variables.add(parseVariableDeclaration());
+    }
+    return astFactory.variableDeclarationList(commentAndMetadata?.comment,
+        commentAndMetadata?.metadata, keyword, type, variables);
+  }
+
+  /**
+   * Parse a variable declaration statement. The [commentAndMetadata] is the
+   * metadata to be associated with the variable declaration statement, or
+   * `null` if there is no attempt at parsing the comment and metadata. Return
+   * the variable declaration statement that was parsed.
+   *
+   *     variableDeclarationStatement ::=
+   *         variableDeclarationList ';'
+   */
+  VariableDeclarationStatement parseVariableDeclarationStatementAfterMetadata(
+      CommentAndMetadata commentAndMetadata) {
+    //    Token startToken = currentToken;
+    VariableDeclarationList variableList =
+        parseVariableDeclarationListAfterMetadata(commentAndMetadata);
+//        if (!matches(TokenType.SEMICOLON)) {
+//          if (matches(startToken, Keyword.VAR) && isTypedIdentifier(startToken.getNext())) {
+//            // TODO(brianwilkerson) This appears to be of the form "var type variable". We should do
+//            // a better job of recovering in this case.
+//          }
+//        }
+    Token semicolon = _expect(TokenType.SEMICOLON);
+    return astFactory.variableDeclarationStatement(variableList, semicolon);
+  }
+
+  /**
+   * Parse a while statement. Return the while statement that was parsed.
+   *
+   * This method assumes that the current token matches [Keyword.WHILE].
+   *
+   *     whileStatement ::=
+   *         'while' '(' expression ')' statement
+   */
+  Statement parseWhileStatement() {
+    bool wasInLoop = _inLoop;
+    _inLoop = true;
+    try {
+      Token keyword = getAndAdvance();
+      Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
+      Expression condition = parseExpression2();
+      Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
+      Statement body = parseStatement2();
+      return astFactory.whileStatement(
+          keyword, leftParenthesis, condition, rightParenthesis, body);
+    } finally {
+      _inLoop = wasInLoop;
+    }
   }
 
   /**
    * Parse a with clause. Return the with clause that was parsed.
    *
+   * This method assumes that the current token matches `Keyword.WITH`.
+   *
    *     withClause ::=
    *         'with' typeName (',' typeName)*
    */
   WithClause parseWithClause() {
-    Token with2 = _expectKeyword(Keyword.WITH);
-    List<TypeName> types = new List<TypeName>();
-    types.add(parseTypeName());
-    while (_optional(TokenType.COMMA)) {
-      types.add(parseTypeName());
+    Token withKeyword = getAndAdvance();
+    List<TypeName> types = <TypeName>[];
+    do {
+      TypeName typeName = parseTypeName(false);
+      _mustNotBeNullable(typeName, ParserErrorCode.NULLABLE_TYPE_IN_WITH);
+      types.add(typeName);
+    } while (_optional(TokenType.COMMA));
+    return astFactory.withClause(withKeyword, types);
+  }
+
+  /**
+   * Parse a yield statement. Return the yield statement that was parsed.
+   *
+   * This method assumes that the current token matches [Keyword.YIELD].
+   *
+   *     yieldStatement ::=
+   *         'yield' '*'? expression ';'
+   */
+  YieldStatement parseYieldStatement() {
+    Token yieldToken = getAndAdvance();
+    Token star = null;
+    if (_matches(TokenType.STAR)) {
+      star = getAndAdvance();
     }
-    return new WithClause(with2, types);
+    Expression expression = parseExpression2();
+    Token semicolon = _expect(TokenType.SEMICOLON);
+    return astFactory.yieldStatement(yieldToken, star, expression, semicolon);
+  }
+
+  /**
+   * Parse a prefixed identifier, starting at the [startToken], without actually
+   * creating a prefixed identifier or changing the current token. Return the
+   * token following the prefixed identifier that was parsed, or `null` if the
+   * given token is not the first token in a valid prefixed identifier.
+   *
+   * This method must be kept in sync with [parsePrefixedIdentifier].
+   *
+   *     prefixedIdentifier ::=
+   *         identifier ('.' identifier)?
+   */
+  Token skipPrefixedIdentifier(Token startToken) {
+    Token token = skipSimpleIdentifier(startToken);
+    if (token == null) {
+      return null;
+    } else if (!_tokenMatches(token, TokenType.PERIOD)) {
+      return token;
+    }
+    token = token.next;
+    Token nextToken = skipSimpleIdentifier(token);
+    if (nextToken != null) {
+      return nextToken;
+    } else if (_tokenMatches(token, TokenType.CLOSE_PAREN) ||
+        _tokenMatches(token, TokenType.COMMA)) {
+      // If the `id.` is followed by something that cannot produce a valid
+      // structure then assume this is a prefixed identifier but missing the
+      // trailing identifier
+      return token;
+    }
+    return null;
+  }
+
+  /**
+   * Parse a return type, starting at the [startToken], without actually
+   * creating a return type or changing the current token. Return the token
+   * following the return type that was parsed, or `null` if the given token is
+   * not the first token in a valid return type.
+   *
+   * This method must be kept in sync with [parseReturnType].
+   *
+   *     returnType ::=
+   *         'void'
+   *       | type
+   */
+  Token skipReturnType(Token startToken) {
+    if (_tokenMatchesKeyword(startToken, Keyword.VOID)) {
+      return startToken.next;
+    } else {
+      return skipTypeName(startToken);
+    }
+  }
+
+  /**
+   * Parse a simple identifier, starting at the [startToken], without actually
+   * creating a simple identifier or changing the current token. Return the
+   * token following the simple identifier that was parsed, or `null` if the
+   * given token is not the first token in a valid simple identifier.
+   *
+   * This method must be kept in sync with [parseSimpleIdentifier].
+   *
+   *     identifier ::=
+   *         IDENTIFIER
+   */
+  Token skipSimpleIdentifier(Token startToken) {
+    if (_tokenMatches(startToken, TokenType.IDENTIFIER) ||
+        _tokenMatchesPseudoKeyword(startToken)) {
+      return startToken.next;
+    }
+    return null;
+  }
+
+  /**
+   * Parse a string literal, starting at the [startToken], without actually
+   * creating a string literal or changing the current token. Return the token
+   * following the string literal that was parsed, or `null` if the given token
+   * is not the first token in a valid string literal.
+   *
+   * This method must be kept in sync with [parseStringLiteral].
+   *
+   *     stringLiteral ::=
+   *         MULTI_LINE_STRING+
+   *       | SINGLE_LINE_STRING+
+   */
+  Token skipStringLiteral(Token startToken) {
+    Token token = startToken;
+    while (token != null && _tokenMatches(token, TokenType.STRING)) {
+      token = token.next;
+      TokenType type = token.type;
+      if (type == TokenType.STRING_INTERPOLATION_EXPRESSION ||
+          type == TokenType.STRING_INTERPOLATION_IDENTIFIER) {
+        token = _skipStringInterpolation(token);
+      }
+    }
+    if (identical(token, startToken)) {
+      return null;
+    }
+    return token;
+  }
+
+  /**
+   * Parse a list of type arguments, starting at the [startToken], without
+   * actually creating a type argument list or changing the current token.
+   * Return the token following the type argument list that was parsed, or
+   * `null` if the given token is not the first token in a valid type argument
+   * list.
+   *
+   * This method must be kept in sync with [parseTypeArgumentList].
+   *
+   *     typeArguments ::=
+   *         '<' typeList '>'
+   *
+   *     typeList ::=
+   *         type (',' type)*
+   */
+  Token skipTypeArgumentList(Token startToken) {
+    Token token = startToken;
+    if (!_tokenMatches(token, TokenType.LT) &&
+        !_injectGenericCommentTypeList()) {
+      return null;
+    }
+    token = skipTypeName(token.next);
+    if (token == null) {
+      // If the start token '<' is followed by '>'
+      // then assume this should be type argument list but is missing a type
+      token = startToken.next;
+      if (_tokenMatches(token, TokenType.GT)) {
+        return token.next;
+      }
+      return null;
+    }
+    while (_tokenMatches(token, TokenType.COMMA)) {
+      token = skipTypeName(token.next);
+      if (token == null) {
+        return null;
+      }
+    }
+    if (token.type == TokenType.GT) {
+      return token.next;
+    } else if (token.type == TokenType.GT_GT) {
+      Token second = new Token(TokenType.GT, token.offset + 1);
+      second.setNextWithoutSettingPrevious(token.next);
+      return second;
+    }
+    return null;
+  }
+
+  /**
+   * Parse a type name, starting at the [startToken], without actually creating
+   * a type name or changing the current token. Return the token following the
+   * type name that was parsed, or `null` if the given token is not the first
+   * token in a valid type name.
+   *
+   * This method must be kept in sync with [parseTypeName].
+   *
+   *     type ::=
+   *         qualified typeArguments?
+   */
+  Token skipTypeName(Token startToken) {
+    Token token = skipPrefixedIdentifier(startToken);
+    if (token == null) {
+      return null;
+    }
+    if (_tokenMatches(token, TokenType.LT)) {
+      token = skipTypeArgumentList(token);
+    }
+    return token;
   }
 
   /**
@@ -3596,54 +5390,49 @@ class Parser {
   }
 
   /**
-   * Append the character equivalent of the given [scalarValue] to the given
+   * Append the character equivalent of the given [codePoint] to the given
    * [builder]. Use the [startIndex] and [endIndex] to report an error, and
-   * don't append anything to the builder, if the scalar value is invalid. The
+   * don't append anything to the builder, if the code point is invalid. The
    * [escapeSequence] is the escape sequence that was parsed to produce the
-   * scalar value (used for error reporting).
+   * code point (used for error reporting).
    */
-  void _appendScalarValue(StringBuffer buffer, String escapeSequence,
-      int scalarValue, int startIndex, int endIndex) {
-    if (scalarValue < 0 ||
-        scalarValue > Character.MAX_CODE_POINT ||
-        (scalarValue >= 0xD800 && scalarValue <= 0xDFFF)) {
+  void _appendCodePoint(StringBuffer buffer, String source, int codePoint,
+      int startIndex, int endIndex) {
+    if (codePoint < 0 || codePoint > Character.MAX_CODE_POINT) {
+      String escapeSequence = source.substring(startIndex, endIndex + 1);
       _reportErrorForCurrentToken(
           ParserErrorCode.INVALID_CODE_POINT, [escapeSequence]);
       return;
     }
-    if (scalarValue < Character.MAX_VALUE) {
-      buffer.writeCharCode(scalarValue);
+    if (codePoint < Character.MAX_VALUE) {
+      buffer.writeCharCode(codePoint);
     } else {
-      buffer.write(Character.toChars(scalarValue));
+      buffer.write(Character.toChars(codePoint));
     }
   }
 
   /**
-   * Return the content of a string with the given literal representation. The
-   * [lexeme] is the literal representation of the string. The flag [isFirst] is
-   * `true` if this is the first token in a string literal. The flag [isLast] is
-   * `true` if this is the last token in a string literal.
+   * Clone all token starting from the given [token] up to the end of the token
+   * stream, and return the first token in the new token stream.
    */
-  String _computeStringValue(String lexeme, bool isFirst, bool isLast) {
-    StringLexemeHelper helper = new StringLexemeHelper(lexeme, isFirst, isLast);
-    int start = helper.start;
-    int end = helper.end;
-    bool stringEndsAfterStart = end >= start;
-    assert(stringEndsAfterStart);
-    if (!stringEndsAfterStart) {
-      AnalysisEngine.instance.logger.logError(
-          "Internal error: computeStringValue($lexeme, $isFirst, $isLast)");
-      return "";
+  Token _cloneTokens(Token token) {
+    if (token == null) {
+      return null;
     }
-    if (helper.isRaw) {
-      return lexeme.substring(start, end);
+    token = token is CommentToken ? token.parent : token;
+    Token head = new Token(TokenType.EOF, -1);
+    head.setNext(head);
+    Token current = head;
+    while (token.type != TokenType.EOF) {
+      Token clone = token.copy();
+      current.setNext(clone);
+      current = clone;
+      token = token.next;
     }
-    StringBuffer buffer = new StringBuffer();
-    int index = start;
-    while (index < end) {
-      index = _translateCharacter(buffer, lexeme, index);
-    }
-    return buffer.toString();
+    Token tail = new Token(TokenType.EOF, 0);
+    tail.setNext(tail);
+    current.setNext(tail);
+    return head.next;
   }
 
   /**
@@ -3652,14 +5441,14 @@ class Parser {
    * captures the components of the given method declaration).
    */
   FunctionDeclaration _convertToFunctionDeclaration(MethodDeclaration method) =>
-      new FunctionDeclaration(
+      astFactory.functionDeclaration(
           method.documentationComment,
           method.metadata,
           method.externalKeyword,
           method.returnType,
           method.propertyKeyword,
           method.name,
-          new FunctionExpression(
+          astFactory.functionExpression(
               method.typeParameters, method.parameters, method.body));
 
   /**
@@ -3669,40 +5458,44 @@ class Parser {
    * member.
    */
   bool _couldBeStartOfCompilationUnitMember() {
-    if ((_matchesKeyword(Keyword.IMPORT) ||
-            _matchesKeyword(Keyword.EXPORT) ||
-            _matchesKeyword(Keyword.LIBRARY) ||
-            _matchesKeyword(Keyword.PART)) &&
-        !_tokenMatches(_peek(), TokenType.PERIOD) &&
-        !_tokenMatches(_peek(), TokenType.LT)) {
+    Keyword keyword = _currentToken.keyword;
+    Token next = _currentToken.next;
+    TokenType nextType = next.type;
+    if ((keyword == Keyword.IMPORT ||
+            keyword == Keyword.EXPORT ||
+            keyword == Keyword.LIBRARY ||
+            keyword == Keyword.PART) &&
+        nextType != TokenType.PERIOD &&
+        nextType != TokenType.LT) {
       // This looks like the start of a directive
       return true;
-    } else if (_matchesKeyword(Keyword.CLASS)) {
+    } else if (keyword == Keyword.CLASS) {
       // This looks like the start of a class definition
       return true;
-    } else if (_matchesKeyword(Keyword.TYPEDEF) &&
-        !_tokenMatches(_peek(), TokenType.PERIOD) &&
-        !_tokenMatches(_peek(), TokenType.LT)) {
+    } else if (keyword == Keyword.TYPEDEF &&
+        nextType != TokenType.PERIOD &&
+        nextType != TokenType.LT) {
       // This looks like the start of a typedef
       return true;
-    } else if (_matchesKeyword(Keyword.VOID) ||
-        ((_matchesKeyword(Keyword.GET) || _matchesKeyword(Keyword.SET)) &&
-            _tokenMatchesIdentifier(_peek())) ||
-        (_matchesKeyword(Keyword.OPERATOR) && _isOperator(_peek()))) {
+    } else if (keyword == Keyword.VOID ||
+        ((keyword == Keyword.GET || keyword == Keyword.SET) &&
+            _tokenMatchesIdentifier(next)) ||
+        (keyword == Keyword.OPERATOR && _isOperator(next))) {
       // This looks like the start of a function
       return true;
     } else if (_matchesIdentifier()) {
-      if (_tokenMatches(_peek(), TokenType.OPEN_PAREN)) {
+      if (nextType == TokenType.OPEN_PAREN) {
         // This looks like the start of a function
         return true;
       }
-      Token token = _skipReturnType(_currentToken);
+      Token token = skipReturnType(_currentToken);
       if (token == null) {
         return false;
       }
-      if (_matchesKeyword(Keyword.GET) ||
-          _matchesKeyword(Keyword.SET) ||
-          (_matchesKeyword(Keyword.OPERATOR) && _isOperator(_peek())) ||
+      // TODO(brianwilkerson) This looks wrong; should we be checking 'token'?
+      if (keyword == Keyword.GET ||
+          keyword == Keyword.SET ||
+          (keyword == Keyword.OPERATOR && _isOperator(next)) ||
           _matchesIdentifier()) {
         return true;
       }
@@ -3711,35 +5504,10 @@ class Parser {
   }
 
   /**
-   * Return a synthetic identifier.
-   */
-  SimpleIdentifier _createSyntheticIdentifier({bool isDeclaration: false}) {
-    Token syntheticToken;
-    if (_currentToken.type == TokenType.KEYWORD) {
-      // Consider current keyword token as an identifier.
-      // It is not always true, e.g. "^is T" where "^" is place the place for
-      // synthetic identifier. By creating SyntheticStringToken we can
-      // distinguish a real identifier from synthetic. In the code completion
-      // behavior will depend on a cursor position - before or on "is".
-      syntheticToken = _injectToken(new SyntheticStringToken(
-          TokenType.IDENTIFIER, _currentToken.lexeme, _currentToken.offset));
-    } else {
-      syntheticToken = _createSyntheticToken(TokenType.IDENTIFIER);
-    }
-    return new SimpleIdentifier(syntheticToken, isDeclaration: isDeclaration);
-  }
-
-  /**
    * Return a synthetic token representing the given [keyword].
    */
   Token _createSyntheticKeyword(Keyword keyword) => _injectToken(
       new Parser_SyntheticKeywordToken(keyword, _currentToken.offset));
-
-  /**
-   * Return a synthetic string literal.
-   */
-  SimpleStringLiteral _createSyntheticStringLiteral() =>
-      new SimpleStringLiteral(_createSyntheticToken(TokenType.STRING), "");
 
   /**
    * Return a synthetic token with the given [type].
@@ -3872,7 +5640,7 @@ class Parser {
    * should be treated as code blocks.
    */
   List<List<int>> _getCodeBlockRanges(String comment) {
-    List<List<int>> ranges = new List<List<int>>();
+    List<List<int>> ranges = <List<int>>[];
     int length = comment.length;
     if (length < 3) {
       return ranges;
@@ -4011,74 +5779,20 @@ class Parser {
   }
 
   /**
-   * Return `true` if the current token appears to be the beginning of a
-   * function declaration.
+   * Return `true` if the current token could be the question mark in a
+   * condition expression. The current token is assumed to be a question mark.
    */
-  bool _isFunctionDeclaration() {
-    if (_matchesKeyword(Keyword.VOID)) {
-      return true;
+  bool _isConditionalOperator() {
+    void parseOperation(Parser parser) {
+      parser.parseExpressionWithoutCascade();
     }
-    Token afterReturnType = _skipTypeName(_currentToken);
-    if (afterReturnType == null) {
-      // There was no return type, but it is optional, so go back to where we
-      // started.
-      afterReturnType = _currentToken;
-    }
-    Token afterIdentifier = _skipSimpleIdentifier(afterReturnType);
-    if (afterIdentifier == null) {
-      // It's possible that we parsed the function name as if it were a type
-      // name, so see whether it makes sense if we assume that there is no type.
-      afterIdentifier = _skipSimpleIdentifier(_currentToken);
-    }
-    if (afterIdentifier == null) {
-      return false;
-    }
-    if (_isFunctionExpression(afterIdentifier)) {
-      return true;
-    }
-    // It's possible that we have found a getter. While this isn't valid at this
-    // point we test for it in order to recover better.
-    if (_matchesKeyword(Keyword.GET)) {
-      Token afterName = _skipSimpleIdentifier(_currentToken.next);
-      if (afterName == null) {
-        return false;
-      }
-      return _tokenMatches(afterName, TokenType.FUNCTION) ||
-          _tokenMatches(afterName, TokenType.OPEN_CURLY_BRACKET);
-    } else if (_tokenMatchesKeyword(afterReturnType, Keyword.GET)) {
-      Token afterName = _skipSimpleIdentifier(afterReturnType.next);
-      if (afterName == null) {
-        return false;
-      }
-      return _tokenMatches(afterName, TokenType.FUNCTION) ||
-          _tokenMatches(afterName, TokenType.OPEN_CURLY_BRACKET);
-    }
-    return false;
-  }
 
-  /**
-   * Return `true` if the given [token] appears to be the beginning of a
-   * function expression.
-   */
-  bool _isFunctionExpression(Token token) {
-    // Function expressions aren't allowed in initializer lists.
-    if (_inInitializer) {
+    Token token = _skip(_currentToken.next, parseOperation);
+    if (token == null || !_tokenMatches(token, TokenType.COLON)) {
       return false;
     }
-    Token afterTypeParameters = _skipTypeParameterList(token);
-    if (afterTypeParameters == null) {
-      afterTypeParameters = token;
-    }
-    Token afterParameters = _skipFormalParameterList(afterTypeParameters);
-    if (afterParameters == null) {
-      return false;
-    }
-    if (afterParameters.matchesAny(
-        const <TokenType>[TokenType.OPEN_CURLY_BRACKET, TokenType.FUNCTION])) {
-      return true;
-    }
-    String lexeme = afterParameters.lexeme;
-    return lexeme == ASYNC || lexeme == SYNC;
+    token = _skip(token.next, parseOperation);
+    return token != null;
   }
 
   /**
@@ -4089,102 +5803,13 @@ class Parser {
       (0x41 <= character && character <= 0x46) ||
       (0x61 <= character && character <= 0x66);
 
-  /**
-   * Return `true` if the current token is the first token in an initialized
-   * variable declaration rather than an expression. This method assumes that we
-   * have already skipped past any metadata that might be associated with the
-   * declaration.
-   *
-   *     initializedVariableDeclaration ::=
-   *         declaredIdentifier ('=' expression)? (',' initializedIdentifier)*
-   *
-   *     declaredIdentifier ::=
-   *         metadata finalConstVarOrType identifier
-   *
-   *     finalConstVarOrType ::=
-   *         'final' type?
-   *       | 'const' type?
-   *       | 'var'
-   *       | type
-   *
-   *     type ::=
-   *         qualified typeArguments?
-   *
-   *     initializedIdentifier ::=
-   *         identifier ('=' expression)?
-   */
-  bool _isInitializedVariableDeclaration() {
-    if (_matchesKeyword(Keyword.FINAL) || _matchesKeyword(Keyword.VAR)) {
-      // An expression cannot start with a keyword other than 'const',
-      // 'rethrow', or 'throw'.
-      return true;
-    }
-    if (_matchesKeyword(Keyword.CONST)) {
-      // Look to see whether we might be at the start of a list or map literal,
-      // otherwise this should be the start of a variable declaration.
-      return !_peek().matchesAny(const <TokenType>[
-        TokenType.LT,
-        TokenType.OPEN_CURLY_BRACKET,
-        TokenType.OPEN_SQUARE_BRACKET,
-        TokenType.INDEX
-      ]);
-    }
-    bool allowAdditionalTokens = true;
-    // We know that we have an identifier, and need to see whether it might be
-    // a type name.
-    if (_currentToken.type != TokenType.IDENTIFIER) {
-      allowAdditionalTokens = false;
-    }
-    Token token = _skipTypeName(_currentToken);
-    if (token == null) {
-      // There was no type name, so this can't be a declaration.
-      return false;
-    }
-    if (token.type != TokenType.IDENTIFIER) {
-      allowAdditionalTokens = false;
-    }
-    token = _skipSimpleIdentifier(token);
-    if (token == null) {
-      return false;
-    }
-    TokenType type = token.type;
-    // Usual cases in valid code:
-    //     String v = '';
-    //     String v, v2;
-    //     String v;
-    //     for (String item in items) {}
-    if (type == TokenType.EQ ||
-        type == TokenType.COMMA ||
-        type == TokenType.SEMICOLON ||
-        _tokenMatchesKeyword(token, Keyword.IN)) {
-      return true;
-    }
-    // It is OK to parse as a variable declaration in these cases:
-    //     String v }
-    //     String v if (true) print('OK');
-    //     String v { print(42); }
-    // ...but not in these cases:
-    //     get getterName {
-    //     String get getterName
-    if (allowAdditionalTokens) {
-      if (type == TokenType.CLOSE_CURLY_BRACKET ||
-          type == TokenType.KEYWORD ||
-          type == TokenType.IDENTIFIER ||
-          type == TokenType.OPEN_CURLY_BRACKET) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   bool _isLikelyArgumentList() {
+    // Try to reduce the amount of lookahead required here before enabling
+    // generic methods.
     if (_matches(TokenType.OPEN_PAREN)) {
       return true;
     }
-    if (!parseGenericMethods) {
-      return false;
-    }
-    Token token = _skipTypeArgumentList(_currentToken);
+    Token token = skipTypeArgumentList(_currentToken);
     return token != null && _tokenMatches(token, TokenType.OPEN_PAREN);
   }
 
@@ -4228,7 +5853,7 @@ class Parser {
     if (!startToken.isOperator) {
       return false;
     }
-    // Token "=" means that it is actually field initializer.
+    // Token "=" means that it is actually a field initializer.
     if (startToken.type == TokenType.EQ) {
       return false;
     }
@@ -4242,25 +5867,8 @@ class Parser {
   }
 
   bool _isPeekGenericTypeParametersAndOpenParen() {
-    if (!parseGenericMethods) {
-      return false;
-    }
     Token token = _skipTypeParameterList(_peek());
     return token != null && _tokenMatches(token, TokenType.OPEN_PAREN);
-  }
-
-  /**
-   * Return `true` if the current token appears to be the beginning of a switch
-   * member.
-   */
-  bool _isSwitchMember() {
-    Token token = _currentToken;
-    while (_tokenMatches(token, TokenType.IDENTIFIER) &&
-        _tokenMatches(token.next, TokenType.COLON)) {
-      token = token.next.next;
-    }
-    Keyword keyword = token.keyword;
-    return keyword == Keyword.CASE || keyword == Keyword.DEFAULT;
   }
 
   /**
@@ -4268,7 +5876,7 @@ class Parser {
    * name that is followed by a variable or field formal parameter.
    */
   bool _isTypedIdentifier(Token startToken) {
-    Token token = _skipReturnType(startToken);
+    Token token = skipReturnType(startToken);
     if (token == null) {
       return false;
     } else if (_tokenMatchesIdentifier(token)) {
@@ -4367,12 +5975,22 @@ class Parser {
       _currentToken.lexeme == identifier;
 
   /**
+   * Report an error with the given [errorCode] if the given [typeName] has been
+   * marked as nullable.
+   */
+  void _mustNotBeNullable(TypeName typeName, ParserErrorCode errorCode) {
+    if (typeName.question != null) {
+      _reportErrorForToken(errorCode, typeName.question);
+    }
+  }
+
+  /**
    * If the current token has the given [type], then advance to the next token
    * and return `true`. Otherwise, return `false` without advancing. This method
    * should not be invoked with an argument value of [TokenType.GT].
    */
   bool _optional(TokenType type) {
-    if (_matches(type)) {
+    if (_currentToken.type == type) {
       _advance();
       return true;
     }
@@ -4380,52 +5998,33 @@ class Parser {
   }
 
   /**
-   * Parse an additive expression. Return the additive expression that was
-   * parsed.
-   *
-   *     additiveExpression ::=
-   *         multiplicativeExpression (additiveOperator multiplicativeExpression)*
-   *       | 'super' (additiveOperator multiplicativeExpression)+
+   * Parse an argument list when we need to check for an open paren and recover
+   * when there isn't one. Return the argument list that was parsed.
    */
-  Expression _parseAdditiveExpression() {
-    Expression expression;
-    if (_matchesKeyword(Keyword.SUPER) &&
-        _currentToken.next.type.isAdditiveOperator) {
-      expression = new SuperExpression(getAndAdvance());
-    } else {
-      expression = _parseMultiplicativeExpression();
+  ArgumentList _parseArgumentListChecked() {
+    if (_matches(TokenType.OPEN_PAREN)) {
+      return parseArgumentList();
     }
-    while (_currentToken.type.isAdditiveOperator) {
-      Token operator = getAndAdvance();
-      expression = new BinaryExpression(
-          expression, operator, _parseMultiplicativeExpression());
-    }
-    return expression;
+    _reportErrorForCurrentToken(
+        ParserErrorCode.EXPECTED_TOKEN, [TokenType.OPEN_PAREN.lexeme]);
+    // Recovery: Look to see whether there is a close paren that isn't matched
+    // to an open paren and if so parse the list of arguments as normal.
+    return astFactory.argumentList(_createSyntheticToken(TokenType.OPEN_PAREN),
+        null, _createSyntheticToken(TokenType.CLOSE_PAREN));
   }
 
   /**
-   * Parse an assert statement. Return the assert statement.
+   * Parse an assert within a constructor's initializer list. Return the assert.
    *
-   *     assertStatement ::=
-   *         'assert' '(' conditionalExpression ')' ';'
+   * This method assumes that the current token matches `Keyword.ASSERT`.
+   *
+   *     assertInitializer ::=
+   *         'assert' '(' expression [',' expression] ')'
    */
-  AssertStatement _parseAssertStatement() {
-    Token keyword = _expectKeyword(Keyword.ASSERT);
+  AssertInitializer _parseAssertInitializer() {
+    Token keyword = getAndAdvance();
     Token leftParen = _expect(TokenType.OPEN_PAREN);
     Expression expression = parseExpression2();
-    if (expression is AssignmentExpression) {
-      _reportErrorForNode(
-          ParserErrorCode.ASSERT_DOES_NOT_TAKE_ASSIGNMENT, expression);
-    } else if (expression is CascadeExpression) {
-      _reportErrorForNode(
-          ParserErrorCode.ASSERT_DOES_NOT_TAKE_CASCADE, expression);
-    } else if (expression is ThrowExpression) {
-      _reportErrorForNode(
-          ParserErrorCode.ASSERT_DOES_NOT_TAKE_THROW, expression);
-    } else if (expression is RethrowExpression) {
-      _reportErrorForNode(
-          ParserErrorCode.ASSERT_DOES_NOT_TAKE_RETHROW, expression);
-    }
     Token comma;
     Expression message;
     if (_matches(TokenType.COMMA)) {
@@ -4433,33 +6032,24 @@ class Parser {
       message = parseExpression2();
     }
     Token rightParen = _expect(TokenType.CLOSE_PAREN);
-    Token semicolon = _expect(TokenType.SEMICOLON);
-    return new AssertStatement(
-        keyword, leftParen, expression, comma, message, rightParen, semicolon);
+    return astFactory.assertInitializer(
+        keyword, leftParen, expression, comma, message, rightParen);
   }
 
   /**
-   * Parse an assignable expression. The [primaryAllowed] is `true` if the
-   * expression is allowed to be a primary without any assignable selector.
-   * Return the assignable expression that was parsed.
-   *
-   *     assignableExpression ::=
-   *         primary (arguments* assignableSelector)+
-   *       | 'super' unconditionalAssignableSelector
-   *       | identifier
+   * Parse an assignable expression given that the current token is not 'super'.
+   * The [primaryAllowed] is `true` if the expression is allowed to be a primary
+   * without any assignable selector. Return the assignable expression that was
+   * parsed.
    */
-  Expression _parseAssignableExpression(bool primaryAllowed) {
-    if (_matchesKeyword(Keyword.SUPER)) {
-      return _parseAssignableSelector(
-          new SuperExpression(getAndAdvance()), false,
-          allowConditional: false);
-    }
+  Expression _parseAssignableExpressionNotStartingWithSuper(
+      bool primaryAllowed) {
     //
     // A primary expression can start with an identifier. We resolve the
     // ambiguity by determining whether the primary consists of anything other
     // than an identifier and/or is followed by an assignableSelector.
     //
-    Expression expression = _parsePrimaryExpression();
+    Expression expression = parsePrimaryExpression();
     bool isOptional = primaryAllowed || expression is SimpleIdentifier;
     while (true) {
       while (_isLikelyArgumentList()) {
@@ -4467,36 +6057,36 @@ class Parser {
         ArgumentList argumentList = parseArgumentList();
         Expression currentExpression = expression;
         if (currentExpression is SimpleIdentifier) {
-          expression = new MethodInvocation(
+          expression = astFactory.methodInvocation(
               null, null, currentExpression, typeArguments, argumentList);
         } else if (currentExpression is PrefixedIdentifier) {
-          expression = new MethodInvocation(
+          expression = astFactory.methodInvocation(
               currentExpression.prefix,
               currentExpression.period,
               currentExpression.identifier,
               typeArguments,
               argumentList);
         } else if (currentExpression is PropertyAccess) {
-          expression = new MethodInvocation(
+          expression = astFactory.methodInvocation(
               currentExpression.target,
               currentExpression.operator,
               currentExpression.propertyName,
               typeArguments,
               argumentList);
         } else {
-          expression = new FunctionExpressionInvocation(
+          expression = astFactory.functionExpressionInvocation(
               expression, typeArguments, argumentList);
         }
         if (!primaryAllowed) {
           isOptional = false;
         }
       }
-      Expression selectorExpression = _parseAssignableSelector(
+      Expression selectorExpression = parseAssignableSelector(
           expression, isOptional || (expression is PrefixedIdentifier));
       if (identical(selectorExpression, expression)) {
         if (!isOptional && (expression is PrefixedIdentifier)) {
           PrefixedIdentifier identifier = expression as PrefixedIdentifier;
-          expression = new PropertyAccess(
+          expression = astFactory.propertyAccess(
               identifier.prefix, identifier.period, identifier.identifier);
         }
         return expression;
@@ -4507,353 +6097,23 @@ class Parser {
   }
 
   /**
-   * Parse an assignable selector. The [prefix] is the expression preceding the
-   * selector. The [optional] is `true` if the selector is optional. Return the
-   * assignable selector that was parsed, or the original prefix if there was no
-   * assignable selector.  If [allowConditional] is false, then the '?.'
-   * operator will still be parsed, but a parse error will be generated.
+   * Parse a block when we need to check for an open curly brace and recover
+   * when there isn't one. Return the block that was parsed.
    *
-   *     unconditionalAssignableSelector ::=
-   *         '[' expression ']'
-   *       | '.' identifier
-   *
-   *     assignableSelector ::=
-   *         unconditionalAssignableSelector
-   *       | '?.' identifier
+   *     block ::=
+   *         '{' statements '}'
    */
-  Expression _parseAssignableSelector(Expression prefix, bool optional,
-      {bool allowConditional: true}) {
-    if (_matches(TokenType.OPEN_SQUARE_BRACKET)) {
-      Token leftBracket = getAndAdvance();
-      bool wasInInitializer = _inInitializer;
-      _inInitializer = false;
-      try {
-        Expression index = parseExpression2();
-        Token rightBracket = _expect(TokenType.CLOSE_SQUARE_BRACKET);
-        return new IndexExpression.forTarget(
-            prefix, leftBracket, index, rightBracket);
-      } finally {
-        _inInitializer = wasInInitializer;
-      }
-    } else if (_matches(TokenType.PERIOD) ||
-        _matches(TokenType.QUESTION_PERIOD)) {
-      if (_matches(TokenType.QUESTION_PERIOD) && !allowConditional) {
-        _reportErrorForCurrentToken(
-            ParserErrorCode.INVALID_OPERATOR_FOR_SUPER, [_currentToken.lexeme]);
-      }
-      Token operator = getAndAdvance();
-      return new PropertyAccess(prefix, operator, parseSimpleIdentifier());
-    } else {
-      if (!optional) {
-        // Report the missing selector.
-        _reportErrorForCurrentToken(
-            ParserErrorCode.MISSING_ASSIGNABLE_SELECTOR);
-      }
-      return prefix;
-    }
-  }
-
-  /**
-   * Parse a await expression. Return the await expression that was parsed.
-   *
-   *     awaitExpression ::=
-   *         'await' unaryExpression
-   */
-  AwaitExpression _parseAwaitExpression() {
-    Token awaitToken = getAndAdvance();
-    Expression expression = _parseUnaryExpression();
-    return new AwaitExpression(awaitToken, expression);
-  }
-
-  /**
-   * Parse a bitwise and expression. Return the bitwise and expression that was
-   * parsed.
-   *
-   *     bitwiseAndExpression ::=
-   *         shiftExpression ('&' shiftExpression)*
-   *       | 'super' ('&' shiftExpression)+
-   */
-  Expression _parseBitwiseAndExpression() {
-    Expression expression;
-    if (_matchesKeyword(Keyword.SUPER) &&
-        _tokenMatches(_peek(), TokenType.AMPERSAND)) {
-      expression = new SuperExpression(getAndAdvance());
-    } else {
-      expression = _parseShiftExpression();
-    }
-    while (_matches(TokenType.AMPERSAND)) {
-      Token operator = getAndAdvance();
-      expression =
-          new BinaryExpression(expression, operator, _parseShiftExpression());
-    }
-    return expression;
-  }
-
-  /**
-   * Parse a bitwise exclusive-or expression. Return the bitwise exclusive-or
-   * expression that was parsed.
-   *
-   *     bitwiseXorExpression ::=
-   *         bitwiseAndExpression ('^' bitwiseAndExpression)*
-   *       | 'super' ('^' bitwiseAndExpression)+
-   */
-  Expression _parseBitwiseXorExpression() {
-    Expression expression;
-    if (_matchesKeyword(Keyword.SUPER) &&
-        _tokenMatches(_peek(), TokenType.CARET)) {
-      expression = new SuperExpression(getAndAdvance());
-    } else {
-      expression = _parseBitwiseAndExpression();
-    }
-    while (_matches(TokenType.CARET)) {
-      Token operator = getAndAdvance();
-      expression = new BinaryExpression(
-          expression, operator, _parseBitwiseAndExpression());
-    }
-    return expression;
-  }
-
-  /**
-   * Parse a break statement. Return the break statement that was parsed.
-   *
-   *     breakStatement ::=
-   *         'break' identifier? ';'
-   */
-  Statement _parseBreakStatement() {
-    Token breakKeyword = _expectKeyword(Keyword.BREAK);
-    SimpleIdentifier label = null;
-    if (_matchesIdentifier()) {
-      label = parseSimpleIdentifier();
-    }
-    if (!_inLoop && !_inSwitch && label == null) {
-      _reportErrorForToken(ParserErrorCode.BREAK_OUTSIDE_OF_LOOP, breakKeyword);
-    }
-    Token semicolon = _expect(TokenType.SEMICOLON);
-    return new BreakStatement(breakKeyword, label, semicolon);
-  }
-
-  /**
-   * Parse a cascade section. Return the expression representing the cascaded
-   * method invocation.
-   *
-   *     cascadeSection ::=
-   *         '..' (cascadeSelector typeArguments? arguments*)
-   *         (assignableSelector typeArguments? arguments*)* cascadeAssignment?
-   *
-   *     cascadeSelector ::=
-   *         '[' expression ']'
-   *       | identifier
-   *
-   *     cascadeAssignment ::=
-   *         assignmentOperator expressionWithoutCascade
-   */
-  Expression _parseCascadeSection() {
-    Token period = _expect(TokenType.PERIOD_PERIOD);
-    Expression expression = null;
-    SimpleIdentifier functionName = null;
-    if (_matchesIdentifier()) {
-      functionName = parseSimpleIdentifier();
-    } else if (_currentToken.type == TokenType.OPEN_SQUARE_BRACKET) {
-      Token leftBracket = getAndAdvance();
-      bool wasInInitializer = _inInitializer;
-      _inInitializer = false;
-      try {
-        Expression index = parseExpression2();
-        Token rightBracket = _expect(TokenType.CLOSE_SQUARE_BRACKET);
-        expression = new IndexExpression.forCascade(
-            period, leftBracket, index, rightBracket);
-        period = null;
-      } finally {
-        _inInitializer = wasInInitializer;
-      }
-    } else {
-      _reportErrorForToken(ParserErrorCode.MISSING_IDENTIFIER, _currentToken,
-          [_currentToken.lexeme]);
-      functionName = _createSyntheticIdentifier();
-    }
-    assert((expression == null && functionName != null) ||
-        (expression != null && functionName == null));
-    if (_isLikelyArgumentList()) {
-      while (_isLikelyArgumentList()) {
-        TypeArgumentList typeArguments = _parseOptionalTypeArguments();
-        if (functionName != null) {
-          expression = new MethodInvocation(expression, period, functionName,
-              typeArguments, parseArgumentList());
-          period = null;
-          functionName = null;
-        } else if (expression == null) {
-          // It should not be possible to get here.
-          expression = new MethodInvocation(expression, period,
-              _createSyntheticIdentifier(), typeArguments, parseArgumentList());
-        } else {
-          expression = new FunctionExpressionInvocation(
-              expression, typeArguments, parseArgumentList());
-        }
-      }
-    } else if (functionName != null) {
-      expression = new PropertyAccess(expression, period, functionName);
-      period = null;
-    }
-    assert(expression != null);
-    bool progress = true;
-    while (progress) {
-      progress = false;
-      Expression selector = _parseAssignableSelector(expression, true);
-      if (!identical(selector, expression)) {
-        expression = selector;
-        progress = true;
-        while (_isLikelyArgumentList()) {
-          TypeArgumentList typeArguments = _parseOptionalTypeArguments();
-          Expression currentExpression = expression;
-          if (currentExpression is PropertyAccess) {
-            expression = new MethodInvocation(
-                currentExpression.target,
-                currentExpression.operator,
-                currentExpression.propertyName,
-                typeArguments,
-                parseArgumentList());
-          } else {
-            expression = new FunctionExpressionInvocation(
-                expression, typeArguments, parseArgumentList());
-          }
-        }
-      }
-    }
-    if (_currentToken.type.isAssignmentOperator) {
-      Token operator = getAndAdvance();
-      _ensureAssignable(expression);
-      expression = new AssignmentExpression(
-          expression, operator, parseExpressionWithoutCascade());
-    }
-    return expression;
-  }
-
-  /**
-   * Parse a class declaration. The [commentAndMetadata] is the metadata to be
-   * associated with the member. The [abstractKeyword] is the token for the
-   * keyword 'abstract', or `null` if the keyword was not given. Return the
-   * class declaration that was parsed.
-   *
-   *     classDeclaration ::=
-   *         metadata 'abstract'? 'class' name typeParameterList? (extendsClause withClause?)? implementsClause? '{' classMembers '}' |
-   *         metadata 'abstract'? 'class' mixinApplicationClass
-   */
-  CompilationUnitMember _parseClassDeclaration(
-      CommentAndMetadata commentAndMetadata, Token abstractKeyword) {
-    Token keyword = _expectKeyword(Keyword.CLASS);
-    if (_matchesIdentifier()) {
-      Token next = _peek();
-      if (_tokenMatches(next, TokenType.LT)) {
-        next = _skipTypeParameterList(next);
-        if (next != null && _tokenMatches(next, TokenType.EQ)) {
-          return _parseClassTypeAlias(
-              commentAndMetadata, abstractKeyword, keyword);
-        }
-      } else if (_tokenMatches(next, TokenType.EQ)) {
-        return _parseClassTypeAlias(
-            commentAndMetadata, abstractKeyword, keyword);
-      }
-    }
-    SimpleIdentifier name = parseSimpleIdentifier(isDeclaration: true);
-    String className = name.name;
-    TypeParameterList typeParameters = null;
-    if (_matches(TokenType.LT)) {
-      typeParameters = parseTypeParameterList();
-    }
-    //
-    // Parse the clauses. The parser accepts clauses in any order, but will
-    // generate errors if they are not in the order required by the
-    // specification.
-    //
-    ExtendsClause extendsClause = null;
-    WithClause withClause = null;
-    ImplementsClause implementsClause = null;
-    bool foundClause = true;
-    while (foundClause) {
-      if (_matchesKeyword(Keyword.EXTENDS)) {
-        if (extendsClause == null) {
-          extendsClause = parseExtendsClause();
-          if (withClause != null) {
-            _reportErrorForToken(
-                ParserErrorCode.WITH_BEFORE_EXTENDS, withClause.withKeyword);
-          } else if (implementsClause != null) {
-            _reportErrorForToken(ParserErrorCode.IMPLEMENTS_BEFORE_EXTENDS,
-                implementsClause.implementsKeyword);
-          }
-        } else {
-          _reportErrorForToken(ParserErrorCode.MULTIPLE_EXTENDS_CLAUSES,
-              extendsClause.extendsKeyword);
-          parseExtendsClause();
-        }
-      } else if (_matchesKeyword(Keyword.WITH)) {
-        if (withClause == null) {
-          withClause = parseWithClause();
-          if (implementsClause != null) {
-            _reportErrorForToken(ParserErrorCode.IMPLEMENTS_BEFORE_WITH,
-                implementsClause.implementsKeyword);
-          }
-        } else {
-          _reportErrorForToken(
-              ParserErrorCode.MULTIPLE_WITH_CLAUSES, withClause.withKeyword);
-          parseWithClause();
-          // TODO(brianwilkerson) Should we merge the list of applied mixins
-          // into a single list?
-        }
-      } else if (_matchesKeyword(Keyword.IMPLEMENTS)) {
-        if (implementsClause == null) {
-          implementsClause = parseImplementsClause();
-        } else {
-          _reportErrorForToken(ParserErrorCode.MULTIPLE_IMPLEMENTS_CLAUSES,
-              implementsClause.implementsKeyword);
-          parseImplementsClause();
-          // TODO(brianwilkerson) Should we merge the list of implemented
-          // classes into a single list?
-        }
-      } else {
-        foundClause = false;
-      }
-    }
-    if (withClause != null && extendsClause == null) {
-      _reportErrorForToken(
-          ParserErrorCode.WITH_WITHOUT_EXTENDS, withClause.withKeyword);
-    }
-    //
-    // Look for and skip over the extra-lingual 'native' specification.
-    //
-    NativeClause nativeClause = null;
-    if (_matchesString(_NATIVE) && _tokenMatches(_peek(), TokenType.STRING)) {
-      nativeClause = _parseNativeClause();
-    }
-    //
-    // Parse the body of the class.
-    //
-    Token leftBracket = null;
-    List<ClassMember> members = null;
-    Token rightBracket = null;
+  Block _parseBlockChecked() {
     if (_matches(TokenType.OPEN_CURLY_BRACKET)) {
-      leftBracket = _expect(TokenType.OPEN_CURLY_BRACKET);
-      members = _parseClassMembers(className, _getEndToken(leftBracket));
-      rightBracket = _expect(TokenType.CLOSE_CURLY_BRACKET);
-    } else {
-      leftBracket = _createSyntheticToken(TokenType.OPEN_CURLY_BRACKET);
-      rightBracket = _createSyntheticToken(TokenType.CLOSE_CURLY_BRACKET);
-      _reportErrorForCurrentToken(ParserErrorCode.MISSING_CLASS_BODY);
+      return parseBlock();
     }
-    ClassDeclaration classDeclaration = new ClassDeclaration(
-        commentAndMetadata.comment,
-        commentAndMetadata.metadata,
-        abstractKeyword,
-        keyword,
-        name,
-        typeParameters,
-        extendsClause,
-        withClause,
-        implementsClause,
-        leftBracket,
-        members,
-        rightBracket);
-    classDeclaration.nativeClause = nativeClause;
-    return classDeclaration;
+    // TODO(brianwilkerson) Improve the error message.
+    _reportErrorForCurrentToken(
+        ParserErrorCode.EXPECTED_TOKEN, [TokenType.OPEN_CURLY_BRACKET.lexeme]);
+    // Recovery: Check for an unmatched closing curly bracket and parse
+    // statements until it is reached.
+    return astFactory.block(_createSyntheticToken(TokenType.OPEN_CURLY_BRACKET),
+        null, _createSyntheticToken(TokenType.CLOSE_CURLY_BRACKET));
   }
 
   /**
@@ -4866,14 +6126,15 @@ class Parser {
    *         (metadata memberDefinition)*
    */
   List<ClassMember> _parseClassMembers(String className, Token closingBracket) {
-    List<ClassMember> members = new List<ClassMember>();
+    List<ClassMember> members = <ClassMember>[];
     Token memberStart = _currentToken;
-    while (!_matches(TokenType.EOF) &&
-        !_matches(TokenType.CLOSE_CURLY_BRACKET) &&
+    TokenType type = _currentToken.type;
+    Keyword keyword = _currentToken.keyword;
+    while (type != TokenType.EOF &&
+        type != TokenType.CLOSE_CURLY_BRACKET &&
         (closingBracket != null ||
-            (!_matchesKeyword(Keyword.CLASS) &&
-                !_matchesKeyword(Keyword.TYPEDEF)))) {
-      if (_matches(TokenType.SEMICOLON)) {
+            (keyword != Keyword.CLASS && keyword != Keyword.TYPEDEF))) {
+      if (type == TokenType.SEMICOLON) {
         _reportErrorForToken(ParserErrorCode.UNEXPECTED_TOKEN, _currentToken,
             [_currentToken.lexeme]);
         _advance();
@@ -4889,6 +6150,8 @@ class Parser {
         _advance();
       }
       memberStart = _currentToken;
+      type = _currentToken.type;
+      keyword = _currentToken.keyword;
     }
     return members;
   }
@@ -4897,7 +6160,9 @@ class Parser {
    * Parse a class type alias. The [commentAndMetadata] is the metadata to be
    * associated with the member. The [abstractKeyword] is the token representing
    * the 'abstract' keyword. The [classKeyword] is the token representing the
-   * 'class' keyword. Return the class type alias that was parsed.
+   * 'class' keyword. The [className] is the name of the alias, and the
+   * [typeParameters] are the type parameters following the name. Return the
+   * class type alias that was parsed.
    *
    *     classTypeAlias ::=
    *         identifier typeParameters? '=' 'abstract'? mixinApplication
@@ -4905,15 +6170,14 @@ class Parser {
    *     mixinApplication ::=
    *         type withClause implementsClause? ';'
    */
-  ClassTypeAlias _parseClassTypeAlias(CommentAndMetadata commentAndMetadata,
-      Token abstractKeyword, Token classKeyword) {
-    SimpleIdentifier className = parseSimpleIdentifier(isDeclaration: true);
-    TypeParameterList typeParameters = null;
-    if (_matches(TokenType.LT)) {
-      typeParameters = parseTypeParameterList();
-    }
+  ClassTypeAlias _parseClassTypeAliasAfterName(
+      CommentAndMetadata commentAndMetadata,
+      Token abstractKeyword,
+      Token classKeyword,
+      SimpleIdentifier className,
+      TypeParameterList typeParameters) {
     Token equals = _expect(TokenType.EQ);
-    TypeName superclass = parseTypeName();
+    TypeName superclass = parseTypeName(false);
     WithClause withClause = null;
     if (_matchesKeyword(Keyword.WITH)) {
       withClause = parseWithClause();
@@ -4941,7 +6205,7 @@ class Parser {
       }
       semicolon = _createSyntheticToken(TokenType.SEMICOLON);
     }
-    return new ClassTypeAlias(
+    return astFactory.classTypeAlias(
         commentAndMetadata.comment,
         commentAndMetadata.metadata,
         classKeyword,
@@ -4956,444 +6220,16 @@ class Parser {
   }
 
   /**
-   * Parse a list of combinators in a directive. Return the combinators that
-   * were parsed.
-   *
-   *     combinator ::=
-   *         'show' identifier (',' identifier)*
-   *       | 'hide' identifier (',' identifier)*
-   */
-  List<Combinator> _parseCombinators() {
-    List<Combinator> combinators = new List<Combinator>();
-    while (true) {
-      Combinator combinator = parseCombinator();
-      if (combinator == null) {
-        break;
-      }
-      combinators.add(combinator);
-    }
-    return combinators;
-  }
-
-  /**
-   * Parse the documentation comment and metadata preceding a declaration. This
-   * method allows any number of documentation comments to occur before, after
-   * or between the metadata, but only returns the last (right-most)
-   * documentation comment that is found. Return the documentation comment and
-   * metadata that were parsed.
-   *
-   *     metadata ::=
-   *         annotation*
-   */
-  CommentAndMetadata _parseCommentAndMetadata() {
-    Comment comment = _parseDocumentationComment();
-    List<Annotation> metadata = null;
-    while (_matches(TokenType.AT)) {
-      metadata ??= new List<Annotation>();
-      metadata.add(parseAnnotation());
-      Comment optionalComment = _parseDocumentationComment();
-      if (optionalComment != null) {
-        comment = optionalComment;
-      }
-    }
-    metadata ??= const <Annotation>[];
-    return new CommentAndMetadata(comment, metadata);
-  }
-
-  /**
-   * Parse a comment reference from the source between square brackets. The
-   * [referenceSource] is the source occurring between the square brackets
-   * within a documentation comment. The [sourceOffset] is the offset of the
-   * first character of the reference source. Return the comment reference that
-   * was parsed, or `null` if no reference could be found.
-   *
-   *     commentReference ::=
-   *         'new'? prefixedIdentifier
-   */
-  CommentReference _parseCommentReference(
-      String referenceSource, int sourceOffset) {
-    // TODO(brianwilkerson) The errors are not getting the right offset/length
-    // and are being duplicated.
-    if (referenceSource.length == 0) {
-      Token syntheticToken =
-          new SyntheticStringToken(TokenType.IDENTIFIER, "", sourceOffset);
-      return new CommentReference(null, new SimpleIdentifier(syntheticToken));
-    }
-    try {
-      BooleanErrorListener listener = new BooleanErrorListener();
-      Scanner scanner = new Scanner(
-          null, new SubSequenceReader(referenceSource, sourceOffset), listener);
-      scanner.setSourceStart(1, 1);
-      Token firstToken = scanner.tokenize();
-      if (listener.errorReported) {
-        return null;
-      }
-      Token newKeyword = null;
-      if (_tokenMatchesKeyword(firstToken, Keyword.NEW)) {
-        newKeyword = firstToken;
-        firstToken = firstToken.next;
-      }
-      if (_tokenMatchesIdentifier(firstToken)) {
-        Token secondToken = firstToken.next;
-        Token thirdToken = secondToken.next;
-        Token nextToken;
-        Identifier identifier;
-        if (_tokenMatches(secondToken, TokenType.PERIOD) &&
-            _tokenMatchesIdentifier(thirdToken)) {
-          identifier = new PrefixedIdentifier(new SimpleIdentifier(firstToken),
-              secondToken, new SimpleIdentifier(thirdToken));
-          nextToken = thirdToken.next;
-        } else {
-          identifier = new SimpleIdentifier(firstToken);
-          nextToken = firstToken.next;
-        }
-        if (nextToken.type != TokenType.EOF) {
-          return null;
-        }
-        return new CommentReference(newKeyword, identifier);
-      } else if (_tokenMatchesKeyword(firstToken, Keyword.THIS) ||
-          _tokenMatchesKeyword(firstToken, Keyword.NULL) ||
-          _tokenMatchesKeyword(firstToken, Keyword.TRUE) ||
-          _tokenMatchesKeyword(firstToken, Keyword.FALSE)) {
-        // TODO(brianwilkerson) If we want to support this we will need to
-        // extend the definition of CommentReference to take an expression
-        // rather than an identifier. For now we just ignore it to reduce the
-        // number of errors produced, but that's probably not a valid long term
-        // approach.
-        return null;
-      }
-    } catch (exception) {
-      // Ignored because we assume that it wasn't a real comment reference.
-    }
-    return null;
-  }
-
-  /**
-   * Parse all of the comment references occurring in the given array of
-   * documentation comments. The [tokens] are the comment tokens representing
-   * the documentation comments to be parsed. Return the comment references that
-   * were parsed.
-   *
-   *     commentReference ::=
-   *         '[' 'new'? qualified ']' libraryReference?
-   *
-   *     libraryReference ::=
-   *          '(' stringLiteral ')'
-   */
-  List<CommentReference> _parseCommentReferences(
-      List<DocumentationCommentToken> tokens) {
-    List<CommentReference> references = new List<CommentReference>();
-    for (DocumentationCommentToken token in tokens) {
-      String comment = token.lexeme;
-      comment = _removeCodeBlocksGitHub(comment);
-      int length = comment.length;
-      List<List<int>> codeBlockRanges = _getCodeBlockRanges(comment);
-      int leftIndex = comment.indexOf('[');
-      while (leftIndex >= 0 && leftIndex + 1 < length) {
-        List<int> range = _findRange(codeBlockRanges, leftIndex);
-        if (range == null) {
-          int nameOffset = token.offset + leftIndex + 1;
-          int rightIndex = JavaString.indexOf(comment, ']', leftIndex);
-          if (rightIndex >= 0) {
-            int firstChar = comment.codeUnitAt(leftIndex + 1);
-            if (firstChar != 0x27 && firstChar != 0x22) {
-              if (_isLinkText(comment, rightIndex)) {
-                // TODO(brianwilkerson) Handle the case where there's a library
-                // URI in the link text.
-              } else {
-                CommentReference reference = _parseCommentReference(
-                    comment.substring(leftIndex + 1, rightIndex), nameOffset);
-                if (reference != null) {
-                  references.add(reference);
-                  token.references.add(reference.beginToken);
-                }
-              }
-            }
-          } else {
-            // terminating ']' is not typed yet
-            int charAfterLeft = comment.codeUnitAt(leftIndex + 1);
-            if (Character.isLetterOrDigit(charAfterLeft)) {
-              int nameEnd = StringUtilities.indexOfFirstNotLetterDigit(
-                  comment, leftIndex + 1);
-              String name = comment.substring(leftIndex + 1, nameEnd);
-              Token nameToken =
-                  new StringToken(TokenType.IDENTIFIER, name, nameOffset);
-              references.add(
-                  new CommentReference(null, new SimpleIdentifier(nameToken)));
-            } else {
-              Token nameToken = new SyntheticStringToken(
-                  TokenType.IDENTIFIER, "", nameOffset);
-              references.add(
-                  new CommentReference(null, new SimpleIdentifier(nameToken)));
-            }
-            // next character
-            rightIndex = leftIndex + 1;
-          }
-          leftIndex = JavaString.indexOf(comment, '[', rightIndex);
-        } else {
-          leftIndex = JavaString.indexOf(comment, '[', range[1] + 1);
-        }
-      }
-    }
-    return references;
-  }
-
-  /**
-   * Parse a compilation unit member. The [commentAndMetadata] is the metadata
-   * to be associated with the member. Return the compilation unit member that
-   * was parsed, or `null` if what was parsed could not be represented as a
-   * compilation unit member.
-   *
-   *     compilationUnitMember ::=
-   *         classDefinition
-   *       | functionTypeAlias
-   *       | external functionSignature
-   *       | external getterSignature
-   *       | external setterSignature
-   *       | functionSignature functionBody
-   *       | returnType? getOrSet identifier formalParameterList functionBody
-   *       | (final | const) type? staticFinalDeclarationList ';'
-   *       | variableDeclaration ';'
-   */
-  CompilationUnitMember _parseCompilationUnitMember(
-      CommentAndMetadata commentAndMetadata) {
-    Modifiers modifiers = _parseModifiers();
-    if (_matchesKeyword(Keyword.CLASS)) {
-      return _parseClassDeclaration(
-          commentAndMetadata, _validateModifiersForClass(modifiers));
-    } else if (_matchesKeyword(Keyword.TYPEDEF) &&
-        !_tokenMatches(_peek(), TokenType.PERIOD) &&
-        !_tokenMatches(_peek(), TokenType.LT) &&
-        !_tokenMatches(_peek(), TokenType.OPEN_PAREN)) {
-      _validateModifiersForTypedef(modifiers);
-      return _parseTypeAlias(commentAndMetadata);
-    } else if (_matchesKeyword(Keyword.ENUM)) {
-      _validateModifiersForEnum(modifiers);
-      return _parseEnumDeclaration(commentAndMetadata);
-    }
-    if (_matchesKeyword(Keyword.VOID)) {
-      TypeName returnType = parseReturnType();
-      if ((_matchesKeyword(Keyword.GET) || _matchesKeyword(Keyword.SET)) &&
-          _tokenMatchesIdentifier(_peek())) {
-        _validateModifiersForTopLevelFunction(modifiers);
-        return _parseFunctionDeclaration(
-            commentAndMetadata, modifiers.externalKeyword, returnType);
-      } else if (_matchesKeyword(Keyword.OPERATOR) && _isOperator(_peek())) {
-        _reportErrorForToken(ParserErrorCode.TOP_LEVEL_OPERATOR, _currentToken);
-        return _convertToFunctionDeclaration(_parseOperator(
-            commentAndMetadata, modifiers.externalKeyword, returnType));
-      } else if (_matchesIdentifier() &&
-          _peek().matchesAny(const <TokenType>[
-            TokenType.OPEN_PAREN,
-            TokenType.OPEN_CURLY_BRACKET,
-            TokenType.FUNCTION,
-            TokenType.LT
-          ])) {
-        _validateModifiersForTopLevelFunction(modifiers);
-        return _parseFunctionDeclaration(
-            commentAndMetadata, modifiers.externalKeyword, returnType);
-      } else {
-        //
-        // We have found an error of some kind. Try to recover.
-        //
-        if (_matchesIdentifier()) {
-          if (_peek().matchesAny(const <TokenType>[
-            TokenType.EQ,
-            TokenType.COMMA,
-            TokenType.SEMICOLON
-          ])) {
-            //
-            // We appear to have a variable declaration with a type of "void".
-            //
-            _reportErrorForNode(ParserErrorCode.VOID_VARIABLE, returnType);
-            return new TopLevelVariableDeclaration(
-                commentAndMetadata.comment,
-                commentAndMetadata.metadata,
-                _parseVariableDeclarationListAfterType(null,
-                    _validateModifiersForTopLevelVariable(modifiers), null),
-                _expect(TokenType.SEMICOLON));
-          }
-        }
-        _reportErrorForToken(
-            ParserErrorCode.EXPECTED_EXECUTABLE, _currentToken);
-        return null;
-      }
-    } else if ((_matchesKeyword(Keyword.GET) || _matchesKeyword(Keyword.SET)) &&
-        _tokenMatchesIdentifier(_peek())) {
-      _validateModifiersForTopLevelFunction(modifiers);
-      return _parseFunctionDeclaration(
-          commentAndMetadata, modifiers.externalKeyword, null);
-    } else if (_matchesKeyword(Keyword.OPERATOR) && _isOperator(_peek())) {
-      _reportErrorForToken(ParserErrorCode.TOP_LEVEL_OPERATOR, _currentToken);
-      return _convertToFunctionDeclaration(
-          _parseOperator(commentAndMetadata, modifiers.externalKeyword, null));
-    } else if (!_matchesIdentifier()) {
-      Token keyword = modifiers.varKeyword;
-      if (keyword == null) {
-        keyword = modifiers.finalKeyword;
-      }
-      if (keyword == null) {
-        keyword = modifiers.constKeyword;
-      }
-      if (keyword != null) {
-        //
-        // We appear to have found an incomplete top-level variable declaration.
-        //
-        _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
-        List<VariableDeclaration> variables = new List<VariableDeclaration>();
-        variables.add(
-            new VariableDeclaration(_createSyntheticIdentifier(), null, null));
-        return new TopLevelVariableDeclaration(
-            commentAndMetadata.comment,
-            commentAndMetadata.metadata,
-            new VariableDeclarationList(null, null, keyword, null, variables),
-            _expect(TokenType.SEMICOLON));
-      }
-      _reportErrorForToken(ParserErrorCode.EXPECTED_EXECUTABLE, _currentToken);
-      return null;
-    } else if (_isPeekGenericTypeParametersAndOpenParen()) {
-      return _parseFunctionDeclaration(
-          commentAndMetadata, modifiers.externalKeyword, null);
-    } else if (_tokenMatches(_peek(), TokenType.OPEN_PAREN)) {
-      TypeName returnType = _parseOptionalTypeNameComment();
-      _validateModifiersForTopLevelFunction(modifiers);
-      return _parseFunctionDeclaration(
-          commentAndMetadata, modifiers.externalKeyword, returnType);
-    } else if (_peek().matchesAny(const <TokenType>[
-      TokenType.EQ,
-      TokenType.COMMA,
-      TokenType.SEMICOLON
-    ])) {
-      if (modifiers.constKeyword == null &&
-          modifiers.finalKeyword == null &&
-          modifiers.varKeyword == null) {
-        _reportErrorForCurrentToken(
-            ParserErrorCode.MISSING_CONST_FINAL_VAR_OR_TYPE);
-      }
-      return new TopLevelVariableDeclaration(
-          commentAndMetadata.comment,
-          commentAndMetadata.metadata,
-          _parseVariableDeclarationListAfterType(
-              null, _validateModifiersForTopLevelVariable(modifiers), null),
-          _expect(TokenType.SEMICOLON));
-    }
-    TypeName returnType = parseReturnType();
-    if ((_matchesKeyword(Keyword.GET) || _matchesKeyword(Keyword.SET)) &&
-        _tokenMatchesIdentifier(_peek())) {
-      _validateModifiersForTopLevelFunction(modifiers);
-      return _parseFunctionDeclaration(
-          commentAndMetadata, modifiers.externalKeyword, returnType);
-    } else if (_matchesKeyword(Keyword.OPERATOR) && _isOperator(_peek())) {
-      _reportErrorForToken(ParserErrorCode.TOP_LEVEL_OPERATOR, _currentToken);
-      return _convertToFunctionDeclaration(_parseOperator(
-          commentAndMetadata, modifiers.externalKeyword, returnType));
-    } else if (_matches(TokenType.AT)) {
-      return new TopLevelVariableDeclaration(
-          commentAndMetadata.comment,
-          commentAndMetadata.metadata,
-          _parseVariableDeclarationListAfterType(null,
-              _validateModifiersForTopLevelVariable(modifiers), returnType),
-          _expect(TokenType.SEMICOLON));
-    } else if (!_matchesIdentifier()) {
-      // TODO(brianwilkerson) Generalize this error. We could also be parsing a
-      // top-level variable at this point.
-      _reportErrorForToken(ParserErrorCode.EXPECTED_EXECUTABLE, _currentToken);
-      Token semicolon;
-      if (_matches(TokenType.SEMICOLON)) {
-        semicolon = getAndAdvance();
-      } else {
-        semicolon = _createSyntheticToken(TokenType.SEMICOLON);
-      }
-      List<VariableDeclaration> variables = new List<VariableDeclaration>();
-      variables.add(
-          new VariableDeclaration(_createSyntheticIdentifier(), null, null));
-      return new TopLevelVariableDeclaration(
-          commentAndMetadata.comment,
-          commentAndMetadata.metadata,
-          new VariableDeclarationList(null, null, null, returnType, variables),
-          semicolon);
-    }
-    if (_peek().matchesAny(const <TokenType>[
-      TokenType.OPEN_PAREN,
-      TokenType.FUNCTION,
-      TokenType.OPEN_CURLY_BRACKET,
-      TokenType.LT
-    ])) {
-      _validateModifiersForTopLevelFunction(modifiers);
-      return _parseFunctionDeclaration(
-          commentAndMetadata, modifiers.externalKeyword, returnType);
-    }
-    return new TopLevelVariableDeclaration(
-        commentAndMetadata.comment,
-        commentAndMetadata.metadata,
-        _parseVariableDeclarationListAfterType(
-            null, _validateModifiersForTopLevelVariable(modifiers), returnType),
-        _expect(TokenType.SEMICOLON));
-  }
-
-  /**
-   * Parse a configuration in either an import or export directive.
-   *
-   *     configuration ::=
-   *         'if' '(' test ')' uri
-   *
-   *     test ::=
-   *         dottedName ('==' stringLiteral)?
-   *
-   *     dottedName ::=
-   *         identifier ('.' identifier)*
-   */
-  Configuration _parseConfiguration() {
-    Token ifKeyword = _expectKeyword(Keyword.IF);
-    Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
-    DottedName name = _parseDottedName();
-    Token equalToken = null;
-    StringLiteral value = null;
-    if (_matches(TokenType.EQ_EQ)) {
-      equalToken = getAndAdvance();
-      value = parseStringLiteral();
-      if (value is StringInterpolation) {
-        _reportErrorForNode(
-            ParserErrorCode.INVALID_LITERAL_IN_CONFIGURATION, value);
-      }
-    }
-    Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
-    StringLiteral libraryUri = _parseUri();
-    return new Configuration(ifKeyword, leftParenthesis, name, equalToken,
-        value, rightParenthesis, libraryUri);
-  }
-
-  /**
-   * Parse a list of configurations. If conditional directives are not
-   * supported, return an empty list without attempting to parse anything.
+   * Parse a list of configurations. Return the configurations that were parsed,
+   * or `null` if there are no configurations.
    */
   List<Configuration> _parseConfigurations() {
-    List<Configuration> configurations = <Configuration>[];
+    List<Configuration> configurations = null;
     while (_matchesKeyword(Keyword.IF)) {
-      configurations.add(_parseConfiguration());
+      configurations ??= <Configuration>[];
+      configurations.add(parseConfiguration());
     }
     return configurations;
-  }
-
-  /**
-   * Parse a const expression. Return the const expression that was parsed.
-   *
-   *     constExpression ::=
-   *         instanceCreationExpression
-   *       | listLiteral
-   *       | mapLiteral
-   */
-  Expression _parseConstExpression() {
-    Token keyword = _expectKeyword(Keyword.CONST);
-    if (_matches(TokenType.LT) || _injectGenericCommentTypeList()) {
-      return _parseListOrMapLiteral(keyword);
-    } else if (_matches(TokenType.OPEN_SQUARE_BRACKET) ||
-        _matches(TokenType.INDEX)) {
-      return _parseListLiteral(keyword, null);
-    } else if (_matches(TokenType.OPEN_CURLY_BRACKET)) {
-      return _parseMapLiteral(keyword, null);
-    }
-    return _parseInstanceCreationExpression(keyword);
   }
 
   ConstructorDeclaration _parseConstructor(
@@ -5410,26 +6246,31 @@ class Parser {
     List<ConstructorInitializer> initializers = null;
     if (_matches(TokenType.COLON)) {
       separator = getAndAdvance();
-      initializers = new List<ConstructorInitializer>();
+      initializers = <ConstructorInitializer>[];
       do {
-        if (_matchesKeyword(Keyword.THIS)) {
-          if (_tokenMatches(_peek(), TokenType.OPEN_PAREN)) {
+        Keyword keyword = _currentToken.keyword;
+        if (keyword == Keyword.THIS) {
+          TokenType nextType = _peek().type;
+          if (nextType == TokenType.OPEN_PAREN) {
             bodyAllowed = false;
-            initializers.add(_parseRedirectingConstructorInvocation());
-          } else if (_tokenMatches(_peek(), TokenType.PERIOD) &&
+            initializers.add(parseRedirectingConstructorInvocation(false));
+          } else if (nextType == TokenType.PERIOD &&
               _tokenMatches(_peekAt(3), TokenType.OPEN_PAREN)) {
             bodyAllowed = false;
-            initializers.add(_parseRedirectingConstructorInvocation());
+            initializers.add(parseRedirectingConstructorInvocation(true));
           } else {
-            initializers.add(_parseConstructorFieldInitializer());
+            initializers.add(parseConstructorFieldInitializer(true));
           }
-        } else if (_matchesKeyword(Keyword.SUPER)) {
-          initializers.add(_parseSuperConstructorInvocation());
+        } else if (keyword == Keyword.SUPER) {
+          initializers.add(parseSuperConstructorInvocation());
         } else if (_matches(TokenType.OPEN_CURLY_BRACKET) ||
             _matches(TokenType.FUNCTION)) {
           _reportErrorForCurrentToken(ParserErrorCode.MISSING_INITIALIZER);
+        } else if (_enableAssertInitializer &&
+            _matchesKeyword(Keyword.ASSERT)) {
+          initializers.add(_parseAssertInitializer());
         } else {
-          initializers.add(_parseConstructorFieldInitializer());
+          initializers.add(parseConstructorFieldInitializer(false));
         }
       } while (_optional(TokenType.COMMA));
       if (factoryKeyword != null) {
@@ -5442,18 +6283,19 @@ class Parser {
     if (_matches(TokenType.EQ)) {
       separator = getAndAdvance();
       redirectedConstructor = parseConstructorName();
-      body = new EmptyFunctionBody(_expect(TokenType.SEMICOLON));
+      body = astFactory.emptyFunctionBody(_expect(TokenType.SEMICOLON));
       if (factoryKeyword == null) {
         _reportErrorForNode(
             ParserErrorCode.REDIRECTION_IN_NON_FACTORY_CONSTRUCTOR,
             redirectedConstructor);
       }
     } else {
-      body = _parseFunctionBody(
-          true, ParserErrorCode.MISSING_FUNCTION_BODY, false);
+      body =
+          parseFunctionBody(true, ParserErrorCode.MISSING_FUNCTION_BODY, false);
       if (constKeyword != null &&
           factoryKeyword != null &&
-          externalKeyword == null) {
+          externalKeyword == null &&
+          body is! NativeFunctionBody) {
         _reportErrorForToken(ParserErrorCode.CONST_FACTORY, factoryKeyword);
       } else if (body is EmptyFunctionBody) {
         if (factoryKeyword != null &&
@@ -5463,7 +6305,7 @@ class Parser {
               ParserErrorCode.FACTORY_WITHOUT_BODY, factoryKeyword);
         }
       } else {
-        if (constKeyword != null) {
+        if (constKeyword != null && body is! NativeFunctionBody) {
           _reportErrorForNode(
               ParserErrorCode.CONST_CONSTRUCTOR_WITH_BODY, body);
         } else if (externalKeyword != null) {
@@ -5475,7 +6317,7 @@ class Parser {
         }
       }
     }
-    return new ConstructorDeclaration(
+    return astFactory.constructorDeclaration(
         commentAndMetadata.comment,
         commentAndMetadata.metadata,
         externalKeyword,
@@ -5492,792 +6334,204 @@ class Parser {
   }
 
   /**
-   * Parse a field initializer within a constructor. Return the field
-   * initializer that was parsed.
+   * Parse an enum constant declaration. Return the enum constant declaration
+   * that was parsed.
    *
-   *     fieldInitializer:
-   *         ('this' '.')? identifier '=' conditionalExpression cascadeSection*
-   */
-  ConstructorFieldInitializer _parseConstructorFieldInitializer() {
-    Token keyword = null;
-    Token period = null;
-    if (_matchesKeyword(Keyword.THIS)) {
-      keyword = getAndAdvance();
-      period = _expect(TokenType.PERIOD);
-    }
-    SimpleIdentifier fieldName = parseSimpleIdentifier();
-    Token equals = null;
-    if (_matches(TokenType.EQ)) {
-      equals = getAndAdvance();
-    } else if (!_matchesKeyword(Keyword.THIS) &&
-        !_matchesKeyword(Keyword.SUPER) &&
-        !_matches(TokenType.OPEN_CURLY_BRACKET) &&
-        !_matches(TokenType.FUNCTION)) {
-      _reportErrorForCurrentToken(
-          ParserErrorCode.MISSING_ASSIGNMENT_IN_INITIALIZER);
-      equals = _createSyntheticToken(TokenType.EQ);
-    } else {
-      _reportErrorForCurrentToken(
-          ParserErrorCode.MISSING_ASSIGNMENT_IN_INITIALIZER);
-      return new ConstructorFieldInitializer(keyword, period, fieldName,
-          _createSyntheticToken(TokenType.EQ), _createSyntheticIdentifier());
-    }
-    bool wasInInitializer = _inInitializer;
-    _inInitializer = true;
-    try {
-      Expression expression = parseConditionalExpression();
-      TokenType tokenType = _currentToken.type;
-      if (tokenType == TokenType.PERIOD_PERIOD) {
-        List<Expression> cascadeSections = new List<Expression>();
-        while (tokenType == TokenType.PERIOD_PERIOD) {
-          Expression section = _parseCascadeSection();
-          if (section != null) {
-            cascadeSections.add(section);
-          }
-          tokenType = _currentToken.type;
-        }
-        expression = new CascadeExpression(expression, cascadeSections);
-      }
-      return new ConstructorFieldInitializer(
-          keyword, period, fieldName, equals, expression);
-    } finally {
-      _inInitializer = wasInInitializer;
-    }
-  }
-
-  /**
-   * Parse a continue statement. Return the continue statement that was parsed.
+   * Specified:
    *
-   *     continueStatement ::=
-   *         'continue' identifier? ';'
-   */
-  Statement _parseContinueStatement() {
-    Token continueKeyword = _expectKeyword(Keyword.CONTINUE);
-    if (!_inLoop && !_inSwitch) {
-      _reportErrorForToken(
-          ParserErrorCode.CONTINUE_OUTSIDE_OF_LOOP, continueKeyword);
-    }
-    SimpleIdentifier label = null;
-    if (_matchesIdentifier()) {
-      label = parseSimpleIdentifier();
-    }
-    if (_inSwitch && !_inLoop && label == null) {
-      _reportErrorForToken(
-          ParserErrorCode.CONTINUE_WITHOUT_LABEL_IN_CASE, continueKeyword);
-    }
-    Token semicolon = _expect(TokenType.SEMICOLON);
-    return new ContinueStatement(continueKeyword, label, semicolon);
-  }
-
-  /**
-   * Parse a directive. The [commentAndMetadata] is the metadata to be
-   * associated with the directive. Return the directive that was parsed.
+   *     enumConstant ::=
+   *         id
    *
-   *     directive ::=
-   *         exportDirective
-   *       | libraryDirective
-   *       | importDirective
-   *       | partDirective
-   */
-  Directive _parseDirective(CommentAndMetadata commentAndMetadata) {
-    if (_matchesKeyword(Keyword.IMPORT)) {
-      return _parseImportDirective(commentAndMetadata);
-    } else if (_matchesKeyword(Keyword.EXPORT)) {
-      return _parseExportDirective(commentAndMetadata);
-    } else if (_matchesKeyword(Keyword.LIBRARY)) {
-      return _parseLibraryDirective(commentAndMetadata);
-    } else if (_matchesKeyword(Keyword.PART)) {
-      return _parsePartDirective(commentAndMetadata);
-    } else {
-      // Internal error: this method should not have been invoked if the current
-      // token was something other than one of the above.
-      throw new IllegalStateException(
-          "parseDirective invoked in an invalid state; currentToken = $_currentToken");
-    }
-  }
-
-  /**
-   * Parse the script tag and directives in a compilation unit until the first
-   * non-directive is encountered. Return the compilation unit that was parsed.
+   * Actual:
    *
-   *     compilationUnit ::=
-   *         scriptTag? directive*
+   *     enumConstant ::=
+   *         metadata id
    */
-  CompilationUnit _parseDirectives() {
-    Token firstToken = _currentToken;
-    ScriptTag scriptTag = null;
-    if (_matches(TokenType.SCRIPT_TAG)) {
-      scriptTag = new ScriptTag(getAndAdvance());
-    }
-    List<Directive> directives = new List<Directive>();
-    while (!_matches(TokenType.EOF)) {
-      CommentAndMetadata commentAndMetadata = _parseCommentAndMetadata();
-      if ((_matchesKeyword(Keyword.IMPORT) ||
-              _matchesKeyword(Keyword.EXPORT) ||
-              _matchesKeyword(Keyword.LIBRARY) ||
-              _matchesKeyword(Keyword.PART)) &&
-          !_tokenMatches(_peek(), TokenType.PERIOD) &&
-          !_tokenMatches(_peek(), TokenType.LT) &&
-          !_tokenMatches(_peek(), TokenType.OPEN_PAREN)) {
-        directives.add(_parseDirective(commentAndMetadata));
-      } else if (_matches(TokenType.SEMICOLON)) {
-        _advance();
-      } else {
-        while (!_matches(TokenType.EOF)) {
-          _advance();
-        }
-        return new CompilationUnit(firstToken, scriptTag, directives,
-            new List<CompilationUnitMember>(), _currentToken);
-      }
-    }
-    return new CompilationUnit(firstToken, scriptTag, directives,
-        new List<CompilationUnitMember>(), _currentToken);
-  }
-
-  /**
-   * Parse a documentation comment. Return the documentation comment that was
-   * parsed, or `null` if there was no comment.
-   *
-   *     documentationComment ::=
-   *         multiLineComment?
-   *       | singleLineComment*
-   */
-  Comment _parseDocumentationComment() {
-    List<DocumentationCommentToken> documentationTokens =
-        <DocumentationCommentToken>[];
-    CommentToken commentToken = _currentToken.precedingComments;
-    while (commentToken != null) {
-      if (commentToken is DocumentationCommentToken) {
-        if (documentationTokens.isNotEmpty) {
-          if (commentToken.type == TokenType.SINGLE_LINE_COMMENT) {
-            if (documentationTokens[0].type != TokenType.SINGLE_LINE_COMMENT) {
-              documentationTokens.clear();
-            }
-          } else {
-            documentationTokens.clear();
-          }
-        }
-        documentationTokens.add(commentToken);
-      }
-      commentToken = commentToken.next;
-    }
-    if (documentationTokens.isEmpty) {
-      return null;
-    }
-    List<CommentReference> references =
-        _parseCommentReferences(documentationTokens);
-    return Comment.createDocumentationCommentWithReferences(
-        documentationTokens, references);
-  }
-
-  /**
-   * Parse a do statement. Return the do statement that was parsed.
-   *
-   *     doStatement ::=
-   *         'do' statement 'while' '(' expression ')' ';'
-   */
-  Statement _parseDoStatement() {
-    bool wasInLoop = _inLoop;
-    _inLoop = true;
-    try {
-      Token doKeyword = _expectKeyword(Keyword.DO);
-      Statement body = parseStatement2();
-      Token whileKeyword = _expectKeyword(Keyword.WHILE);
-      Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
-      Expression condition = parseExpression2();
-      Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
-      Token semicolon = _expect(TokenType.SEMICOLON);
-      return new DoStatement(doKeyword, body, whileKeyword, leftParenthesis,
-          condition, rightParenthesis, semicolon);
-    } finally {
-      _inLoop = wasInLoop;
-    }
-  }
-
-  /**
-   * Parse a dotted name. Return the dotted name that was parsed.
-   *
-   *     dottedName ::=
-   *         identifier ('.' identifier)*
-   */
-  DottedName _parseDottedName() {
-    List<SimpleIdentifier> components = new List<SimpleIdentifier>();
-    components.add(parseSimpleIdentifier());
-    while (_matches(TokenType.PERIOD)) {
-      _advance();
-      components.add(parseSimpleIdentifier());
-    }
-    return new DottedName(components);
-  }
-
-  /**
-   * Parse an empty statement. Return the empty statement that was parsed.
-   *
-   *     emptyStatement ::=
-   *         ';'
-   */
-  Statement _parseEmptyStatement() => new EmptyStatement(getAndAdvance());
-
   EnumConstantDeclaration _parseEnumConstantDeclaration() {
-    CommentAndMetadata commentAndMetadata = _parseCommentAndMetadata();
+    CommentAndMetadata commentAndMetadata = parseCommentAndMetadata();
     SimpleIdentifier name;
     if (_matchesIdentifier()) {
-      name = parseSimpleIdentifier(isDeclaration: true);
+      name = _parseSimpleIdentifierUnchecked(isDeclaration: true);
     } else {
-      name = _createSyntheticIdentifier();
+      name = createSyntheticIdentifier();
     }
-    if (commentAndMetadata.metadata.isNotEmpty) {
+    if (commentAndMetadata.hasMetadata) {
       _reportErrorForNode(ParserErrorCode.ANNOTATION_ON_ENUM_CONSTANT,
           commentAndMetadata.metadata[0]);
     }
-    return new EnumConstantDeclaration(
+    return astFactory.enumConstantDeclaration(
         commentAndMetadata.comment, commentAndMetadata.metadata, name);
   }
 
   /**
-   * Parse an enum declaration. The [commentAndMetadata] is the metadata to be
-   * associated with the member. Return the enum declaration that was parsed.
-   *
-   *     enumType ::=
-   *         metadata 'enum' id '{' id (',' id)* (',')? '}'
+   * Parse a list of formal parameters given that the list starts with the given
+   * [leftParenthesis]. Return the formal parameters that were parsed.
    */
-  EnumDeclaration _parseEnumDeclaration(CommentAndMetadata commentAndMetadata) {
-    Token keyword = _expectKeyword(Keyword.ENUM);
-    SimpleIdentifier name = parseSimpleIdentifier(isDeclaration: true);
-    Token leftBracket = null;
-    List<EnumConstantDeclaration> constants =
-        new List<EnumConstantDeclaration>();
-    Token rightBracket = null;
-    if (_matches(TokenType.OPEN_CURLY_BRACKET)) {
-      leftBracket = _expect(TokenType.OPEN_CURLY_BRACKET);
-      if (_matchesIdentifier() || _matches(TokenType.AT)) {
-        constants.add(_parseEnumConstantDeclaration());
-      } else if (_matches(TokenType.COMMA) &&
-          _tokenMatchesIdentifier(_peek())) {
-        constants.add(_parseEnumConstantDeclaration());
-        _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
-      } else {
-        constants.add(_parseEnumConstantDeclaration());
-        _reportErrorForCurrentToken(ParserErrorCode.EMPTY_ENUM_BODY);
-      }
-      while (_optional(TokenType.COMMA)) {
-        if (_matches(TokenType.CLOSE_CURLY_BRACKET)) {
+  FormalParameterList _parseFormalParameterListAfterParen(
+      Token leftParenthesis) {
+    if (_matches(TokenType.CLOSE_PAREN)) {
+      return astFactory.formalParameterList(
+          leftParenthesis, null, null, null, getAndAdvance());
+    }
+    //
+    // Even though it is invalid to have default parameters outside of brackets,
+    // required parameters inside of brackets, or multiple groups of default and
+    // named parameters, we allow all of these cases so that we can recover
+    // better.
+    //
+    List<FormalParameter> parameters = <FormalParameter>[];
+    Token leftSquareBracket = null;
+    Token rightSquareBracket = null;
+    Token leftCurlyBracket = null;
+    Token rightCurlyBracket = null;
+    ParameterKind kind = ParameterKind.REQUIRED;
+    bool firstParameter = true;
+    bool reportedMultiplePositionalGroups = false;
+    bool reportedMultipleNamedGroups = false;
+    bool reportedMixedGroups = false;
+    bool wasOptionalParameter = false;
+    Token initialToken = null;
+    do {
+      if (firstParameter) {
+        firstParameter = false;
+      } else if (!_optional(TokenType.COMMA)) {
+        // TODO(brianwilkerson) The token is wrong, we need to recover from this
+        // case.
+        if (_getEndToken(leftParenthesis) != null) {
+          _reportErrorForCurrentToken(
+              ParserErrorCode.EXPECTED_TOKEN, [TokenType.COMMA.lexeme]);
+        } else {
+          _reportErrorForToken(ParserErrorCode.MISSING_CLOSING_PARENTHESIS,
+              _currentToken.previous);
           break;
         }
-        constants.add(_parseEnumConstantDeclaration());
       }
-      rightBracket = _expect(TokenType.CLOSE_CURLY_BRACKET);
-    } else {
-      leftBracket = _createSyntheticToken(TokenType.OPEN_CURLY_BRACKET);
-      rightBracket = _createSyntheticToken(TokenType.CLOSE_CURLY_BRACKET);
-      _reportErrorForCurrentToken(ParserErrorCode.MISSING_ENUM_BODY);
-    }
-    return new EnumDeclaration(
-        commentAndMetadata.comment,
-        commentAndMetadata.metadata,
-        keyword,
-        name,
-        leftBracket,
-        constants,
-        rightBracket);
-  }
-
-  /**
-   * Parse an equality expression. Return the equality expression that was
-   * parsed.
-   *
-   *     equalityExpression ::=
-   *         relationalExpression (equalityOperator relationalExpression)?
-   *       | 'super' equalityOperator relationalExpression
-   */
-  Expression _parseEqualityExpression() {
-    Expression expression;
-    if (_matchesKeyword(Keyword.SUPER) &&
-        _currentToken.next.type.isEqualityOperator) {
-      expression = new SuperExpression(getAndAdvance());
-    } else {
-      expression = _parseRelationalExpression();
-    }
-    bool leftEqualityExpression = false;
-    while (_currentToken.type.isEqualityOperator) {
-      Token operator = getAndAdvance();
-      if (leftEqualityExpression) {
-        _reportErrorForNode(
-            ParserErrorCode.EQUALITY_CANNOT_BE_EQUALITY_OPERAND, expression);
-      }
-      expression = new BinaryExpression(
-          expression, operator, _parseRelationalExpression());
-      leftEqualityExpression = true;
-    }
-    return expression;
-  }
-
-  /**
-   * Parse an export directive. The [commentAndMetadata] is the metadata to be
-   * associated with the directive. Return the export directive that was parsed.
-   *
-   *     exportDirective ::=
-   *         metadata 'export' stringLiteral configuration* combinator*';'
-   */
-  ExportDirective _parseExportDirective(CommentAndMetadata commentAndMetadata) {
-    Token exportKeyword = _expectKeyword(Keyword.EXPORT);
-    StringLiteral libraryUri = _parseUri();
-    List<Configuration> configurations = _parseConfigurations();
-    List<Combinator> combinators = _parseCombinators();
-    Token semicolon = _expect(TokenType.SEMICOLON);
-    return new ExportDirective(
-        commentAndMetadata.comment,
-        commentAndMetadata.metadata,
-        exportKeyword,
-        libraryUri,
-        configurations,
-        combinators,
-        semicolon);
-  }
-
-  /**
-   * Parse a list of expressions. Return the expression that was parsed.
-   *
-   *     expressionList ::=
-   *         expression (',' expression)*
-   */
-  List<Expression> _parseExpressionList() {
-    List<Expression> expressions = new List<Expression>();
-    expressions.add(parseExpression2());
-    while (_optional(TokenType.COMMA)) {
-      expressions.add(parseExpression2());
-    }
-    return expressions;
-  }
-
-  /**
-   * Parse the 'final', 'const', 'var' or type preceding a variable declaration.
-   * The [optional] is `true` if the keyword and type are optional. Return the
-   * 'final', 'const', 'var' or type that was parsed.
-   *
-   *     finalConstVarOrType ::=
-   *         'final' type?
-   *       | 'const' type?
-   *       | 'var'
-   *       | type
-   */
-  FinalConstVarOrType _parseFinalConstVarOrType(bool optional) {
-    Token keyword = null;
-    TypeName type = null;
-    if (_matchesKeyword(Keyword.FINAL) || _matchesKeyword(Keyword.CONST)) {
-      keyword = getAndAdvance();
-      if (_isTypedIdentifier(_currentToken)) {
-        type = parseTypeName();
-      } else {
-        // Support `final/*=T*/ x;`
-        type = _parseOptionalTypeNameComment();
-      }
-    } else if (_matchesKeyword(Keyword.VAR)) {
-      keyword = getAndAdvance();
-      // Support `var/*=T*/ x;`
-      type = _parseOptionalTypeNameComment();
-      if (type != null) {
-        // Clear the keyword to prevent an error.
-        keyword = null;
-      }
-    } else if (_isTypedIdentifier(_currentToken)) {
-      type = parseReturnType();
-    } else if (!optional) {
-      _reportErrorForCurrentToken(
-          ParserErrorCode.MISSING_CONST_FINAL_VAR_OR_TYPE);
-    } else {
-      // Support parameters such as `(/*=K*/ key, /*=V*/ value)`
-      // This is not supported if the type is required.
-      type = _parseOptionalTypeNameComment();
-    }
-    return new FinalConstVarOrType(keyword, type);
-  }
-
-  /**
-   * Parse a formal parameter. At most one of `isOptional` and `isNamed` can be
-   * `true`. The [kind] is the kind of parameter being expected based on the
-   * presence or absence of group delimiters. Return the formal parameter that
-   * was parsed.
-   *
-   *     defaultFormalParameter ::=
-   *         normalFormalParameter ('=' expression)?
-   *
-   *     defaultNamedParameter ::=
-   *         normalFormalParameter (':' expression)?
-   */
-  FormalParameter _parseFormalParameter(ParameterKind kind) {
-    NormalFormalParameter parameter = parseNormalFormalParameter();
-    if (_matches(TokenType.EQ)) {
-      Token seperator = getAndAdvance();
-      Expression defaultValue = parseExpression2();
-      if (kind == ParameterKind.NAMED) {
-        _reportErrorForToken(
-            ParserErrorCode.WRONG_SEPARATOR_FOR_NAMED_PARAMETER, seperator);
-      } else if (kind == ParameterKind.REQUIRED) {
-        _reportErrorForNode(
-            ParserErrorCode.POSITIONAL_PARAMETER_OUTSIDE_GROUP, parameter);
-      }
-      return new DefaultFormalParameter(
-          parameter, kind, seperator, defaultValue);
-    } else if (_matches(TokenType.COLON)) {
-      Token seperator = getAndAdvance();
-      Expression defaultValue = parseExpression2();
-      if (kind == ParameterKind.POSITIONAL) {
-        _reportErrorForToken(
-            ParserErrorCode.WRONG_SEPARATOR_FOR_POSITIONAL_PARAMETER,
-            seperator);
-      } else if (kind == ParameterKind.REQUIRED) {
-        _reportErrorForNode(
-            ParserErrorCode.NAMED_PARAMETER_OUTSIDE_GROUP, parameter);
-      }
-      return new DefaultFormalParameter(
-          parameter, kind, seperator, defaultValue);
-    } else if (kind != ParameterKind.REQUIRED) {
-      return new DefaultFormalParameter(parameter, kind, null, null);
-    }
-    return parameter;
-  }
-
-  /**
-   * Parse a for statement. Return the for statement that was parsed.
-   *
-   *     forStatement ::=
-   *         'for' '(' forLoopParts ')' statement
-   *
-   *     forLoopParts ::=
-   *         forInitializerStatement expression? ';' expressionList?
-   *       | declaredIdentifier 'in' expression
-   *       | identifier 'in' expression
-   *
-   *     forInitializerStatement ::=
-   *         localVariableDeclaration ';'
-   *       | expression? ';'
-   */
-  Statement _parseForStatement() {
-    bool wasInLoop = _inLoop;
-    _inLoop = true;
-    try {
-      Token awaitKeyword = null;
-      if (_matchesString(_AWAIT)) {
-        awaitKeyword = getAndAdvance();
-      }
-      Token forKeyword = _expectKeyword(Keyword.FOR);
-      Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
-      VariableDeclarationList variableList = null;
-      Expression initialization = null;
-      if (!_matches(TokenType.SEMICOLON)) {
-        CommentAndMetadata commentAndMetadata = _parseCommentAndMetadata();
-        if (_matchesIdentifier() &&
-            (_tokenMatchesKeyword(_peek(), Keyword.IN) ||
-                _tokenMatches(_peek(), TokenType.COLON))) {
-          List<VariableDeclaration> variables = new List<VariableDeclaration>();
-          SimpleIdentifier variableName = parseSimpleIdentifier();
-          variables.add(new VariableDeclaration(variableName, null, null));
-          variableList = new VariableDeclarationList(commentAndMetadata.comment,
-              commentAndMetadata.metadata, null, null, variables);
-        } else if (_isInitializedVariableDeclaration()) {
-          variableList =
-              _parseVariableDeclarationListAfterMetadata(commentAndMetadata);
-        } else {
-          initialization = parseExpression2();
+      initialToken = _currentToken;
+      //
+      // Handle the beginning of parameter groups.
+      //
+      TokenType type = _currentToken.type;
+      if (type == TokenType.OPEN_SQUARE_BRACKET) {
+        wasOptionalParameter = true;
+        if (leftSquareBracket != null && !reportedMultiplePositionalGroups) {
+          _reportErrorForCurrentToken(
+              ParserErrorCode.MULTIPLE_POSITIONAL_PARAMETER_GROUPS);
+          reportedMultiplePositionalGroups = true;
         }
-        if (_matchesKeyword(Keyword.IN) || _matches(TokenType.COLON)) {
-          if (_matches(TokenType.COLON)) {
-            _reportErrorForCurrentToken(ParserErrorCode.COLON_IN_PLACE_OF_IN);
+        if (leftCurlyBracket != null && !reportedMixedGroups) {
+          _reportErrorForCurrentToken(ParserErrorCode.MIXED_PARAMETER_GROUPS);
+          reportedMixedGroups = true;
+        }
+        leftSquareBracket = getAndAdvance();
+        kind = ParameterKind.POSITIONAL;
+      } else if (type == TokenType.OPEN_CURLY_BRACKET) {
+        wasOptionalParameter = true;
+        if (leftCurlyBracket != null && !reportedMultipleNamedGroups) {
+          _reportErrorForCurrentToken(
+              ParserErrorCode.MULTIPLE_NAMED_PARAMETER_GROUPS);
+          reportedMultipleNamedGroups = true;
+        }
+        if (leftSquareBracket != null && !reportedMixedGroups) {
+          _reportErrorForCurrentToken(ParserErrorCode.MIXED_PARAMETER_GROUPS);
+          reportedMixedGroups = true;
+        }
+        leftCurlyBracket = getAndAdvance();
+        kind = ParameterKind.NAMED;
+      }
+      //
+      // Parse and record the parameter.
+      //
+      FormalParameter parameter = parseFormalParameter(kind);
+      parameters.add(parameter);
+      if (kind == ParameterKind.REQUIRED && wasOptionalParameter) {
+        _reportErrorForNode(
+            ParserErrorCode.NORMAL_BEFORE_OPTIONAL_PARAMETERS, parameter);
+      }
+      //
+      // Handle the end of parameter groups.
+      //
+      // TODO(brianwilkerson) Improve the detection and reporting of missing and
+      // mismatched delimiters.
+      type = _currentToken.type;
+
+      // Advance past trailing commas as appropriate.
+      if (type == TokenType.COMMA) {
+        // Only parse commas trailing normal (non-positional/named) params.
+        if (rightSquareBracket == null && rightCurlyBracket == null) {
+          Token next = _peek();
+          if (next.type == TokenType.CLOSE_PAREN ||
+              next.type == TokenType.CLOSE_CURLY_BRACKET ||
+              next.type == TokenType.CLOSE_SQUARE_BRACKET) {
+            _advance();
+            type = _currentToken.type;
           }
-          DeclaredIdentifier loopVariable = null;
-          SimpleIdentifier identifier = null;
-          if (variableList == null) {
-            // We found: <expression> 'in'
+        }
+      }
+
+      if (type == TokenType.CLOSE_SQUARE_BRACKET) {
+        rightSquareBracket = getAndAdvance();
+        if (leftSquareBracket == null) {
+          if (leftCurlyBracket != null) {
             _reportErrorForCurrentToken(
-                ParserErrorCode.MISSING_VARIABLE_IN_FOR_EACH);
+                ParserErrorCode.WRONG_TERMINATOR_FOR_PARAMETER_GROUP,
+                ['}', ']']);
+            rightCurlyBracket = rightSquareBracket;
+            rightSquareBracket = null;
           } else {
-            NodeList<VariableDeclaration> variables = variableList.variables;
-            if (variables.length > 1) {
-              _reportErrorForCurrentToken(
-                  ParserErrorCode.MULTIPLE_VARIABLES_IN_FOR_EACH,
-                  [variables.length.toString()]);
-            }
-            VariableDeclaration variable = variables[0];
-            if (variable.initializer != null) {
-              _reportErrorForCurrentToken(
-                  ParserErrorCode.INITIALIZED_VARIABLE_IN_FOR_EACH);
-            }
-            Token keyword = variableList.keyword;
-            TypeName type = variableList.type;
-            if (keyword != null || type != null) {
-              loopVariable = new DeclaredIdentifier(
-                  commentAndMetadata.comment,
-                  commentAndMetadata.metadata,
-                  keyword,
-                  type,
-                  new SimpleIdentifier(variable.name.token,
-                      isDeclaration: true));
-            } else {
-              if (!commentAndMetadata.metadata.isEmpty) {
-                // TODO(jwren) metadata isn't allowed before the identifier in
-                // "identifier in expression", add warning if commentAndMetadata
-                // has content
-              }
-              identifier = variable.name;
-            }
+            _reportErrorForCurrentToken(
+                ParserErrorCode.UNEXPECTED_TERMINATOR_FOR_PARAMETER_GROUP,
+                ["["]);
           }
-          Token inKeyword = getAndAdvance();
-          Expression iterator = parseExpression2();
-          Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
-          Statement body = parseStatement2();
-          if (loopVariable == null) {
-            return new ForEachStatement.withReference(
-                awaitKeyword,
-                forKeyword,
-                leftParenthesis,
-                identifier,
-                inKeyword,
-                iterator,
-                rightParenthesis,
-                body);
-          }
-          return new ForEachStatement.withDeclaration(
-              awaitKeyword,
-              forKeyword,
-              leftParenthesis,
-              loopVariable,
-              inKeyword,
-              iterator,
-              rightParenthesis,
-              body);
         }
+        kind = ParameterKind.REQUIRED;
+      } else if (type == TokenType.CLOSE_CURLY_BRACKET) {
+        rightCurlyBracket = getAndAdvance();
+        if (leftCurlyBracket == null) {
+          if (leftSquareBracket != null) {
+            _reportErrorForCurrentToken(
+                ParserErrorCode.WRONG_TERMINATOR_FOR_PARAMETER_GROUP,
+                [']', '}']);
+            rightSquareBracket = rightCurlyBracket;
+            rightCurlyBracket = null;
+          } else {
+            _reportErrorForCurrentToken(
+                ParserErrorCode.UNEXPECTED_TERMINATOR_FOR_PARAMETER_GROUP,
+                ["{"]);
+          }
+        }
+        kind = ParameterKind.REQUIRED;
       }
-      if (awaitKeyword != null) {
-        _reportErrorForToken(
-            ParserErrorCode.INVALID_AWAIT_IN_FOR, awaitKeyword);
-      }
-      Token leftSeparator = _expect(TokenType.SEMICOLON);
-      Expression condition = null;
-      if (!_matches(TokenType.SEMICOLON)) {
-        condition = parseExpression2();
-      }
-      Token rightSeparator = _expect(TokenType.SEMICOLON);
-      List<Expression> updaters = null;
-      if (!_matches(TokenType.CLOSE_PAREN)) {
-        updaters = _parseExpressionList();
-      }
-      Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
-      Statement body = parseStatement2();
-      return new ForStatement(
-          forKeyword,
-          leftParenthesis,
-          variableList,
-          initialization,
-          leftSeparator,
-          condition,
-          rightSeparator,
-          updaters,
-          rightParenthesis,
-          body);
-    } finally {
-      _inLoop = wasInLoop;
+    } while (!_matches(TokenType.CLOSE_PAREN) &&
+        !identical(initialToken, _currentToken));
+    Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
+    //
+    // Check that the groups were closed correctly.
+    //
+    if (leftSquareBracket != null && rightSquareBracket == null) {
+      _reportErrorForCurrentToken(
+          ParserErrorCode.MISSING_TERMINATOR_FOR_PARAMETER_GROUP, ["]"]);
     }
+    if (leftCurlyBracket != null && rightCurlyBracket == null) {
+      _reportErrorForCurrentToken(
+          ParserErrorCode.MISSING_TERMINATOR_FOR_PARAMETER_GROUP, ["}"]);
+    }
+    //
+    // Build the parameter list.
+    //
+    leftSquareBracket ??= leftCurlyBracket;
+    rightSquareBracket ??= rightCurlyBracket;
+    return astFactory.formalParameterList(leftParenthesis, parameters,
+        leftSquareBracket, rightSquareBracket, rightParenthesis);
   }
 
   /**
-   * Parse a function body. The [mayBeEmpty] is `true` if the function body is
-   * allowed to be empty. The [emptyErrorCode] is the error code to report if
-   * function body expected, but not found. The [inExpression] is `true` if the
-   * function body is being parsed as part of an expression and therefore does
-   * not have a terminating semicolon. Return the function body that was parsed.
-   *
-   *     functionBody ::=
-   *         '=>' expression ';'
-   *       | block
-   *
-   *     functionExpressionBody ::=
-   *         '=>' expression
-   *       | block
-   */
-  FunctionBody _parseFunctionBody(
-      bool mayBeEmpty, ParserErrorCode emptyErrorCode, bool inExpression) {
-    bool wasInAsync = _inAsync;
-    bool wasInGenerator = _inGenerator;
-    bool wasInLoop = _inLoop;
-    bool wasInSwitch = _inSwitch;
-    _inAsync = false;
-    _inGenerator = false;
-    _inLoop = false;
-    _inSwitch = false;
-    try {
-      if (_matches(TokenType.SEMICOLON)) {
-        if (!mayBeEmpty) {
-          _reportErrorForCurrentToken(emptyErrorCode);
-        }
-        return new EmptyFunctionBody(getAndAdvance());
-      } else if (_matchesString(_NATIVE)) {
-        Token nativeToken = getAndAdvance();
-        StringLiteral stringLiteral = null;
-        if (_matches(TokenType.STRING)) {
-          stringLiteral = parseStringLiteral();
-        }
-        return new NativeFunctionBody(
-            nativeToken, stringLiteral, _expect(TokenType.SEMICOLON));
-      }
-      Token keyword = null;
-      Token star = null;
-      if (_matchesString(ASYNC)) {
-        keyword = getAndAdvance();
-        if (!_parseAsync) {
-          _reportErrorForToken(ParserErrorCode.ASYNC_NOT_SUPPORTED, keyword);
-        }
-        if (_matches(TokenType.STAR)) {
-          star = getAndAdvance();
-          _inGenerator = true;
-        }
-        _inAsync = true;
-      } else if (_matchesString(SYNC)) {
-        keyword = getAndAdvance();
-        if (!_parseAsync) {
-          _reportErrorForToken(ParserErrorCode.ASYNC_NOT_SUPPORTED, keyword);
-        }
-        if (_matches(TokenType.STAR)) {
-          star = getAndAdvance();
-          _inGenerator = true;
-        }
-      }
-      if (_matches(TokenType.FUNCTION)) {
-        if (keyword != null) {
-          if (!_tokenMatchesString(keyword, ASYNC)) {
-            _reportErrorForToken(ParserErrorCode.INVALID_SYNC, keyword);
-            keyword = null;
-          } else if (star != null) {
-            _reportErrorForToken(
-                ParserErrorCode.INVALID_STAR_AFTER_ASYNC, star);
-          }
-        }
-        Token functionDefinition = getAndAdvance();
-        if (_matchesKeyword(Keyword.RETURN)) {
-          _reportErrorForToken(ParserErrorCode.UNEXPECTED_TOKEN, _currentToken,
-              [_currentToken.lexeme]);
-          _advance();
-        }
-        Expression expression = parseExpression2();
-        Token semicolon = null;
-        if (!inExpression) {
-          semicolon = _expect(TokenType.SEMICOLON);
-        }
-        if (!_parseFunctionBodies) {
-          return new EmptyFunctionBody(
-              _createSyntheticToken(TokenType.SEMICOLON));
-        }
-        return new ExpressionFunctionBody(
-            keyword, functionDefinition, expression, semicolon);
-      } else if (_matches(TokenType.OPEN_CURLY_BRACKET)) {
-        if (keyword != null) {
-          if (_tokenMatchesString(keyword, SYNC) && star == null) {
-            _reportErrorForToken(
-                ParserErrorCode.MISSING_STAR_AFTER_SYNC, keyword);
-          }
-        }
-        if (!_parseFunctionBodies) {
-          _skipBlock();
-          return new EmptyFunctionBody(
-              _createSyntheticToken(TokenType.SEMICOLON));
-        }
-        return new BlockFunctionBody(keyword, star, parseBlock());
-      } else {
-        // Invalid function body
-        _reportErrorForCurrentToken(emptyErrorCode);
-        return new EmptyFunctionBody(
-            _createSyntheticToken(TokenType.SEMICOLON));
-      }
-    } finally {
-      _inAsync = wasInAsync;
-      _inGenerator = wasInGenerator;
-      _inLoop = wasInLoop;
-      _inSwitch = wasInSwitch;
-    }
-  }
-
-  /**
-   * Parse a function declaration. The [commentAndMetadata] is the documentation
-   * comment and metadata to be associated with the declaration. The
-   * [externalKeyword] is the 'external' keyword, or `null` if the function is
-   * not external. The [returnType] is the return type, or `null` if there is no
-   * return type. The [isStatement] is `true` if the function declaration is
-   * being parsed as a statement. Return the function declaration that was
+   * Parse a list of formal parameters. Return the formal parameters that were
    * parsed.
    *
-   *     functionDeclaration ::=
-   *         functionSignature functionBody
-   *       | returnType? getOrSet identifier formalParameterList functionBody
+   * This method assumes that the current token matches `TokenType.OPEN_PAREN`.
    */
-  FunctionDeclaration _parseFunctionDeclaration(
-      CommentAndMetadata commentAndMetadata,
-      Token externalKeyword,
-      TypeName returnType) {
-    Token keyword = null;
-    bool isGetter = false;
-    if (_matchesKeyword(Keyword.GET) &&
-        !_tokenMatches(_peek(), TokenType.OPEN_PAREN)) {
-      keyword = getAndAdvance();
-      isGetter = true;
-    } else if (_matchesKeyword(Keyword.SET) &&
-        !_tokenMatches(_peek(), TokenType.OPEN_PAREN)) {
-      keyword = getAndAdvance();
-    }
-    SimpleIdentifier name = parseSimpleIdentifier(isDeclaration: true);
-    TypeParameterList typeParameters = _parseGenericMethodTypeParameters();
-    FormalParameterList parameters = null;
-    if (!isGetter) {
-      if (_matches(TokenType.OPEN_PAREN)) {
-        parameters = parseFormalParameterList();
-        _validateFormalParameterList(parameters);
-      } else {
-        _reportErrorForCurrentToken(
-            ParserErrorCode.MISSING_FUNCTION_PARAMETERS);
-        parameters = new FormalParameterList(
-            _createSyntheticToken(TokenType.OPEN_PAREN),
-            null,
-            null,
-            null,
-            _createSyntheticToken(TokenType.CLOSE_PAREN));
-      }
-    } else if (_matches(TokenType.OPEN_PAREN)) {
-      _reportErrorForCurrentToken(ParserErrorCode.GETTER_WITH_PARAMETERS);
-      parseFormalParameterList();
-    }
-    FunctionBody body;
-    if (externalKeyword == null) {
-      body = _parseFunctionBody(
-          false, ParserErrorCode.MISSING_FUNCTION_BODY, false);
-    } else {
-      body = new EmptyFunctionBody(_expect(TokenType.SEMICOLON));
-    }
-//        if (!isStatement && matches(TokenType.SEMICOLON)) {
-//          // TODO(brianwilkerson) Improve this error message.
-//          reportError(ParserErrorCode.UNEXPECTED_TOKEN, currentToken.getLexeme());
-//          advance();
-//        }
-    return new FunctionDeclaration(
-        commentAndMetadata.comment,
-        commentAndMetadata.metadata,
-        externalKeyword,
-        returnType,
-        keyword,
-        name,
-        new FunctionExpression(typeParameters, parameters, body));
-  }
-
-  /**
-   * Parse a function declaration statement. Return the function declaration
-   * statement that was parsed.
-   *
-   *     functionDeclarationStatement ::=
-   *         functionSignature functionBody
-   */
-  Statement _parseFunctionDeclarationStatement() {
-    Modifiers modifiers = _parseModifiers();
-    _validateModifiersForFunctionDeclarationStatement(modifiers);
-    return _parseFunctionDeclarationStatementAfterReturnType(
-        _parseCommentAndMetadata(), _parseOptionalReturnType());
+  FormalParameterList _parseFormalParameterListUnchecked() {
+    return _parseFormalParameterListAfterParen(getAndAdvance());
   }
 
   /**
@@ -6292,7 +6546,7 @@ class Parser {
   Statement _parseFunctionDeclarationStatementAfterReturnType(
       CommentAndMetadata commentAndMetadata, TypeName returnType) {
     FunctionDeclaration declaration =
-        _parseFunctionDeclaration(commentAndMetadata, null, returnType);
+        parseFunctionDeclaration(commentAndMetadata, null, returnType);
     Token propertyKeyword = declaration.propertyKeyword;
     if (propertyKeyword != null) {
       if (propertyKeyword.keyword == Keyword.GET) {
@@ -6303,7 +6557,7 @@ class Parser {
             ParserErrorCode.SETTER_IN_FUNCTION, propertyKeyword);
       }
     }
-    return new FunctionDeclarationStatement(declaration);
+    return astFactory.functionDeclarationStatement(declaration);
   }
 
   /**
@@ -6328,16 +6582,17 @@ class Parser {
     if (_matches(TokenType.LT)) {
       typeParameters = parseTypeParameterList();
     }
-    if (_matches(TokenType.SEMICOLON) || _matches(TokenType.EOF)) {
+    TokenType type = _currentToken.type;
+    if (type == TokenType.SEMICOLON || type == TokenType.EOF) {
       _reportErrorForCurrentToken(ParserErrorCode.MISSING_TYPEDEF_PARAMETERS);
-      FormalParameterList parameters = new FormalParameterList(
+      FormalParameterList parameters = astFactory.formalParameterList(
           _createSyntheticToken(TokenType.OPEN_PAREN),
           null,
           null,
           null,
           _createSyntheticToken(TokenType.CLOSE_PAREN));
       Token semicolon = _expect(TokenType.SEMICOLON);
-      return new FunctionTypeAlias(
+      return astFactory.functionTypeAlias(
           commentAndMetadata.comment,
           commentAndMetadata.metadata,
           keyword,
@@ -6346,35 +6601,39 @@ class Parser {
           typeParameters,
           parameters,
           semicolon);
-    } else if (!_matches(TokenType.OPEN_PAREN)) {
-      _reportErrorForCurrentToken(ParserErrorCode.MISSING_TYPEDEF_PARAMETERS);
-      // TODO(brianwilkerson) Recover from this error. At the very least we
-      // should skip to the start of the next valid compilation unit member,
-      // allowing for the possibility of finding the typedef parameters before
-      // that point.
-      return new FunctionTypeAlias(
+    } else if (type == TokenType.OPEN_PAREN) {
+      FormalParameterList parameters = _parseFormalParameterListUnchecked();
+      _validateFormalParameterList(parameters);
+      Token semicolon = _expect(TokenType.SEMICOLON);
+      return astFactory.functionTypeAlias(
           commentAndMetadata.comment,
           commentAndMetadata.metadata,
           keyword,
           returnType,
           name,
           typeParameters,
-          new FormalParameterList(_createSyntheticToken(TokenType.OPEN_PAREN),
-              null, null, null, _createSyntheticToken(TokenType.CLOSE_PAREN)),
+          parameters,
+          semicolon);
+    } else {
+      _reportErrorForCurrentToken(ParserErrorCode.MISSING_TYPEDEF_PARAMETERS);
+      // Recovery: At the very least we should skip to the start of the next
+      // valid compilation unit member, allowing for the possibility of finding
+      // the typedef parameters before that point.
+      return astFactory.functionTypeAlias(
+          commentAndMetadata.comment,
+          commentAndMetadata.metadata,
+          keyword,
+          returnType,
+          name,
+          typeParameters,
+          astFactory.formalParameterList(
+              _createSyntheticToken(TokenType.OPEN_PAREN),
+              null,
+              null,
+              null,
+              _createSyntheticToken(TokenType.CLOSE_PAREN)),
           _createSyntheticToken(TokenType.SEMICOLON));
     }
-    FormalParameterList parameters = parseFormalParameterList();
-    _validateFormalParameterList(parameters);
-    Token semicolon = _expect(TokenType.SEMICOLON);
-    return new FunctionTypeAlias(
-        commentAndMetadata.comment,
-        commentAndMetadata.metadata,
-        keyword,
-        returnType,
-        name,
-        typeParameters,
-        parameters,
-        semicolon);
   }
 
   /**
@@ -6401,216 +6660,10 @@ class Parser {
    * See [parseGenericMethodComments].
    */
   TypeParameterList _parseGenericMethodTypeParameters() {
-    if (parseGenericMethods && _matches(TokenType.LT) ||
-        _injectGenericCommentTypeList()) {
+    if (_matches(TokenType.LT) || _injectGenericCommentTypeList()) {
       return parseTypeParameterList();
     }
     return null;
-  }
-
-  /**
-   * Parse a getter. The [commentAndMetadata] is the documentation comment and
-   * metadata to be associated with the declaration. The externalKeyword] is the
-   * 'external' token. The staticKeyword] is the static keyword, or `null` if
-   * the getter is not static. The [returnType] the return type that has already
-   * been parsed, or `null` if there was no return type. Return the getter that
-   * was parsed.
-   *
-   *     getter ::=
-   *         getterSignature functionBody?
-   *
-   *     getterSignature ::=
-   *         'external'? 'static'? returnType? 'get' identifier
-   */
-  MethodDeclaration _parseGetter(CommentAndMetadata commentAndMetadata,
-      Token externalKeyword, Token staticKeyword, TypeName returnType) {
-    Token propertyKeyword = _expectKeyword(Keyword.GET);
-    SimpleIdentifier name = parseSimpleIdentifier(isDeclaration: true);
-    if (_matches(TokenType.OPEN_PAREN) &&
-        _tokenMatches(_peek(), TokenType.CLOSE_PAREN)) {
-      _reportErrorForCurrentToken(ParserErrorCode.GETTER_WITH_PARAMETERS);
-      _advance();
-      _advance();
-    }
-    FunctionBody body = _parseFunctionBody(
-        externalKeyword != null || staticKeyword == null,
-        ParserErrorCode.STATIC_GETTER_WITHOUT_BODY,
-        false);
-    if (externalKeyword != null && body is! EmptyFunctionBody) {
-      _reportErrorForCurrentToken(ParserErrorCode.EXTERNAL_GETTER_WITH_BODY);
-    }
-    return new MethodDeclaration(
-        commentAndMetadata.comment,
-        commentAndMetadata.metadata,
-        externalKeyword,
-        staticKeyword,
-        returnType,
-        propertyKeyword,
-        null,
-        name,
-        null,
-        null,
-        body);
-  }
-
-  /**
-   * Parse a list of identifiers. Return the list of identifiers that were
-   * parsed.
-   *
-   *     identifierList ::=
-   *         identifier (',' identifier)*
-   */
-  List<SimpleIdentifier> _parseIdentifierList() {
-    List<SimpleIdentifier> identifiers = new List<SimpleIdentifier>();
-    identifiers.add(parseSimpleIdentifier());
-    while (_matches(TokenType.COMMA)) {
-      _advance();
-      identifiers.add(parseSimpleIdentifier());
-    }
-    return identifiers;
-  }
-
-  /**
-   * Parse an if statement. Return the if statement that was parsed.
-   *
-   *     ifStatement ::=
-   *         'if' '(' expression ')' statement ('else' statement)?
-   */
-  Statement _parseIfStatement() {
-    Token ifKeyword = _expectKeyword(Keyword.IF);
-    Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
-    Expression condition = parseExpression2();
-    Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
-    Statement thenStatement = parseStatement2();
-    Token elseKeyword = null;
-    Statement elseStatement = null;
-    if (_matchesKeyword(Keyword.ELSE)) {
-      elseKeyword = getAndAdvance();
-      elseStatement = parseStatement2();
-    }
-    return new IfStatement(ifKeyword, leftParenthesis, condition,
-        rightParenthesis, thenStatement, elseKeyword, elseStatement);
-  }
-
-  /**
-   * Parse an import directive. The [commentAndMetadata] is the metadata to be
-   * associated with the directive. Return the import directive that was parsed.
-   *
-   *     importDirective ::=
-   *         metadata 'import' stringLiteral configuration* (deferred)? ('as' identifier)? combinator*';'
-   */
-  ImportDirective _parseImportDirective(CommentAndMetadata commentAndMetadata) {
-    Token importKeyword = _expectKeyword(Keyword.IMPORT);
-    StringLiteral libraryUri = _parseUri();
-    List<Configuration> configurations = _parseConfigurations();
-    Token deferredToken = null;
-    Token asToken = null;
-    SimpleIdentifier prefix = null;
-    if (_matchesKeyword(Keyword.DEFERRED)) {
-      deferredToken = getAndAdvance();
-    }
-    if (_matchesKeyword(Keyword.AS)) {
-      asToken = getAndAdvance();
-      prefix = parseSimpleIdentifier(isDeclaration: true);
-    } else if (deferredToken != null) {
-      _reportErrorForCurrentToken(
-          ParserErrorCode.MISSING_PREFIX_IN_DEFERRED_IMPORT);
-    } else if (!_matches(TokenType.SEMICOLON) &&
-        !_matchesString(_SHOW) &&
-        !_matchesString(_HIDE)) {
-      Token nextToken = _peek();
-      if (_tokenMatchesKeyword(nextToken, Keyword.AS) ||
-          _tokenMatchesString(nextToken, _SHOW) ||
-          _tokenMatchesString(nextToken, _HIDE)) {
-        _reportErrorForCurrentToken(
-            ParserErrorCode.UNEXPECTED_TOKEN, [_currentToken]);
-        _advance();
-        if (_matchesKeyword(Keyword.AS)) {
-          asToken = getAndAdvance();
-          prefix = parseSimpleIdentifier(isDeclaration: true);
-        }
-      }
-    }
-    List<Combinator> combinators = _parseCombinators();
-    Token semicolon = _expect(TokenType.SEMICOLON);
-    return new ImportDirective(
-        commentAndMetadata.comment,
-        commentAndMetadata.metadata,
-        importKeyword,
-        libraryUri,
-        configurations,
-        deferredToken,
-        asToken,
-        prefix,
-        combinators,
-        semicolon);
-  }
-
-  /**
-   * Parse a list of initialized identifiers. The [commentAndMetadata] is the
-   * documentation comment and metadata to be associated with the declaration.
-   * The [staticKeyword] is the static keyword, or `null` if the getter is not
-   * static. The [keyword] is the token representing the 'final', 'const' or
-   * 'var' keyword, or `null` if there is no keyword. The [type] is the type
-   * that has already been parsed, or `null` if 'var' was provided. Return the
-   * getter that was parsed.
-   *
-   *     ?? ::=
-   *         'static'? ('var' | type) initializedIdentifierList ';'
-   *       | 'final' type? initializedIdentifierList ';'
-   *
-   *     initializedIdentifierList ::=
-   *         initializedIdentifier (',' initializedIdentifier)*
-   *
-   *     initializedIdentifier ::=
-   *         identifier ('=' expression)?
-   */
-  FieldDeclaration _parseInitializedIdentifierList(
-      CommentAndMetadata commentAndMetadata,
-      Token staticKeyword,
-      Token keyword,
-      TypeName type) {
-    VariableDeclarationList fieldList =
-        _parseVariableDeclarationListAfterType(null, keyword, type);
-    return new FieldDeclaration(
-        commentAndMetadata.comment,
-        commentAndMetadata.metadata,
-        staticKeyword,
-        fieldList,
-        _expect(TokenType.SEMICOLON));
-  }
-
-  /**
-   * Parse an instance creation expression. The [keyword] is the 'new' or
-   * 'const' keyword that introduces the expression. Return the instance
-   * creation expression that was parsed.
-   *
-   *     instanceCreationExpression ::=
-   *         ('new' | 'const') type ('.' identifier)? argumentList
-   */
-  InstanceCreationExpression _parseInstanceCreationExpression(Token keyword) {
-    ConstructorName constructorName = parseConstructorName();
-    ArgumentList argumentList = parseArgumentList();
-    return new InstanceCreationExpression(
-        keyword, constructorName, argumentList);
-  }
-
-  /**
-   * Parse a library directive. The [commentAndMetadata] is the metadata to be
-   * associated with the directive. Return the library directive that was
-   * parsed.
-   *
-   *     libraryDirective ::=
-   *         metadata 'library' identifier ';'
-   */
-  LibraryDirective _parseLibraryDirective(
-      CommentAndMetadata commentAndMetadata) {
-    Token keyword = _expectKeyword(Keyword.LIBRARY);
-    LibraryIdentifier libraryName = _parseLibraryName(
-        ParserErrorCode.MISSING_NAME_IN_LIBRARY_DIRECTIVE, keyword);
-    Token semicolon = _expect(TokenType.SEMICOLON);
-    return new LibraryDirective(commentAndMetadata.comment,
-        commentAndMetadata.metadata, keyword, libraryName, semicolon);
   }
 
   /**
@@ -6627,147 +6680,15 @@ class Parser {
     if (_matchesIdentifier()) {
       return parseLibraryIdentifier();
     } else if (_matches(TokenType.STRING)) {
-      // TODO(brianwilkerson) Recovery: This should be extended to handle
-      // arbitrary tokens until we can find a token that can start a compilation
-      // unit member.
+      // Recovery: This should be extended to handle arbitrary tokens until we
+      // can find a token that can start a compilation unit member.
       StringLiteral string = parseStringLiteral();
       _reportErrorForNode(ParserErrorCode.NON_IDENTIFIER_LIBRARY_NAME, string);
     } else {
       _reportErrorForToken(missingNameError, missingNameToken);
     }
-    List<SimpleIdentifier> components = new List<SimpleIdentifier>();
-    components.add(_createSyntheticIdentifier());
-    return new LibraryIdentifier(components);
-  }
-
-  /**
-   * Parse a list literal. The [modifier] is the 'const' modifier appearing
-   * before the literal, or `null` if there is no modifier. The [typeArguments]
-   * is the type arguments appearing before the literal, or `null` if there are
-   * no type arguments. Return the list literal that was parsed.
-   *
-   *     listLiteral ::=
-   *         'const'? typeArguments? '[' (expressionList ','?)? ']'
-   */
-  ListLiteral _parseListLiteral(
-      Token modifier, TypeArgumentList typeArguments) {
-    // may be empty list literal
-    if (_matches(TokenType.INDEX)) {
-      BeginToken leftBracket = _createToken(
-          _currentToken, TokenType.OPEN_SQUARE_BRACKET,
-          isBegin: true);
-      Token rightBracket =
-          new Token(TokenType.CLOSE_SQUARE_BRACKET, _currentToken.offset + 1);
-      leftBracket.endToken = rightBracket;
-      rightBracket.setNext(_currentToken.next);
-      leftBracket.setNext(rightBracket);
-      _currentToken.previous.setNext(leftBracket);
-      _currentToken = _currentToken.next;
-      return new ListLiteral(
-          modifier, typeArguments, leftBracket, null, rightBracket);
-    }
-    // open
-    Token leftBracket = _expect(TokenType.OPEN_SQUARE_BRACKET);
-    if (_matches(TokenType.CLOSE_SQUARE_BRACKET)) {
-      return new ListLiteral(
-          modifier, typeArguments, leftBracket, null, getAndAdvance());
-    }
-    bool wasInInitializer = _inInitializer;
-    _inInitializer = false;
-    try {
-      List<Expression> elements = new List<Expression>();
-      elements.add(parseExpression2());
-      while (_optional(TokenType.COMMA)) {
-        if (_matches(TokenType.CLOSE_SQUARE_BRACKET)) {
-          return new ListLiteral(
-              modifier, typeArguments, leftBracket, elements, getAndAdvance());
-        }
-        elements.add(parseExpression2());
-      }
-      Token rightBracket = _expect(TokenType.CLOSE_SQUARE_BRACKET);
-      return new ListLiteral(
-          modifier, typeArguments, leftBracket, elements, rightBracket);
-    } finally {
-      _inInitializer = wasInInitializer;
-    }
-  }
-
-  /**
-   * Parse a list or map literal. The [modifier] is the 'const' modifier
-   * appearing before the literal, or `null` if there is no modifier. Return the
-   * list or map literal that was parsed.
-   *
-   *     listOrMapLiteral ::=
-   *         listLiteral
-   *       | mapLiteral
-   */
-  TypedLiteral _parseListOrMapLiteral(Token modifier) {
-    TypeArgumentList typeArguments = _parseOptionalTypeArguments();
-    if (_matches(TokenType.OPEN_CURLY_BRACKET)) {
-      return _parseMapLiteral(modifier, typeArguments);
-    } else if (_matches(TokenType.OPEN_SQUARE_BRACKET) ||
-        _matches(TokenType.INDEX)) {
-      return _parseListLiteral(modifier, typeArguments);
-    }
-    _reportErrorForCurrentToken(ParserErrorCode.EXPECTED_LIST_OR_MAP_LITERAL);
-    return new ListLiteral(
-        modifier,
-        typeArguments,
-        _createSyntheticToken(TokenType.OPEN_SQUARE_BRACKET),
-        null,
-        _createSyntheticToken(TokenType.CLOSE_SQUARE_BRACKET));
-  }
-
-  /**
-   * Parse a logical and expression. Return the logical and expression that was
-   * parsed.
-   *
-   *     logicalAndExpression ::=
-   *         equalityExpression ('&&' equalityExpression)*
-   */
-  Expression _parseLogicalAndExpression() {
-    Expression expression = _parseEqualityExpression();
-    while (_matches(TokenType.AMPERSAND_AMPERSAND)) {
-      Token operator = getAndAdvance();
-      expression = new BinaryExpression(
-          expression, operator, _parseEqualityExpression());
-    }
-    return expression;
-  }
-
-  /**
-   * Parse a map literal. The [modifier] is the 'const' modifier appearing
-   * before the literal, or `null` if there is no modifier. The [typeArguments]
-   * is the type arguments that were declared, or `null` if there are no type
-   * arguments. Return the map literal that was parsed.
-   *
-   *     mapLiteral ::=
-   *         'const'? typeArguments? '{' (mapLiteralEntry (',' mapLiteralEntry)* ','?)? '}'
-   */
-  MapLiteral _parseMapLiteral(Token modifier, TypeArgumentList typeArguments) {
-    Token leftBracket = _expect(TokenType.OPEN_CURLY_BRACKET);
-    List<MapLiteralEntry> entries = new List<MapLiteralEntry>();
-    if (_matches(TokenType.CLOSE_CURLY_BRACKET)) {
-      return new MapLiteral(
-          modifier, typeArguments, leftBracket, entries, getAndAdvance());
-    }
-    bool wasInInitializer = _inInitializer;
-    _inInitializer = false;
-    try {
-      entries.add(parseMapLiteralEntry());
-      while (_optional(TokenType.COMMA)) {
-        if (_matches(TokenType.CLOSE_CURLY_BRACKET)) {
-          return new MapLiteral(
-              modifier, typeArguments, leftBracket, entries, getAndAdvance());
-        }
-        entries.add(parseMapLiteralEntry());
-      }
-      Token rightBracket = _expect(TokenType.CLOSE_CURLY_BRACKET);
-      return new MapLiteral(
-          modifier, typeArguments, leftBracket, entries, rightBracket);
-    } finally {
-      _inInitializer = wasInInitializer;
-    }
+    return astFactory
+        .libraryIdentifier(<SimpleIdentifier>[createSyntheticIdentifier()]);
   }
 
   /**
@@ -6791,7 +6712,7 @@ class Parser {
       SimpleIdentifier name,
       TypeParameterList typeParameters,
       FormalParameterList parameters) {
-    FunctionBody body = _parseFunctionBody(
+    FunctionBody body = parseFunctionBody(
         externalKeyword != null || staticKeyword == null,
         ParserErrorCode.MISSING_FUNCTION_BODY,
         false);
@@ -6804,7 +6725,7 @@ class Parser {
         _reportErrorForNode(ParserErrorCode.ABSTRACT_STATIC_METHOD, body);
       }
     }
-    return new MethodDeclaration(
+    return astFactory.methodDeclaration(
         commentAndMetadata.comment,
         commentAndMetadata.metadata,
         externalKeyword,
@@ -6838,12 +6759,14 @@ class Parser {
     SimpleIdentifier methodName = parseSimpleIdentifier(isDeclaration: true);
     TypeParameterList typeParameters = _parseGenericMethodTypeParameters();
     FormalParameterList parameters;
-    if (!_matches(TokenType.OPEN_PAREN) &&
-        (_matches(TokenType.OPEN_CURLY_BRACKET) ||
-            _matches(TokenType.FUNCTION))) {
+    TokenType type = _currentToken.type;
+    // TODO(brianwilkerson) Figure out why we care what the current token is if
+    // it isn't a paren.
+    if (type != TokenType.OPEN_PAREN &&
+        (type == TokenType.OPEN_CURLY_BRACKET || type == TokenType.FUNCTION)) {
       _reportErrorForToken(
           ParserErrorCode.MISSING_METHOD_PARAMETERS, _currentToken.previous);
-      parameters = new FormalParameterList(
+      parameters = astFactory.formalParameterList(
           _createSyntheticToken(TokenType.OPEN_PAREN),
           null,
           null,
@@ -6864,120 +6787,9 @@ class Parser {
   }
 
   /**
-   * Parse the modifiers preceding a declaration. This method allows the
-   * modifiers to appear in any order but does generate errors for duplicated
-   * modifiers. Checks for other problems, such as having the modifiers appear
-   * in the wrong order or specifying both 'const' and 'final', are reported in
-   * one of the methods whose name is prefixed with `validateModifiersFor`.
-   * Return the modifiers that were parsed.
-   *
-   *     modifiers ::=
-   *         ('abstract' | 'const' | 'external' | 'factory' | 'final' | 'static' | 'var')*
-   */
-  Modifiers _parseModifiers() {
-    Modifiers modifiers = new Modifiers();
-    bool progress = true;
-    while (progress) {
-      if (_tokenMatches(_peek(), TokenType.PERIOD) ||
-          _tokenMatches(_peek(), TokenType.LT) ||
-          _tokenMatches(_peek(), TokenType.OPEN_PAREN)) {
-        return modifiers;
-      }
-      if (_matchesKeyword(Keyword.ABSTRACT)) {
-        if (modifiers.abstractKeyword != null) {
-          _reportErrorForCurrentToken(
-              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
-          _advance();
-        } else {
-          modifiers.abstractKeyword = getAndAdvance();
-        }
-      } else if (_matchesKeyword(Keyword.CONST)) {
-        if (modifiers.constKeyword != null) {
-          _reportErrorForCurrentToken(
-              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
-          _advance();
-        } else {
-          modifiers.constKeyword = getAndAdvance();
-        }
-      } else if (_matchesKeyword(Keyword.EXTERNAL) &&
-          !_tokenMatches(_peek(), TokenType.PERIOD) &&
-          !_tokenMatches(_peek(), TokenType.LT)) {
-        if (modifiers.externalKeyword != null) {
-          _reportErrorForCurrentToken(
-              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
-          _advance();
-        } else {
-          modifiers.externalKeyword = getAndAdvance();
-        }
-      } else if (_matchesKeyword(Keyword.FACTORY) &&
-          !_tokenMatches(_peek(), TokenType.PERIOD) &&
-          !_tokenMatches(_peek(), TokenType.LT)) {
-        if (modifiers.factoryKeyword != null) {
-          _reportErrorForCurrentToken(
-              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
-          _advance();
-        } else {
-          modifiers.factoryKeyword = getAndAdvance();
-        }
-      } else if (_matchesKeyword(Keyword.FINAL)) {
-        if (modifiers.finalKeyword != null) {
-          _reportErrorForCurrentToken(
-              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
-          _advance();
-        } else {
-          modifiers.finalKeyword = getAndAdvance();
-        }
-      } else if (_matchesKeyword(Keyword.STATIC) &&
-          !_tokenMatches(_peek(), TokenType.PERIOD) &&
-          !_tokenMatches(_peek(), TokenType.LT)) {
-        if (modifiers.staticKeyword != null) {
-          _reportErrorForCurrentToken(
-              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
-          _advance();
-        } else {
-          modifiers.staticKeyword = getAndAdvance();
-        }
-      } else if (_matchesKeyword(Keyword.VAR)) {
-        if (modifiers.varKeyword != null) {
-          _reportErrorForCurrentToken(
-              ParserErrorCode.DUPLICATED_MODIFIER, [_currentToken.lexeme]);
-          _advance();
-        } else {
-          modifiers.varKeyword = getAndAdvance();
-        }
-      } else {
-        progress = false;
-      }
-    }
-    return modifiers;
-  }
-
-  /**
-   * Parse a multiplicative expression. Return the multiplicative expression
-   * that was parsed.
-   *
-   *     multiplicativeExpression ::=
-   *         unaryExpression (multiplicativeOperator unaryExpression)*
-   *       | 'super' (multiplicativeOperator unaryExpression)+
-   */
-  Expression _parseMultiplicativeExpression() {
-    Expression expression;
-    if (_matchesKeyword(Keyword.SUPER) &&
-        _currentToken.next.type.isMultiplicativeOperator) {
-      expression = new SuperExpression(getAndAdvance());
-    } else {
-      expression = _parseUnaryExpression();
-    }
-    while (_currentToken.type.isMultiplicativeOperator) {
-      Token operator = getAndAdvance();
-      expression =
-          new BinaryExpression(expression, operator, _parseUnaryExpression());
-    }
-    return expression;
-  }
-
-  /**
    * Parse a class native clause. Return the native clause that was parsed.
+   *
+   * This method assumes that the current token matches `_NATIVE`.
    *
    *     classNativeClause ::=
    *         'native' name
@@ -6985,201 +6797,16 @@ class Parser {
   NativeClause _parseNativeClause() {
     Token keyword = getAndAdvance();
     StringLiteral name = parseStringLiteral();
-    return new NativeClause(keyword, name);
+    return astFactory.nativeClause(keyword, name);
   }
 
   /**
-   * Parse a new expression. Return the new expression that was parsed.
-   *
-   *     newExpression ::=
-   *         instanceCreationExpression
-   */
-  InstanceCreationExpression _parseNewExpression() =>
-      _parseInstanceCreationExpression(_expectKeyword(Keyword.NEW));
-
-  /**
-   * Parse a non-labeled statement. Return the non-labeled statement that was
-   * parsed.
-   *
-   *     nonLabeledStatement ::=
-   *         block
-   *       | assertStatement
-   *       | breakStatement
-   *       | continueStatement
-   *       | doStatement
-   *       | forStatement
-   *       | ifStatement
-   *       | returnStatement
-   *       | switchStatement
-   *       | tryStatement
-   *       | whileStatement
-   *       | variableDeclarationList ';'
-   *       | expressionStatement
-   *       | functionSignature functionBody
-   */
-  Statement _parseNonLabeledStatement() {
-    // TODO(brianwilkerson) Pass the comment and metadata on where appropriate.
-    CommentAndMetadata commentAndMetadata = _parseCommentAndMetadata();
-    if (_matches(TokenType.OPEN_CURLY_BRACKET)) {
-      if (_tokenMatches(_peek(), TokenType.STRING)) {
-        Token afterString = _skipStringLiteral(_currentToken.next);
-        if (afterString != null && afterString.type == TokenType.COLON) {
-          return new ExpressionStatement(
-              parseExpression2(), _expect(TokenType.SEMICOLON));
-        }
-      }
-      return parseBlock();
-    } else if (_matches(TokenType.KEYWORD) &&
-        !_currentToken.keyword.isPseudoKeyword) {
-      Keyword keyword = _currentToken.keyword;
-      // TODO(jwren) compute some metrics to figure out a better order for this
-      // if-then sequence to optimize performance
-      if (keyword == Keyword.ASSERT) {
-        return _parseAssertStatement();
-      } else if (keyword == Keyword.BREAK) {
-        return _parseBreakStatement();
-      } else if (keyword == Keyword.CONTINUE) {
-        return _parseContinueStatement();
-      } else if (keyword == Keyword.DO) {
-        return _parseDoStatement();
-      } else if (keyword == Keyword.FOR) {
-        return _parseForStatement();
-      } else if (keyword == Keyword.IF) {
-        return _parseIfStatement();
-      } else if (keyword == Keyword.RETHROW) {
-        return new ExpressionStatement(
-            _parseRethrowExpression(), _expect(TokenType.SEMICOLON));
-      } else if (keyword == Keyword.RETURN) {
-        return _parseReturnStatement();
-      } else if (keyword == Keyword.SWITCH) {
-        return _parseSwitchStatement();
-      } else if (keyword == Keyword.THROW) {
-        return new ExpressionStatement(
-            _parseThrowExpression(), _expect(TokenType.SEMICOLON));
-      } else if (keyword == Keyword.TRY) {
-        return _parseTryStatement();
-      } else if (keyword == Keyword.WHILE) {
-        return _parseWhileStatement();
-      } else if (keyword == Keyword.VAR || keyword == Keyword.FINAL) {
-        return _parseVariableDeclarationStatementAfterMetadata(
-            commentAndMetadata);
-      } else if (keyword == Keyword.VOID) {
-        TypeName returnType = parseReturnType();
-        if (_matchesIdentifier() &&
-            _peek().matchesAny(const <TokenType>[
-              TokenType.OPEN_PAREN,
-              TokenType.OPEN_CURLY_BRACKET,
-              TokenType.FUNCTION,
-              TokenType.LT
-            ])) {
-          return _parseFunctionDeclarationStatementAfterReturnType(
-              commentAndMetadata, returnType);
-        } else {
-          //
-          // We have found an error of some kind. Try to recover.
-          //
-          if (_matchesIdentifier()) {
-            if (_peek().matchesAny(const <TokenType>[
-              TokenType.EQ,
-              TokenType.COMMA,
-              TokenType.SEMICOLON
-            ])) {
-              //
-              // We appear to have a variable declaration with a type of "void".
-              //
-              _reportErrorForNode(ParserErrorCode.VOID_VARIABLE, returnType);
-              return _parseVariableDeclarationStatementAfterMetadata(
-                  commentAndMetadata);
-            }
-          } else if (_matches(TokenType.CLOSE_CURLY_BRACKET)) {
-            //
-            // We appear to have found an incomplete statement at the end of a
-            // block. Parse it as a variable declaration.
-            //
-            return _parseVariableDeclarationStatementAfterType(
-                commentAndMetadata, null, returnType);
-          }
-          _reportErrorForCurrentToken(ParserErrorCode.MISSING_STATEMENT);
-          // TODO(brianwilkerson) Recover from this error.
-          return new EmptyStatement(_createSyntheticToken(TokenType.SEMICOLON));
-        }
-      } else if (keyword == Keyword.CONST) {
-        if (_peek().matchesAny(const <TokenType>[
-          TokenType.LT,
-          TokenType.OPEN_CURLY_BRACKET,
-          TokenType.OPEN_SQUARE_BRACKET,
-          TokenType.INDEX
-        ])) {
-          return new ExpressionStatement(
-              parseExpression2(), _expect(TokenType.SEMICOLON));
-        } else if (_tokenMatches(_peek(), TokenType.IDENTIFIER)) {
-          Token afterType = _skipTypeName(_peek());
-          if (afterType != null) {
-            if (_tokenMatches(afterType, TokenType.OPEN_PAREN) ||
-                (_tokenMatches(afterType, TokenType.PERIOD) &&
-                    _tokenMatches(afterType.next, TokenType.IDENTIFIER) &&
-                    _tokenMatches(afterType.next.next, TokenType.OPEN_PAREN))) {
-              return new ExpressionStatement(
-                  parseExpression2(), _expect(TokenType.SEMICOLON));
-            }
-          }
-        }
-        return _parseVariableDeclarationStatementAfterMetadata(
-            commentAndMetadata);
-      } else if (keyword == Keyword.NEW ||
-          keyword == Keyword.TRUE ||
-          keyword == Keyword.FALSE ||
-          keyword == Keyword.NULL ||
-          keyword == Keyword.SUPER ||
-          keyword == Keyword.THIS) {
-        return new ExpressionStatement(
-            parseExpression2(), _expect(TokenType.SEMICOLON));
-      } else {
-        //
-        // We have found an error of some kind. Try to recover.
-        //
-        _reportErrorForCurrentToken(ParserErrorCode.MISSING_STATEMENT);
-        return new EmptyStatement(_createSyntheticToken(TokenType.SEMICOLON));
-      }
-    } else if (_inGenerator && _matchesString(_YIELD)) {
-      return _parseYieldStatement();
-    } else if (_inAsync && _matchesString(_AWAIT)) {
-      if (_tokenMatchesKeyword(_peek(), Keyword.FOR)) {
-        return _parseForStatement();
-      }
-      return new ExpressionStatement(
-          parseExpression2(), _expect(TokenType.SEMICOLON));
-    } else if (_matchesString(_AWAIT) &&
-        _tokenMatchesKeyword(_peek(), Keyword.FOR)) {
-      Token awaitToken = _currentToken;
-      Statement statement = _parseForStatement();
-      if (statement is! ForStatement) {
-        _reportErrorForToken(
-            CompileTimeErrorCode.ASYNC_FOR_IN_WRONG_CONTEXT, awaitToken);
-      }
-      return statement;
-    } else if (_matches(TokenType.SEMICOLON)) {
-      return _parseEmptyStatement();
-    } else if (_isInitializedVariableDeclaration()) {
-      return _parseVariableDeclarationStatementAfterMetadata(
-          commentAndMetadata);
-    } else if (_isFunctionDeclaration()) {
-      return _parseFunctionDeclarationStatement();
-    } else if (_matches(TokenType.CLOSE_CURLY_BRACKET)) {
-      _reportErrorForCurrentToken(ParserErrorCode.MISSING_STATEMENT);
-      return new EmptyStatement(_createSyntheticToken(TokenType.SEMICOLON));
-    } else {
-      return new ExpressionStatement(
-          parseExpression2(), _expect(TokenType.SEMICOLON));
-    }
-  }
-
-  /**
-   * Parse an operator declaration. The [commentAndMetadata] is the
-   * documentation comment and metadata to be associated with the declaration.
-   * The [externalKeyword] is the 'external' token. The [returnType] is the
-   * return type that has already been parsed, or `null` if there was no return
-   * type. Return the operator declaration that was parsed.
+   * Parse an operator declaration starting after the 'operator' keyword. The
+   * [commentAndMetadata] is the documentation comment and metadata to be
+   * associated with the declaration. The [externalKeyword] is the 'external'
+   * token. The [returnType] is the return type that has already been parsed, or
+   * `null` if there was no return type. The [operatorKeyword] is the 'operator'
+   * keyword. Return the operator declaration that was parsed.
    *
    *     operatorDeclaration ::=
    *         operatorSignature (';' | functionBody)
@@ -7187,22 +6814,17 @@ class Parser {
    *     operatorSignature ::=
    *         'external'? returnType? 'operator' operator formalParameterList
    */
-  MethodDeclaration _parseOperator(CommentAndMetadata commentAndMetadata,
-      Token externalKeyword, TypeName returnType) {
-    Token operatorKeyword;
-    if (_matchesKeyword(Keyword.OPERATOR)) {
-      operatorKeyword = getAndAdvance();
-    } else {
-      _reportErrorForToken(
-          ParserErrorCode.MISSING_KEYWORD_OPERATOR, _currentToken);
-      operatorKeyword = _createSyntheticKeyword(Keyword.OPERATOR);
-    }
+  MethodDeclaration _parseOperatorAfterKeyword(
+      CommentAndMetadata commentAndMetadata,
+      Token externalKeyword,
+      TypeName returnType,
+      Token operatorKeyword) {
     if (!_currentToken.isUserDefinableOperator) {
       _reportErrorForCurrentToken(
           ParserErrorCode.NON_USER_DEFINABLE_OPERATOR, [_currentToken.lexeme]);
     }
     SimpleIdentifier name =
-        new SimpleIdentifier(getAndAdvance(), isDeclaration: true);
+        astFactory.simpleIdentifier(getAndAdvance(), isDeclaration: true);
     if (_matches(TokenType.EQ)) {
       Token previous = _currentToken.previous;
       if ((_tokenMatches(previous, TokenType.EQ_EQ) ||
@@ -7216,11 +6838,11 @@ class Parser {
     FormalParameterList parameters = parseFormalParameterList();
     _validateFormalParameterList(parameters);
     FunctionBody body =
-        _parseFunctionBody(true, ParserErrorCode.MISSING_FUNCTION_BODY, false);
+        parseFunctionBody(true, ParserErrorCode.MISSING_FUNCTION_BODY, false);
     if (externalKeyword != null && body is! EmptyFunctionBody) {
       _reportErrorForCurrentToken(ParserErrorCode.EXTERNAL_OPERATOR_WITH_BODY);
     }
-    return new MethodDeclaration(
+    return astFactory.methodDeclaration(
         commentAndMetadata.comment,
         commentAndMetadata.metadata,
         externalKeyword,
@@ -7242,21 +6864,28 @@ class Parser {
     TypeName typeComment = _parseOptionalTypeNameComment();
     if (typeComment != null) {
       return typeComment;
-    } else if (_matchesKeyword(Keyword.VOID)) {
-      return parseReturnType();
-    } else if (_matchesIdentifier() &&
-        !_matchesKeyword(Keyword.GET) &&
-        !_matchesKeyword(Keyword.SET) &&
-        !_matchesKeyword(Keyword.OPERATOR) &&
-        (_tokenMatchesIdentifier(_peek()) ||
-            _tokenMatches(_peek(), TokenType.LT))) {
-      return parseReturnType();
-    } else if (_matchesIdentifier() &&
-        _tokenMatches(_peek(), TokenType.PERIOD) &&
-        _tokenMatchesIdentifier(_peekAt(2)) &&
-        (_tokenMatchesIdentifier(_peekAt(3)) ||
-            _tokenMatches(_peekAt(3), TokenType.LT))) {
-      return parseReturnType();
+    }
+    Keyword keyword = _currentToken.keyword;
+    if (keyword == Keyword.VOID) {
+      return astFactory.typeName(
+          astFactory.simpleIdentifier(getAndAdvance()), null);
+    } else if (_matchesIdentifier()) {
+      Token next = _peek();
+      if (keyword != Keyword.GET &&
+          keyword != Keyword.SET &&
+          keyword != Keyword.OPERATOR &&
+          (_tokenMatchesIdentifier(next) ||
+              _tokenMatches(next, TokenType.LT))) {
+        return parseReturnType();
+      }
+      Token next2 = next.next;
+      Token next3 = next2.next;
+      if (_tokenMatches(next, TokenType.PERIOD) &&
+          _tokenMatchesIdentifier(next2) &&
+          (_tokenMatchesIdentifier(next3) ||
+              _tokenMatches(next3, TokenType.LT))) {
+        return parseReturnType();
+      }
     }
     return null;
   }
@@ -7274,368 +6903,117 @@ class Parser {
 
   TypeName _parseOptionalTypeNameComment() {
     if (_injectGenericCommentTypeAssign()) {
-      return _parseTypeName();
+      return _parseTypeName(false);
     }
     return null;
   }
 
   /**
-   * Parse a part or part-of directive. The [commentAndMetadata] is the metadata
-   * to be associated with the directive. Return the part or part-of directive
-   * that was parsed.
+   * Parse a part directive. The [commentAndMetadata] is the metadata to be
+   * associated with the directive. Return the part or part-of directive that
+   * was parsed.
+   *
+   * This method assumes that the current token matches `Keyword.PART`.
    *
    *     partDirective ::=
    *         metadata 'part' stringLiteral ';'
-   *
-   *     partOfDirective ::=
-   *         metadata 'part' 'of' identifier ';'
    */
   Directive _parsePartDirective(CommentAndMetadata commentAndMetadata) {
-    Token partKeyword = _expectKeyword(Keyword.PART);
-    if (_matchesString(_OF)) {
-      Token ofKeyword = getAndAdvance();
-      LibraryIdentifier libraryName = _parseLibraryName(
-          ParserErrorCode.MISSING_NAME_IN_PART_OF_DIRECTIVE, ofKeyword);
-      Token semicolon = _expect(TokenType.SEMICOLON);
-      return new PartOfDirective(
-          commentAndMetadata.comment,
-          commentAndMetadata.metadata,
-          partKeyword,
-          ofKeyword,
-          libraryName,
-          semicolon);
-    }
+    Token partKeyword = getAndAdvance();
     StringLiteral partUri = _parseUri();
     Token semicolon = _expect(TokenType.SEMICOLON);
-    return new PartDirective(commentAndMetadata.comment,
+    return astFactory.partDirective(commentAndMetadata.comment,
         commentAndMetadata.metadata, partKeyword, partUri, semicolon);
   }
 
   /**
-   * Parse a postfix expression. Return the postfix expression that was parsed.
+   * Parse a part-of directive. The [commentAndMetadata] is the metadata to be
+   * associated with the directive. Return the part or part-of directive that
+   * was parsed.
    *
-   *     postfixExpression ::=
-   *         assignableExpression postfixOperator
-   *       | primary selector*
+   * This method assumes that the current token matches [Keyword.PART] and that
+   * the following token matches the identifier 'of'.
    *
-   *     selector ::=
-   *         assignableSelector
-   *       | argumentList
+   *     partOfDirective ::=
+   *         metadata 'part' 'of' identifier ';'
    */
-  Expression _parsePostfixExpression() {
-    Expression operand = _parseAssignableExpression(true);
-    if (_matches(TokenType.OPEN_SQUARE_BRACKET) ||
-        _matches(TokenType.PERIOD) ||
-        _matches(TokenType.QUESTION_PERIOD) ||
-        _matches(TokenType.OPEN_PAREN) ||
-        (parseGenericMethods && _matches(TokenType.LT))) {
-      do {
-        if (_isLikelyArgumentList()) {
-          TypeArgumentList typeArguments = _parseOptionalTypeArguments();
-          ArgumentList argumentList = parseArgumentList();
-          Expression currentOperand = operand;
-          if (currentOperand is PropertyAccess) {
-            operand = new MethodInvocation(
-                currentOperand.target,
-                currentOperand.operator,
-                currentOperand.propertyName,
-                typeArguments,
-                argumentList);
-          } else {
-            operand = new FunctionExpressionInvocation(
-                operand, typeArguments, argumentList);
-          }
-        } else {
-          operand = _parseAssignableSelector(operand, true);
-        }
-      } while (_matches(TokenType.OPEN_SQUARE_BRACKET) ||
-          _matches(TokenType.PERIOD) ||
-          _matches(TokenType.QUESTION_PERIOD) ||
-          _matches(TokenType.OPEN_PAREN));
-      return operand;
+  Directive _parsePartOfDirective(CommentAndMetadata commentAndMetadata) {
+    Token partKeyword = getAndAdvance();
+    Token ofKeyword = getAndAdvance();
+    if (enableUriInPartOf && _matches(TokenType.STRING)) {
+      StringLiteral libraryUri = _parseUri();
+      Token semicolon = _expect(TokenType.SEMICOLON);
+      return astFactory.partOfDirective(
+          commentAndMetadata.comment,
+          commentAndMetadata.metadata,
+          partKeyword,
+          ofKeyword,
+          libraryUri,
+          null,
+          semicolon);
     }
-    if (!_currentToken.type.isIncrementOperator) {
-      return operand;
-    }
-    _ensureAssignable(operand);
-    Token operator = getAndAdvance();
-    return new PostfixExpression(operand, operator);
-  }
-
-  /**
-   * Parse a primary expression. Return the primary expression that was parsed.
-   *
-   *     primary ::=
-   *         thisExpression
-   *       | 'super' unconditionalAssignableSelector
-   *       | functionExpression
-   *       | literal
-   *       | identifier
-   *       | newExpression
-   *       | constObjectExpression
-   *       | '(' expression ')'
-   *       | argumentDefinitionTest
-   *
-   *     literal ::=
-   *         nullLiteral
-   *       | booleanLiteral
-   *       | numericLiteral
-   *       | stringLiteral
-   *       | symbolLiteral
-   *       | mapLiteral
-   *       | listLiteral
-   */
-  Expression _parsePrimaryExpression() {
-    if (_matchesKeyword(Keyword.THIS)) {
-      return new ThisExpression(getAndAdvance());
-    } else if (_matchesKeyword(Keyword.SUPER)) {
-      // TODO(paulberry): verify with Gilad that "super" must be followed by
-      // unconditionalAssignableSelector in this case.
-      return _parseAssignableSelector(
-          new SuperExpression(getAndAdvance()), false,
-          allowConditional: false);
-    } else if (_matchesKeyword(Keyword.NULL)) {
-      return new NullLiteral(getAndAdvance());
-    } else if (_matchesKeyword(Keyword.FALSE)) {
-      return new BooleanLiteral(getAndAdvance(), false);
-    } else if (_matchesKeyword(Keyword.TRUE)) {
-      return new BooleanLiteral(getAndAdvance(), true);
-    } else if (_matches(TokenType.DOUBLE)) {
-      Token token = getAndAdvance();
-      double value = 0.0;
-      try {
-        value = double.parse(token.lexeme);
-      } on FormatException {
-        // The invalid format should have been reported by the scanner.
-      }
-      return new DoubleLiteral(token, value);
-    } else if (_matches(TokenType.HEXADECIMAL)) {
-      Token token = getAndAdvance();
-      int value = null;
-      try {
-        value = int.parse(token.lexeme.substring(2), radix: 16);
-      } on FormatException {
-        // The invalid format should have been reported by the scanner.
-      }
-      return new IntegerLiteral(token, value);
-    } else if (_matches(TokenType.INT)) {
-      Token token = getAndAdvance();
-      int value = null;
-      try {
-        value = int.parse(token.lexeme);
-      } on FormatException {
-        // The invalid format should have been reported by the scanner.
-      }
-      return new IntegerLiteral(token, value);
-    } else if (_matches(TokenType.STRING)) {
-      return parseStringLiteral();
-    } else if (_matchesIdentifier()) {
-      // TODO(brianwilkerson) The code below was an attempt to recover from an
-      // error case, but it needs to be applied as a recovery only after we
-      // know that parsing it as an identifier doesn't work. Leaving the code as
-      // a reminder of how to recover.
-//            if (isFunctionExpression(peek())) {
-//              //
-//              // Function expressions were allowed to have names at one point, but this is now illegal.
-//              //
-//              reportError(ParserErrorCode.NAMED_FUNCTION_EXPRESSION, getAndAdvance());
-//              return parseFunctionExpression();
-//            }
-      return parsePrefixedIdentifier();
-    } else if (_matchesKeyword(Keyword.NEW)) {
-      return _parseNewExpression();
-    } else if (_matchesKeyword(Keyword.CONST)) {
-      return _parseConstExpression();
-    } else if (_matches(TokenType.OPEN_PAREN)) {
-      if (_isFunctionExpression(_currentToken)) {
-        return parseFunctionExpression();
-      }
-      Token leftParenthesis = getAndAdvance();
-      bool wasInInitializer = _inInitializer;
-      _inInitializer = false;
-      try {
-        Expression expression = parseExpression2();
-        Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
-        return new ParenthesizedExpression(
-            leftParenthesis, expression, rightParenthesis);
-      } finally {
-        _inInitializer = wasInInitializer;
-      }
-    } else if (_matches(TokenType.LT) || _injectGenericCommentTypeList()) {
-      return _parseListOrMapLiteral(null);
-    } else if (_matches(TokenType.OPEN_CURLY_BRACKET)) {
-      return _parseMapLiteral(null, null);
-    } else if (_matches(TokenType.OPEN_SQUARE_BRACKET) ||
-        _matches(TokenType.INDEX)) {
-      return _parseListLiteral(null, null);
-    } else if (_matches(TokenType.QUESTION) &&
-        _tokenMatches(_peek(), TokenType.IDENTIFIER)) {
-      _reportErrorForCurrentToken(
-          ParserErrorCode.UNEXPECTED_TOKEN, [_currentToken.lexeme]);
-      _advance();
-      return _parsePrimaryExpression();
-    } else if (_matchesKeyword(Keyword.VOID)) {
-      //
-      // Recover from having a return type of "void" where a return type is not
-      // expected.
-      //
-      // TODO(brianwilkerson) Improve this error message.
-      _reportErrorForCurrentToken(
-          ParserErrorCode.UNEXPECTED_TOKEN, [_currentToken.lexeme]);
-      _advance();
-      return _parsePrimaryExpression();
-    } else if (_matches(TokenType.HASH)) {
-      return _parseSymbolLiteral();
-    } else {
-      _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
-      return _createSyntheticIdentifier();
-    }
-  }
-
-  /**
-   * Parse a redirecting constructor invocation. Return the redirecting
-   * constructor invocation that was parsed.
-   *
-   *     redirectingConstructorInvocation ::=
-   *         'this' ('.' identifier)? arguments
-   */
-  RedirectingConstructorInvocation _parseRedirectingConstructorInvocation() {
-    Token keyword = _expectKeyword(Keyword.THIS);
-    Token period = null;
-    SimpleIdentifier constructorName = null;
-    if (_matches(TokenType.PERIOD)) {
-      period = getAndAdvance();
-      constructorName = parseSimpleIdentifier();
-    }
-    ArgumentList argumentList = parseArgumentList();
-    return new RedirectingConstructorInvocation(
-        keyword, period, constructorName, argumentList);
-  }
-
-  /**
-   * Parse a relational expression. Return the relational expression that was
-   * parsed.
-   *
-   *     relationalExpression ::=
-   *         bitwiseOrExpression ('is' '!'? type | 'as' type | relationalOperator bitwiseOrExpression)?
-   *       | 'super' relationalOperator bitwiseOrExpression
-   */
-  Expression _parseRelationalExpression() {
-    if (_matchesKeyword(Keyword.SUPER) &&
-        _currentToken.next.type.isRelationalOperator) {
-      Expression expression = new SuperExpression(getAndAdvance());
-      Token operator = getAndAdvance();
-      expression = new BinaryExpression(
-          expression, operator, parseBitwiseOrExpression());
-      return expression;
-    }
-    Expression expression = parseBitwiseOrExpression();
-    if (_matchesKeyword(Keyword.AS)) {
-      Token asOperator = getAndAdvance();
-      expression = new AsExpression(expression, asOperator, parseTypeName());
-    } else if (_matchesKeyword(Keyword.IS)) {
-      Token isOperator = getAndAdvance();
-      Token notOperator = null;
-      if (_matches(TokenType.BANG)) {
-        notOperator = getAndAdvance();
-      }
-      expression = new IsExpression(
-          expression, isOperator, notOperator, parseTypeName());
-    } else if (_currentToken.type.isRelationalOperator) {
-      Token operator = getAndAdvance();
-      expression = new BinaryExpression(
-          expression, operator, parseBitwiseOrExpression());
-    }
-    return expression;
-  }
-
-  /**
-   * Parse a rethrow expression. Return the rethrow expression that was parsed.
-   *
-   *     rethrowExpression ::=
-   *         'rethrow'
-   */
-  Expression _parseRethrowExpression() =>
-      new RethrowExpression(_expectKeyword(Keyword.RETHROW));
-
-  /**
-   * Parse a return statement. Return the return statement that was parsed.
-   *
-   *     returnStatement ::=
-   *         'return' expression? ';'
-   */
-  Statement _parseReturnStatement() {
-    Token returnKeyword = _expectKeyword(Keyword.RETURN);
-    if (_matches(TokenType.SEMICOLON)) {
-      return new ReturnStatement(returnKeyword, null, getAndAdvance());
-    }
-    Expression expression = parseExpression2();
+    LibraryIdentifier libraryName = _parseLibraryName(
+        ParserErrorCode.MISSING_NAME_IN_PART_OF_DIRECTIVE, ofKeyword);
     Token semicolon = _expect(TokenType.SEMICOLON);
-    return new ReturnStatement(returnKeyword, expression, semicolon);
-  }
-
-  /**
-   * Parse a setter. The [commentAndMetadata] is the documentation comment and
-   * metadata to be associated with the declaration. The [externalKeyword] is
-   * the 'external' token. The [staticKeyword] is the static keyword, or `null`
-   * if the setter is not static. The [returnType] is the return type that has
-   * already been parsed, or `null` if there was no return type. Return the
-   * setter that was parsed.
-   *
-   *     setter ::=
-   *         setterSignature functionBody?
-   *
-   *     setterSignature ::=
-   *         'external'? 'static'? returnType? 'set' identifier formalParameterList
-   */
-  MethodDeclaration _parseSetter(CommentAndMetadata commentAndMetadata,
-      Token externalKeyword, Token staticKeyword, TypeName returnType) {
-    Token propertyKeyword = _expectKeyword(Keyword.SET);
-    SimpleIdentifier name = parseSimpleIdentifier(isDeclaration: true);
-    FormalParameterList parameters = parseFormalParameterList();
-    _validateFormalParameterList(parameters);
-    FunctionBody body = _parseFunctionBody(
-        externalKeyword != null || staticKeyword == null,
-        ParserErrorCode.STATIC_SETTER_WITHOUT_BODY,
-        false);
-    if (externalKeyword != null && body is! EmptyFunctionBody) {
-      _reportErrorForCurrentToken(ParserErrorCode.EXTERNAL_SETTER_WITH_BODY);
-    }
-    return new MethodDeclaration(
+    return astFactory.partOfDirective(
         commentAndMetadata.comment,
         commentAndMetadata.metadata,
-        externalKeyword,
-        staticKeyword,
-        returnType,
-        propertyKeyword,
+        partKeyword,
+        ofKeyword,
         null,
-        name,
-        null,
-        parameters,
-        body);
+        libraryName,
+        semicolon);
   }
 
   /**
-   * Parse a shift expression. Return the shift expression that was parsed.
+   * Parse a prefixed identifier given that the given [qualifier] was already
+   * parsed. Return the prefixed identifier that was parsed.
    *
-   *     shiftExpression ::=
-   *         additiveExpression (shiftOperator additiveExpression)*
-   *       | 'super' (shiftOperator additiveExpression)+
+   *     prefixedIdentifier ::=
+   *         identifier ('.' identifier)?
    */
-  Expression _parseShiftExpression() {
-    Expression expression;
-    if (_matchesKeyword(Keyword.SUPER) &&
-        _currentToken.next.type.isShiftOperator) {
-      expression = new SuperExpression(getAndAdvance());
-    } else {
-      expression = _parseAdditiveExpression();
+  Identifier _parsePrefixedIdentifierAfterIdentifier(
+      SimpleIdentifier qualifier) {
+    if (!_matches(TokenType.PERIOD) || _injectGenericCommentTypeList()) {
+      return qualifier;
     }
-    while (_currentToken.type.isShiftOperator) {
-      Token operator = getAndAdvance();
-      expression = new BinaryExpression(
-          expression, operator, _parseAdditiveExpression());
+    Token period = getAndAdvance();
+    SimpleIdentifier qualified = parseSimpleIdentifier();
+    return astFactory.prefixedIdentifier(qualifier, period, qualified);
+  }
+
+  /**
+   * Parse a prefixed identifier. Return the prefixed identifier that was
+   * parsed.
+   *
+   * This method assumes that the current token matches an identifier.
+   *
+   *     prefixedIdentifier ::=
+   *         identifier ('.' identifier)?
+   */
+  Identifier _parsePrefixedIdentifierUnchecked() {
+    return _parsePrefixedIdentifierAfterIdentifier(
+        _parseSimpleIdentifierUnchecked());
+  }
+
+  /**
+   * Parse a simple identifier. Return the simple identifier that was parsed.
+   *
+   * This method assumes that the current token matches an identifier.
+   *
+   *     identifier ::=
+   *         IDENTIFIER
+   */
+  SimpleIdentifier _parseSimpleIdentifierUnchecked(
+      {bool isDeclaration: false}) {
+    String lexeme = _currentToken.lexeme;
+    if ((_inAsync || _inGenerator) &&
+        (lexeme == ASYNC || lexeme == _AWAIT || lexeme == _YIELD)) {
+      _reportErrorForCurrentToken(
+          ParserErrorCode.ASYNC_KEYWORD_USED_AS_IDENTIFIER);
     }
-    return expression;
+    return astFactory.simpleIdentifier(getAndAdvance(),
+        isDeclaration: isDeclaration);
   }
 
   /**
@@ -7646,11 +7024,12 @@ class Parser {
    *         statement*
    */
   List<Statement> _parseStatementList() {
-    List<Statement> statements = new List<Statement>();
+    List<Statement> statements = <Statement>[];
     Token statementStart = _currentToken;
-    while (!_matches(TokenType.EOF) &&
-        !_matches(TokenType.CLOSE_CURLY_BRACKET) &&
-        !_isSwitchMember()) {
+    TokenType type = _currentToken.type;
+    while (type != TokenType.EOF &&
+        type != TokenType.CLOSE_CURLY_BRACKET &&
+        !isSwitchMember()) {
       statements.add(parseStatement2());
       if (identical(_currentToken, statementStart)) {
         _reportErrorForToken(ParserErrorCode.UNEXPECTED_TOKEN, _currentToken,
@@ -7658,6 +7037,7 @@ class Parser {
         _advance();
       }
       statementStart = _currentToken;
+      type = _currentToken.type;
     }
     return statements;
   }
@@ -7665,23 +7045,28 @@ class Parser {
   /**
    * Parse a string literal that contains interpolations. Return the string
    * literal that was parsed.
+   *
+   * This method assumes that the current token matches either
+   * [TokenType.STRING_INTERPOLATION_EXPRESSION] or
+   * [TokenType.STRING_INTERPOLATION_IDENTIFIER].
    */
   StringInterpolation _parseStringInterpolation(Token string) {
-    List<InterpolationElement> elements = new List<InterpolationElement>();
-    bool hasMore = _matches(TokenType.STRING_INTERPOLATION_EXPRESSION) ||
-        _matches(TokenType.STRING_INTERPOLATION_IDENTIFIER);
-    elements.add(new InterpolationString(
-        string, _computeStringValue(string.lexeme, true, !hasMore)));
+    List<InterpolationElement> elements = <InterpolationElement>[
+      astFactory.interpolationString(
+          string, computeStringValue(string.lexeme, true, false))
+    ];
+    bool hasMore = true;
+    bool isExpression = _matches(TokenType.STRING_INTERPOLATION_EXPRESSION);
     while (hasMore) {
-      if (_matches(TokenType.STRING_INTERPOLATION_EXPRESSION)) {
+      if (isExpression) {
         Token openToken = getAndAdvance();
         bool wasInInitializer = _inInitializer;
         _inInitializer = false;
         try {
           Expression expression = parseExpression2();
           Token rightBracket = _expect(TokenType.CLOSE_CURLY_BRACKET);
-          elements.add(
-              new InterpolationExpression(openToken, expression, rightBracket));
+          elements.add(astFactory.interpolationExpression(
+              openToken, expression, rightBracket));
         } finally {
           _inInitializer = wasInInitializer;
         }
@@ -7689,396 +7074,91 @@ class Parser {
         Token openToken = getAndAdvance();
         Expression expression = null;
         if (_matchesKeyword(Keyword.THIS)) {
-          expression = new ThisExpression(getAndAdvance());
+          expression = astFactory.thisExpression(getAndAdvance());
         } else {
           expression = parseSimpleIdentifier();
         }
-        elements.add(new InterpolationExpression(openToken, expression, null));
+        elements.add(
+            astFactory.interpolationExpression(openToken, expression, null));
       }
       if (_matches(TokenType.STRING)) {
         string = getAndAdvance();
-        hasMore = _matches(TokenType.STRING_INTERPOLATION_EXPRESSION) ||
-            _matches(TokenType.STRING_INTERPOLATION_IDENTIFIER);
-        elements.add(new InterpolationString(
-            string, _computeStringValue(string.lexeme, false, !hasMore)));
+        isExpression = _matches(TokenType.STRING_INTERPOLATION_EXPRESSION);
+        hasMore =
+            isExpression || _matches(TokenType.STRING_INTERPOLATION_IDENTIFIER);
+        elements.add(astFactory.interpolationString(
+            string, computeStringValue(string.lexeme, false, !hasMore)));
       } else {
         hasMore = false;
       }
     }
-    return new StringInterpolation(elements);
+    return astFactory.stringInterpolation(elements);
   }
 
   /**
-   * Parse a super constructor invocation. Return the super constructor
-   * invocation that was parsed.
+   * Parse a string literal. Return the string literal that was parsed.
    *
-   *     superConstructorInvocation ::=
-   *         'super' ('.' identifier)? arguments
+   * This method assumes that the current token matches `TokenType.STRING`.
+   *
+   *     stringLiteral ::=
+   *         MULTI_LINE_STRING+
+   *       | SINGLE_LINE_STRING+
    */
-  SuperConstructorInvocation _parseSuperConstructorInvocation() {
-    Token keyword = _expectKeyword(Keyword.SUPER);
-    Token period = null;
-    SimpleIdentifier constructorName = null;
-    if (_matches(TokenType.PERIOD)) {
-      period = getAndAdvance();
-      constructorName = parseSimpleIdentifier();
-    }
-    ArgumentList argumentList = parseArgumentList();
-    return new SuperConstructorInvocation(
-        keyword, period, constructorName, argumentList);
-  }
-
-  /**
-   * Parse a switch statement. Return the switch statement that was parsed.
-   *
-   *     switchStatement ::=
-   *         'switch' '(' expression ')' '{' switchCase* defaultCase? '}'
-   *
-   *     switchCase ::=
-   *         label* ('case' expression ':') statements
-   *
-   *     defaultCase ::=
-   *         label* 'default' ':' statements
-   */
-  SwitchStatement _parseSwitchStatement() {
-    bool wasInSwitch = _inSwitch;
-    _inSwitch = true;
-    try {
-      HashSet<String> definedLabels = new HashSet<String>();
-      Token keyword = _expectKeyword(Keyword.SWITCH);
-      Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
-      Expression expression = parseExpression2();
-      Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
-      Token leftBracket = _expect(TokenType.OPEN_CURLY_BRACKET);
-      Token defaultKeyword = null;
-      List<SwitchMember> members = new List<SwitchMember>();
-      while (!_matches(TokenType.EOF) &&
-          !_matches(TokenType.CLOSE_CURLY_BRACKET)) {
-        List<Label> labels = new List<Label>();
-        while (
-            _matchesIdentifier() && _tokenMatches(_peek(), TokenType.COLON)) {
-          SimpleIdentifier identifier =
-              parseSimpleIdentifier(isDeclaration: true);
-          String label = identifier.token.lexeme;
-          if (definedLabels.contains(label)) {
-            _reportErrorForToken(
-                ParserErrorCode.DUPLICATE_LABEL_IN_SWITCH_STATEMENT,
-                identifier.token,
-                [label]);
-          } else {
-            definedLabels.add(label);
-          }
-          Token colon = _expect(TokenType.COLON);
-          labels.add(new Label(identifier, colon));
-        }
-        if (_matchesKeyword(Keyword.CASE)) {
-          Token caseKeyword = getAndAdvance();
-          Expression caseExpression = parseExpression2();
-          Token colon = _expect(TokenType.COLON);
-          members.add(new SwitchCase(labels, caseKeyword, caseExpression, colon,
-              _parseStatementList()));
-          if (defaultKeyword != null) {
-            _reportErrorForToken(
-                ParserErrorCode.SWITCH_HAS_CASE_AFTER_DEFAULT_CASE,
-                caseKeyword);
-          }
-        } else if (_matchesKeyword(Keyword.DEFAULT)) {
-          if (defaultKeyword != null) {
-            _reportErrorForToken(
-                ParserErrorCode.SWITCH_HAS_MULTIPLE_DEFAULT_CASES, _peek());
-          }
-          defaultKeyword = getAndAdvance();
-          Token colon = _expect(TokenType.COLON);
-          members.add(new SwitchDefault(
-              labels, defaultKeyword, colon, _parseStatementList()));
-        } else {
-          // We need to advance, otherwise we could end up in an infinite loop,
-          // but this could be a lot smarter about recovering from the error.
-          _reportErrorForCurrentToken(ParserErrorCode.EXPECTED_CASE_OR_DEFAULT);
-          while (!_matches(TokenType.EOF) &&
-              !_matches(TokenType.CLOSE_CURLY_BRACKET) &&
-              !_matchesKeyword(Keyword.CASE) &&
-              !_matchesKeyword(Keyword.DEFAULT)) {
-            _advance();
-          }
-        }
+  StringLiteral _parseStringLiteralUnchecked() {
+    List<StringLiteral> strings = <StringLiteral>[];
+    do {
+      Token string = getAndAdvance();
+      if (_matches(TokenType.STRING_INTERPOLATION_EXPRESSION) ||
+          _matches(TokenType.STRING_INTERPOLATION_IDENTIFIER)) {
+        strings.add(_parseStringInterpolation(string));
+      } else {
+        strings.add(astFactory.simpleStringLiteral(
+            string, computeStringValue(string.lexeme, true, true)));
       }
-      Token rightBracket = _expect(TokenType.CLOSE_CURLY_BRACKET);
-      return new SwitchStatement(keyword, leftParenthesis, expression,
-          rightParenthesis, leftBracket, members, rightBracket);
-    } finally {
-      _inSwitch = wasInSwitch;
-    }
+    } while (_matches(TokenType.STRING));
+    return strings.length == 1
+        ? strings[0]
+        : astFactory.adjacentStrings(strings);
   }
 
-  /**
-   * Parse a symbol literal. Return the symbol literal that was parsed.
-   *
-   *     symbolLiteral ::=
-   *         '#' identifier ('.' identifier)*
-   */
-  SymbolLiteral _parseSymbolLiteral() {
-    Token poundSign = getAndAdvance();
-    List<Token> components = new List<Token>();
-    if (_matchesIdentifier()) {
-      components.add(getAndAdvance());
-      while (_matches(TokenType.PERIOD)) {
-        _advance();
-        if (_matchesIdentifier()) {
-          components.add(getAndAdvance());
-        } else {
-          _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
-          components.add(_createSyntheticToken(TokenType.IDENTIFIER));
-          break;
-        }
-      }
-    } else if (_currentToken.isOperator) {
-      components.add(getAndAdvance());
-    } else if (_tokenMatchesKeyword(_currentToken, Keyword.VOID)) {
-      components.add(getAndAdvance());
-    } else {
-      _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
-      components.add(_createSyntheticToken(TokenType.IDENTIFIER));
-    }
-    return new SymbolLiteral(poundSign, components);
-  }
-
-  /**
-   * Parse a throw expression. Return the throw expression that was parsed.
-   *
-   *     throwExpression ::=
-   *         'throw' expression
-   */
-  Expression _parseThrowExpression() {
-    Token keyword = _expectKeyword(Keyword.THROW);
-    if (_matches(TokenType.SEMICOLON) || _matches(TokenType.CLOSE_PAREN)) {
-      _reportErrorForToken(
-          ParserErrorCode.MISSING_EXPRESSION_IN_THROW, _currentToken);
-      return new ThrowExpression(keyword, _createSyntheticIdentifier());
-    }
-    Expression expression = parseExpression2();
-    return new ThrowExpression(keyword, expression);
-  }
-
-  /**
-   * Parse a throw expression. Return the throw expression that was parsed.
-   *
-   *     throwExpressionWithoutCascade ::=
-   *         'throw' expressionWithoutCascade
-   */
-  Expression _parseThrowExpressionWithoutCascade() {
-    Token keyword = _expectKeyword(Keyword.THROW);
-    if (_matches(TokenType.SEMICOLON) || _matches(TokenType.CLOSE_PAREN)) {
-      _reportErrorForToken(
-          ParserErrorCode.MISSING_EXPRESSION_IN_THROW, _currentToken);
-      return new ThrowExpression(keyword, _createSyntheticIdentifier());
-    }
-    Expression expression = parseExpressionWithoutCascade();
-    return new ThrowExpression(keyword, expression);
-  }
-
-  /**
-   * Parse a try statement. Return the try statement that was parsed.
-   *
-   *     tryStatement ::=
-   *         'try' block (onPart+ finallyPart? | finallyPart)
-   *
-   *     onPart ::=
-   *         catchPart block
-   *       | 'on' type catchPart? block
-   *
-   *     catchPart ::=
-   *         'catch' '(' identifier (',' identifier)? ')'
-   *
-   *     finallyPart ::=
-   *         'finally' block
-   */
-  Statement _parseTryStatement() {
-    Token tryKeyword = _expectKeyword(Keyword.TRY);
-    Block body = parseBlock();
-    List<CatchClause> catchClauses = new List<CatchClause>();
-    Block finallyClause = null;
-    while (_matchesString(_ON) || _matchesKeyword(Keyword.CATCH)) {
-      Token onKeyword = null;
-      TypeName exceptionType = null;
-      if (_matchesString(_ON)) {
-        onKeyword = getAndAdvance();
-        exceptionType = parseTypeName();
-      }
-      Token catchKeyword = null;
-      Token leftParenthesis = null;
-      SimpleIdentifier exceptionParameter = null;
-      Token comma = null;
-      SimpleIdentifier stackTraceParameter = null;
-      Token rightParenthesis = null;
-      if (_matchesKeyword(Keyword.CATCH)) {
-        catchKeyword = getAndAdvance();
-        leftParenthesis = _expect(TokenType.OPEN_PAREN);
-        exceptionParameter = parseSimpleIdentifier(isDeclaration: true);
-        if (_matches(TokenType.COMMA)) {
-          comma = getAndAdvance();
-          stackTraceParameter = parseSimpleIdentifier(isDeclaration: true);
-        }
-        rightParenthesis = _expect(TokenType.CLOSE_PAREN);
-      }
-      Block catchBody = parseBlock();
-      catchClauses.add(new CatchClause(
-          onKeyword,
-          exceptionType,
-          catchKeyword,
-          leftParenthesis,
-          exceptionParameter,
-          comma,
-          stackTraceParameter,
-          rightParenthesis,
-          catchBody));
-    }
-    Token finallyKeyword = null;
-    if (_matchesKeyword(Keyword.FINALLY)) {
-      finallyKeyword = getAndAdvance();
-      finallyClause = parseBlock();
-    } else {
-      if (catchClauses.isEmpty) {
-        _reportErrorForCurrentToken(ParserErrorCode.MISSING_CATCH_OR_FINALLY);
-      }
-    }
-    return new TryStatement(
-        tryKeyword, body, catchClauses, finallyKeyword, finallyClause);
-  }
-
-  /**
-   * Parse a type alias. The [commentAndMetadata] is the metadata to be
-   * associated with the member. Return the type alias that was parsed.
-   *
-   *     typeAlias ::=
-   *         'typedef' typeAliasBody
-   *
-   *     typeAliasBody ::=
-   *         classTypeAlias
-   *       | functionTypeAlias
-   *
-   *     classTypeAlias ::=
-   *         identifier typeParameters? '=' 'abstract'? mixinApplication
-   *
-   *     mixinApplication ::=
-   *         qualified withClause implementsClause? ';'
-   *
-   *     functionTypeAlias ::=
-   *         functionPrefix typeParameterList? formalParameterList ';'
-   *
-   *     functionPrefix ::=
-   *         returnType? name
-   */
-  TypeAlias _parseTypeAlias(CommentAndMetadata commentAndMetadata) {
-    Token keyword = _expectKeyword(Keyword.TYPEDEF);
-    if (_matchesIdentifier()) {
-      Token next = _peek();
-      if (_tokenMatches(next, TokenType.LT)) {
-        next = _skipTypeParameterList(next);
-        if (next != null && _tokenMatches(next, TokenType.EQ)) {
-          TypeAlias typeAlias =
-              _parseClassTypeAlias(commentAndMetadata, null, keyword);
-          _reportErrorForToken(
-              ParserErrorCode.DEPRECATED_CLASS_TYPE_ALIAS, keyword);
-          return typeAlias;
-        }
-      } else if (_tokenMatches(next, TokenType.EQ)) {
-        TypeAlias typeAlias =
-            _parseClassTypeAlias(commentAndMetadata, null, keyword);
-        _reportErrorForToken(
-            ParserErrorCode.DEPRECATED_CLASS_TYPE_ALIAS, keyword);
-        return typeAlias;
-      }
-    }
-    return _parseFunctionTypeAlias(commentAndMetadata, keyword);
-  }
-
-  TypeName _parseTypeName() {
+  TypeName _parseTypeName(bool inExpression) {
     Identifier typeName;
-    if (_matchesKeyword(Keyword.VAR)) {
+    if (_matchesIdentifier()) {
+      typeName = _parsePrefixedIdentifierUnchecked();
+    } else if (_matchesKeyword(Keyword.VAR)) {
       _reportErrorForCurrentToken(ParserErrorCode.VAR_AS_TYPE_NAME);
-      typeName = new SimpleIdentifier(getAndAdvance());
-    } else if (_matchesIdentifier()) {
-      typeName = parsePrefixedIdentifier();
+      typeName = astFactory.simpleIdentifier(getAndAdvance());
     } else {
-      typeName = _createSyntheticIdentifier();
+      typeName = createSyntheticIdentifier();
       _reportErrorForCurrentToken(ParserErrorCode.EXPECTED_TYPE_NAME);
     }
     TypeArgumentList typeArguments = _parseOptionalTypeArguments();
-    return new TypeName(typeName, typeArguments);
+    Token question = null;
+    if (enableNnbd && _matches(TokenType.QUESTION)) {
+      if (!inExpression || !_isConditionalOperator()) {
+        question = getAndAdvance();
+      }
+    }
+    return astFactory.typeName(typeName, typeArguments, question: question);
   }
 
   /**
-   * Parse a unary expression. Return the unary expression that was parsed.
+   * Parse a type name. Return the type name that was parsed.
    *
-   *     unaryExpression ::=
-   *         prefixOperator unaryExpression
-   *       | awaitExpression
-   *       | postfixExpression
-   *       | unaryOperator 'super'
-   *       | '-' 'super'
-   *       | incrementOperator assignableExpression
+   * This method assumes that the current token is an identifier.
+   *
+   *     type ::=
+   *         qualified typeArguments?
    */
-  Expression _parseUnaryExpression() {
-    if (_matches(TokenType.MINUS) ||
-        _matches(TokenType.BANG) ||
-        _matches(TokenType.TILDE)) {
-      Token operator = getAndAdvance();
-      if (_matchesKeyword(Keyword.SUPER)) {
-        if (_tokenMatches(_peek(), TokenType.OPEN_SQUARE_BRACKET) ||
-            _tokenMatches(_peek(), TokenType.PERIOD)) {
-          //     "prefixOperator unaryExpression"
-          // --> "prefixOperator postfixExpression"
-          // --> "prefixOperator primary                    selector*"
-          // --> "prefixOperator 'super' assignableSelector selector*"
-          return new PrefixExpression(operator, _parseUnaryExpression());
-        }
-        return new PrefixExpression(
-            operator, new SuperExpression(getAndAdvance()));
-      }
-      return new PrefixExpression(operator, _parseUnaryExpression());
-    } else if (_currentToken.type.isIncrementOperator) {
-      Token operator = getAndAdvance();
-      if (_matchesKeyword(Keyword.SUPER)) {
-        if (_tokenMatches(_peek(), TokenType.OPEN_SQUARE_BRACKET) ||
-            _tokenMatches(_peek(), TokenType.PERIOD)) {
-          // --> "prefixOperator 'super' assignableSelector selector*"
-          return new PrefixExpression(operator, _parseUnaryExpression());
-        }
-        //
-        // Even though it is not valid to use an incrementing operator
-        // ('++' or '--') before 'super', we can (and therefore must) interpret
-        // "--super" as semantically equivalent to "-(-super)". Unfortunately,
-        // we cannot do the same for "++super" because "+super" is also not
-        // valid.
-        //
-        if (operator.type == TokenType.MINUS_MINUS) {
-          Token firstOperator = _createToken(operator, TokenType.MINUS);
-          Token secondOperator =
-              new Token(TokenType.MINUS, operator.offset + 1);
-          secondOperator.setNext(_currentToken);
-          firstOperator.setNext(secondOperator);
-          operator.previous.setNext(firstOperator);
-          return new PrefixExpression(
-              firstOperator,
-              new PrefixExpression(
-                  secondOperator, new SuperExpression(getAndAdvance())));
-        } else {
-          // Invalid operator before 'super'
-          _reportErrorForCurrentToken(
-              ParserErrorCode.INVALID_OPERATOR_FOR_SUPER, [operator.lexeme]);
-          return new PrefixExpression(
-              operator, new SuperExpression(getAndAdvance()));
-        }
-      }
-      return new PrefixExpression(operator, _parseAssignableExpression(false));
-    } else if (_matches(TokenType.PLUS)) {
-      _reportErrorForCurrentToken(ParserErrorCode.MISSING_IDENTIFIER);
-      return _createSyntheticIdentifier();
-    } else if (_inAsync && _matchesString(_AWAIT)) {
-      return _parseAwaitExpression();
-    }
-    return _parsePostfixExpression();
+  TypeName _parseTypeNameAfterIdentifier() {
+    Identifier typeName = _parsePrefixedIdentifierUnchecked();
+    TypeArgumentList typeArguments = _parseOptionalTypeArguments();
+    // If this is followed by a generic method type comment, allow the comment
+    // type to replace the real type name.
+    // TODO(jmesserly): this feels like a big hammer. Can we restrict it to
+    // only work inside generic methods?
+    TypeName typeFromComment = _parseOptionalTypeNameComment();
+    return typeFromComment ?? astFactory.typeName(typeName, typeArguments);
   }
 
   /**
@@ -8086,28 +7166,36 @@ class Parser {
    * was parsed.
    */
   StringLiteral _parseUri() {
-    bool iskeywordAfterUri(Token token) =>
+    // TODO(brianwilkerson) Should this function also return true for valid
+    // top-level keywords?
+    bool isKeywordAfterUri(Token token) =>
         token.lexeme == Keyword.AS.syntax ||
         token.lexeme == _HIDE ||
         token.lexeme == _SHOW;
-    if (!_matches(TokenType.STRING) &&
-        !_matches(TokenType.SEMICOLON) &&
-        !iskeywordAfterUri(_currentToken)) {
+    TokenType type = _currentToken.type;
+    if (type != TokenType.STRING &&
+        type != TokenType.SEMICOLON &&
+        !isKeywordAfterUri(_currentToken)) {
       // Attempt to recover in the case where the URI was not enclosed in
       // quotes.
       Token token = _currentToken;
-      while ((_tokenMatchesIdentifier(token) && !iskeywordAfterUri(token)) ||
-          _tokenMatches(token, TokenType.COLON) ||
-          _tokenMatches(token, TokenType.SLASH) ||
-          _tokenMatches(token, TokenType.PERIOD) ||
-          _tokenMatches(token, TokenType.PERIOD_PERIOD) ||
-          _tokenMatches(token, TokenType.PERIOD_PERIOD_PERIOD) ||
-          _tokenMatches(token, TokenType.INT) ||
-          _tokenMatches(token, TokenType.DOUBLE)) {
+      bool isValidInUri(Token token) {
+        TokenType type = token.type;
+        return type == TokenType.COLON ||
+            type == TokenType.SLASH ||
+            type == TokenType.PERIOD ||
+            type == TokenType.PERIOD_PERIOD ||
+            type == TokenType.PERIOD_PERIOD_PERIOD ||
+            type == TokenType.INT ||
+            type == TokenType.DOUBLE;
+      }
+
+      while ((_tokenMatchesIdentifier(token) && !isKeywordAfterUri(token)) ||
+          isValidInUri(token)) {
         token = token.next;
       }
       if (_tokenMatches(token, TokenType.SEMICOLON) ||
-          iskeywordAfterUri(token)) {
+          isKeywordAfterUri(token)) {
         Token endToken = token.previous;
         token = _currentToken;
         int endOffset = token.end;
@@ -8127,104 +7215,10 @@ class Parser {
         _reportErrorForToken(
             ParserErrorCode.NON_STRING_LITERAL_AS_URI, newToken);
         _currentToken = endToken.next;
-        return new SimpleStringLiteral(newToken, value);
+        return astFactory.simpleStringLiteral(newToken, value);
       }
     }
     return parseStringLiteral();
-  }
-
-  /**
-   * Parse a variable declaration. Return the variable declaration that was
-   * parsed.
-   *
-   *     variableDeclaration ::=
-   *         identifier ('=' expression)?
-   */
-  VariableDeclaration _parseVariableDeclaration() {
-    // TODO(paulberry): prior to the fix for bug 23204, we permitted
-    // annotations before variable declarations (e.g. "String @deprecated s;").
-    // Although such constructions are prohibited by the spec, we may want to
-    // consider handling them anyway to allow for better parser recovery in the
-    // event that the user erroneously tries to use them.  However, as a
-    // counterargument, this would likely degrade parser recovery in the event
-    // of a construct like "class C { int @deprecated foo() {} }" (i.e. the
-    // user is in the middle of inserting "int bar;" prior to
-    // "@deprecated foo() {}").
-    SimpleIdentifier name = parseSimpleIdentifier(isDeclaration: true);
-    Token equals = null;
-    Expression initializer = null;
-    if (_matches(TokenType.EQ)) {
-      equals = getAndAdvance();
-      initializer = parseExpression2();
-    }
-    return new VariableDeclaration(name, equals, initializer);
-  }
-
-  /**
-   * Parse a variable declaration list. The [commentAndMetadata] is the metadata
-   * to be associated with the variable declaration list. Return the variable
-   * declaration list that was parsed.
-   *
-   *     variableDeclarationList ::=
-   *         finalConstVarOrType variableDeclaration (',' variableDeclaration)*
-   */
-  VariableDeclarationList _parseVariableDeclarationListAfterMetadata(
-      CommentAndMetadata commentAndMetadata) {
-    FinalConstVarOrType holder = _parseFinalConstVarOrType(false);
-    return _parseVariableDeclarationListAfterType(
-        commentAndMetadata, holder.keyword, holder.type);
-  }
-
-  /**
-   * Parse a variable declaration list. The [commentAndMetadata] is the metadata
-   * to be associated with the variable declaration list, or `null` if there is
-   * no attempt at parsing the comment and metadata. The [keyword] is the token
-   * representing the 'final', 'const' or 'var' keyword, or `null` if there is
-   * no keyword. The [type] is the type of the variables in the list. Return the
-   * variable declaration list that was parsed.
-   *
-   *     variableDeclarationList ::=
-   *         finalConstVarOrType variableDeclaration (',' variableDeclaration)*
-   */
-  VariableDeclarationList _parseVariableDeclarationListAfterType(
-      CommentAndMetadata commentAndMetadata, Token keyword, TypeName type) {
-    if (type != null &&
-        keyword != null &&
-        _tokenMatchesKeyword(keyword, Keyword.VAR)) {
-      _reportErrorForToken(ParserErrorCode.VAR_AND_TYPE, keyword);
-    }
-    List<VariableDeclaration> variables = new List<VariableDeclaration>();
-    variables.add(_parseVariableDeclaration());
-    while (_matches(TokenType.COMMA)) {
-      _advance();
-      variables.add(_parseVariableDeclaration());
-    }
-    return new VariableDeclarationList(commentAndMetadata?.comment,
-        commentAndMetadata?.metadata, keyword, type, variables);
-  }
-
-  /**
-   * Parse a variable declaration statement. The [commentAndMetadata] is the
-   * metadata to be associated with the variable declaration statement, or
-   * `null` if there is no attempt at parsing the comment and metadata. Return
-   * the variable declaration statement that was parsed.
-   *
-   *     variableDeclarationStatement ::=
-   *         variableDeclarationList ';'
-   */
-  VariableDeclarationStatement _parseVariableDeclarationStatementAfterMetadata(
-      CommentAndMetadata commentAndMetadata) {
-    //    Token startToken = currentToken;
-    VariableDeclarationList variableList =
-        _parseVariableDeclarationListAfterMetadata(commentAndMetadata);
-//        if (!matches(TokenType.SEMICOLON)) {
-//          if (matches(startToken, Keyword.VAR) && isTypedIdentifier(startToken.getNext())) {
-//            // TODO(brianwilkerson) This appears to be of the form "var type variable". We should do
-//            // a better job of recovering in this case.
-//          }
-//        }
-    Token semicolon = _expect(TokenType.SEMICOLON);
-    return new VariableDeclarationStatement(variableList, semicolon);
   }
 
   /**
@@ -8241,49 +7235,10 @@ class Parser {
   VariableDeclarationStatement _parseVariableDeclarationStatementAfterType(
       CommentAndMetadata commentAndMetadata, Token keyword, TypeName type) {
     VariableDeclarationList variableList =
-        _parseVariableDeclarationListAfterType(
+        parseVariableDeclarationListAfterType(
             commentAndMetadata, keyword, type);
     Token semicolon = _expect(TokenType.SEMICOLON);
-    return new VariableDeclarationStatement(variableList, semicolon);
-  }
-
-  /**
-   * Parse a while statement. Return the while statement that was parsed.
-   *
-   *     whileStatement ::=
-   *         'while' '(' expression ')' statement
-   */
-  Statement _parseWhileStatement() {
-    bool wasInLoop = _inLoop;
-    _inLoop = true;
-    try {
-      Token keyword = _expectKeyword(Keyword.WHILE);
-      Token leftParenthesis = _expect(TokenType.OPEN_PAREN);
-      Expression condition = parseExpression2();
-      Token rightParenthesis = _expect(TokenType.CLOSE_PAREN);
-      Statement body = parseStatement2();
-      return new WhileStatement(
-          keyword, leftParenthesis, condition, rightParenthesis, body);
-    } finally {
-      _inLoop = wasInLoop;
-    }
-  }
-
-  /**
-   * Parse a yield statement. Return the yield statement that was parsed.
-   *
-   *     yieldStatement ::=
-   *         'yield' '*'? expression ';'
-   */
-  YieldStatement _parseYieldStatement() {
-    Token yieldToken = getAndAdvance();
-    Token star = null;
-    if (_matches(TokenType.STAR)) {
-      star = getAndAdvance();
-    }
-    Expression expression = parseExpression2();
-    Token semicolon = _expect(TokenType.SEMICOLON);
-    return new YieldStatement(yieldToken, star, expression, semicolon);
+    return astFactory.variableDeclarationStatement(variableList, semicolon);
   }
 
   /**
@@ -8305,7 +7260,7 @@ class Parser {
     return token;
   }
 
-  String _removeCodeBlocksGitHub(String comment) {
+  String _removeGitHubInlineCode(String comment) {
     int index = 0;
     while (true) {
       int beginIndex = comment.indexOf('`', index);
@@ -8383,6 +7338,39 @@ class Parser {
   }
 
   /**
+   * Execute the given [parseOperation] in a temporary parser whose current
+   * token has been set to the given [startToken]. If the parse does not
+   * generate any errors or exceptions, then return the token following the
+   * matching portion of the token stream. Otherwise, return `null`.
+   *
+   * Note: This is an extremely inefficient way of testing whether the tokens in
+   * the token stream match a given production. It should not be used for
+   * production code.
+   */
+  Token _skip(Token startToken, parseOperation(Parser parser)) {
+    BooleanErrorListener listener = new BooleanErrorListener();
+    Parser parser = new Parser(_source, listener);
+    parser._currentToken = _cloneTokens(startToken);
+    parser._enableAssertInitializer = _enableAssertInitializer;
+    parser._enableNnbd = _enableNnbd;
+    parser._inAsync = _inAsync;
+    parser._inGenerator = _inGenerator;
+    parser._inInitializer = _inInitializer;
+    parser._inLoop = _inLoop;
+    parser._inSwitch = _inSwitch;
+    parser._parseFunctionBodies = _parseFunctionBodies;
+    try {
+      parseOperation(parser);
+    } catch (exception) {
+      return null;
+    }
+    if (listener.errorReported) {
+      return null;
+    }
+    return parser._currentToken;
+  }
+
+  /**
    * Skips a block with all containing blocks.
    */
   void _skipBlock() {
@@ -8415,8 +7403,8 @@ class Parser {
    *   | type
    */
   Token _skipFinalConstVarOrType(Token startToken) {
-    if (_tokenMatchesKeyword(startToken, Keyword.FINAL) ||
-        _tokenMatchesKeyword(startToken, Keyword.CONST)) {
+    Keyword keyword = startToken.keyword;
+    if (keyword == Keyword.FINAL || keyword == Keyword.CONST) {
       Token next = startToken.next;
       if (_tokenMatchesIdentifier(next)) {
         Token next2 = next.next;
@@ -8424,12 +7412,12 @@ class Parser {
         if (_tokenMatchesIdentifier(next2) ||
             _tokenMatches(next2, TokenType.LT) ||
             _tokenMatches(next2, TokenType.PERIOD)) {
-          return _skipTypeName(next);
+          return skipTypeName(next);
         }
         // "parameter"
         return next;
       }
-    } else if (_tokenMatchesKeyword(startToken, Keyword.VAR)) {
+    } else if (keyword == Keyword.VAR) {
       return startToken.next;
     } else if (_tokenMatchesIdentifier(startToken)) {
       Token next = startToken.next;
@@ -8441,7 +7429,7 @@ class Parser {
               (_tokenMatchesIdentifier(next.next.next) ||
                   _tokenMatches(next.next.next, TokenType.LT) ||
                   _tokenMatchesKeyword(next.next.next, Keyword.THIS)))) {
-        return _skipReturnType(startToken);
+        return skipReturnType(startToken);
       }
     }
     return null;
@@ -8525,7 +7513,7 @@ class Parser {
     if (afterType == null) {
       return null;
     }
-    if (_skipSimpleIdentifier(afterType) == null) {
+    if (skipSimpleIdentifier(afterType) == null) {
       return null;
     }
     return _skipPastMatchingToken(startToken);
@@ -8544,77 +7532,6 @@ class Parser {
       return null;
     }
     return closeParen.next;
-  }
-
-  /**
-   * Parse a prefixed identifier, starting at the [startToken], without actually
-   * creating a prefixed identifier or changing the current token. Return the
-   * token following the prefixed identifier that was parsed, or `null` if the
-   * given token is not the first token in a valid prefixed identifier.
-   *
-   * This method must be kept in sync with [parsePrefixedIdentifier].
-   *
-   *     prefixedIdentifier ::=
-   *         identifier ('.' identifier)?
-   */
-  Token _skipPrefixedIdentifier(Token startToken) {
-    Token token = _skipSimpleIdentifier(startToken);
-    if (token == null) {
-      return null;
-    } else if (!_tokenMatches(token, TokenType.PERIOD)) {
-      return token;
-    }
-    token = token.next;
-    Token nextToken = _skipSimpleIdentifier(token);
-    if (nextToken != null) {
-      return nextToken;
-    } else if (_tokenMatches(token, TokenType.CLOSE_PAREN) ||
-        _tokenMatches(token, TokenType.COMMA)) {
-      // If the `id.` is followed by something that cannot produce a valid
-      // structure then assume this is a prefixed identifier but missing the
-      // trailing identifier
-      return token;
-    }
-    return null;
-  }
-
-  /**
-   * Parse a return type, starting at the [startToken], without actually
-   * creating a return type or changing the current token. Return the token
-   * following the return type that was parsed, or `null` if the given token is
-   * not the first token in a valid return type.
-   *
-   * This method must be kept in sync with [parseReturnType].
-   *
-   *     returnType ::=
-   *         'void'
-   *       | type
-   */
-  Token _skipReturnType(Token startToken) {
-    if (_tokenMatchesKeyword(startToken, Keyword.VOID)) {
-      return startToken.next;
-    } else {
-      return _skipTypeName(startToken);
-    }
-  }
-
-  /**
-   * Parse a simple identifier, starting at the [startToken], without actually
-   * creating a simple identifier or changing the current token. Return the
-   * token following the simple identifier that was parsed, or `null` if the
-   * given token is not the first token in a valid simple identifier.
-   *
-   * This method must be kept in sync with [parseSimpleIdentifier].
-   *
-   *     identifier ::=
-   *         IDENTIFIER
-   */
-  Token _skipSimpleIdentifier(Token startToken) {
-    if (_tokenMatches(startToken, TokenType.IDENTIFIER) ||
-        _tokenMatchesPseudoKeyword(startToken)) {
-      return startToken.next;
-    }
-    return null;
   }
 
   /**
@@ -8650,7 +7567,7 @@ class Parser {
             bracketNestingLevel--;
             token = token.next;
           } else if (type == TokenType.STRING) {
-            token = _skipStringLiteral(token);
+            token = skipStringLiteral(token);
             if (token == null) {
               return null;
             }
@@ -8673,103 +7590,6 @@ class Parser {
         token = token.next;
         type = token.type;
       }
-    }
-    return token;
-  }
-
-  /**
-   * Parse a string literal, starting at the [startToken], without actually
-   * creating a string literal or changing the current token. Return the token
-   * following the string literal that was parsed, or `null` if the given token
-   * is not the first token in a valid string literal.
-   *
-   * This method must be kept in sync with [parseStringLiteral].
-   *
-   *     stringLiteral ::=
-   *         MULTI_LINE_STRING+
-   *       | SINGLE_LINE_STRING+
-   */
-  Token _skipStringLiteral(Token startToken) {
-    Token token = startToken;
-    while (token != null && _tokenMatches(token, TokenType.STRING)) {
-      token = token.next;
-      TokenType type = token.type;
-      if (type == TokenType.STRING_INTERPOLATION_EXPRESSION ||
-          type == TokenType.STRING_INTERPOLATION_IDENTIFIER) {
-        token = _skipStringInterpolation(token);
-      }
-    }
-    if (identical(token, startToken)) {
-      return null;
-    }
-    return token;
-  }
-
-  /**
-   * Parse a list of type arguments, starting at the [startToken], without
-   * actually creating a type argument list or changing the current token.
-   * Return the token following the type argument list that was parsed, or
-   * `null` if the given token is not the first token in a valid type argument
-   * list.
-   *
-   * This method must be kept in sync with [parseTypeArgumentList].
-   *
-   *     typeArguments ::=
-   *         '<' typeList '>'
-   *
-   *     typeList ::=
-   *         type (',' type)*
-   */
-  Token _skipTypeArgumentList(Token startToken) {
-    Token token = startToken;
-    if (!_tokenMatches(token, TokenType.LT) &&
-        !_injectGenericCommentTypeList()) {
-      return null;
-    }
-    token = _skipTypeName(token.next);
-    if (token == null) {
-      // If the start token '<' is followed by '>'
-      // then assume this should be type argument list but is missing a type
-      token = startToken.next;
-      if (_tokenMatches(token, TokenType.GT)) {
-        return token.next;
-      }
-      return null;
-    }
-    while (_tokenMatches(token, TokenType.COMMA)) {
-      token = _skipTypeName(token.next);
-      if (token == null) {
-        return null;
-      }
-    }
-    if (token.type == TokenType.GT) {
-      return token.next;
-    } else if (token.type == TokenType.GT_GT) {
-      Token second = new Token(TokenType.GT, token.offset + 1);
-      second.setNextWithoutSettingPrevious(token.next);
-      return second;
-    }
-    return null;
-  }
-
-  /**
-   * Parse a type name, starting at the [startToken], without actually creating
-   * a type name or changing the current token. Return the token following the
-   * type name that was parsed, or `null` if the given token is not the first
-   * token in a valid type name.
-   *
-   * This method must be kept in sync with [parseTypeName].
-   *
-   *     type ::=
-   *         qualified typeArguments?
-   */
-  Token _skipTypeName(Token startToken) {
-    Token token = _skipPrefixedIdentifier(startToken);
-    if (token == null) {
-      return null;
-    }
-    if (_tokenMatches(token, TokenType.LT)) {
-      token = _skipTypeArgumentList(token);
     }
     return token;
   }
@@ -8825,6 +7645,24 @@ class Parser {
       next = next.next;
     }
     return next;
+  }
+
+  /**
+   * Assuming that the current token is an index token ('[]'), split it into two
+   * tokens ('[' and ']'), leaving the left bracket as the current token.
+   */
+  void _splitIndex() {
+    // Split the token into two separate tokens.
+    BeginToken leftBracket = _createToken(
+        _currentToken, TokenType.OPEN_SQUARE_BRACKET,
+        isBegin: true);
+    Token rightBracket =
+        new Token(TokenType.CLOSE_SQUARE_BRACKET, _currentToken.offset + 1);
+    leftBracket.endToken = rightBracket;
+    rightBracket.setNext(_currentToken.next);
+    leftBracket.setNext(rightBracket);
+    _currentToken.previous.setNext(leftBracket);
+    _currentToken = leftBracket;
   }
 
   /**
@@ -8962,8 +7800,7 @@ class Parser {
           // Illegal escape sequence: not enough or too many hex digits
           _reportErrorForCurrentToken(ParserErrorCode.INVALID_UNICODE_ESCAPE);
         }
-        _appendScalarValue(buffer, lexeme.substring(index, currentIndex + 1),
-            value, index, currentIndex);
+        _appendCodePoint(buffer, lexeme, value, index, currentIndex);
         return currentIndex + 1;
       } else {
         if (currentIndex + 3 >= length) {
@@ -8982,9 +7819,9 @@ class Parser {
           // Illegal escape sequence: invalid hex digits
           _reportErrorForCurrentToken(ParserErrorCode.INVALID_UNICODE_ESCAPE);
         } else {
-          _appendScalarValue(
+          _appendCodePoint(
               buffer,
-              lexeme.substring(index, currentIndex + 1),
+              lexeme,
               (((((Character.digit(firstDigit, 16) << 4) +
                                   Character.digit(secondDigit, 16)) <<
                               4) +
@@ -9008,8 +7845,7 @@ class Parser {
    */
   void _unlockErrorListener() {
     if (_errorListenerLock == 0) {
-      throw new IllegalStateException(
-          "Attempt to unlock not locked error listener.");
+      throw new StateError("Attempt to unlock not locked error listener.");
     }
     _errorListenerLock--;
   }
@@ -9090,7 +7926,7 @@ class Parser {
   }
 
   /**
-   * Validate that the given set of [modifiers] is appropriate for a class and
+   * Validate that the given set of [modifiers] is appropriate for an enum and
    * return the 'abstract' keyword if there is one.
    */
   void _validateModifiersForEnum(Modifiers modifiers) {
@@ -9351,627 +8187,4 @@ class Parser_SyntheticKeywordToken extends KeywordToken {
 
   @override
   Token copy() => new Parser_SyntheticKeywordToken(keyword, offset);
-}
-
-/**
- * The error codes used for errors detected by the parser. The convention for
- * this class is for the name of the error code to indicate the problem that
- * caused the error to be generated and for the error message to explain what
- * is wrong and, when appropriate, how the problem can be corrected.
- */
-class ParserErrorCode extends ErrorCode {
-  static const ParserErrorCode ABSTRACT_CLASS_MEMBER = const ParserErrorCode(
-      'ABSTRACT_CLASS_MEMBER',
-      "Members of classes cannot be declared to be 'abstract'");
-
-  static const ParserErrorCode ABSTRACT_ENUM = const ParserErrorCode(
-      'ABSTRACT_ENUM', "Enums cannot be declared to be 'abstract'");
-
-  static const ParserErrorCode ABSTRACT_STATIC_METHOD = const ParserErrorCode(
-      'ABSTRACT_STATIC_METHOD',
-      "Static methods cannot be declared to be 'abstract'");
-
-  static const ParserErrorCode ABSTRACT_TOP_LEVEL_FUNCTION =
-      const ParserErrorCode('ABSTRACT_TOP_LEVEL_FUNCTION',
-          "Top-level functions cannot be declared to be 'abstract'");
-
-  static const ParserErrorCode ABSTRACT_TOP_LEVEL_VARIABLE =
-      const ParserErrorCode('ABSTRACT_TOP_LEVEL_VARIABLE',
-          "Top-level variables cannot be declared to be 'abstract'");
-
-  static const ParserErrorCode ABSTRACT_TYPEDEF = const ParserErrorCode(
-      'ABSTRACT_TYPEDEF', "Type aliases cannot be declared to be 'abstract'");
-
-  static const ParserErrorCode ANNOTATION_ON_ENUM_CONSTANT =
-      const ParserErrorCode('ANNOTATION_ON_ENUM_CONSTANT',
-          "Enum constants cannot have annotations");
-
-  static const ParserErrorCode ASSERT_DOES_NOT_TAKE_ASSIGNMENT =
-      const ParserErrorCode('ASSERT_DOES_NOT_TAKE_ASSIGNMENT',
-          "Assert cannot be called on an assignment");
-
-  static const ParserErrorCode ASSERT_DOES_NOT_TAKE_CASCADE =
-      const ParserErrorCode(
-          'ASSERT_DOES_NOT_TAKE_CASCADE', "Assert cannot be called on cascade");
-
-  static const ParserErrorCode ASSERT_DOES_NOT_TAKE_THROW =
-      const ParserErrorCode(
-          'ASSERT_DOES_NOT_TAKE_THROW', "Assert cannot be called on throws");
-
-  static const ParserErrorCode ASSERT_DOES_NOT_TAKE_RETHROW =
-      const ParserErrorCode('ASSERT_DOES_NOT_TAKE_RETHROW',
-          "Assert cannot be called on rethrows");
-
-  /**
-   * 16.32 Identifier Reference: It is a compile-time error if any of the
-   * identifiers async, await, or yield is used as an identifier in a function
-   * body marked with either async, async*, or sync*.
-   */
-  static const ParserErrorCode ASYNC_KEYWORD_USED_AS_IDENTIFIER =
-      const ParserErrorCode('ASYNC_KEYWORD_USED_AS_IDENTIFIER',
-          "The keywords 'async', 'await', and 'yield' may not be used as identifiers in an asynchronous or generator function.");
-
-  /**
-   * Some environments, such as Fletch, do not support async.
-   */
-  static const ParserErrorCode ASYNC_NOT_SUPPORTED = const ParserErrorCode(
-      'ASYNC_NOT_SUPPORTED',
-      "Async and sync are not supported in this environment.");
-
-  static const ParserErrorCode BREAK_OUTSIDE_OF_LOOP = const ParserErrorCode(
-      'BREAK_OUTSIDE_OF_LOOP',
-      "A break statement cannot be used outside of a loop or switch statement");
-
-  static const ParserErrorCode CLASS_IN_CLASS = shared_messages.CLASS_IN_CLASS;
-
-  static const ParserErrorCode COLON_IN_PLACE_OF_IN = const ParserErrorCode(
-      'COLON_IN_PLACE_OF_IN', "For-in loops use 'in' rather than a colon");
-
-  static const ParserErrorCode CONST_AND_FINAL =
-      shared_messages.CONST_AND_FINAL;
-
-  static const ParserErrorCode CONST_AND_VAR = shared_messages.CONST_AND_VAR;
-
-  static const ParserErrorCode CONST_CLASS = shared_messages.CONST_CLASS;
-
-  static const ParserErrorCode CONST_CONSTRUCTOR_WITH_BODY =
-      shared_messages.CONST_CONSTRUCTOR_WITH_BODY;
-
-  static const ParserErrorCode CONST_ENUM = shared_messages.CONST_ENUM;
-
-  static const ParserErrorCode CONST_FACTORY = shared_messages.CONST_FACTORY;
-
-  static const ParserErrorCode CONST_METHOD = shared_messages.CONST_METHOD;
-
-  static const ParserErrorCode CONST_TYPEDEF = shared_messages.CONST_TYPEDEF;
-
-  static const ParserErrorCode CONSTRUCTOR_WITH_RETURN_TYPE =
-      shared_messages.CONSTRUCTOR_WITH_RETURN_TYPE;
-
-  static const ParserErrorCode CONTINUE_OUTSIDE_OF_LOOP = const ParserErrorCode(
-      'CONTINUE_OUTSIDE_OF_LOOP',
-      "A continue statement cannot be used outside of a loop or switch statement");
-
-  static const ParserErrorCode CONTINUE_WITHOUT_LABEL_IN_CASE =
-      const ParserErrorCode('CONTINUE_WITHOUT_LABEL_IN_CASE',
-          "A continue statement in a switch statement must have a label as a target");
-
-  static const ParserErrorCode DEPRECATED_CLASS_TYPE_ALIAS =
-      const ParserErrorCode('DEPRECATED_CLASS_TYPE_ALIAS',
-          "The 'typedef' mixin application was replaced with 'class'");
-
-  static const ParserErrorCode DIRECTIVE_AFTER_DECLARATION =
-      const ParserErrorCode('DIRECTIVE_AFTER_DECLARATION',
-          "Directives must appear before any declarations");
-
-  static const ParserErrorCode DUPLICATE_LABEL_IN_SWITCH_STATEMENT =
-      const ParserErrorCode('DUPLICATE_LABEL_IN_SWITCH_STATEMENT',
-          "The label {0} was already used in this switch statement");
-
-  static const ParserErrorCode DUPLICATED_MODIFIER = const ParserErrorCode(
-      'DUPLICATED_MODIFIER', "The modifier '{0}' was already specified.");
-
-  static const ParserErrorCode EMPTY_ENUM_BODY = const ParserErrorCode(
-      'EMPTY_ENUM_BODY', "An enum must declare at least one constant name");
-
-  static const ParserErrorCode ENUM_IN_CLASS = const ParserErrorCode(
-      'ENUM_IN_CLASS', "Enums cannot be declared inside classes");
-
-  static const ParserErrorCode EQUALITY_CANNOT_BE_EQUALITY_OPERAND =
-      const ParserErrorCode('EQUALITY_CANNOT_BE_EQUALITY_OPERAND',
-          "Equality expression cannot be operand of another equality expression.");
-
-  static const ParserErrorCode EXPECTED_CASE_OR_DEFAULT = const ParserErrorCode(
-      'EXPECTED_CASE_OR_DEFAULT', "Expected 'case' or 'default'");
-
-  static const ParserErrorCode EXPECTED_CLASS_MEMBER =
-      const ParserErrorCode('EXPECTED_CLASS_MEMBER', "Expected a class member");
-
-  static const ParserErrorCode EXPECTED_EXECUTABLE = const ParserErrorCode(
-      'EXPECTED_EXECUTABLE',
-      "Expected a method, getter, setter or operator declaration");
-
-  static const ParserErrorCode EXPECTED_LIST_OR_MAP_LITERAL =
-      const ParserErrorCode(
-          'EXPECTED_LIST_OR_MAP_LITERAL', "Expected a list or map literal");
-
-  static const ParserErrorCode EXPECTED_STRING_LITERAL = const ParserErrorCode(
-      'EXPECTED_STRING_LITERAL', "Expected a string literal");
-
-  static const ParserErrorCode EXPECTED_TOKEN =
-      const ParserErrorCode('EXPECTED_TOKEN', "Expected to find '{0}'");
-
-  static const ParserErrorCode EXPECTED_TYPE_NAME =
-      const ParserErrorCode('EXPECTED_TYPE_NAME', "Expected a type name");
-
-  static const ParserErrorCode EXPORT_DIRECTIVE_AFTER_PART_DIRECTIVE =
-      const ParserErrorCode('EXPORT_DIRECTIVE_AFTER_PART_DIRECTIVE',
-          "Export directives must preceed part directives");
-
-  static const ParserErrorCode EXTERNAL_AFTER_CONST = const ParserErrorCode(
-      'EXTERNAL_AFTER_CONST',
-      "The modifier 'external' should be before the modifier 'const'");
-
-  static const ParserErrorCode EXTERNAL_AFTER_FACTORY = const ParserErrorCode(
-      'EXTERNAL_AFTER_FACTORY',
-      "The modifier 'external' should be before the modifier 'factory'");
-
-  static const ParserErrorCode EXTERNAL_AFTER_STATIC = const ParserErrorCode(
-      'EXTERNAL_AFTER_STATIC',
-      "The modifier 'external' should be before the modifier 'static'");
-
-  static const ParserErrorCode EXTERNAL_CLASS = const ParserErrorCode(
-      'EXTERNAL_CLASS', "Classes cannot be declared to be 'external'");
-
-  static const ParserErrorCode EXTERNAL_CONSTRUCTOR_WITH_BODY =
-      const ParserErrorCode('EXTERNAL_CONSTRUCTOR_WITH_BODY',
-          "External constructors cannot have a body");
-
-  static const ParserErrorCode EXTERNAL_ENUM = const ParserErrorCode(
-      'EXTERNAL_ENUM', "Enums cannot be declared to be 'external'");
-
-  static const ParserErrorCode EXTERNAL_FIELD = const ParserErrorCode(
-      'EXTERNAL_FIELD', "Fields cannot be declared to be 'external'");
-
-  static const ParserErrorCode EXTERNAL_GETTER_WITH_BODY =
-      const ParserErrorCode(
-          'EXTERNAL_GETTER_WITH_BODY', "External getters cannot have a body");
-
-  static const ParserErrorCode EXTERNAL_METHOD_WITH_BODY =
-      const ParserErrorCode(
-          'EXTERNAL_METHOD_WITH_BODY', "External methods cannot have a body");
-
-  static const ParserErrorCode EXTERNAL_OPERATOR_WITH_BODY =
-      const ParserErrorCode('EXTERNAL_OPERATOR_WITH_BODY',
-          "External operators cannot have a body");
-
-  static const ParserErrorCode EXTERNAL_SETTER_WITH_BODY =
-      const ParserErrorCode(
-          'EXTERNAL_SETTER_WITH_BODY', "External setters cannot have a body");
-
-  static const ParserErrorCode EXTERNAL_TYPEDEF = const ParserErrorCode(
-      'EXTERNAL_TYPEDEF', "Type aliases cannot be declared to be 'external'");
-
-  static const ParserErrorCode FACTORY_TOP_LEVEL_DECLARATION =
-      const ParserErrorCode('FACTORY_TOP_LEVEL_DECLARATION',
-          "Top-level declarations cannot be declared to be 'factory'");
-
-  static const ParserErrorCode FACTORY_WITH_INITIALIZERS =
-      const ParserErrorCode(
-          'FACTORY_WITH_INITIALIZERS',
-          "A 'factory' constructor cannot have initializers",
-          "Either remove the 'factory' keyword to make this a generative "
-          "constructor or remove the initializers.");
-
-  static const ParserErrorCode FACTORY_WITHOUT_BODY = const ParserErrorCode(
-      'FACTORY_WITHOUT_BODY',
-      "A non-redirecting 'factory' constructor must have a body");
-
-  static const ParserErrorCode FIELD_INITIALIZER_OUTSIDE_CONSTRUCTOR =
-      const ParserErrorCode('FIELD_INITIALIZER_OUTSIDE_CONSTRUCTOR',
-          "Field initializers can only be used in a constructor");
-
-  static const ParserErrorCode FINAL_AND_VAR = const ParserErrorCode(
-      'FINAL_AND_VAR',
-      "Members cannot be declared to be both 'final' and 'var'");
-
-  static const ParserErrorCode FINAL_CLASS = const ParserErrorCode(
-      'FINAL_CLASS', "Classes cannot be declared to be 'final'");
-
-  static const ParserErrorCode FINAL_CONSTRUCTOR = const ParserErrorCode(
-      'FINAL_CONSTRUCTOR', "A constructor cannot be declared to be 'final'");
-
-  static const ParserErrorCode FINAL_ENUM = const ParserErrorCode(
-      'FINAL_ENUM', "Enums cannot be declared to be 'final'");
-
-  static const ParserErrorCode FINAL_METHOD = const ParserErrorCode(
-      'FINAL_METHOD',
-      "Getters, setters and methods cannot be declared to be 'final'");
-
-  static const ParserErrorCode FINAL_TYPEDEF = const ParserErrorCode(
-      'FINAL_TYPEDEF', "Type aliases cannot be declared to be 'final'");
-
-  static const ParserErrorCode FUNCTION_TYPED_PARAMETER_VAR = const ParserErrorCode(
-      'FUNCTION_TYPED_PARAMETER_VAR',
-      "Function typed parameters cannot specify 'const', 'final' or 'var' instead of return type");
-
-  static const ParserErrorCode GETTER_IN_FUNCTION = const ParserErrorCode(
-      'GETTER_IN_FUNCTION',
-      "Getters cannot be defined within methods or functions");
-
-  static const ParserErrorCode GETTER_WITH_PARAMETERS = const ParserErrorCode(
-      'GETTER_WITH_PARAMETERS',
-      "Getter should be declared without a parameter list");
-
-  static const ParserErrorCode ILLEGAL_ASSIGNMENT_TO_NON_ASSIGNABLE =
-      const ParserErrorCode('ILLEGAL_ASSIGNMENT_TO_NON_ASSIGNABLE',
-          "Illegal assignment to non-assignable expression");
-
-  static const ParserErrorCode IMPLEMENTS_BEFORE_EXTENDS =
-      const ParserErrorCode('IMPLEMENTS_BEFORE_EXTENDS',
-          "The extends clause must be before the implements clause");
-
-  static const ParserErrorCode IMPLEMENTS_BEFORE_WITH = const ParserErrorCode(
-      'IMPLEMENTS_BEFORE_WITH',
-      "The with clause must be before the implements clause");
-
-  static const ParserErrorCode IMPORT_DIRECTIVE_AFTER_PART_DIRECTIVE =
-      const ParserErrorCode('IMPORT_DIRECTIVE_AFTER_PART_DIRECTIVE',
-          "Import directives must preceed part directives");
-
-  static const ParserErrorCode INITIALIZED_VARIABLE_IN_FOR_EACH =
-      const ParserErrorCode('INITIALIZED_VARIABLE_IN_FOR_EACH',
-          "The loop variable in a for-each loop cannot be initialized");
-
-  static const ParserErrorCode INVALID_AWAIT_IN_FOR = const ParserErrorCode(
-      'INVALID_AWAIT_IN_FOR',
-      "The modifier 'await' is not allowed for a normal 'for' statement",
-      "Remove the keyword or use a for-each statement.");
-
-  static const ParserErrorCode INVALID_CODE_POINT = const ParserErrorCode(
-      'INVALID_CODE_POINT',
-      "The escape sequence '{0}' is not a valid code point");
-
-  static const ParserErrorCode INVALID_COMMENT_REFERENCE = const ParserErrorCode(
-      'INVALID_COMMENT_REFERENCE',
-      "Comment references should contain a possibly prefixed identifier and can start with 'new', but should not contain anything else");
-
-  static const ParserErrorCode INVALID_HEX_ESCAPE = const ParserErrorCode(
-      'INVALID_HEX_ESCAPE',
-      "An escape sequence starting with '\\x' must be followed by 2 hexidecimal digits");
-
-  static const ParserErrorCode INVALID_LITERAL_IN_CONFIGURATION =
-      const ParserErrorCode('INVALID_LITERAL_IN_CONFIGURATION',
-          "The literal in a configuration cannot contain interpolation");
-
-  static const ParserErrorCode INVALID_OPERATOR = const ParserErrorCode(
-      'INVALID_OPERATOR', "The string '{0}' is not a valid operator");
-
-  static const ParserErrorCode INVALID_OPERATOR_FOR_SUPER =
-      const ParserErrorCode('INVALID_OPERATOR_FOR_SUPER',
-          "The operator '{0}' cannot be used with 'super'");
-
-  static const ParserErrorCode INVALID_STAR_AFTER_ASYNC = const ParserErrorCode(
-      'INVALID_STAR_AFTER_ASYNC',
-      "The modifier 'async*' is not allowed for an expression function body",
-      "Convert the body to a block.");
-
-  static const ParserErrorCode INVALID_SYNC = const ParserErrorCode(
-      'INVALID_SYNC',
-      "The modifier 'sync' is not allowed for an exrpression function body",
-      "Convert the body to a block.");
-
-  static const ParserErrorCode INVALID_UNICODE_ESCAPE = const ParserErrorCode(
-      'INVALID_UNICODE_ESCAPE',
-      "An escape sequence starting with '\\u' must be followed by 4 hexidecimal digits or from 1 to 6 digits between '{' and '}'");
-
-  static const ParserErrorCode LIBRARY_DIRECTIVE_NOT_FIRST =
-      const ParserErrorCode('LIBRARY_DIRECTIVE_NOT_FIRST',
-          "The library directive must appear before all other directives");
-
-  static const ParserErrorCode LOCAL_FUNCTION_DECLARATION_MODIFIER =
-      const ParserErrorCode('LOCAL_FUNCTION_DECLARATION_MODIFIER',
-          "Local function declarations cannot specify any modifier");
-
-  static const ParserErrorCode MISSING_ASSIGNABLE_SELECTOR =
-      const ParserErrorCode('MISSING_ASSIGNABLE_SELECTOR',
-          "Missing selector such as \".<identifier>\" or \"[0]\"");
-
-  static const ParserErrorCode MISSING_ASSIGNMENT_IN_INITIALIZER =
-      const ParserErrorCode('MISSING_ASSIGNMENT_IN_INITIALIZER',
-          "Expected an assignment after the field name");
-
-  static const ParserErrorCode MISSING_CATCH_OR_FINALLY = const ParserErrorCode(
-      'MISSING_CATCH_OR_FINALLY',
-      "A try statement must have either a catch or finally clause");
-
-  static const ParserErrorCode MISSING_CLASS_BODY = const ParserErrorCode(
-      'MISSING_CLASS_BODY',
-      "A class definition must have a body, even if it is empty");
-
-  static const ParserErrorCode MISSING_CLOSING_PARENTHESIS =
-      const ParserErrorCode(
-          'MISSING_CLOSING_PARENTHESIS', "The closing parenthesis is missing");
-
-  static const ParserErrorCode MISSING_CONST_FINAL_VAR_OR_TYPE =
-      const ParserErrorCode('MISSING_CONST_FINAL_VAR_OR_TYPE',
-          "Variables must be declared using the keywords 'const', 'final', 'var' or a type name");
-
-  static const ParserErrorCode MISSING_ENUM_BODY = const ParserErrorCode(
-      'MISSING_ENUM_BODY',
-      "An enum definition must have a body with at least one constant name");
-
-  static const ParserErrorCode MISSING_EXPRESSION_IN_INITIALIZER =
-      const ParserErrorCode('MISSING_EXPRESSION_IN_INITIALIZER',
-          "Expected an expression after the assignment operator");
-
-  static const ParserErrorCode MISSING_EXPRESSION_IN_THROW =
-      shared_messages.MISSING_EXPRESSION_IN_THROW;
-
-  static const ParserErrorCode MISSING_FUNCTION_BODY = const ParserErrorCode(
-      'MISSING_FUNCTION_BODY', "A function body must be provided");
-
-  static const ParserErrorCode MISSING_FUNCTION_PARAMETERS =
-      const ParserErrorCode('MISSING_FUNCTION_PARAMETERS',
-          "Functions must have an explicit list of parameters");
-
-  static const ParserErrorCode MISSING_METHOD_PARAMETERS =
-      const ParserErrorCode('MISSING_METHOD_PARAMETERS',
-          "Methods must have an explicit list of parameters");
-
-  static const ParserErrorCode MISSING_GET = const ParserErrorCode(
-      'MISSING_GET',
-      "Getters must have the keyword 'get' before the getter name");
-
-  static const ParserErrorCode MISSING_IDENTIFIER =
-      const ParserErrorCode('MISSING_IDENTIFIER', "Expected an identifier");
-
-  static const ParserErrorCode MISSING_INITIALIZER =
-      const ParserErrorCode('MISSING_INITIALIZER', "Expected an initializer");
-
-  static const ParserErrorCode MISSING_KEYWORD_OPERATOR = const ParserErrorCode(
-      'MISSING_KEYWORD_OPERATOR',
-      "Operator declarations must be preceeded by the keyword 'operator'");
-
-  static const ParserErrorCode MISSING_NAME_IN_LIBRARY_DIRECTIVE =
-      const ParserErrorCode('MISSING_NAME_IN_LIBRARY_DIRECTIVE',
-          "Library directives must include a library name");
-
-  static const ParserErrorCode MISSING_NAME_IN_PART_OF_DIRECTIVE =
-      const ParserErrorCode('MISSING_NAME_IN_PART_OF_DIRECTIVE',
-          "Library directives must include a library name");
-
-  static const ParserErrorCode MISSING_PREFIX_IN_DEFERRED_IMPORT =
-      const ParserErrorCode('MISSING_PREFIX_IN_DEFERRED_IMPORT',
-          "Deferred imports must have a prefix");
-
-  static const ParserErrorCode MISSING_STAR_AFTER_SYNC = const ParserErrorCode(
-      'MISSING_STAR_AFTER_SYNC',
-      "The modifier 'sync' must be followed by a star ('*')",
-      "Remove the modifier or add a star.");
-
-  static const ParserErrorCode MISSING_STATEMENT =
-      const ParserErrorCode('MISSING_STATEMENT', "Expected a statement");
-
-  static const ParserErrorCode MISSING_TERMINATOR_FOR_PARAMETER_GROUP =
-      const ParserErrorCode('MISSING_TERMINATOR_FOR_PARAMETER_GROUP',
-          "There is no '{0}' to close the parameter group");
-
-  static const ParserErrorCode MISSING_TYPEDEF_PARAMETERS =
-      const ParserErrorCode('MISSING_TYPEDEF_PARAMETERS',
-          "Type aliases for functions must have an explicit list of parameters");
-
-  static const ParserErrorCode MISSING_VARIABLE_IN_FOR_EACH = const ParserErrorCode(
-      'MISSING_VARIABLE_IN_FOR_EACH',
-      "A loop variable must be declared in a for-each loop before the 'in', but none were found");
-
-  static const ParserErrorCode MIXED_PARAMETER_GROUPS = const ParserErrorCode(
-      'MIXED_PARAMETER_GROUPS',
-      "Cannot have both positional and named parameters in a single parameter list");
-
-  static const ParserErrorCode MULTIPLE_EXTENDS_CLAUSES = const ParserErrorCode(
-      'MULTIPLE_EXTENDS_CLAUSES',
-      "Each class definition can have at most one extends clause");
-
-  static const ParserErrorCode MULTIPLE_IMPLEMENTS_CLAUSES =
-      const ParserErrorCode('MULTIPLE_IMPLEMENTS_CLAUSES',
-          "Each class definition can have at most one implements clause");
-
-  static const ParserErrorCode MULTIPLE_LIBRARY_DIRECTIVES =
-      const ParserErrorCode('MULTIPLE_LIBRARY_DIRECTIVES',
-          "Only one library directive may be declared in a file");
-
-  static const ParserErrorCode MULTIPLE_NAMED_PARAMETER_GROUPS =
-      const ParserErrorCode('MULTIPLE_NAMED_PARAMETER_GROUPS',
-          "Cannot have multiple groups of named parameters in a single parameter list");
-
-  static const ParserErrorCode MULTIPLE_PART_OF_DIRECTIVES =
-      const ParserErrorCode('MULTIPLE_PART_OF_DIRECTIVES',
-          "Only one part-of directive may be declared in a file");
-
-  static const ParserErrorCode MULTIPLE_POSITIONAL_PARAMETER_GROUPS =
-      const ParserErrorCode('MULTIPLE_POSITIONAL_PARAMETER_GROUPS',
-          "Cannot have multiple groups of positional parameters in a single parameter list");
-
-  static const ParserErrorCode MULTIPLE_VARIABLES_IN_FOR_EACH =
-      const ParserErrorCode('MULTIPLE_VARIABLES_IN_FOR_EACH',
-          "A single loop variable must be declared in a for-each loop before the 'in', but {0} were found");
-
-  static const ParserErrorCode MULTIPLE_WITH_CLAUSES = const ParserErrorCode(
-      'MULTIPLE_WITH_CLAUSES',
-      "Each class definition can have at most one with clause");
-
-  static const ParserErrorCode NAMED_FUNCTION_EXPRESSION =
-      const ParserErrorCode(
-          'NAMED_FUNCTION_EXPRESSION', "Function expressions cannot be named");
-
-  static const ParserErrorCode NAMED_PARAMETER_OUTSIDE_GROUP =
-      const ParserErrorCode('NAMED_PARAMETER_OUTSIDE_GROUP',
-          "Named parameters must be enclosed in curly braces ('{' and '}')");
-
-  static const ParserErrorCode NATIVE_CLAUSE_IN_NON_SDK_CODE =
-      const ParserErrorCode('NATIVE_CLAUSE_IN_NON_SDK_CODE',
-          "Native clause can only be used in the SDK and code that is loaded through native extensions");
-
-  static const ParserErrorCode NATIVE_FUNCTION_BODY_IN_NON_SDK_CODE =
-      const ParserErrorCode('NATIVE_FUNCTION_BODY_IN_NON_SDK_CODE',
-          "Native functions can only be declared in the SDK and code that is loaded through native extensions");
-
-  static const ParserErrorCode NON_CONSTRUCTOR_FACTORY = const ParserErrorCode(
-      'NON_CONSTRUCTOR_FACTORY',
-      "Only constructors can be declared to be a 'factory'");
-
-  static const ParserErrorCode NON_IDENTIFIER_LIBRARY_NAME =
-      const ParserErrorCode('NON_IDENTIFIER_LIBRARY_NAME',
-          "The name of a library must be an identifier");
-
-  static const ParserErrorCode NON_PART_OF_DIRECTIVE_IN_PART =
-      const ParserErrorCode('NON_PART_OF_DIRECTIVE_IN_PART',
-          "The part-of directive must be the only directive in a part");
-
-  static const ParserErrorCode NON_STRING_LITERAL_AS_URI =
-      const ParserErrorCode(
-          'NON_STRING_LITERAL_AS_URI',
-          "The URI must be a string literal",
-          "Enclose the URI in either single or double quotes.");
-
-  static const ParserErrorCode NON_USER_DEFINABLE_OPERATOR =
-      const ParserErrorCode('NON_USER_DEFINABLE_OPERATOR',
-          "The operator '{0}' is not user definable");
-
-  static const ParserErrorCode NORMAL_BEFORE_OPTIONAL_PARAMETERS =
-      const ParserErrorCode('NORMAL_BEFORE_OPTIONAL_PARAMETERS',
-          "Normal parameters must occur before optional parameters");
-
-  static const ParserErrorCode POSITIONAL_AFTER_NAMED_ARGUMENT =
-      const ParserErrorCode('POSITIONAL_AFTER_NAMED_ARGUMENT',
-          "Positional arguments must occur before named arguments");
-
-  static const ParserErrorCode POSITIONAL_PARAMETER_OUTSIDE_GROUP =
-      const ParserErrorCode('POSITIONAL_PARAMETER_OUTSIDE_GROUP',
-          "Positional parameters must be enclosed in square brackets ('[' and ']')");
-
-  static const ParserErrorCode REDIRECTING_CONSTRUCTOR_WITH_BODY =
-      const ParserErrorCode('REDIRECTING_CONSTRUCTOR_WITH_BODY',
-          "Redirecting constructors cannot have a body");
-
-  static const ParserErrorCode REDIRECTION_IN_NON_FACTORY_CONSTRUCTOR =
-      const ParserErrorCode('REDIRECTION_IN_NON_FACTORY_CONSTRUCTOR',
-          "Only factory constructor can specify '=' redirection.");
-
-  static const ParserErrorCode SETTER_IN_FUNCTION = const ParserErrorCode(
-      'SETTER_IN_FUNCTION',
-      "Setters cannot be defined within methods or functions");
-
-  static const ParserErrorCode STATIC_AFTER_CONST = const ParserErrorCode(
-      'STATIC_AFTER_CONST',
-      "The modifier 'static' should be before the modifier 'const'");
-
-  static const ParserErrorCode STATIC_AFTER_FINAL = const ParserErrorCode(
-      'STATIC_AFTER_FINAL',
-      "The modifier 'static' should be before the modifier 'final'");
-
-  static const ParserErrorCode STATIC_AFTER_VAR = const ParserErrorCode(
-      'STATIC_AFTER_VAR',
-      "The modifier 'static' should be before the modifier 'var'");
-
-  static const ParserErrorCode STATIC_CONSTRUCTOR = const ParserErrorCode(
-      'STATIC_CONSTRUCTOR', "Constructors cannot be static");
-
-  static const ParserErrorCode STATIC_GETTER_WITHOUT_BODY =
-      const ParserErrorCode(
-          'STATIC_GETTER_WITHOUT_BODY', "A 'static' getter must have a body");
-
-  static const ParserErrorCode STATIC_OPERATOR =
-      const ParserErrorCode('STATIC_OPERATOR', "Operators cannot be static");
-
-  static const ParserErrorCode STATIC_SETTER_WITHOUT_BODY =
-      const ParserErrorCode(
-          'STATIC_SETTER_WITHOUT_BODY', "A 'static' setter must have a body");
-
-  static const ParserErrorCode STATIC_TOP_LEVEL_DECLARATION =
-      const ParserErrorCode('STATIC_TOP_LEVEL_DECLARATION',
-          "Top-level declarations cannot be declared to be 'static'");
-
-  static const ParserErrorCode SWITCH_HAS_CASE_AFTER_DEFAULT_CASE =
-      const ParserErrorCode('SWITCH_HAS_CASE_AFTER_DEFAULT_CASE',
-          "The 'default' case should be the last case in a switch statement");
-
-  static const ParserErrorCode SWITCH_HAS_MULTIPLE_DEFAULT_CASES =
-      const ParserErrorCode('SWITCH_HAS_MULTIPLE_DEFAULT_CASES',
-          "The 'default' case can only be declared once");
-
-  static const ParserErrorCode TOP_LEVEL_OPERATOR = const ParserErrorCode(
-      'TOP_LEVEL_OPERATOR', "Operators must be declared within a class");
-
-  static const ParserErrorCode TYPEDEF_IN_CLASS = const ParserErrorCode(
-      'TYPEDEF_IN_CLASS',
-      "Function type aliases cannot be declared inside classes");
-
-  static const ParserErrorCode UNEXPECTED_TERMINATOR_FOR_PARAMETER_GROUP =
-      const ParserErrorCode('UNEXPECTED_TERMINATOR_FOR_PARAMETER_GROUP',
-          "There is no '{0}' to open a parameter group");
-
-  static const ParserErrorCode UNEXPECTED_TOKEN =
-      const ParserErrorCode('UNEXPECTED_TOKEN', "Unexpected token '{0}'");
-
-  static const ParserErrorCode WITH_BEFORE_EXTENDS = const ParserErrorCode(
-      'WITH_BEFORE_EXTENDS',
-      "The extends clause must be before the with clause");
-
-  static const ParserErrorCode WITH_WITHOUT_EXTENDS = const ParserErrorCode(
-      'WITH_WITHOUT_EXTENDS',
-      "The with clause cannot be used without an extends clause");
-
-  static const ParserErrorCode WRONG_SEPARATOR_FOR_NAMED_PARAMETER =
-      const ParserErrorCode('WRONG_SEPARATOR_FOR_NAMED_PARAMETER',
-          "The default value of a named parameter should be preceeded by ':'");
-
-  static const ParserErrorCode WRONG_SEPARATOR_FOR_POSITIONAL_PARAMETER =
-      const ParserErrorCode('WRONG_SEPARATOR_FOR_POSITIONAL_PARAMETER',
-          "The default value of a positional parameter should be preceeded by '='");
-
-  static const ParserErrorCode WRONG_TERMINATOR_FOR_PARAMETER_GROUP =
-      const ParserErrorCode('WRONG_TERMINATOR_FOR_PARAMETER_GROUP',
-          "Expected '{0}' to close parameter group");
-
-  static const ParserErrorCode VAR_AND_TYPE = const ParserErrorCode(
-      'VAR_AND_TYPE',
-      "Variables cannot be declared using both 'var' and a type name; remove the 'var'");
-
-  static const ParserErrorCode VAR_AS_TYPE_NAME = const ParserErrorCode(
-      'VAR_AS_TYPE_NAME', "The keyword 'var' cannot be used as a type name");
-
-  static const ParserErrorCode VAR_CLASS = const ParserErrorCode(
-      'VAR_CLASS', "Classes cannot be declared to be 'var'");
-
-  static const ParserErrorCode VAR_ENUM =
-      const ParserErrorCode('VAR_ENUM', "Enums cannot be declared to be 'var'");
-
-  static const ParserErrorCode VAR_RETURN_TYPE = const ParserErrorCode(
-      'VAR_RETURN_TYPE', "The return type cannot be 'var'");
-
-  static const ParserErrorCode VAR_TYPEDEF = const ParserErrorCode(
-      'VAR_TYPEDEF', "Type aliases cannot be declared to be 'var'");
-
-  static const ParserErrorCode VOID_PARAMETER = const ParserErrorCode(
-      'VOID_PARAMETER', "Parameters cannot have a type of 'void'");
-
-  static const ParserErrorCode VOID_VARIABLE = const ParserErrorCode(
-      'VOID_VARIABLE', "Variables cannot have a type of 'void'");
-
-  /**
-   * Initialize a newly created error code to have the given [name]. The message
-   * associated with the error will be created from the given [message]
-   * template. The correction associated with the error will be created from the
-   * given [correction] template.
-   */
-  const ParserErrorCode(String name, String message, [String correction])
-      : super(name, message, correction);
-
-  @override
-  ErrorSeverity get errorSeverity => ErrorSeverity.ERROR;
-
-  @override
-  ErrorType get type => ErrorType.SYNTACTIC_ERROR;
 }

@@ -4,6 +4,9 @@
 
 [ $compiler == dart2analyzer ]
 
+regress_26668_test: Fail # Issue 26678
+regress_27617_test/1: MissingCompileTimeError
+
 # Runtime negative test. No static errors or warnings.
 closure_call_wrong_argument_count_negative_test: skip
 
@@ -83,9 +86,6 @@ malbounded_redirecting_factory2_test/none: fail # Issue 11578
 # test issue 11579, assignment, no setter
 getter_no_setter_test/none: fail
 
-# test issue 11584, positional arguments cannot be used for named parameters
-compile_time_constant_e_test: fail # Test Issue 11584
-
 # test issue 11585, static warning, not negative test
 constructor3_negative_test: fail
 constructor_call_wrong_argument_count_negative_test: fail
@@ -123,9 +123,6 @@ unresolved_top_level_var_negative_test: fail # Issue 12163
 
 # test issue 12191, ambiguous import is always warning now
 prefix3_negative_test: fail # Issue 12191
-
-# test issue 12289, assignment in assert statement
-type_error_test: fail # Issue 12289
 
 # test issue 12381, It is compile-time error to invoke not existing function
 issue11724_test: fail # Issue 12381
@@ -359,7 +356,6 @@ parameter_initializer1_negative_test: CompileTimeError
 parameter_initializer2_negative_test: CompileTimeError
 parameter_initializer3_negative_test: CompileTimeError
 parameter_initializer4_negative_test: CompileTimeError
-parameter_initializer5_negative_test: CompileTimeError
 parameter_initializer6_negative_test: CompileTimeError
 parser_quirks_test: StaticWarning
 part2_test: StaticWarning
@@ -413,7 +409,6 @@ switch1_negative_test: CompileTimeError
 switch3_negative_test: CompileTimeError
 switch4_negative_test: CompileTimeError
 switch5_negative_test: CompileTimeError
-switch6_test: StaticWarning
 switch7_negative_test: CompileTimeError
 switch_fallthru_test: StaticWarning
 test_negative_test: CompileTimeError
@@ -502,10 +497,10 @@ for_in3_test: StaticWarning, OK # Test should have warning by design.
 for_in_side_effects_test: StaticWarning, OK # Test uses custom class that does not implement Iterable in for-in.
 
 # Experimental feature: Syntactic support for generic methods.
-generic_functions_test: CompileTimeError # Issue 25868
-generic_local_functions_test: CompileTimeError # Issue 25868
-generic_methods_test: CompileTimeError # Issue 25868
-generic_sends_test: CompileTimeError # Issue 25868
-generic_methods_new_test: CompiletimeError # Issue 25868
-generic_methods_function_type_test: CompiletimeError # Issue 25868
-generic_methods_type_expression_test: CompiletimeError # Issue 25868
+generic_methods_type_expression_test: StaticWarning # Issue 25868
+generic_methods_generic_function_parameter_test: StaticWarning # Issue 25868
+
+# Experimental feature: Use initializing formals in initializers and constructor body.
+initializing_formal_type_test: StaticWarning # Issue 26658
+
+regress_27572_test: StaticWarning # Warning about undefined method expected.

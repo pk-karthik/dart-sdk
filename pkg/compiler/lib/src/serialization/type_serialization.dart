@@ -5,8 +5,9 @@
 library dart2js.serialization.types;
 
 import '../dart_types.dart';
-import 'serialization.dart';
+import '../elements/elements.dart';
 import 'keys.dart';
+import 'serialization.dart';
 
 /// Visitor that serializes a [DartType] by encoding it into an [ObjectEncoder].
 ///
@@ -24,6 +25,8 @@ class TypeSerializer extends DartTypeVisitor<dynamic, ObjectEncoder> {
 
   void visitTypeVariableType(TypeVariableType type, ObjectEncoder encoder) {
     encoder.setElement(Key.ELEMENT, type.element);
+    encoder.setBool(
+        Key.IS_METHOD_TYPE_VARIABLE_TYPE, type is MethodTypeVariableType);
   }
 
   void visitFunctionType(FunctionType type, ObjectEncoder encoder) {
@@ -35,7 +38,9 @@ class TypeSerializer extends DartTypeVisitor<dynamic, ObjectEncoder> {
     encoder.setTypes(Key.NAMED_PARAMETER_TYPES, type.namedParameterTypes);
   }
 
-  void visitMalformedType(MalformedType type, ObjectEncoder encoder) {}
+  void visitMalformedType(MalformedType type, ObjectEncoder encoder) {
+    encoder.setElement(Key.ELEMENT, type.element);
+  }
 
   void visitInterfaceType(InterfaceType type, ObjectEncoder encoder) {
     encoder.setElement(Key.ELEMENT, type.element);
@@ -74,13 +79,20 @@ class TypeDeserializer {
             decoder.getStrings(Key.NAMED_PARAMETERS, isOptional: true),
             decoder.getTypes(Key.NAMED_PARAMETER_TYPES, isOptional: true));
       case TypeKind.TYPE_VARIABLE:
-        return new TypeVariableType(decoder.getElement(Key.ELEMENT));
+        TypeVariableElement element = decoder.getElement(Key.ELEMENT);
+        if (decoder.getBool(Key.IS_METHOD_TYPE_VARIABLE_TYPE)) {
+          return new MethodTypeVariableType(element);
+        }
+        return new TypeVariableType(element);
       case TypeKind.TYPEDEF:
         return new TypedefType(decoder.getElement(Key.ELEMENT),
             decoder.getTypes(Key.TYPE_ARGUMENTS, isOptional: true));
       case TypeKind.STATEMENT:
-      case TypeKind.MALFORMED_TYPE:
         throw new UnsupportedError("Unexpected type kind '${typeKind}.");
+      case TypeKind.MALFORMED_TYPE:
+        // TODO(johnniwinther): Do we need the 'userProvidedBadType' or maybe
+        // just a toString of it?
+        return new MalformedType(decoder.getElement(Key.ELEMENT), null);
       case TypeKind.DYNAMIC:
         return const DynamicType();
       case TypeKind.VOID:

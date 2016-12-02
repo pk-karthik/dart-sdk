@@ -2,7 +2,7 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-part of js_backend;
+part of js_backend.namer;
 
 abstract class _MinifiedFieldNamer implements Namer {
   _FieldNamingRegistry get fieldRegistry;
@@ -24,8 +24,8 @@ abstract class _MinifiedFieldNamer implements Namer {
       names = new _FieldNamingScope.forBox(element.box, fieldRegistry);
     } else {
       ClassElement cls = element.enclosingClass;
-      names =
-          new _FieldNamingScope.forClass(cls, compiler.world, fieldRegistry);
+      names = new _FieldNamingScope.forClass(
+          cls, compiler.closedWorld, fieldRegistry);
     }
 
     if (names.containsField(element)) {
@@ -118,7 +118,7 @@ class _FieldNamingScope {
   }
 
   factory _FieldNamingScope.forClass(
-      ClassElement cls, ClassWorld world, _FieldNamingRegistry registry) {
+      ClassElement cls, ClosedWorld world, _FieldNamingRegistry registry) {
     _FieldNamingScope result = registry.scopes[cls];
     if (result != null) return result;
 

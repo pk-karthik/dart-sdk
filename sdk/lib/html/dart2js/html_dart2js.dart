@@ -89,7 +89,8 @@ Window get window => JS('Window', 'window');
 /**
  * Root node for all content in a web page.
  */
-HtmlDocument get document => JS('HtmlDocument', 'document');
+HtmlDocument get document =>
+    JS('returns:HtmlDocument;depends:none;effects:none;gvn:true', 'document');
 
 // Workaround for tags like <cite> that lack their own Element subclass --
 // Dart issue 1990.
@@ -3069,10 +3070,8 @@ class CloseEvent extends Event {
 @Native("Comment")
 class Comment extends CharacterData {
   factory Comment([String data]) {
-    if (data != null) {
-      return JS('Comment', '#.createComment(#)', document, data);
-    }
-    return JS('Comment', '#.createComment("")', document);
+    return JS('returns:Comment;depends:none;effects:none;new:true',
+        '#.createComment(#)', document, data == null ? "" : data);
   }
   // To suppress missing implicit constructor warnings.
   factory Comment._() { throw new UnsupportedError("Not supported"); }
@@ -11507,11 +11506,11 @@ class DomRectReadOnly extends Interceptor implements Rectangle {
            another.y <= top + height;
   }
 
-  Point get topLeft => new Point(this.left, this.top);
-  Point get topRight => new Point(this.left + this.width, this.top);
-  Point get bottomRight => new Point(this.left + this.width,
+  Point get topLeft => new Point/*<num>*/(this.left, this.top);
+  Point get topRight => new Point/*<num>*/(this.left + this.width, this.top);
+  Point get bottomRight => new Point/*<num>*/(this.left + this.width,
       this.top + this.height);
-  Point get bottomLeft => new Point(this.left,
+  Point get bottomLeft => new Point/*<num>*/(this.left,
       this.top + this.height);
 
     // To suppress missing implicit constructor warnings.
@@ -13865,13 +13864,13 @@ class Element extends Node implements NonDocumentTypeChildNode, GlobalEventHandl
     bool sameAsParent = identical(current, parent);
     bool foundAsParent = sameAsParent || parent.tagName == 'HTML';
     if (current == null || sameAsParent) {
-      if (foundAsParent) return new Point(0, 0);
+      if (foundAsParent) return new Point/*<num>*/(0, 0);
       throw new ArgumentError("Specified element is not a transitive offset "
           "parent of this element.");
     }
     Element parentOffset = current.offsetParent;
     Point p = Element._offsetToHelper(parentOffset, parent);
-    return new Point(p.x + current.offsetLeft, p.y + current.offsetTop);
+    return new Point/*<num>*/(p.x + current.offsetLeft, p.y + current.offsetTop);
   }
 
   static HtmlDocument _parseDocument;
@@ -17673,6 +17672,8 @@ class Gamepad extends Interceptor {
 
   @DomName('Gamepad.buttons')
   @DocsEditable()
+  @Creates('JSExtendableArray|GamepadButton')
+  @Returns('JSExtendableArray')
   final List<GamepadButton> buttons;
 
   @DomName('Gamepad.connected')
@@ -22889,7 +22890,7 @@ class MediaStream extends EventTarget {
 
   @DomName('MediaStream.getAudioTracks')
   @DocsEditable()
-  @Creates('JSExtendableArray')
+  @Creates('JSExtendableArray|MediaStreamTrack')
   @Returns('JSExtendableArray')
   List<MediaStreamTrack> getAudioTracks() native;
 
@@ -22904,7 +22905,7 @@ class MediaStream extends EventTarget {
 
   @DomName('MediaStream.getVideoTracks')
   @DocsEditable()
-  @Creates('JSExtendableArray')
+  @Creates('JSExtendableArray|MediaStreamTrack')
   @Returns('JSExtendableArray')
   List<MediaStreamTrack> getVideoTracks() native;
 
@@ -24071,14 +24072,14 @@ class MouseEvent extends UIEvent {
 
   @DomName('MouseEvent.clientX')
   @DomName('MouseEvent.clientY')
-  Point get client => new Point(_clientX, _clientY);
+  Point get client => new Point/*<num>*/(_clientX, _clientY);
 
   @DomName('MouseEvent.movementX')
   @DomName('MouseEvent.movementY')
   @SupportedBrowser(SupportedBrowser.CHROME)
   @SupportedBrowser(SupportedBrowser.FIREFOX)
   @Experimental()
-  Point get movement => new Point(_movementX, _movementY);
+  Point get movement => new Point/*<num>*/(_movementX, _movementY);
 
   /**
    * The coordinates of the mouse pointer in target node coordinates.
@@ -24091,7 +24092,7 @@ class MouseEvent extends UIEvent {
     if (JS('bool', '!!#.offsetX', this)) {
       var x = JS('int', '#.offsetX', this);
       var y = JS('int', '#.offsetY', this);
-      return new Point(x, y);
+      return new Point/*<num>*/(x, y);
     } else {
       // Firefox does not support offsetX.
       if (!(this.target is Element)) {
@@ -24100,21 +24101,21 @@ class MouseEvent extends UIEvent {
       }
       Element target = this.target;
       var point = (this.client - target.getBoundingClientRect().topLeft);
-      return new Point(point.x.toInt(), point.y.toInt());
+      return new Point/*<num>*/(point.x.toInt(), point.y.toInt());
     }
   }
 
   @DomName('MouseEvent.screenX')
   @DomName('MouseEvent.screenY')
-  Point get screen => new Point(_screenX, _screenY);
+  Point get screen => new Point/*<num>*/(_screenX, _screenY);
 
   @DomName('MouseEvent.layerX')
   @DomName('MouseEvent.layerY')
-  Point get layer => new Point(_layerX, _layerY);
+  Point get layer => new Point/*<num>*/(_layerX, _layerY);
 
   @DomName('MouseEvent.pageX')
   @DomName('MouseEvent.pageY')
-  Point get page => new Point(_pageX, _pageY);
+  Point get page => new Point/*<num>*/(_pageX, _pageY);
 }
 // Copyright (c) 2012, the Dart project authors.  Please see the AUTHORS file
 // for details. All rights reserved. Use of this source code is governed by a
@@ -31127,7 +31128,7 @@ class StashedPortCollection extends EventTarget {
  * For more examples of using this API, see
  * [localstorage_test.dart](http://code.google.com/p/dart/source/browse/branches/bleeding_edge/dart/tests/html/localstorage_test.dart).
  * For details on using the Map API, see the
- * [Maps](http://www.dartlang.org/docs/library-tour/#maps-aka-dictionaries-or-hashes)
+ * [Maps](https://www.dartlang.org/guides/libraries/library-tour#maps)
  * section of the library tour.
  */
 @DomName('Storage')
@@ -31997,7 +31998,9 @@ class TemplateElement extends HtmlElement {
 @DomName('Text')
 @Native("Text")
 class Text extends CharacterData {
-  factory Text(String data) => document._createTextNode(data);
+  factory Text(String data) =>
+      JS('returns:Text;depends:none;effects:none;new:true',
+          '#.createTextNode(#)', document, data);
   // To suppress missing implicit constructor warnings.
   factory Text._() { throw new UnsupportedError("Not supported"); }
 
@@ -32743,15 +32746,15 @@ class Touch extends Interceptor {
 
   @DomName('Touch.clientX')
   @DomName('Touch.clientY')
-  Point get client => new Point(__clientX, __clientY);
+  Point get client => new Point/*<num>*/(__clientX, __clientY);
 
   @DomName('Touch.pageX')
   @DomName('Touch.pageY')
-  Point get page => new Point(__pageX, __pageY);
+  Point get page => new Point/*<num>*/(__pageX, __pageY);
 
   @DomName('Touch.screenX')
   @DomName('Touch.screenY')
-  Point get screen => new Point(__screenX, __screenY);
+  Point get screen => new Point/*<num>*/(__screenX, __screenY);
 
   @DomName('Touch.radiusX')
   @DocsEditable()
@@ -37486,11 +37489,11 @@ class _ClientRect extends Interceptor implements Rectangle {
            another.y <= top + height;
   }
 
-  Point get topLeft => new Point(this.left, this.top);
-  Point get topRight => new Point(this.left + this.width, this.top);
-  Point get bottomRight => new Point(this.left + this.width,
+  Point get topLeft => new Point/*<num>*/(this.left, this.top);
+  Point get topRight => new Point/*<num>*/(this.left + this.width, this.top);
+  Point get bottomRight => new Point/*<num>*/(this.left + this.width,
       this.top + this.height);
-  Point get bottomLeft => new Point(this.left,
+  Point get bottomLeft => new Point/*<num>*/(this.left,
       this.top + this.height);
 
     // To suppress missing implicit constructor warnings.
@@ -37900,7 +37903,7 @@ class _GamepadList extends Interceptor with ListMixin<Gamepad>, ImmutableListMix
     if (JS("bool", "# >>> 0 !== # || # >= #", index,
         index, index, length))
       throw new RangeError.index(index, this);
-    return JS("Gamepad", "#[#]", this, index);
+    return JS("Gamepad|Null", "#[#]", this, index);
   }
   void operator[]=(int index, Gamepad value) {
     throw new UnsupportedError("Cannot assign element of immutable List.");
@@ -37915,7 +37918,7 @@ class _GamepadList extends Interceptor with ListMixin<Gamepad>, ImmutableListMix
 
   Gamepad get first {
     if (this.length > 0) {
-      return JS('Gamepad', '#[0]', this);
+      return JS('Gamepad|Null', '#[0]', this);
     }
     throw new StateError("No elements");
   }
@@ -37923,7 +37926,7 @@ class _GamepadList extends Interceptor with ListMixin<Gamepad>, ImmutableListMix
   Gamepad get last {
     int len = this.length;
     if (len > 0) {
-      return JS('Gamepad', '#[#]', this, len - 1);
+      return JS('Gamepad|Null', '#[#]', this, len - 1);
     }
     throw new StateError("No elements");
   }
@@ -37931,7 +37934,7 @@ class _GamepadList extends Interceptor with ListMixin<Gamepad>, ImmutableListMix
   Gamepad get single {
     int len = this.length;
     if (len == 1) {
-      return JS('Gamepad', '#[0]', this);
+      return JS('Gamepad|Null', '#[0]', this);
     }
     if (len == 0) throw new StateError("No elements");
     throw new StateError("More than one element");
@@ -39801,7 +39804,7 @@ class Dimension {
   /**
    * Set this CSS Dimension to the specified number of x-heights.
    *
-   * One ex is equal to the the x-height of a font's baseline to its mean line,
+   * One ex is equal to the x-height of a font's baseline to its mean line,
    * generally the height of the letter "x" in the font, which is usually about
    * half the font-size.
    */
@@ -42763,6 +42766,21 @@ _makeCallbackMethod3(callback) {
       convertDartClosureToJS(callback, 4));
 }
 
+/// Checks whether the given [element] correctly extends from the native class
+/// with the given [baseClassName]. This method will throw if the base class
+/// doesn't match, except when the element extends from `template` and it's base
+/// class is `HTMLUnknownElement`. This exclusion is needed to support extension
+/// of template elements (used heavily in Polymer 1.0) on IE11 when using the
+/// webcomponents-lite.js polyfill.
+void _checkExtendsNativeClassOrTemplate(
+    Element element, String extendsTag, String baseClassName) {
+  if (!JS('bool', '(# instanceof window[#])', element, baseClassName) &&
+      !((extendsTag == 'template' &&
+       JS('bool', '(# instanceof window["HTMLUnknownElement"])', element)))) {
+    throw new UnsupportedError('extendsTag does not match base native class');
+  }
+}
+
 void _registerCustomElement(context, document, String tag, Type type,
     String extendsTagName) {
   // Function follows the same pattern as the following JavaScript code for
@@ -42806,10 +42824,8 @@ void _registerCustomElement(context, document, String tag, Type type,
           'native class is not HtmlElement');
     }
   } else {
-    if (!JS('bool', '(#.createElement(#) instanceof window[#])',
-        document, extendsTagName, baseClassName)) {
-      throw new UnsupportedError('extendsTag does not match base native class');
-    }
+    var element = document.createElement(extendsTagName);
+    _checkExtendsNativeClassOrTemplate(element, extendsTagName, baseClassName);
   }
 
   var baseConstructor = JS('=Object', '#[#]', context, baseClassName);
@@ -42879,11 +42895,7 @@ class _JSElementUpgrader implements ElementUpgrader {
       _nativeType = HtmlElement;
     } else {
       var element = document.createElement(extendsTag);
-      if (!JS('bool', '(# instanceof window[#])',
-          element, baseClassName)) {
-        throw new UnsupportedError(
-            'extendsTag does not match base native class');
-      }
+      _checkExtendsNativeClassOrTemplate(element, extendsTag, baseClassName);
       _nativeType = element.runtimeType;
     }
 

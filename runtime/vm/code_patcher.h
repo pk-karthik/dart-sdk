@@ -3,8 +3,8 @@
 // BSD-style license that can be found in the LICENSE file.
 // Class for patching compiled code.
 
-#ifndef VM_CODE_PATCHER_H_
-#define VM_CODE_PATCHER_H_
+#ifndef RUNTIME_VM_CODE_PATCHER_H_
+#define RUNTIME_VM_CODE_PATCHER_H_
 
 #include "vm/allocation.h"
 #include "vm/native_entry.h"
@@ -68,17 +68,20 @@ class CodePatcher : public AllStatic {
 
   static intptr_t InstanceCallSizeInBytes();
 
-  static void InsertDeoptimizationCallAt(uword start, uword target);
+  static void InsertDeoptimizationCallAt(uword start);
 
   static void PatchPoolPointerCallAt(uword return_address,
                                      const Code& code,
                                      const Code& new_target);
 
   static void PatchSwitchableCallAt(uword return_address,
-                                    const Code& code,
-                                    const ICData& ic_data,
-                                    const MegamorphicCache& new_cache,
-                                    const Code& lookup_stub);
+                                    const Code& caller_code,
+                                    const Object& data,
+                                    const Code& target);
+  static RawObject* GetSwitchableCallDataAt(uword return_address,
+                                            const Code& caller_code);
+  static RawCode* GetSwitchableCallTargetAt(uword return_address,
+                                            const Code& caller_code);
 
   static RawCode* GetNativeCallAt(uword return_address,
                                   const Code& code,
@@ -92,4 +95,4 @@ class CodePatcher : public AllStatic {
 
 }  // namespace dart
 
-#endif  // VM_CODE_PATCHER_H_
+#endif  // RUNTIME_VM_CODE_PATCHER_H_

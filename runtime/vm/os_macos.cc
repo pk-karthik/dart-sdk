@@ -7,17 +7,17 @@
 
 #include "vm/os.h"
 
-#include <errno.h>  // NOLINT
-#include <limits.h>  // NOLINT
-#include <mach/mach.h>  // NOLINT
-#include <mach/clock.h>  // NOLINT
+#include <errno.h>           // NOLINT
+#include <limits.h>          // NOLINT
+#include <mach/mach.h>       // NOLINT
+#include <mach/clock.h>      // NOLINT
 #include <mach/mach_time.h>  // NOLINT
-#include <sys/time.h>  // NOLINT
-#include <sys/resource.h>  // NOLINT
-#include <unistd.h>  // NOLINT
+#include <sys/time.h>        // NOLINT
+#include <sys/resource.h>    // NOLINT
+#include <unistd.h>          // NOLINT
 #if TARGET_OS_IOS
 #include <sys/sysctl.h>  // NOLINT
-#include <syslog.h>  // NOLINT
+#include <syslog.h>      // NOLINT
 #endif
 
 #include "platform/utils.h"
@@ -153,8 +153,8 @@ int64_t OS::GetCurrentThreadCPUMicros() {
   if (thread_port == MACH_PORT_NULL) {
     return -1;
   }
-  kern_return_t r = thread_info(thread_port, THREAD_BASIC_INFO,
-                                (thread_info_t)info, &count);
+  kern_return_t r =
+      thread_info(thread_port, THREAD_BASIC_INFO, (thread_info_t)info, &count);
   mach_port_deallocate(mach_task_self(), thread_port);
   ASSERT(r == KERN_SUCCESS);
   int64_t thread_cpu_micros =
@@ -163,24 +163,6 @@ int64_t OS::GetCurrentThreadCPUMicros() {
   thread_cpu_micros += info->user_time.microseconds;
   thread_cpu_micros += info->system_time.microseconds;
   return thread_cpu_micros;
-}
-
-
-void* OS::AlignedAllocate(intptr_t size, intptr_t alignment) {
-  const int kMinimumAlignment = 16;
-  ASSERT(Utils::IsPowerOfTwo(alignment));
-  ASSERT(alignment >= kMinimumAlignment);
-  // Temporary workaround until xcode is upgraded.
-  // Mac guarantees malloc returns a 16 byte aligned memory chunk.
-  // Currently we only allocate with 16-bye alignment.
-  ASSERT(alignment == 16);
-  // TODO(johnmccutchan): Remove hack and switch to posix_memalign.
-  return malloc(size);
-}
-
-
-void OS::AlignedFree(void* ptr) {
-  free(ptr);
 }
 
 
@@ -201,7 +183,7 @@ intptr_t OS::ActivationFrameAlignment() {
 #else
 #error Unimplemented
 #endif
-#else  // TARGET_OS_IOS
+#else   // TARGET_OS_IOS
   // OS X activation frames must be 16 byte-aligned; see "Mac OS X ABI
   // Function Call Guide".
   return 16;
@@ -210,10 +192,8 @@ intptr_t OS::ActivationFrameAlignment() {
 
 
 intptr_t OS::PreferredCodeAlignment() {
-#if defined(TARGET_ARCH_IA32) ||                                               \
-    defined(TARGET_ARCH_X64) ||                                                \
-    defined(TARGET_ARCH_ARM64) ||                                              \
-    defined(TARGET_ARCH_DBC)
+#if defined(TARGET_ARCH_IA32) || defined(TARGET_ARCH_X64) ||                   \
+    defined(TARGET_ARCH_ARM64) || defined(TARGET_ARCH_DBC)
   const int kMinimumAlignment = 32;
 #elif defined(TARGET_ARCH_ARM) || defined(TARGET_ARCH_MIPS)
   const int kMinimumAlignment = 16;
@@ -238,6 +218,15 @@ bool OS::AllowStackFrameIteratorFromAnotherThread() {
 
 int OS::NumberOfAvailableProcessors() {
   return sysconf(_SC_NPROCESSORS_ONLN);
+}
+
+
+uintptr_t OS::MaxRSS() {
+  struct rusage usage;
+  usage.ru_maxrss = 0;
+  int r = getrusage(RUSAGE_SELF, &usage);
+  ASSERT(r == 0);
+  return usage.ru_maxrss;
 }
 
 
@@ -278,9 +267,9 @@ void OS::DebugBreak() {
 
 
 char* OS::StrNDup(const char* s, intptr_t n) {
-  // strndup has only been added to Mac OS X in 10.7. We are supplying
-  // our own copy here if needed.
-#if !defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) || \
+// strndup has only been added to Mac OS X in 10.7. We are supplying
+// our own copy here if needed.
+#if !defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) ||                 \
     __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ <= 1060
   intptr_t len = strlen(s);
   if ((n < 0) || (len < 0)) {
@@ -295,16 +284,16 @@ char* OS::StrNDup(const char* s, intptr_t n) {
   }
   result[len] = '\0';
   return reinterpret_cast<char*>(memmove(result, s, len));
-#else  // !defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) || ...
+#else   // !defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) || ...
   return strndup(s, n);
 #endif  // !defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) || ...
 }
 
 
 intptr_t OS::StrNLen(const char* s, intptr_t n) {
-  // strnlen has only been added to Mac OS X in 10.7. We are supplying
-  // our own copy here if needed.
-#if !defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) || \
+// strnlen has only been added to Mac OS X in 10.7. We are supplying
+// our own copy here if needed.
+#if !defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) ||                 \
     __ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__ <= 1060
   intptr_t len = 0;
   while ((len <= n) && (*s != '\0')) {
@@ -312,7 +301,7 @@ intptr_t OS::StrNLen(const char* s, intptr_t n) {
     len++;
   }
   return len;
-#else  // !defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) || ...
+#else   // !defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) || ...
   return strnlen(s, n);
 #endif  // !defined(__ENVIRONMENT_MAC_OS_X_VERSION_MIN_REQUIRED__) || ...
 }
@@ -398,8 +387,7 @@ bool OS::StringToInt64(const char* str, int64_t* value) {
   if (str[0] == '-') {
     i = 1;
   }
-  if ((str[i] == '0') &&
-      (str[i + 1] == 'x' || str[i + 1] == 'X') &&
+  if ((str[i] == '0') && (str[i + 1] == 'x' || str[i + 1] == 'X') &&
       (str[i + 2] != '\0')) {
     base = 16;
   }
@@ -409,8 +397,7 @@ bool OS::StringToInt64(const char* str, int64_t* value) {
 }
 
 
-void OS::RegisterCodeObservers() {
-}
+void OS::RegisterCodeObservers() {}
 
 
 void OS::PrintErr(const char* format, ...) {
@@ -438,8 +425,7 @@ void OS::InitOnce() {
 }
 
 
-void OS::Shutdown() {
-}
+void OS::Shutdown() {}
 
 
 void OS::Abort() {

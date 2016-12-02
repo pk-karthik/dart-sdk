@@ -32,7 +32,8 @@ import '../../js_backend/backend_helpers.dart' show BackendHelpers;
 import '../../js_backend/js_backend.dart'
     show Namer, JavaScriptBackend, JavaScriptConstantCompiler, StringBackedName;
 import '../../universe/selector.dart' show Selector;
-import '../../universe/universe.dart' show Universe, SelectorConstraints;
+import '../../universe/world_builder.dart'
+    show CodegenWorldBuilder, SelectorConstraints;
 import '../js_emitter.dart'
     show
         ClassStubGenerator,
@@ -79,7 +80,7 @@ class ProgramBuilder {
 
   JavaScriptBackend get backend => _compiler.backend;
   BackendHelpers get helpers => backend.helpers;
-  Universe get universe => _compiler.codegenWorld;
+  CodegenWorldBuilder get universe => _compiler.codegenWorld;
 
   /// Mapping from [ClassElement] to constructed [Class]. We need this to
   /// update the superclass in the [Class].
@@ -168,8 +169,8 @@ class ProgramBuilder {
 
     List<Holder> holders = _registry.holders.toList(growable: false);
 
-    bool needsNativeSupport = _compiler.enqueuer.codegen.nativeEnqueuer
-        .hasInstantiatedNativeClasses();
+    bool needsNativeSupport =
+        _compiler.enqueuer.codegen.nativeEnqueuer.hasInstantiatedNativeClasses;
 
     assert(!needsNativeSupport || nativeClasses.isNotEmpty);
 
@@ -260,9 +261,9 @@ class ProgramBuilder {
     return staticNonFinalFields.map(_buildStaticField).toList(growable: false);
   }
 
-  StaticField _buildStaticField(Element element) {
+  StaticField _buildStaticField(FieldElement element) {
     JavaScriptConstantCompiler handler = backend.constants;
-    ConstantValue initialValue = handler.getInitialValueFor(element);
+    ConstantValue initialValue = handler.getConstantValue(element.constant);
     // TODO(zarah): The holder should not be registered during building of
     // a static field.
     _registry.registerHolder(namer.globalObjectForConstant(initialValue),
@@ -345,6 +346,8 @@ class ProgramBuilder {
       for (Element e in elements) {
         if (e is ClassElement && backend.isJsInterop(e)) {
           e.declaration.forEachMember((_, Element member) {
+            var jsName =
+                backend.nativeData.getUnescapedJSInteropName(member.name);
             if (!member.isInstanceMember) return;
             if (member.isGetter || member.isField || member.isFunction) {
               var selectors =
@@ -354,7 +357,7 @@ class ProgramBuilder {
                   var stubName = namer.invocationName(selector);
                   if (stubNames.add(stubName.key)) {
                     interceptorClass.callStubs.add(_buildStubMethod(stubName,
-                        js.js('function(obj) { return obj.# }', [member.name]),
+                        js.js('function(obj) { return obj.# }', [jsName]),
                         element: member));
                   }
                 }
@@ -367,10 +370,8 @@ class ProgramBuilder {
               if (selectors != null && !selectors.isEmpty) {
                 var stubName = namer.setterForElement(member);
                 if (stubNames.add(stubName.key)) {
-                  interceptorClass.callStubs.add(_buildStubMethod(
-                      stubName,
-                      js.js('function(obj, v) { return obj.# = v }',
-                          [member.name]),
+                  interceptorClass.callStubs.add(_buildStubMethod(stubName,
+                      js.js('function(obj, v) { return obj.# = v }', [jsName]),
                       element: member));
                 }
               }
@@ -447,7 +448,7 @@ class ProgramBuilder {
                   interceptorClass.callStubs.add(_buildStubMethod(
                       stubName,
                       js.js('function(receiver, #) { return receiver.#(#) }',
-                          [parameters, member.name, parameters]),
+                          [parameters, jsName, parameters]),
                       element: member));
                 }
               }
@@ -499,12 +500,14 @@ class ProgramBuilder {
     return new Class(
         element, name, null, [], instanceFields, [], [], [], [], [], [], null,
         isDirectlyInstantiated: true,
+        hasRtiField: backend.classNeedsRtiField(element),
         onlyForRti: false,
         isNative: backend.isNative(element));
   }
 
   Class _buildClass(ClassElement element) {
     bool onlyForRti = collector.classesOnlyNeededForRti.contains(element);
+    bool hasRtiField = backend.classNeedsRtiField(element);
     if (backend.isJsInterop(element)) {
       // TODO(jacobr): check whether the class has any active static fields
       // if it does not we can suppress it completely.
@@ -635,6 +638,7 @@ class ProgramBuilder {
           isChecks,
           typeTests.functionTypeIndex,
           isDirectlyInstantiated: isInstantiated,
+          hasRtiField: hasRtiField,
           onlyForRti: onlyForRti);
     } else {
       result = new Class(
@@ -651,6 +655,7 @@ class ProgramBuilder {
           isChecks,
           typeTests.functionTypeIndex,
           isDirectlyInstantiated: isInstantiated,
+          hasRtiField: hasRtiField,
           onlyForRti: onlyForRti,
           isNative: backend.isNative(element));
     }
@@ -670,8 +675,8 @@ class ProgramBuilder {
   }
 
   bool _methodCanBeApplied(FunctionElement method) {
-    return _compiler.enabledFunctionApply &&
-        _compiler.world.getMightBePassedToApply(method);
+    return _compiler.hasFunctionApplySupport &&
+        _compiler.closedWorld.getMightBePassedToApply(method);
   }
 
   // TODO(herhut): Refactor incremental compilation and remove method.
@@ -731,8 +736,9 @@ class ProgramBuilder {
         isClosureCallMethod = true;
       } else {
         // Careful with operators.
-        canTearOff = universe.hasInvokedGetter(element, _compiler.world) ||
-            (canBeReflected && !element.isOperator);
+        canTearOff =
+            universe.hasInvokedGetter(element, _compiler.closedWorld) ||
+                (canBeReflected && !element.isOperator);
         assert(canTearOff ||
             !universe.methodsNeedingSuperGetter.contains(element));
         tearOffName = namer.getterForElement(element);

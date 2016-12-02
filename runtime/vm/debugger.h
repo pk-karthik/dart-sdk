@@ -2,8 +2,8 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef VM_DEBUGGER_H_
-#define VM_DEBUGGER_H_
+#ifndef RUNTIME_VM_DEBUGGER_H_
+#define RUNTIME_VM_DEBUGGER_H_
 
 #include "include/dart_tools_api.h"
 
@@ -27,12 +27,12 @@ class StackFrame;
 class Breakpoint {
  public:
   Breakpoint(intptr_t id, BreakpointLocation* bpt_location)
-    : id_(id),
-      kind_(Breakpoint::kNone),
-      next_(NULL),
-      closure_(Instance::null()),
-      bpt_location_(bpt_location),
-      is_synthetic_async_(false) {}
+      : id_(id),
+        kind_(Breakpoint::kNone),
+        next_(NULL),
+        closure_(Instance::null()),
+        bpt_location_(bpt_location),
+        is_synthetic_async_(false) {}
 
   intptr_t id() const { return id_; }
   Breakpoint* next() const { return next_; }
@@ -66,9 +66,7 @@ class Breakpoint {
   void set_is_synthetic_async(bool is_synthetic_async) {
     is_synthetic_async_ = is_synthetic_async;
   }
-  bool is_synthetic_async() const {
-    return is_synthetic_async_;
-  }
+  bool is_synthetic_async() const { return is_synthetic_async_; }
 
   void PrintJSON(JSONStream* stream);
 
@@ -235,6 +233,7 @@ class CodeBreakpoint {
   // DebugBreak. This is an instruction that was replaced. DebugBreak
   // will execute it after the breakpoint.
   Instr saved_value_;
+  Instr saved_value_fastsmi_;
 #endif
 
   friend class Debugger;
@@ -246,8 +245,12 @@ class CodeBreakpoint {
 // on the call stack.
 class ActivationFrame : public ZoneAllocated {
  public:
-  ActivationFrame(uword pc, uword fp, uword sp, const Code& code,
-                  const Array& deopt_frame, intptr_t deopt_frame_offset);
+  ActivationFrame(uword pc,
+                  uword fp,
+                  uword sp,
+                  const Code& code,
+                  const Array& deopt_frame,
+                  intptr_t deopt_frame_offset);
 
   uword pc() const { return pc_; }
   uword fp() const { return fp_; }
@@ -273,6 +276,9 @@ class ActivationFrame : public ZoneAllocated {
   // to the user and can be debugged.
   bool IsDebuggable() const;
 
+  // Returns true if it is possible to rewind the debugger to this frame.
+  bool IsRewindable() const;
+
   // The context level of a frame is the context level at the
   // PC/token index of the frame. It determines the depth of the context
   // chain that belongs to the function of this activation frame.
@@ -284,8 +290,9 @@ class ActivationFrame : public ZoneAllocated {
 
   void VariableAt(intptr_t i,
                   String* name,
-                  TokenPosition* token_pos,
-                  TokenPosition* end_pos,
+                  TokenPosition* declaration_token_pos,
+                  TokenPosition* visible_start_token_pos,
+                  TokenPosition* visible_end_token_pos,
                   Object* value);
 
   RawArray* GetLocalVariables();
@@ -350,14 +357,11 @@ class ActivationFrame : public ZoneAllocated {
 // Array of function activations on the call stack.
 class DebuggerStackTrace : public ZoneAllocated {
  public:
-  explicit DebuggerStackTrace(int capacity)
-      : trace_(capacity) { }
+  explicit DebuggerStackTrace(int capacity) : trace_(capacity) {}
 
   intptr_t Length() const { return trace_.length(); }
 
-  ActivationFrame* FrameAt(int i) const {
-    return trace_[i];
-  }
+  ActivationFrame* FrameAt(int i) const { return trace_[i]; }
 
   ActivationFrame* GetHandlerFrame(const Instance& exc_obj) const;
 
@@ -372,6 +376,15 @@ class DebuggerStackTrace : public ZoneAllocated {
 
 class Debugger {
  public:
+  enum ResumeAction {
+    kContinue,
+    kStepInto,
+    kStepOver,
+    kStepOut,
+    kStepRewind,
+    kStepOverAsyncSuspension,
+  };
+
   typedef void EventHandler(ServiceEvent* event);
 
   Debugger();
@@ -411,11 +424,10 @@ class Debugger {
   void RemoveBreakpoint(intptr_t bp_id);
   Breakpoint* GetBreakpointById(intptr_t id);
 
-  // Will return false if we are not at an await.
-  bool SetupStepOverAsyncSuspension();
-  void SetStepOver();
-  void SetSingleStep();
-  void SetStepOut();
+  bool SetResumeAction(ResumeAction action,
+                       intptr_t frame_index = 1,
+                       const char** error = NULL);
+
   bool IsStepping() const { return resume_action_ != kContinue; }
 
   bool IsPaused() const { return pause_event_ != NULL; }
@@ -482,8 +494,7 @@ class Debugger {
   RawObject* GetInstanceField(const Class& cls,
                               const String& field_name,
                               const Instance& object);
-  RawObject* GetStaticField(const Class& cls,
-                            const String& field_name);
+  RawObject* GetStaticField(const Class& cls, const String& field_name);
 
   // Pause execution for a breakpoint.  Called from generated code.
   RawError* PauseBreakpoint();
@@ -493,6 +504,9 @@ class Debugger {
 
   // Pause execution due to isolate interrupt.
   RawError* PauseInterrupted();
+
+  // Pause after a reload request.
+  RawError* PausePostRequest();
 
   // Pause execution due to an uncaught exception.
   void PauseException(const Instance& exc);
@@ -510,13 +524,14 @@ class Debugger {
 
   intptr_t limitBreakpointId() { return next_id_; }
 
+  // Callback to the debugger to continue frame rewind, post-deoptimization.
+  void RewindPostDeopt();
+
  private:
-  enum ResumeAction {
-    kContinue,
-    kStepOver,
-    kStepOut,
-    kSingleStep
-  };
+  RawError* PauseRequest(ServiceEvent::EventKind kind);
+
+  // Will return false if we are not at an await.
+  bool SetupStepOverAsyncSuspension(const char** error);
 
   bool NeedsIsolateEvents();
   bool NeedsDebugEvents();
@@ -533,9 +548,9 @@ class Debugger {
   RawFunction* FindInnermostClosure(const Function& function,
                                     TokenPosition token_pos);
   TokenPosition ResolveBreakpointPos(const Function& func,
-                                       TokenPosition requested_token_pos,
-                                       TokenPosition last_token_pos,
-                                       intptr_t requested_column);
+                                     TokenPosition requested_token_pos,
+                                     TokenPosition last_token_pos,
+                                     intptr_t requested_column);
   void DeoptimizeWorld();
   BreakpointLocation* SetBreakpoint(const Script& script,
                                     TokenPosition token_pos,
@@ -552,8 +567,7 @@ class Debugger {
   BreakpointLocation* GetBreakpointLocation(const Script& script,
                                             TokenPosition token_pos,
                                             intptr_t requested_column);
-  void MakeCodeBreakpointAt(const Function& func,
-                            BreakpointLocation* bpt);
+  void MakeCodeBreakpointAt(const Function& func, BreakpointLocation* bpt);
   // Returns NULL if no breakpoint exists for the given address.
   CodeBreakpoint* GetCodeBreakpoint(uword breakpoint_address);
 
@@ -570,8 +584,7 @@ class Debugger {
                                      StackFrame* frame,
                                      const Code& code);
   static DebuggerStackTrace* CollectStackTrace();
-  void SignalPausedEvent(ActivationFrame* top_frame,
-                         Breakpoint* bpt);
+  void SignalPausedEvent(ActivationFrame* top_frame, Breakpoint* bpt);
 
   intptr_t nextId() { return next_id_++; }
 
@@ -590,6 +603,15 @@ class Debugger {
   void HandleSteppingRequest(DebuggerStackTrace* stack_trace,
                              bool skip_next_step = false);
 
+  // Can we rewind to the indicated frame?
+  bool CanRewindFrame(intptr_t frame_index, const char** error) const;
+
+  void RewindToFrame(intptr_t frame_index);
+  void RewindToUnoptimizedFrame(StackFrame* frame, const Code& code);
+  void RewindToOptimizedFrame(StackFrame* frame,
+                              const Code& code,
+                              intptr_t post_deopt_frame_index);
+
   Isolate* isolate_;
   Dart_Port isolate_id_;  // A unique ID for the isolate in the debugger.
   bool initialized_;
@@ -603,6 +625,8 @@ class Debugger {
 
   // Tells debugger what to do when resuming execution after a breakpoint.
   ResumeAction resume_action_;
+  intptr_t resume_frame_index_;
+  intptr_t post_deopt_frame_index_;
 
   // Do not call back to breakpoint handler if this flag is set.
   // Effectively this means ignoring breakpoints. Set when Dart code may
@@ -648,4 +672,4 @@ class Debugger {
 
 }  // namespace dart
 
-#endif  // VM_DEBUGGER_H_
+#endif  // RUNTIME_VM_DEBUGGER_H_

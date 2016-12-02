@@ -4,69 +4,126 @@
 
 part of app;
 
-class Notification {
-  Notification.fromEvent(this.event);
-  Notification.fromException(this.exception, this.stacktrace);
-
-  ServiceEvent event;
-  var exception;
-  var stacktrace;
-}
-
 /// The observatory application. Instances of this are created and owned
 /// by the observatory_application custom element.
-class ObservatoryApplication extends Observable {
+class ObservatoryApplication {
   static ObservatoryApplication app;
+  final RenderingQueue queue = new RenderingQueue();
+  final TargetRepository targets = new TargetRepository();
+  final EventRepository events = new EventRepository();
+  final NotificationRepository notifications = new NotificationRepository();
   final _pageRegistry = new List<Page>();
   LocationManager _locationManager;
   LocationManager get locationManager => _locationManager;
-  @observable Page currentPage;
+  Page currentPage;
+  bool _vmConnected = false;
   VM _vm;
   VM get vm => _vm;
 
-  set vm(VM vm) {
-    if (_vm == vm) {
+  bool isConnectedVMTarget(WebSocketVMTarget target) {
+    if (_vm is CommonWebSocketVM) {
+      if ((_vm as CommonWebSocketVM).target == target) {
+        return _vm.isConnected;
+      }
+    }
+    return false;
+  }
+
+  _switchVM(VM newVM) {
+    final VM oldVM = _vm;
+
+    Logger.root.info('_switchVM from:${oldVM} to:${newVM}');
+
+    if (oldVM == newVM) {
       // Do nothing.
       return;
     }
-    if (_vm != null) {
+
+    if (oldVM != null) {
+      print('disconnecting from the old VM ${oldVM}--');
       // Disconnect from current VM.
-      notifications.clear();
-      _vm.disconnect();
+      stopGCEventListener();
+      notifications.deleteAll();
+      oldVM.disconnect();
     }
-    if (vm != null) {
-      Logger.root.info('Registering new VM callbacks');
 
-      vm.onConnect.then((_) {
-        if (vm is WebSocketVM) {
-          targets.add(vm.target);
-        }
-        _removeDisconnectEvents();
+    if (newVM != null) {
+      // Mark that we haven't connected yet.
+      _vmConnected = false;
+      // On connect:
+      newVM.onConnect.then((_) {
+        // We connected.
+        _vmConnected = true;
+        notifications.deleteDisconnectEvents();
       });
-
-      vm.onDisconnect.then((String reason) {
-        if (this.vm != vm) {
+      // On disconnect:
+      newVM.onDisconnect.then((String reason) {
+        if (this.vm != newVM) {
           // This disconnect event occured *after* a new VM was installed.
           return;
         }
-        notifications.add(
-            new Notification.fromEvent(
-                new ServiceEvent.connectionClosed(reason)));
+        // Let anyone looking at the targets know that we have disconnected
+        // from one.
+        targets.emitDisconnectEvent();
+        if (!_vmConnected) {
+          // Connection error. Navigate back to the connect page.
+          Logger.root.info('Connection failed, navigating to VM connect page.');
+          // Clear the vm.
+          _vm = null;
+          app.locationManager.go(Uris.vmConnect());
+        } else {
+          // Disconnect. Stay at the current page and push an a connection
+          // closed event.
+          Logger.root.info('Lost an existing connection to a VM');
+          events.add(new ConnectionClosedEvent(new DateTime.now(), reason));
+        }
       });
-
-      vm.listenEventStream(VM.kIsolateStream, _onEvent);
-      vm.listenEventStream(VM.kDebugStream, _onEvent);
+      // TODO(cbernaschina) smart connection of streams in the events object.
+      newVM.listenEventStream(VM.kVMStream, _onEvent);
+      newVM.listenEventStream(VM.kIsolateStream, _onEvent);
+      newVM.listenEventStream(VM.kDebugStream, _onEvent);
     }
-    _vm = vm;
+
+    _vm = newVM;
   }
-  final TargetManager targets;
-  @reflectable final ObservatoryApplicationElement rootElement;
 
-  TraceViewElement _traceView = null;
+  StreamSubscription _gcSubscription;
+  StreamSubscription _loggingSubscription;
 
-  @reflectable ServiceObject lastErrorOrException;
-  @observable ObservableList<Notification> notifications =
-      new ObservableList<Notification>();
+  Future startGCEventListener() async {
+    if (_gcSubscription != null || _vm == null) {
+      return;
+    }
+    _gcSubscription = await _vm.listenEventStream(VM.kGCStream, _onEvent);
+  }
+
+  Future startLoggingEventListener() async {
+    if (_loggingSubscription != null || _vm == null) {
+      return;
+    }
+    _loggingSubscription =
+        await _vm.listenEventStream(Isolate.kLoggingStream, _onEvent);
+  }
+
+  Future stopGCEventListener() async {
+    if (_gcSubscription == null) {
+      return;
+    }
+    _gcSubscription.cancel();
+    _gcSubscription = null;
+  }
+
+  Future stopLoggingEventListener() async {
+    if (_loggingSubscription == null) {
+      return;
+    }
+    _loggingSubscription.cancel();
+    _loggingSubscription = null;
+  }
+
+  final ObservatoryApplicationElement rootElement;
+
+  ServiceObject lastErrorOrException;
 
   void _initOnce() {
     assert(app == null);
@@ -77,56 +134,19 @@ class ObservatoryApplication extends Observable {
     locationManager._visit();
   }
 
-  void removePauseEvents(Isolate isolate) {
-    notifications.removeWhere((notification) {
-        var event = notification.event;
-        return (event != null &&
-                event.isolate == isolate &&
-                event.isPauseEvent);
-      });
+  void _deletePauseEvents(e) {
+    notifications.deletePauseEvents(isolate: e.isolate);
+  }
+
+  void _addNotification(M.Event e) {
+    notifications.add(new EventNotification(e));
   }
 
   void _onEvent(ServiceEvent event) {
     assert(event.kind != ServiceEvent.kNone);
-
-    switch(event.kind) {
-      case ServiceEvent.kVMUpdate:
-      case ServiceEvent.kIsolateStart:
-      case ServiceEvent.kIsolateRunnable:
-      case ServiceEvent.kIsolateUpdate:
-      case ServiceEvent.kBreakpointAdded:
-      case ServiceEvent.kBreakpointResolved:
-      case ServiceEvent.kBreakpointRemoved:
-      case ServiceEvent.kDebuggerSettingsUpdate:
-        // Ignore for now.
-        break;
-
-      case ServiceEvent.kIsolateReload:
-        notifications.add(new Notification.fromEvent(event));
-        break;
-
-      case ServiceEvent.kIsolateExit:
-      case ServiceEvent.kResume:
-        removePauseEvents(event.isolate);
-        break;
-
-      case ServiceEvent.kPauseStart:
-      case ServiceEvent.kPauseExit:
-      case ServiceEvent.kPauseBreakpoint:
-      case ServiceEvent.kPauseInterrupted:
-      case ServiceEvent.kPauseException:
-        removePauseEvents(event.isolate);
-        notifications.add(new Notification.fromEvent(event));
-        break;
-
-      case ServiceEvent.kInspect:
-        notifications.add(new Notification.fromEvent(event));
-        break;
-
-      default:
-        // Ignore unrecognized events.
-        Logger.root.severe('Unrecognized event: $event');
-        break;
+    M.Event e = createEventFromServiceEvent(event);
+    if (e != null) {
+      events.add(e);
     }
   }
 
@@ -136,6 +156,7 @@ class ObservatoryApplication extends Observable {
     _pageRegistry.add(new InspectPage(this));
     _pageRegistry.add(new ClassTreePage(this));
     _pageRegistry.add(new DebuggerPage(this));
+    _pageRegistry.add(new ObjectStorePage(this));
     _pageRegistry.add(new CpuProfilerPage(this));
     _pageRegistry.add(new TableCpuProfilerPage(this));
     _pageRegistry.add(new AllocationProfilerPage(this));
@@ -166,9 +187,6 @@ class ObservatoryApplication extends Observable {
     if (Tracer.current != null) {
       Tracer.current.reset();
     }
-    if (_traceView != null) {
-      _traceView.tracer = Tracer.current;
-    }
     for (var i = 0; i < _pageRegistry.length; i++) {
       var page = _pageRegistry[i];
       if (page.canVisit(uri)) {
@@ -184,7 +202,7 @@ class ObservatoryApplication extends Observable {
   void _installPage(Page page) {
     assert(page != null);
     if (currentPage == page) {
-      // Already isntalled.
+      // Already installed.
       return;
     }
     if (currentPage != null) {
@@ -202,33 +220,55 @@ class ObservatoryApplication extends Observable {
     // Add new page.
     rootElement.children.add(page.element);
 
-    // Add tracing support.
-    _traceView = new Element.tag('trace-view');
-    _traceView.tracer = Tracer.current;
-    rootElement.children.add(_traceView);
-
     // Remember page.
     currentPage = page;
   }
 
-  ObservatoryApplication(this.rootElement) :
-      targets = new TargetManager() {
+  ObservatoryApplication(this.rootElement) {
     _locationManager = new LocationManager(this);
-    vm = new WebSocketVM(targets.defaultTarget);
-    _initOnce();
-  }
+    targets.onChange.listen((TargetChangeEvent e) {
+      if (e.disconnected) {
+        // We don't care about disconnected events.
+        return;
+      }
+      if (targets.current == null) {
+        _switchVM(null);
+      }
+      final bool currentTarget =
+          (_vm as WebSocketVM)?.target == targets.current;
+      final bool currentTargetConnected = (_vm != null) && !_vm.isDisconnected;
+      if (!currentTarget || !currentTargetConnected) {
+        _switchVM(new WebSocketVM(targets.current));
+        app.locationManager.go(Uris.vm());
+      }
+    });
 
-  void _removeDisconnectEvents() {
-    notifications.removeWhere((notification) {
-        var event = notification.event;
-        return (event != null &&
-                event.kind == ServiceEvent.kConnectionClosed);
-      });
+    Logger.root.info('Setting initial target to ${targets.current.name}');
+    _switchVM(new WebSocketVM(targets.current));
+    _initOnce();
+
+    // delete pause events.
+    events.onIsolateExit.listen(_deletePauseEvents);
+    events.onResume.listen(_deletePauseEvents);
+    events.onPauseStart.listen(_deletePauseEvents);
+    events.onPauseExit.listen(_deletePauseEvents);
+    events.onPauseBreakpoint.listen(_deletePauseEvents);
+    events.onPauseInterrupted.listen(_deletePauseEvents);
+    events.onPauseException.listen(_deletePauseEvents);
+
+    // show notification for an event.
+    events.onIsolateReload.listen(_addNotification);
+    events.onPauseExit.listen(_addNotification);
+    events.onPauseBreakpoint.listen(_addNotification);
+    events.onPauseInterrupted.listen(_addNotification);
+    events.onPauseException.listen(_addNotification);
+    events.onInspect.listen(_addNotification);
+    events.onConnectionClosed.listen(_addNotification);
   }
 
   loadCrashDump(Map crashDump) {
-    this.vm = new FakeVM(crashDump['result']);
-    app.locationManager.go('#/vm');
+    _switchVM(new FakeVM(crashDump['result']));
+    app.locationManager.go(Uris.vm());
   }
 
   void handleException(e, st) {
@@ -241,9 +281,9 @@ class ObservatoryApplication extends Observable {
 
     // TODO(turnidge): Report this failure via analytics.
     Logger.root.warning('Caught exception: ${e}\n${st}');
-    notifications.add(new Notification.fromException(e, st));
+    notifications.add(new ExceptionNotification(e, stacktrace: st));
   }
 
   // This map keeps track of which curly-blocks have been expanded by the user.
-  Map<String,bool> expansions = {};
+  Map<String, bool> expansions = {};
 }

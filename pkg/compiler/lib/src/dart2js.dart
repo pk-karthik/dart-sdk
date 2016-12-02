@@ -11,9 +11,8 @@ import 'dart:io' show exit, File, FileMode, Platform, stdin, stderr;
 import 'package:package_config/discovery.dart' show findPackages;
 
 import '../compiler_new.dart' as api;
-import 'apiimpl.dart';
-import 'common/names.dart' show Uris;
 import 'commandline_options.dart';
+import 'common/names.dart' show Uris;
 import 'filenames.dart';
 import 'io/source_file.dart';
 import 'null_compiler_output.dart';
@@ -82,7 +81,8 @@ void parseCommandLine(List<OptionHandler> handlers, List<String> argv) {
   var pattern = new RegExp('^(${patterns.join(")\$|^(")})\$');
 
   Iterator<String> arguments = argv.iterator;
-  OUTER: while (arguments.moveNext()) {
+  OUTER:
+  while (arguments.moveNext()) {
     String argument = arguments.current;
     Match match = pattern.firstMatch(argument);
     assert(match.groupCount == handlers.length);
@@ -109,32 +109,36 @@ Future<api.CompilationResult> compile(List<String> argv) {
   Uri out = currentDirectory.resolve('out.js');
   Uri sourceMapOut = currentDirectory.resolve('out.js.map');
   List<Uri> resolutionInputs;
+  List<String> bazelPaths;
   Uri packageConfig = null;
   Uri packageRoot = null;
   List<String> options = new List<String>();
   List<String> explicitOutputArguments = <String>[];
   bool wantHelp = false;
   bool wantVersion = false;
-  String outputLanguage = 'JavaScript';
-  bool stripArgumentSet = false;
   bool analyzeOnly = false;
   bool analyzeAll = false;
   bool resolveOnly = false;
   Uri resolutionOutput = currentDirectory.resolve('out.data');
-  bool dumpInfo = false;
   bool allowNativeExtensions = false;
   bool trustTypeAnnotations = false;
   bool trustJSInteropTypeAnnotations = false;
   bool checkedMode = false;
+  List<String> hints = <String>[];
+  bool verbose;
+  bool throwOnError;
+  int throwOnErrorCount;
+  bool showWarnings;
+  bool showHints;
+  bool enableColors;
   // List of provided options that imply that output is expected.
   List<String> optionsImplyCompilation = <String>[];
   bool hasDisallowUnsafeEval = false;
-  // TODO(johnniwinther): Measure time for reading files.
-  SourceFileProvider inputProvider = new CompilerSourceFileProvider();
-  diagnosticHandler = new FormattingDiagnosticHandler(inputProvider);
   Map<String, dynamic> environment = new Map<String, dynamic>();
 
   void passThrough(String argument) => options.add(argument);
+
+  void ignoreOption(String argument) {}
 
   if (BUILD_ID != null) {
     passThrough("--build-id=$BUILD_ID");
@@ -173,20 +177,10 @@ Future<api.CompilationResult> compile(List<String> argv) {
     optionsImplyCompilation.add(argument);
     if (argument == '--output-type=dart' ||
         argument == '--output-type=dart-multi') {
-      outputLanguage = OUTPUT_LANGUAGE_DART;
-      if (explicitOutputArguments.isNotEmpty) {
-        out = currentDirectory.resolve('out.dart');
-        sourceMapOut = currentDirectory.resolve('out.dart.map');
-      }
-      diagnosticHandler(
-          null,
-          null,
-          null,
-          "--output-type=dart is deprecated. It will remain available "
-          "in Dart 1.11, but will be removed in Dart 1.12.",
-          api.Diagnostic.WARNING);
+      helpAndFail(
+          "--output-type=dart is no longer supported. It was deprecated "
+          "since Dart 1.11 and removed in Dart 1.19.");
     }
-    passThrough(argument);
   }
 
   void setResolutionInput(String argument) {
@@ -195,6 +189,11 @@ Future<api.CompilationResult> compile(List<String> argv) {
     for (String part in parts.split(',')) {
       resolutionInputs.add(currentDirectory.resolve(nativeToUriPath(part)));
     }
+  }
+
+  void setBazelPaths(String argument) {
+    String paths = extractParameter(argument);
+    bazelPaths = <String>[]..addAll(paths.split(','));
   }
 
   void setResolveOnly(String argument) {
@@ -208,14 +207,14 @@ Future<api.CompilationResult> compile(List<String> argv) {
     return filenames.join("\n");
   }
 
-  void implyCompilation(String argument) {
+  implyCompilation(String argument) {
     optionsImplyCompilation.add(argument);
     passThrough(argument);
   }
 
-  void setStrip(String argument) {
-    stripArgumentSet = true;
-    implyCompilation(argument);
+  setStrip(String argument) {
+    helpAndFail("Option '--force-strip' is not in use now that"
+        "--output-type=dart is no longer supported.");
   }
 
   void setAnalyzeOnly(String argument) {
@@ -234,13 +233,8 @@ Future<api.CompilationResult> compile(List<String> argv) {
   }
 
   void setVerbose(_) {
-    diagnosticHandler.verbose = true;
+    verbose = true;
     passThrough('--verbose');
-  }
-
-  void setDumpInfo(String argument) {
-    implyCompilation(argument);
-    dumpInfo = true;
   }
 
   void setTrustTypeAnnotations(String argument) {
@@ -285,10 +279,11 @@ Future<api.CompilationResult> compile(List<String> argv) {
   }
 
   void handleThrowOnError(String argument) {
-    diagnosticHandler.throwOnError = true;
+    throwOnError = true;
     String parameter = extractParameter(argument, isOptionalArgument: true);
     if (parameter != null) {
-      diagnosticHandler.throwOnErrorCount = int.parse(parameter);
+      var count = int.parse(parameter);
+      throwOnErrorCount = count;
     }
   }
 
@@ -320,16 +315,18 @@ Future<api.CompilationResult> compile(List<String> argv) {
     new OptionHandler('-[chvm?]+', handleShortOptions),
     new OptionHandler('--throw-on-error(?:=[0-9]+)?', handleThrowOnError),
     new OptionHandler(Flags.suppressWarnings, (_) {
-      diagnosticHandler.showWarnings = false;
+      showWarnings = false;
       passThrough(Flags.suppressWarnings);
     }),
     new OptionHandler(Flags.fatalWarnings, passThrough),
-    new OptionHandler(
-        Flags.suppressHints, (_) => diagnosticHandler.showHints = false),
+    new OptionHandler(Flags.suppressHints, (_) {
+      showHints = false;
+    }),
+    // TODO(sigmund): remove entirely after Dart 1.20
     new OptionHandler(
         '--output-type=dart|--output-type=dart-multi|--output-type=js',
         setOutputType),
-    new OptionHandler(Flags.useCpsIr, passThrough),
+    new OptionHandler(Flags.useKernel, passThrough),
     new OptionHandler(Flags.noFrequencyBasedMinification, passThrough),
     new OptionHandler(Flags.verbose, setVerbose),
     new OptionHandler(Flags.version, (_) => wantVersion = true),
@@ -337,14 +334,17 @@ Future<api.CompilationResult> compile(List<String> argv) {
     new OptionHandler('--out=.+|-o.*', setOutput, multipleArguments: true),
     new OptionHandler(Flags.allowMockCompilation, passThrough),
     new OptionHandler(Flags.fastStartup, passThrough),
-    new OptionHandler(Flags.genericMethodSyntax, passThrough),
+    new OptionHandler(Flags.genericMethodSyntax, ignoreOption),
+    new OptionHandler(Flags.initializingFormalAccess, ignoreOption),
     new OptionHandler('${Flags.minify}|-m', implyCompilation),
     new OptionHandler(Flags.preserveUris, passThrough),
     new OptionHandler('--force-strip=.*', setStrip),
-    new OptionHandler(Flags.disableDiagnosticColors,
-        (_) => diagnosticHandler.enableColors = false),
-    new OptionHandler(Flags.enableDiagnosticColors,
-        (_) => diagnosticHandler.enableColors = true),
+    new OptionHandler(Flags.disableDiagnosticColors, (_) {
+      enableColors = false;
+    }),
+    new OptionHandler(Flags.enableDiagnosticColors, (_) {
+      enableColors = true;
+    }),
     new OptionHandler('--enable[_-]checked[_-]mode|--checked',
         (_) => setCheckedMode(Flags.enableCheckedMode)),
     new OptionHandler(Flags.trustTypeAnnotations,
@@ -362,14 +362,16 @@ Future<api.CompilationResult> compile(List<String> argv) {
     new OptionHandler(Flags.analyzeOnly, setAnalyzeOnly),
     new OptionHandler(Flags.noSourceMaps, passThrough),
     new OptionHandler(Option.resolutionInput, setResolutionInput),
+    new OptionHandler(Option.bazelPaths, setBazelPaths),
     new OptionHandler(Flags.resolveOnly, setResolveOnly),
     new OptionHandler(Flags.analyzeSignaturesOnly, setAnalyzeOnly),
     new OptionHandler(Flags.disableNativeLiveTypeAnalysis, passThrough),
     new OptionHandler('--categories=.*', setCategories),
+    new OptionHandler(Flags.disableInlining, implyCompilation),
     new OptionHandler(Flags.disableTypeInference, implyCompilation),
     new OptionHandler(Flags.terse, passThrough),
     new OptionHandler('--deferred-map=.+', implyCompilation),
-    new OptionHandler(Flags.dumpInfo, setDumpInfo),
+    new OptionHandler(Flags.dumpInfo, implyCompilation),
     new OptionHandler(
         '--disallow-unsafe-eval', (_) => hasDisallowUnsafeEval = true),
     new OptionHandler(Option.showPackageWarnings, passThrough),
@@ -382,25 +384,20 @@ Future<api.CompilationResult> compile(List<String> argv) {
     // launched the feature yet.
     new OptionHandler(Flags.conditionalDirectives, (_) {}),
     new OptionHandler('--enable-async', (_) {
-      diagnosticHandler.info(
-          "Option '--enable-async' is no longer needed. "
-          "Async-await is supported by default.",
-          api.Diagnostic.HINT);
+      hints.add("Option '--enable-async' is no longer needed. "
+          "Async-await is supported by default.");
     }),
     new OptionHandler('--enable-null-aware-operators', (_) {
-      diagnosticHandler.info(
-          "Option '--enable-null-aware-operators' is no longer needed. "
-          "Null aware operators are supported by default.",
-          api.Diagnostic.HINT);
+      hints.add("Option '--enable-null-aware-operators' is no longer needed. "
+          "Null aware operators are supported by default.");
     }),
     new OptionHandler('--enable-enum', (_) {
-      diagnosticHandler.info(
-          "Option '--enable-enum' is no longer needed. "
-          "Enums are supported by default.",
-          api.Diagnostic.HINT);
+      hints.add("Option '--enable-enum' is no longer needed. "
+          "Enums are supported by default.");
     }),
     new OptionHandler(Flags.allowNativeExtensions, setAllowNativeExtensions),
     new OptionHandler(Flags.generateCodeWithCompileTimeErrors, passThrough),
+    new OptionHandler(Flags.useNewSourceInfo, passThrough),
     new OptionHandler(Flags.testMode, passThrough),
 
     // The following three options must come last.
@@ -414,6 +411,38 @@ Future<api.CompilationResult> compile(List<String> argv) {
   ];
 
   parseCommandLine(handlers, argv);
+
+  // TODO(johnniwinther): Measure time for reading files.
+  SourceFileProvider inputProvider;
+  if (bazelPaths != null) {
+    inputProvider = new BazelInputProvider(bazelPaths);
+  } else {
+    inputProvider = new CompilerSourceFileProvider();
+  }
+
+  diagnosticHandler = new FormattingDiagnosticHandler(inputProvider);
+  if (verbose != null) {
+    diagnosticHandler.verbose = verbose;
+  }
+  if (throwOnError != null) {
+    diagnosticHandler.throwOnError = throwOnError;
+  }
+  if (throwOnErrorCount != null) {
+    diagnosticHandler.throwOnErrorCount = throwOnErrorCount;
+  }
+  if (showWarnings != null) {
+    diagnosticHandler.showWarnings = showWarnings;
+  }
+  if (showHints != null) {
+    diagnosticHandler.showHints = showHints;
+  }
+  if (enableColors != null) {
+    diagnosticHandler.enableColors = enableColors;
+  }
+  for (String hint in hints) {
+    diagnosticHandler.info(hint, api.Diagnostic.HINT);
+  }
+
   if (wantHelp || wantVersion) {
     helpAndExit(wantHelp, wantVersion, diagnosticHandler.verbose);
   }
@@ -428,10 +457,6 @@ Future<api.CompilationResult> compile(List<String> argv) {
         " '$precompiledName'.");
   }
 
-  if (outputLanguage != OUTPUT_LANGUAGE_DART && stripArgumentSet) {
-    helpAndFail("Option '--force-strip' may only be used with "
-        "'--output-type=dart'.");
-  }
   if (arguments.isEmpty) {
     helpAndFail('No Dart file specified.');
   }
@@ -470,6 +495,12 @@ Future<api.CompilationResult> compile(List<String> argv) {
         api.Diagnostic.INFO);
   }
   if (resolveOnly) {
+    if (resolutionInputs != null &&
+        resolutionInputs.contains(resolutionOutput)) {
+      helpAndFail("Resolution input '${resolutionOutput}' can't be used as "
+          "resolution output. Use the '--out' option to specify another "
+          "resolution output.");
+    }
     analyzeOnly = analyzeAll = true;
   } else if (analyzeAll) {
     analyzeOnly = true;
@@ -479,10 +510,6 @@ Future<api.CompilationResult> compile(List<String> argv) {
       helpAndFail("Option '${Flags.allowNativeExtensions}' is only supported "
           "in combination with the '${Flags.analyzeOnly}' option.");
     }
-  }
-  if (dumpInfo && outputLanguage == OUTPUT_LANGUAGE_DART) {
-    helpAndFail("Option '${Flags.dumpInfo}' is not supported in "
-        "combination with the '--output-type=dart' option.");
   }
 
   options.add('--out=$out');
@@ -504,11 +531,11 @@ Future<api.CompilationResult> compile(List<String> argv) {
     diagnosticHandler
         .info('Compiled ${inputProvider.dartCharactersRead} characters Dart '
             '-> ${outputProvider.totalCharactersWritten} characters '
-            '$outputLanguage in '
+            'JavaScript in '
             '${relativize(currentDirectory, out, Platform.isWindows)}');
     if (diagnosticHandler.verbose) {
       String input = uriPathToNative(arguments[0]);
-      print('Dart file ($input) compiled to $outputLanguage.');
+      print('Dart file ($input) compiled to JavaScript.');
       print('Wrote the following files:');
       for (String filename in outputProvider.allOutputFiles) {
         print("  $filename");
@@ -516,7 +543,7 @@ Future<api.CompilationResult> compile(List<String> argv) {
     } else if (explicitOutputArguments.isNotEmpty) {
       String input = uriPathToNative(arguments[0]);
       String output = relativize(currentDirectory, out, Platform.isWindows);
-      print('Dart file ($input) compiled to $outputLanguage: $output');
+      print('Dart file ($input) compiled to JavaScript: $output');
     }
     return result;
   }
@@ -529,7 +556,7 @@ Future<api.CompilationResult> compile(List<String> argv) {
       packageConfig: packageConfig,
       packagesDiscoveryProvider: findPackages,
       resolutionInputs: resolutionInputs,
-      resolutionOutput: resolutionOutput,
+      resolutionOutput: resolveOnly ? resolutionOutput : null,
       options: options,
       environment: environment);
   return compileFunc(
@@ -665,9 +692,6 @@ Supported options:
 The following options are only used for compiler development and may
 be removed in a future version:
 
-  --output-type=dart
-    Output Dart code instead of JavaScript.
-
   --throw-on-error
     Throw an exception if a compile-time error is detected.
 
@@ -696,15 +720,10 @@ be removed in a future version:
     Generates an out.info.json file with information about the generated code.
     You can inspect the generated file with the viewer at:
         https://dart-lang.github.io/dump-info-visualizer/
-    This feature is currently not supported in combination with the
-    '--output-type=dart' option.
 
   --generate-code-with-compile-time-errors
     Generates output even if the program contains compile-time errors. Use the
     exit code to determine if compilation failed.
-
-  --use-cps-ir
-    Experimental.  Use the new CPS based backend for code generation.
 
   --no-frequency-based-minification
     Experimental.  Disabled the new frequency based minifying namer and use the
@@ -834,59 +853,161 @@ void batchMain(List<String> batchArguments) {
   });
 }
 
+// TODO(johnniwinther): Add corresponding options to the test script and change
+// these to use 'bool.fromEnvironment'.
 final bool USE_SERIALIZED_DART_CORE =
     Platform.environment['USE_SERIALIZED_DART_CORE'] == 'true';
 
-/// Mock URI used only in testing when [USE_SERIALIZED_DART_CORE] is enabled.
-final Uri _SERIALIZED_URI = Uri.parse('file:fake.data');
+final bool SERIALIZED_COMPILATION =
+    Platform.environment['SERIALIZED_COMPILATION'] == 'true';
+
+/// Mock URI used only in testing when [USE_SERIALIZED_DART_CORE] or
+/// [SERIALIZED_COMPILATION] is enabled.
+final Uri _SERIALIZED_DART_CORE_URI = Uri.parse('file:core.data');
+final Uri _SERIALIZED_TEST_URI = Uri.parse('file:test.data');
 
 void _useSerializedDataForDartCore(CompileFunc oldCompileFunc) {
-  String serializedData;
-
+  /// Run the [oldCompileFunc] with [serializedData] added as resolution input.
   Future<api.CompilationResult> compileWithSerializedData(
       CompilerOptions compilerOptions,
       api.CompilerInput compilerInput,
       api.CompilerDiagnostics compilerDiagnostics,
-      api.CompilerOutput compilerOutput) async {
-    CompilerImpl compiler = new CompilerImpl(
-        compilerInput, compilerOutput, compilerDiagnostics, compilerOptions);
-    compiler.serialization.deserializeFromText(_SERIALIZED_URI, serializedData);
-    return compiler.run(compilerOptions.entryPoint).then((bool success) {
-      return new api.CompilationResult(compiler, isSuccess: success);
-    });
+      api.CompilerOutput compilerOutput,
+      List<_SerializedData> serializedData,
+      {bool compileOnly: false}) {
+    api.CompilerInput input = compilerInput;
+    CompilerOptions options = compilerOptions;
+    if (serializedData != null && serializedData.isNotEmpty) {
+      Map<Uri, String> dataMap = <Uri, String>{};
+      for (_SerializedData data in serializedData) {
+        dataMap[data.uri] = data.data;
+      }
+      input = new _CompilerInput(input, dataMap);
+      List<Uri> resolutionInputs = dataMap.keys.toList();
+      if (compilerOptions.resolutionInputs != null) {
+        for (Uri uri in compilerOptions.resolutionInputs) {
+          if (!dataMap.containsKey(uri)) {
+            resolutionInputs.add(uri);
+          }
+        }
+      }
+      options = CompilerOptions.copy(options,
+          resolutionInputs: resolutionInputs, compileOnly: compileOnly);
+    }
+    return oldCompileFunc(options, input, compilerDiagnostics, compilerOutput);
   }
 
+  /// Serialize [entryPoint] using [serializedData] if provided.
+  Future<api.CompilationResult> serialize(
+      Uri entryPoint,
+      Uri serializedUri,
+      CompilerOptions compilerOptions,
+      api.CompilerInput compilerInput,
+      api.CompilerDiagnostics compilerDiagnostics,
+      api.CompilerOutput compilerOutput,
+      [List<_SerializedData> serializedData]) {
+    CompilerOptions options = CompilerOptions.copy(compilerOptions,
+        entryPoint: entryPoint,
+        resolutionOutput: serializedUri,
+        analyzeAll: true,
+        analyzeOnly: true,
+        resolveOnly: true);
+    return compileWithSerializedData(options, compilerInput,
+        compilerDiagnostics, compilerOutput, serializedData);
+  }
+
+  // Local cache for the serialized data for dart:core.
+  _SerializedData serializedDartCore;
+
+  /// Serialize the entry point using serialized data from dart:core and run
+  /// [oldCompileFunc] using serialized data for whole program.
+  Future<api.CompilationResult> compileFromSerializedData(
+      CompilerOptions compilerOptions,
+      api.CompilerInput compilerInput,
+      api.CompilerDiagnostics compilerDiagnostics,
+      api.CompilerOutput compilerOutput) async {
+    _CompilerOutput output = new _CompilerOutput(_SERIALIZED_TEST_URI);
+    api.CompilationResult result = await serialize(
+        compilerOptions.entryPoint,
+        output.uri,
+        compilerOptions,
+        compilerInput,
+        compilerDiagnostics,
+        output,
+        [serializedDartCore]);
+    if (!result.isSuccess) {
+      return result;
+    }
+    return compileWithSerializedData(
+        compilerOptions,
+        compilerInput,
+        compilerDiagnostics,
+        compilerOutput,
+        [serializedDartCore, output.serializedData],
+        compileOnly: true);
+  }
+
+  /// Compiles the entry point using the serialized data from dart:core.
+  Future<api.CompilationResult> compileWithSerializedDartCoreData(
+      CompilerOptions compilerOptions,
+      api.CompilerInput compilerInput,
+      api.CompilerDiagnostics compilerDiagnostics,
+      api.CompilerOutput compilerOutput) async {
+    return compileWithSerializedData(compilerOptions, compilerInput,
+        compilerDiagnostics, compilerOutput, [serializedDartCore]);
+  }
+
+  /// Serialize dart:core data into [serializedDartCore] and setup the
+  /// [compileFunc] to run the compiler using this data.
   Future<api.CompilationResult> generateSerializedDataForDartCore(
       CompilerOptions compilerOptions,
       api.CompilerInput compilerInput,
       api.CompilerDiagnostics compilerDiagnostics,
       api.CompilerOutput compilerOutput) async {
-    _CompilerOutput output = new _CompilerOutput();
-    api.CompilationResult result = await oldCompileFunc(
-        new CompilerOptions.parse(
-            entryPoint: Uris.dart_core,
-            libraryRoot: compilerOptions.libraryRoot,
-            packageRoot: compilerOptions.packageRoot,
-            packageConfig: compilerOptions.packageConfig,
-            packagesDiscoveryProvider:
-                compilerOptions.packagesDiscoveryProvider,
-            environment: compilerOptions.environment,
-            resolutionOutput: _SERIALIZED_URI,
-            options: [Flags.resolveOnly]),
-        compilerInput,
-        compilerDiagnostics,
-        output);
-    serializedData = output.serializedData;
-    compileFunc = compileWithSerializedData;
-    return compileWithSerializedData(
+    _CompilerOutput output = new _CompilerOutput(_SERIALIZED_DART_CORE_URI);
+    await serialize(Uris.dart_core, output.uri, compilerOptions, compilerInput,
+        compilerDiagnostics, output);
+    serializedDartCore = output.serializedData;
+    if (SERIALIZED_COMPILATION) {
+      compileFunc = compileFromSerializedData;
+    } else {
+      compileFunc = compileWithSerializedDartCoreData;
+    }
+    return compileFunc(
         compilerOptions, compilerInput, compilerDiagnostics, compilerOutput);
   }
 
   compileFunc = generateSerializedDataForDartCore;
 }
 
+class _CompilerInput implements api.CompilerInput {
+  final api.CompilerInput _input;
+  final Map<Uri, String> _data;
+
+  _CompilerInput(this._input, this._data);
+
+  @override
+  Future readFromUri(Uri uri) {
+    String data = _data[uri];
+    if (data != null) {
+      return new Future.value(data);
+    }
+    return _input.readFromUri(uri);
+  }
+}
+
+class _SerializedData {
+  final Uri uri;
+  final String data;
+
+  _SerializedData(this.uri, this.data);
+}
+
 class _CompilerOutput extends NullCompilerOutput {
+  final Uri uri;
   _BufferedEventSink sink;
+
+  _CompilerOutput(this.uri);
 
   @override
   EventSink<String> createEventSink(String name, String extension) {
@@ -896,7 +1017,9 @@ class _CompilerOutput extends NullCompilerOutput {
     return super.createEventSink(name, extension);
   }
 
-  String get serializedData => sink.sb.toString();
+  _SerializedData get serializedData {
+    return new _SerializedData(uri, sink.sb.toString());
+  }
 }
 
 class _BufferedEventSink implements EventSink<String> {

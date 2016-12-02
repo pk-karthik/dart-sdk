@@ -465,7 +465,7 @@ class JsArray<E> extends JsObject with ListMixin<E> {
     super['length'] = length;
   }
 
-  // Methods overriden for better performance
+  // Methods overridden for better performance
 
   void add(E value) {
     callMethod('push', [value]);
@@ -707,7 +707,7 @@ _callDartFunctionFastCaptureThis(callback, self, List arguments) {
   return Function.apply(callback, [self]..addAll(arguments));
 }
 
-Function allowInterop(Function f) {
+Function/*=F*/ allowInterop/*<F extends Function>*/(Function/*=F*/ f) {
   if (JS('bool', 'typeof(#) == "function"', f)) {
     // Already supports interop, just use the existing function.
     return f;

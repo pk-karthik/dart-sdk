@@ -10,8 +10,8 @@ import '../dart_types.dart';
 import '../elements/elements.dart' show FieldElement;
 import '../resolution/operators.dart';
 import '../universe/call_structure.dart' show CallStructure;
-import 'serialization.dart';
 import 'keys.dart';
+import 'serialization.dart';
 
 /// Visitor that serializes a [ConstantExpression] by encoding it into an
 /// [ObjectEncoder].
@@ -169,8 +169,8 @@ class ConstantSerializer
 
   @override
   void visitDeferred(DeferredConstantExpression exp, ObjectEncoder encoder) {
-    throw new UnsupportedError(
-        "ConstantSerializer.visitDeferred: ${exp.toDartText()}");
+    encoder.setElement(Key.PREFIX, exp.prefix);
+    encoder.setConstant(Key.EXPRESSION, exp.expression);
   }
 }
 
@@ -267,6 +267,9 @@ class ConstantDeserializer {
       case ConstantExpressionKind.NAMED_REFERENCE:
         return new NamedArgumentReference(decoder.getString(Key.NAME));
       case ConstantExpressionKind.DEFERRED:
+        return new DeferredConstantExpression(
+            decoder.getConstant(Key.EXPRESSION),
+            decoder.getElement(Key.PREFIX));
       case ConstantExpressionKind.SYNTHETIC:
     }
     throw new UnsupportedError("Unexpected constant kind: ${kind} in $decoder");

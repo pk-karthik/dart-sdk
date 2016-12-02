@@ -29,9 +29,13 @@ class Key {
   static const Key DYNAMIC_USES = const Key('dynamic-uses');
   static const Key EFFECTIVE_TARGET = const Key('effectiveTarget');
   static const Key EFFECTIVE_TARGET_TYPE = const Key('effectiveTargetType');
+  static const Key EFFECTIVE_TARGET_IS_MALFORMED =
+      const Key('effectiveTargetIsMalformed');
   static const Key ELEMENT = const Key('element');
   static const Key ELEMENTS = const Key('elements');
+  static const Key ENCLOSING = const Key('enclosing');
   static const Key EXECUTABLE_CONTEXT = const Key('executable-context');
+  static const Key EXISTING = const Key('existing');
   static const Key EXPORTS = const Key('exports');
   static const Key EXPORT_SCOPE = const Key('export-scope');
   static const Key EXPRESSION = const Key('expression');
@@ -48,9 +52,11 @@ class Key {
   static const Key IMPACTS = const Key('impacts');
   static const Key IMPORT = const Key('import');
   static const Key IMPORTS = const Key('imports');
+  static const Key IMPORTS_FOR = const Key('importsFor');
   static const Key IMPORT_SCOPE = const Key('import-scope');
-  static const Key INTERFACES = const Key('interfaces');
   static const Key INDEX = const Key('index');
+  static const Key INFO = const Key('info');
+  static const Key INTERFACES = const Key('interfaces');
   static const Key IS_ABSTRACT = const Key('isAbstract');
   static const Key IS_BREAK_TARGET = const Key('isBreakTarget');
   static const Key IS_CONST = const Key('isConst');
@@ -59,6 +65,9 @@ class Key {
   static const Key IS_EMPTY = const Key('isEmpty');
   static const Key IS_EXTERNAL = const Key('isExternal');
   static const Key IS_FINAL = const Key('isFinal');
+  static const Key IS_INJECTED = const Key('isInjected');
+  static const Key IS_METHOD_TYPE_VARIABLE_TYPE =
+      const Key('isMethodTypeVariableType');
   static const Key IS_NAMED = const Key('isNamed');
   static const Key IS_OPERATOR = const Key('isOperator');
   static const Key IS_OPTIONAL = const Key('isOptional');
@@ -83,6 +92,8 @@ class Key {
   static const Key LISTS = const Key('lists');
   static const Key MAPS = const Key('maps');
   static const Key MEMBERS = const Key('members');
+  static const Key MESSAGE_KIND = const Key('messageKind');
+  static const Key METADATA = const Key('metadata');
   static const Key MIXIN = const Key('mixin');
   static const Key MIXINS = const Key('mixins');
   static const Key NAME = const Key('name');
@@ -92,6 +103,7 @@ class Key {
   static const Key NAMED_PARAMETER_TYPES = const Key('named-parameter-types');
   static const Key NATIVE = const Key('native');
   static const Key NESTING_LEVEL = const Key('nestingLevel');
+  static const Key NEW = const Key('new');
   static const Key NEW_STRUCTURE = const Key('newStructure');
   static const Key NODE = const Key('node');
   static const Key OFFSET = const Key('offset');
@@ -107,6 +119,7 @@ class Key {
   static const Key SEMANTICS = const Key('semantics');
   static const Key SEND_STRUCTURE = const Key('sendStructure');
   static const Key SETTER = const Key('setter');
+  static const Key SOURCE_SPAN = const Key('sourceSpan');
   static const Key STATIC_USES = const Key('static-uses');
   static const Key SUB_KIND = const Key('subKind');
   static const Key SUPERTYPE = const Key('supertype');
@@ -124,6 +137,7 @@ class Key {
   static const Key URI = const Key('uri');
   static const Key VALUE = const Key('value');
   static const Key VALUES = const Key('values');
+  static const Key WARNING = const Key('warning');
 
   final String name;
 

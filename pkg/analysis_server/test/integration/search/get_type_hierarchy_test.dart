@@ -7,15 +7,15 @@ library test.integration.search.domain;
 import 'dart:async';
 
 import 'package:analysis_server/plugin/protocol/protocol.dart';
+import 'package:test/test.dart';
 import 'package:test_reflective_loader/test_reflective_loader.dart';
-import 'package:unittest/unittest.dart';
 
-import '../../utils.dart';
 import '../integration_tests.dart';
 
 main() {
-  initializeTestEnvironment();
-  defineReflectiveTests(Test);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(Test);
+  });
 }
 
 /**
@@ -103,6 +103,7 @@ class Derived extends Pivot {}
               equals(text.indexOf('class $name') + 'class '.length));
         }
       }
+
       checkElement('Object');
       checkElement('Base');
       checkElement('Pivot');
@@ -261,17 +262,15 @@ class Pivot /* target */ extends Base2 {}
     return Future.forEach(tests, (test) => test());
   }
 
-  Future<HierarchyResults> typeHierarchyTest(String text) {
+  Future<HierarchyResults> typeHierarchyTest(String text) async {
     int offset = text.indexOf(' /* target */') - 1;
     sendAnalysisUpdateContent({pathname: new AddContentOverlay(text)});
-    return analysisFinished
-        .then((_) => sendSearchGetTypeHierarchy(pathname, offset))
-        .then((result) {
-      if (result.hierarchyItems == null) {
-        return null;
-      } else {
-        return new HierarchyResults(result.hierarchyItems);
-      }
-    });
+    await analysisFinished;
+    var result = await sendSearchGetTypeHierarchy(pathname, offset);
+    if (result.hierarchyItems == null) {
+      return null;
+    } else {
+      return new HierarchyResults(result.hierarchyItems);
+    }
   }
 }

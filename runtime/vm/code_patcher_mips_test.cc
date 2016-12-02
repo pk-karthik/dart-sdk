@@ -26,21 +26,17 @@ ASSEMBLER_TEST_GENERATE(IcDataAccess, assembler) {
   const Script& script = Script::Handle();
   const Class& owner_class = Class::Handle(Class::New(
       Library::Handle(), class_name, script, TokenPosition::kNoSource));
-  const String& function_name = String::Handle(Symbols::New(thread,
-                                                            "callerFunction"));
-  const Function& function = Function::Handle(
-      Function::New(function_name, RawFunction::kRegularFunction,
-                    true, false, false, false, false, owner_class,
-                    TokenPosition::kNoSource));
+  const String& function_name =
+      String::Handle(Symbols::New(thread, "callerFunction"));
+  const Function& function = Function::Handle(Function::New(
+      function_name, RawFunction::kRegularFunction, true, false, false, false,
+      false, owner_class, TokenPosition::kNoSource));
 
   const String& target_name = String::Handle(String::New("targetFunction"));
   const Array& args_descriptor =
       Array::Handle(ArgumentsDescriptor::New(1, Object::null_array()));
-  const ICData& ic_data = ICData::ZoneHandle(ICData::New(function,
-                                                         target_name,
-                                                         args_descriptor,
-                                                         15,
-                                                         1));
+  const ICData& ic_data = ICData::ZoneHandle(
+      ICData::New(function, target_name, args_descriptor, 15, 1, false));
 
   __ LoadObject(S5, ic_data);
   __ BranchLinkPatchable(*StubCode::OneArgCheckInlineCache_entry());
@@ -49,12 +45,12 @@ ASSEMBLER_TEST_GENERATE(IcDataAccess, assembler) {
 
 
 ASSEMBLER_TEST_RUN(IcDataAccess, test) {
-  uword return_address =
-      test->entry() + test->code().Size() - 2 * Instr::kInstrSize;
+  uword end = test->payload_start() + test->code().Size();
+  uword return_address = end - 2 * Instr::kInstrSize;
   ICData& ic_data = ICData::Handle();
   CodePatcher::GetInstanceCallAt(return_address, test->code(), &ic_data);
   EXPECT_STREQ("targetFunction",
-      String::Handle(ic_data.target_name()).ToCString());
+               String::Handle(ic_data.target_name()).ToCString());
   EXPECT_EQ(1, ic_data.NumArgsTested());
   EXPECT_EQ(0, ic_data.NumberOfChecks());
 }

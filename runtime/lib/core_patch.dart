@@ -2,8 +2,13 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+import "dart:async";
+import "dart:collection" show LinkedList, LinkedListEntry;
+import 'dart:convert' show ASCII, JSON;
+import "dart:isolate";
 import "dart:math";
 import "dart:typed_data";
+import 'dart:_internal' as internal;
 
 // Equivalent of calling FATAL from C++ code.
 _fatal(msg) native "DartCore_fatal";
@@ -11,13 +16,9 @@ _fatal(msg) native "DartCore_fatal";
 // The members of this class are cloned and added to each class that
 // represents an enum type.
 class _EnumHelper {
-  // Declare the list of enum value names private. When this field is
-  // cloned into a user-defined enum class, the field will be inaccessible
-  // because of the library-specific name suffix. The toString() function
-  // below can access it because it uses the same name suffix.
-  static const List<String> _enum_names = null;
-  String toString() => _enum_names[index];
-  int get hashCode => _enum_names[index].hashCode;
+  String _name;
+  String toString() => _name;
+  int get hashCode => _name.hashCode;
 }
 
 // _SyncIterable and _syncIterator are used by the compiler to
@@ -79,6 +80,6 @@ class _SyncIterator implements Iterator {
   }
 }
 
-patch class StackTrace {
-  /* patch */ static StackTrace get current native "StackTrace_current";
+@patch class StackTrace {
+  @patch static StackTrace get current native "StackTrace_current";
 }

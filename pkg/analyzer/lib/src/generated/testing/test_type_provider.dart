@@ -15,14 +15,14 @@ import 'package:analyzer/src/generated/engine.dart' show AnalysisContext;
 import 'package:analyzer/src/generated/resolver.dart';
 import 'package:analyzer/src/generated/sdk.dart' show DartSdk;
 import 'package:analyzer/src/generated/source.dart' show Source;
-import 'package:analyzer/src/generated/testing/ast_factory.dart';
+import 'package:analyzer/src/generated/testing/ast_test_factory.dart';
 import 'package:analyzer/src/generated/testing/element_factory.dart';
 
 /**
  * A type provider that can be used by tests without creating the element model
  * for the core library.
  */
-class TestTypeProvider implements TypeProvider {
+class TestTypeProvider extends TypeProviderBase {
   /**
    * The type representing the built-in type 'bool'.
    */
@@ -149,7 +149,7 @@ class TestTypeProvider implements TypeProvider {
   InterfaceType _typeType;
 
   /**
-   * The type representing typenames that can't be resolved.
+   * The type representing type names that can't be resolved.
    */
   DartType _undefinedType;
 
@@ -172,7 +172,7 @@ class TestTypeProvider implements TypeProvider {
         ElementFactory.requiredParameter2("name", stringType),
         ElementFactory.namedParameter3("defaultValue",
             type: _boolType,
-            initializer: AstFactory.booleanLiteral(false),
+            initializer: AstTestFactory.booleanLiteral(false),
             initializerCode: 'false')
       ];
       fromEnvironment.factory = true;
@@ -205,8 +205,8 @@ class TestTypeProvider implements TypeProvider {
           .constructorElement(deprecatedElement, '', true, [stringType]);
       (constructor.parameters[0] as ParameterElementImpl).name = 'expires';
       ConstructorFieldInitializer expiresInit =
-          AstFactory.constructorFieldInitializer(
-              true, 'expires', AstFactory.identifier3('expires'));
+          AstTestFactory.constructorFieldInitializer(
+              true, 'expires', AstTestFactory.identifier3('expires'));
       expiresInit.fieldName.staticElement = expiresField;
       (expiresInit.expression as SimpleIdentifier).staticElement =
           constructor.parameters[0];
@@ -269,7 +269,7 @@ class TestTypeProvider implements TypeProvider {
       CompilationUnitElementImpl asyncUnit =
           new CompilationUnitElementImpl("async.dart");
       LibraryElementImpl asyncLibrary = new LibraryElementImpl.forNode(
-          _context, AstFactory.libraryIdentifier2(["dart.async"]));
+          _context, AstTestFactory.libraryIdentifier2(["dart.async"]));
       asyncLibrary.definingCompilationUnit = asyncUnit;
       asyncUnit.librarySource = asyncUnit.source = asyncSource;
 
@@ -386,16 +386,6 @@ class TestTypeProvider implements TypeProvider {
     }
     return _mapType;
   }
-
-  @override
-  List<InterfaceType> get nonSubtypableTypes => <InterfaceType>[
-        nullType,
-        numType,
-        intType,
-        doubleType,
-        boolType,
-        stringType
-      ];
 
   @override
   DartObjectImpl get nullObject {
@@ -526,7 +516,7 @@ class TestTypeProvider implements TypeProvider {
       ClassElementImpl typeClass = ElementFactory.classElement2("Type");
       typeClass.constructors = <ConstructorElement>[
         ElementFactory.constructorElement(typeClass, null, false)
-          ..synthetic = true
+          ..isSynthetic = true
       ];
       _typeType = typeClass.type;
     }
@@ -621,30 +611,30 @@ class TestTypeProvider implements TypeProvider {
     fromEnvironment.isCycleFree = true;
     numElement.constructors = <ConstructorElement>[
       ElementFactory.constructorElement(numElement, null, false)
-        ..synthetic = true
+        ..isSynthetic = true
     ];
     intElement.constructors = <ConstructorElement>[fromEnvironment];
     doubleElement.constructors = <ConstructorElement>[
       ElementFactory.constructorElement(doubleElement, null, false)
-        ..synthetic = true
+        ..isSynthetic = true
     ];
     ConstFieldElementImpl varINFINITY = ElementFactory.fieldElement(
         "INFINITY", true, false, true, _doubleType,
-        initializer: AstFactory.doubleLiteral(double.INFINITY));
-    varINFINITY.constantInitializer = AstFactory.binaryExpression(
-        AstFactory.integer(1), TokenType.SLASH, AstFactory.integer(0));
+        initializer: AstTestFactory.doubleLiteral(double.INFINITY));
+    varINFINITY.constantInitializer = AstTestFactory.binaryExpression(
+        AstTestFactory.integer(1), TokenType.SLASH, AstTestFactory.integer(0));
     List<FieldElement> fields = <FieldElement>[
       ElementFactory.fieldElement("NAN", true, false, true, _doubleType,
-          initializer: AstFactory.doubleLiteral(double.NAN)),
+          initializer: AstTestFactory.doubleLiteral(double.NAN)),
       varINFINITY,
       ElementFactory.fieldElement(
           "NEGATIVE_INFINITY", true, false, true, _doubleType,
-          initializer: AstFactory.doubleLiteral(double.NEGATIVE_INFINITY)),
+          initializer: AstTestFactory.doubleLiteral(double.NEGATIVE_INFINITY)),
       ElementFactory.fieldElement(
           "MIN_POSITIVE", true, false, true, _doubleType,
-          initializer: AstFactory.doubleLiteral(double.MIN_POSITIVE)),
+          initializer: AstTestFactory.doubleLiteral(double.MIN_POSITIVE)),
       ElementFactory.fieldElement("MAX_FINITE", true, false, true, _doubleType,
-          initializer: AstFactory.doubleLiteral(double.MAX_FINITE))
+          initializer: AstTestFactory.doubleLiteral(double.MAX_FINITE))
     ];
     doubleElement.fields = fields;
     int fieldCount = fields.length;
@@ -683,10 +673,6 @@ class TestTypeProvider implements TypeProvider {
     }
     for (MethodElement method in classElement.methods) {
       (method as ExecutableElementImpl).type = new FunctionTypeImpl(method);
-    }
-    for (ConstructorElement constructor in classElement.constructors) {
-      (constructor as ExecutableElementImpl).type =
-          new FunctionTypeImpl(constructor);
     }
   }
 

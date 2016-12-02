@@ -6,13 +6,15 @@ library analysis.server;
 
 import 'dart:async';
 import 'dart:collection';
-import 'dart:core' hide Resource;
+import 'dart:core';
+import 'dart:io' as io;
 import 'dart:math' show max;
 
 import 'package:analysis_server/plugin/protocol/protocol.dart'
     hide AnalysisOptions, Element;
 import 'package:analysis_server/src/analysis_logger.dart';
 import 'package:analysis_server/src/channel/channel.dart';
+import 'package:analysis_server/src/computer/new_notifications.dart';
 import 'package:analysis_server/src/context_manager.dart';
 import 'package:analysis_server/src/operation/operation.dart';
 import 'package:analysis_server/src/operation/operation_analysis.dart';
@@ -22,23 +24,29 @@ import 'package:analysis_server/src/services/correction/namespace.dart';
 import 'package:analysis_server/src/services/index/index.dart';
 import 'package:analysis_server/src/services/search/search_engine.dart';
 import 'package:analysis_server/src/services/search/search_engine_internal.dart';
+import 'package:analysis_server/src/services/search/search_engine_internal2.dart';
 import 'package:analysis_server/src/single_context_manager.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/exception/exception.dart';
 import 'package:analyzer/file_system/file_system.dart';
+import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:analyzer/instrumentation/instrumentation.dart';
-import 'package:analyzer/plugin/embedded_resolver_provider.dart';
 import 'package:analyzer/plugin/resolver_provider.dart';
-import 'package:analyzer/source/embedder.dart';
 import 'package:analyzer/source/pub_package_map_provider.dart';
+import 'package:analyzer/src/context/builder.dart';
+import 'package:analyzer/src/dart/analysis/byte_store.dart';
+import 'package:analyzer/src/dart/analysis/driver.dart' as nd;
+import 'package:analyzer/src/dart/analysis/file_byte_store.dart';
+import 'package:analyzer/src/dart/analysis/file_state.dart' as nd;
+import 'package:analyzer/src/dart/analysis/status.dart' as nd;
 import 'package:analyzer/src/dart/ast/utilities.dart';
 import 'package:analyzer/src/generated/engine.dart';
-import 'package:analyzer/src/generated/java_engine.dart';
-import 'package:analyzer/src/generated/java_io.dart';
 import 'package:analyzer/src/generated/sdk.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart';
 import 'package:analyzer/src/generated/utilities_general.dart';
+import 'package:analyzer/src/summary/pub_summary.dart';
 import 'package:analyzer/src/task/dart.dart';
 import 'package:analyzer/src/util/glob.dart';
 import 'package:analyzer/task/dart.dart';
@@ -79,7 +87,7 @@ class AnalysisServer {
    * The version of the analysis server. The value should be replaced
    * automatically during the build.
    */
-  static final String VERSION = '1.15.0';
+  static final String VERSION = '1.17.0';
 
   /**
    * The number of milliseconds to perform operations before inserting
@@ -112,7 +120,7 @@ class AnalysisServer {
   /**
    * The [SearchEngine] for this server, may be `null` if indexing is disabled.
    */
-  final SearchEngine searchEngine;
+  SearchEngine searchEngine;
 
   /**
    * The plugin associated with this analysis server.
@@ -149,11 +157,6 @@ class AnalysisServer {
    * server.
    */
   List<RequestHandler> handlers;
-
-  /**
-   * The function used to create a new SDK using the default SDK.
-   */
-  final SdkCreator defaultSdkCreator;
 
   /**
    * The object used to manage the SDK's known to this server.
@@ -264,6 +267,11 @@ class AnalysisServer {
       new DateTime.now().millisecondsSinceEpoch + 1000;
 
   /**
+   * The content overlay for all analysis drivers.
+   */
+  final nd.FileContentOverlay fileContentOverlay = new nd.FileContentOverlay();
+
+  /**
    * The current state of overlays from the client.  This is used as the
    * content cache for all contexts.
    */
@@ -296,6 +304,37 @@ class AnalysisServer {
       new StreamController<ContextsChangedEvent>.broadcast();
 
   /**
+   * The file resolver provider used to override the way file URI's are
+   * resolved in some contexts.
+   */
+  ResolverProvider fileResolverProvider;
+
+  /**
+   * The package resolver provider used to override the way package URI's are
+   * resolved in some contexts.
+   */
+  ResolverProvider packageResolverProvider;
+
+  /**
+   * The manager of pub package summaries.
+   */
+  PubSummaryManager pubSummaryManager;
+
+  nd.PerformanceLog _analysisPerformanceLogger;
+  ByteStore byteStore;
+  nd.AnalysisDriverScheduler analysisDriverScheduler;
+
+  /**
+   * The set of the files that are currently priority.
+   */
+  final Set<String> priorityFiles = new Set<String>();
+
+  /**
+   * The cached results units for [priorityFiles].
+   */
+  final Map<String, nd.AnalysisResult> priorityFileResults = {};
+
+  /**
    * Initialize a newly created server to receive requests from and send
    * responses to the given [channel].
    *
@@ -308,26 +347,53 @@ class AnalysisServer {
       this.channel,
       this.resourceProvider,
       PubPackageMapProvider packageMapProvider,
-      Index _index,
+      this.index,
       this.serverPlugin,
       this.options,
-      this.defaultSdkCreator,
+      this.sdkManager,
       this.instrumentationService,
-      {EmbeddedResolverProvider embeddedResolverProvider: null,
+      {ResolverProvider fileResolverProvider: null,
       ResolverProvider packageResolverProvider: null,
       bool useSingleContextManager: false,
-      this.rethrowExceptions: true})
-      : index = _index,
-        searchEngine = _index != null ? new SearchEngineImpl(_index) : null {
+      this.rethrowExceptions: true}) {
     _performance = performanceDuringStartup;
     defaultContextOptions.incremental = true;
     defaultContextOptions.incrementalApi =
         options.enableIncrementalResolutionApi;
     defaultContextOptions.incrementalValidation =
         options.enableIncrementalResolutionValidation;
+    defaultContextOptions.finerGrainedInvalidation =
+        options.finerGrainedInvalidation;
     defaultContextOptions.generateImplicitErrors = false;
     operationQueue = new ServerOperationQueue();
-    sdkManager = new DartSdkManager(defaultSdkCreator);
+
+    {
+      String name = options.newAnalysisDriverLog;
+      StringSink sink = new _NullStringSink();
+      if (name != null) {
+        if (name == 'stdout') {
+          sink = io.stdout;
+        } else if (name.startsWith('file:')) {
+          String path = name.substring('file:'.length);
+          sink = new io.File(path).openWrite(mode: io.FileMode.APPEND);
+        }
+      }
+      _analysisPerformanceLogger = new nd.PerformanceLog(sink);
+    }
+    if (resourceProvider is PhysicalResourceProvider) {
+      byteStore = new MemoryCachingByteStore(
+          new FileByteStore(
+              resourceProvider.getStateLocation('.analysis-driver').path,
+              1024 * 1024 * 1024 /*1 GiB*/),
+          64 * 1024 * 1024 /*64 MiB*/);
+    } else {
+      byteStore = new MemoryByteStore();
+    }
+    analysisDriverScheduler =
+        new nd.AnalysisDriverScheduler(_analysisPerformanceLogger);
+    analysisDriverScheduler.status.listen(sendStatusNotificationNew);
+    analysisDriverScheduler.start();
+
     if (useSingleContextManager) {
       contextManager = new SingleContextManager(resourceProvider, sdkManager,
           packageResolverProvider, analyzedFilesGlobs, defaultContextOptions);
@@ -336,12 +402,14 @@ class AnalysisServer {
           resourceProvider,
           sdkManager,
           packageResolverProvider,
-          embeddedResolverProvider,
           packageMapProvider,
           analyzedFilesGlobs,
           instrumentationService,
-          defaultContextOptions);
+          defaultContextOptions,
+          options.enableNewAnalysisDriver);
     }
+    this.fileResolverProvider = fileResolverProvider;
+    this.packageResolverProvider = packageResolverProvider;
     ServerContextManagerCallbacks contextManagerCallbacks =
         new ServerContextManagerCallbacks(this, resourceProvider);
     contextManager.callbacks = contextManagerCallbacks;
@@ -359,8 +427,16 @@ class AnalysisServer {
       });
     });
     _setupIndexInvalidation();
-    Notification notification =
-        new ServerConnectedParams(VERSION).toNotification();
+    if (options.enableNewAnalysisDriver) {
+      searchEngine = new SearchEngineImpl2(driverMap.values);
+    } else if (index != null) {
+      searchEngine = new SearchEngineImpl(index);
+    }
+    pubSummaryManager =
+        new PubSummaryManager(resourceProvider, '${io.pid}.temp');
+    Notification notification = new ServerConnectedParams(VERSION, io.pid,
+            sessionId: instrumentationService.sessionId)
+        .toNotification();
     channel.sendNotification(notification);
     channel.listen(handleRequest, onDone: done, onError: error);
     handlers = serverPlugin.createDomains(this);
@@ -383,7 +459,7 @@ class AnalysisServer {
       for (String pattern in patterns) {
         try {
           _analyzedFilesGlobs
-              .add(new Glob(JavaFile.pathContext.separator, pattern));
+              .add(new Glob(resourceProvider.pathContext.separator, pattern));
         } catch (exception, stackTrace) {
           AnalysisEngine.instance.logger.logError(
               'Invalid glob pattern: "$pattern"',
@@ -393,6 +469,11 @@ class AnalysisServer {
     }
     return _analyzedFilesGlobs;
   }
+
+  /**
+   * A table mapping [Folder]s to the [AnalysisDriver]s associated with them.
+   */
+  Map<Folder, nd.AnalysisDriver> get driverMap => contextManager.driverMap;
 
   /**
    * Return a table mapping [Folder]s to the [AnalysisContext]s associated with
@@ -459,7 +540,7 @@ class AnalysisServer {
    * The socket from which requests are being read has been closed.
    */
   void done() {
-    index.stop();
+    index?.stop();
     running = false;
   }
 
@@ -518,6 +599,40 @@ class AnalysisServer {
       }
     }
     return null;
+  }
+
+  /**
+   * Return an analysis driver to which the file with the given [path] is
+   * added if one exists, otherwise a driver in which the file was analyzed if
+   * one exists, otherwise the first driver, otherwise `null`.
+   */
+  nd.AnalysisDriver getAnalysisDriver(String path) {
+    Iterable<nd.AnalysisDriver> drivers = driverMap.values;
+    if (drivers.isNotEmpty) {
+      nd.AnalysisDriver driver = drivers.firstWhere(
+          (driver) => driver.addedFiles.contains(path),
+          orElse: () => null);
+      driver ??= drivers.firstWhere(
+          (driver) => driver.knownFiles.contains(path),
+          orElse: () => null);
+      driver ??= drivers.first;
+      return driver;
+    }
+    return null;
+  }
+
+  /**
+   * Return the analysis result for the file with the given [path]. The file is
+   * analyzed in one of the analysis drivers to which the file was added,
+   * otherwise in the first driver, otherwise `null` is returned.
+   */
+  Future<nd.AnalysisResult> getAnalysisResult(String path) async {
+    nd.AnalysisResult result = priorityFileResults[path];
+    if (result != null) {
+      return result;
+    }
+    nd.AnalysisDriver driver = getAnalysisDriver(path);
+    return driver?.getResult(path);
   }
 
   CompilationUnitElement getCompilationUnitElement(String file) {
@@ -616,41 +731,37 @@ class AnalysisServer {
   }
 
   /**
-   * Returns [Element]s at the given [offset] of the given [file].
-   *
-   * May be empty if cannot be resolved, but not `null`.
+   * Return a [Future] that completes with the [Element] at the given
+   * [offset] of the given [file], or with `null` if there is no node at the
+   * [offset] or the node does not have an element.
    */
-  List<Element> getElementsAtOffset(String file, int offset) {
-    List<AstNode> nodes = getNodesAtOffset(file, offset);
-    return getElementsOfNodes(nodes);
+  Future<Element> getElementAtOffset(String file, int offset) async {
+    AstNode node = await getNodeAtOffset(file, offset);
+    return getElementOfNode(node);
   }
 
   /**
-   * Returns [Element]s of the given [nodes].
-   *
-   * May be empty if not resolved, but not `null`.
+   * Return the [Element] of the given [node], or `null` if [node] is `null` or
+   * does not have an element.
    */
-  List<Element> getElementsOfNodes(List<AstNode> nodes) {
-    List<Element> elements = <Element>[];
-    for (AstNode node in nodes) {
-      if (node is SimpleIdentifier && node.parent is LibraryIdentifier) {
-        node = node.parent;
-      }
-      if (node is LibraryIdentifier) {
-        node = node.parent;
-      }
-      if (node is StringLiteral && node.parent is UriBasedDirective) {
-        continue;
-      }
-      Element element = ElementLocator.locate(node);
-      if (node is SimpleIdentifier && element is PrefixElement) {
-        element = getImportElement(node);
-      }
-      if (element != null) {
-        elements.add(element);
-      }
+  Element getElementOfNode(AstNode node) {
+    if (node == null) {
+      return null;
     }
-    return elements;
+    if (node is SimpleIdentifier && node.parent is LibraryIdentifier) {
+      node = node.parent;
+    }
+    if (node is LibraryIdentifier) {
+      node = node.parent;
+    }
+    if (node is StringLiteral && node.parent is UriBasedDirective) {
+      return null;
+    }
+    Element element = ElementLocator.locate(node);
+    if (node is SimpleIdentifier && element is PrefixElement) {
+      element = getImportElement(node);
+    }
+    return element;
   }
 
   /**
@@ -680,20 +791,47 @@ class AnalysisServer {
   }
 
   /**
-   * Returns resolved [AstNode]s at the given [offset] of the given [file].
-   *
-   * May be empty, but not `null`.
+   * Return a [Future] that completes with the resolved [AstNode] at the
+   * given [offset] of the given [file], or with `null` if there is no node as
+   * the [offset].
    */
-  List<AstNode> getNodesAtOffset(String file, int offset) {
-    List<CompilationUnit> units = getResolvedCompilationUnits(file);
-    List<AstNode> nodes = <AstNode>[];
-    for (CompilationUnit unit in units) {
-      AstNode node = new NodeLocator(offset).searchWithin(unit);
-      if (node != null) {
-        nodes.add(node);
-      }
+  Future<AstNode> getNodeAtOffset(String file, int offset) async {
+    CompilationUnit unit;
+    if (options.enableNewAnalysisDriver) {
+      nd.AnalysisResult result = await getAnalysisResult(file);
+      unit = result?.unit;
+    } else {
+      unit = await getResolvedCompilationUnit(file);
     }
-    return nodes;
+    if (unit != null) {
+      return new NodeLocator(offset).searchWithin(unit);
+    }
+    return null;
+  }
+
+  /**
+   * Return a [Future] that completes with the resolved [CompilationUnit] for
+   * the Dart file with the given [path], or with `null` if the file is not a
+   * Dart file or cannot be resolved.
+   */
+  Future<CompilationUnit> getResolvedCompilationUnit(String path) async {
+    if (options.enableNewAnalysisDriver) {
+      nd.AnalysisResult result = await getAnalysisResult(path);
+      return result?.unit;
+    }
+    ContextSourcePair contextSource = getContextSourcePair(path);
+    AnalysisContext context = contextSource.context;
+    if (context == null) {
+      return null;
+    }
+    return runWithActiveContext(context, () {
+      Source unitSource = contextSource.source;
+      List<Source> librarySources = context.getLibrariesContaining(unitSource);
+      for (Source librarySource in librarySources) {
+        return context.resolveCompilationUnit2(unitSource, librarySource);
+      }
+      return null;
+    });
   }
 
 // TODO(brianwilkerson) Add the following method after 'prioritySources' has
@@ -712,35 +850,6 @@ class AnalysisServer {
 //    });
 //    return priorityFiles;
 //  }
-
-  /**
-   * Returns resolved [CompilationUnit]s of the Dart file with the given [path].
-   *
-   * May be empty, but not `null`.
-   */
-  List<CompilationUnit> getResolvedCompilationUnits(String path) {
-    List<CompilationUnit> units = <CompilationUnit>[];
-    ContextSourcePair contextSource = getContextSourcePair(path);
-    // prepare AnalysisContext
-    AnalysisContext context = contextSource.context;
-    if (context == null) {
-      return units;
-    }
-    // add a unit for each unit/library combination
-    runWithWorkingCacheSize(context, () {
-      Source unitSource = contextSource.source;
-      List<Source> librarySources = context.getLibrariesContaining(unitSource);
-      for (Source librarySource in librarySources) {
-        CompilationUnit unit =
-            context.resolveCompilationUnit2(unitSource, librarySource);
-        if (unit != null) {
-          units.add(unit);
-        }
-      }
-    });
-    // done
-    return units;
-  }
 
   /**
    * Handle a [request] that was read from the communication channel.
@@ -926,6 +1035,32 @@ class AnalysisServer {
   }
 
   /**
+   * Schedule cache consistency validation in [context].
+   * The most of the validation must be done asynchronously.
+   */
+  void scheduleCacheConsistencyValidation(AnalysisContext context) {
+    if (context is InternalAnalysisContext) {
+      CacheConsistencyValidator validator = context.cacheConsistencyValidator;
+      List<Source> sources = validator.getSourcesToComputeModificationTimes();
+      // Compute modification times and notify the validator asynchronously.
+      new Future(() async {
+        try {
+          List<int> modificationTimes =
+              await resourceProvider.getModificationTimes(sources);
+          bool cacheInconsistencyFixed = validator
+              .sourceModificationTimesComputed(sources, modificationTimes);
+          if (cacheInconsistencyFixed) {
+            scheduleOperation(new PerformAnalysisOperation(context, false));
+          }
+        } catch (exception, stackTrace) {
+          sendServerErrorNotification(
+              'Failed to check cache consistency', exception, stackTrace);
+        }
+      });
+    }
+  }
+
+  /**
    * Schedules execution of the given [ServerOperation].
    */
   void scheduleOperation(ServerOperation operation) {
@@ -1017,6 +1152,25 @@ class AnalysisServer {
   }
 
   /**
+   * Send status notification to the client. The `operation` is the operation
+   * being performed or `null` if analysis is complete.
+   */
+  void sendStatusNotificationNew(nd.AnalysisStatus status) {
+    // Only send status when subscribed.
+    if (!serverServices.contains(ServerService.STATUS)) {
+      return;
+    }
+    // Only send status when it changes
+    if (statusAnalyzing == status.isAnalyzing) {
+      return;
+    }
+    statusAnalyzing = status.isAnalyzing;
+    AnalysisStatus analysis = new AnalysisStatus(status.isAnalyzing);
+    channel.sendNotification(
+        new ServerStatusParams(analysis: analysis).toNotification());
+  }
+
+  /**
    * Implementation for `analysis.setAnalysisRoots`.
    *
    * TODO(scheglov) implement complete projects/contexts semantics.
@@ -1043,6 +1197,24 @@ class AnalysisServer {
    */
   void setAnalysisSubscriptions(
       Map<AnalysisService, Set<String>> subscriptions) {
+    if (options.enableNewAnalysisDriver) {
+      this.analysisServices = subscriptions;
+      Iterable<nd.AnalysisDriver> drivers = driverMap.values;
+      if (drivers.isNotEmpty) {
+        Set<String> allNewFiles =
+            subscriptions.values.expand((files) => files).toSet();
+        for (String file in allNewFiles) {
+          nd.AnalysisDriver driver = drivers.firstWhere(
+              (driver) => driver.addedFiles.contains(file),
+              orElse: () => drivers.first);
+          // The result will be produced by the "results" stream with
+          // the fully resolved unit, and processed with sending analysis
+          // notifications as it happens after content changes.
+          driver.getResult(file);
+        }
+      }
+      return;
+    }
     // send notifications for already analyzed sources
     subscriptions.forEach((service, Set<String> newFiles) {
       Set<String> oldFiles = analysisServices[service];
@@ -1132,6 +1304,19 @@ class AnalysisServer {
    * Set the priority files to the given [files].
    */
   void setPriorityFiles(String requestId, List<String> files) {
+    if (options.enableNewAnalysisDriver) {
+      // Flush results for files that are not priority anymore.
+      priorityFiles
+          .difference(files.toSet())
+          .forEach(priorityFileResults.remove);
+      priorityFiles.clear();
+      priorityFiles.addAll(files);
+      // Set priority files in drivers.
+      driverMap.values.forEach((driver) {
+        driver.priorityFiles = files;
+      });
+      return;
+    }
     // Note: when a file is a priority file, that information needs to be
     // propagated to all contexts that analyze the file, so that all contexts
     // will be able to do incremental resolution of the file.  See
@@ -1251,6 +1436,46 @@ class AnalysisServer {
    * Implementation for `analysis.updateContent`.
    */
   void updateContent(String id, Map<String, dynamic> changes) {
+    if (options.enableNewAnalysisDriver) {
+      changes.forEach((file, change) {
+        priorityFileResults.remove(file);
+
+        // Prepare the new contents.
+        String oldContents = fileContentOverlay[file];
+        String newContents;
+        if (change is AddContentOverlay) {
+          newContents = change.content;
+        } else if (change is ChangeContentOverlay) {
+          if (oldContents == null) {
+            // The client may only send a ChangeContentOverlay if there is
+            // already an existing overlay for the source.
+            throw new RequestFailure(new Response(id,
+                error: new RequestError(RequestErrorCode.INVALID_OVERLAY_CHANGE,
+                    'Invalid overlay change')));
+          }
+          try {
+            newContents = SourceEdit.applySequence(oldContents, change.edits);
+          } on RangeError {
+            throw new RequestFailure(new Response(id,
+                error: new RequestError(RequestErrorCode.INVALID_OVERLAY_CHANGE,
+                    'Invalid overlay change')));
+          }
+        } else if (change is RemoveContentOverlay) {
+          newContents = null;
+        } else {
+          // Protocol parsing should have ensured that we never get here.
+          throw new AnalysisException('Illegal change type');
+        }
+
+        fileContentOverlay[file] = newContents;
+
+        driverMap.values.forEach((driver) {
+          driver.changeFile(file);
+        });
+        // TODO(scheglov) implement other cases
+      });
+      return;
+    }
     changes.forEach((file, change) {
       ContextSourcePair contextSource = getContextSourcePair(file);
       Source source = contextSource.source;
@@ -1363,6 +1588,10 @@ class AnalysisServer {
    * existing analysis context.
    */
   void updateOptions(List<OptionUpdater> optionUpdaters) {
+    if (options.enableNewAnalysisDriver) {
+      // TODO(scheglov) implement for the new analysis driver
+      return;
+    }
     //
     // Update existing contexts.
     //
@@ -1424,9 +1653,13 @@ class AnalysisServer {
       return null;
     }
     // if library has been already resolved, resolve unit
-    return runWithWorkingCacheSize(context, () {
+    return runWithActiveContext(context, () {
       return context.resolveCompilationUnit2(source, librarySource);
     });
+  }
+
+  bool _hasAnalysisServiceSubscription(AnalysisService service, String file) {
+    return analysisServices[service]?.contains(file) ?? false;
   }
 
   _scheduleAnalysisImplementedNotification() async {
@@ -1506,10 +1739,14 @@ class AnalysisServer {
 class AnalysisServerOptions {
   bool enableIncrementalResolutionApi = false;
   bool enableIncrementalResolutionValidation = false;
+  bool enableNewAnalysisDriver = false;
+  bool enablePubSummaryManager = false;
+  bool finerGrainedInvalidation = false;
   bool noErrorNotification = false;
   bool noIndex = false;
   bool useAnalysisHighlight2 = false;
   String fileReadMode = 'as-is';
+  String newAnalysisDriverLog;
 }
 
 /**
@@ -1553,41 +1790,144 @@ class ServerContextManagerCallbacks extends ContextManagerCallbacks {
   ServerContextManagerCallbacks(this.analysisServer, this.resourceProvider);
 
   @override
-  AnalysisContext addContext(
-      Folder folder, AnalysisOptions options, FolderDisposition disposition) {
-    InternalAnalysisContext context =
-        AnalysisEngine.instance.createAnalysisContext();
-    context.contentCache = analysisServer.overlayState;
+  nd.AnalysisDriver addAnalysisDriver(Folder folder, AnalysisOptions options) {
+    SourceFactory sourceFactory;
+    AnalysisOptions analysisOptions;
+    {
+      ContextBuilder builder = createContextBuilder(folder, options);
+      AnalysisContext context = builder.buildContext(folder.path);
+      sourceFactory = context.sourceFactory;
+      analysisOptions = context.analysisOptions;
+      context.dispose();
+    }
+    nd.AnalysisDriver analysisDriver = new nd.AnalysisDriver(
+        analysisServer.analysisDriverScheduler,
+        analysisServer._analysisPerformanceLogger,
+        resourceProvider,
+        analysisServer.byteStore,
+        analysisServer.fileContentOverlay,
+        sourceFactory,
+        analysisOptions);
+    analysisDriver.name = folder.shortName;
+    analysisDriver.status.listen((status) {
+      // TODO(scheglov) send server status
+    });
+    analysisDriver.results.listen((result) {
+      if (analysisServer.priorityFiles.contains(result.path)) {
+        analysisServer.priorityFileResults[result.path] = result;
+      }
+      _runDelayed(() {
+        new_sendErrorNotification(analysisServer, result);
+      });
+      String path = result.path;
+      CompilationUnit unit = result.unit;
+      if (unit != null) {
+        if (analysisServer._hasAnalysisServiceSubscription(
+            AnalysisService.HIGHLIGHTS, path)) {
+          _runDelayed(() {
+            sendAnalysisNotificationHighlights(analysisServer, path, unit);
+          });
+        }
+        if (analysisServer._hasAnalysisServiceSubscription(
+            AnalysisService.NAVIGATION, path)) {
+          _runDelayed(() {
+            new_sendDartNotificationNavigation(analysisServer, result);
+          });
+        }
+        if (analysisServer._hasAnalysisServiceSubscription(
+            AnalysisService.OVERRIDES, path)) {
+          _runDelayed(() {
+            sendAnalysisNotificationOverrides(analysisServer, path, unit);
+          });
+        }
+      }
+      // TODO(scheglov) Implement more notifications.
+      // IMPLEMENTED
+      // OCCURRENCES (not used in IDEA)
+      // OUTLINE (not used in IDEA)
+    });
+    analysisServer.driverMap[folder] = analysisDriver;
+    return analysisDriver;
+  }
+
+  @override
+  AnalysisContext addContext(Folder folder, AnalysisOptions options) {
+    ContextBuilder builder = createContextBuilder(folder, options);
+    AnalysisContext context = builder.buildContext(folder.path);
+
     analysisServer.folderMap[folder] = context;
-    _locateEmbedderYamls(context, disposition);
-    context.sourceFactory =
-        _createSourceFactory(context, options, disposition, folder);
-    context.analysisOptions = options;
     analysisServer._onContextsChangedController
         .add(new ContextsChangedEvent(added: [context]));
     analysisServer.schedulePerformAnalysisOperation(context);
+
     return context;
   }
 
   @override
   void applyChangesToContext(Folder contextFolder, ChangeSet changeSet) {
-    AnalysisContext context = analysisServer.folderMap[contextFolder];
-    if (context != null) {
-      ApplyChangesStatus changesStatus = context.applyChanges(changeSet);
-      if (changesStatus.hasChanges) {
+    if (analysisServer.options.enableNewAnalysisDriver) {
+      nd.AnalysisDriver analysisDriver =
+          analysisServer.driverMap[contextFolder];
+      if (analysisDriver != null) {
+        changeSet.addedSources.forEach((source) {
+          analysisDriver.addFile(source.fullName);
+        });
+        changeSet.changedSources.forEach((source) {
+          analysisDriver.changeFile(source.fullName);
+        });
+        changeSet.removedSources.forEach((source) {
+          analysisDriver.removeFile(source.fullName);
+        });
+      }
+    } else {
+      AnalysisContext context = analysisServer.folderMap[contextFolder];
+      if (context != null) {
+        context.applyChanges(changeSet);
         analysisServer.schedulePerformAnalysisOperation(context);
+        List<String> flushedFiles = new List<String>();
+        for (Source source in changeSet.removedSources) {
+          flushedFiles.add(source.fullName);
+        }
+        sendAnalysisNotificationFlushResults(analysisServer, flushedFiles);
       }
-      List<String> flushedFiles = new List<String>();
-      for (Source source in changeSet.removedSources) {
-        flushedFiles.add(source.fullName);
-      }
-      sendAnalysisNotificationFlushResults(analysisServer, flushedFiles);
     }
   }
 
   @override
   void computingPackageMap(bool computing) =>
       analysisServer._computingPackageMap(computing);
+
+  @override
+  ContextBuilder createContextBuilder(Folder folder, AnalysisOptions options) {
+    String defaultPackageFilePath = null;
+    String defaultPackagesDirectoryPath = null;
+    String path = (analysisServer.contextManager as ContextManagerImpl)
+        .normalizedPackageRoots[folder.path];
+    if (path != null) {
+      Resource resource = resourceProvider.getResource(path);
+      if (resource.exists) {
+        if (resource is File) {
+          defaultPackageFilePath = path;
+        } else {
+          defaultPackagesDirectoryPath = path;
+        }
+      }
+    }
+
+    ContextBuilderOptions builderOptions = new ContextBuilderOptions();
+    builderOptions.defaultOptions = options;
+    builderOptions.defaultPackageFilePath = defaultPackageFilePath;
+    builderOptions.defaultPackagesDirectoryPath = defaultPackagesDirectoryPath;
+    if (analysisServer.options.enablePubSummaryManager) {
+      builderOptions.pubSummaryManager = analysisServer.pubSummaryManager;
+    }
+    ContextBuilder builder = new ContextBuilder(resourceProvider,
+        analysisServer.sdkManager, analysisServer.overlayState,
+        options: builderOptions);
+    builder.fileResolverProvider = analysisServer.fileResolverProvider;
+    builder.packageResolverProvider = analysisServer.packageResolverProvider;
+    return builder;
+  }
 
   @override
   void moveContext(Folder from, Folder to) {
@@ -1598,15 +1938,21 @@ class ServerContextManagerCallbacks extends ContextManagerCallbacks {
 
   @override
   void removeContext(Folder folder, List<String> flushedFiles) {
-    AnalysisContext context = analysisServer.folderMap.remove(folder);
-    sendAnalysisNotificationFlushResults(analysisServer, flushedFiles);
+    if (analysisServer.options.enableNewAnalysisDriver) {
+      sendAnalysisNotificationFlushResults(analysisServer, flushedFiles);
+      nd.AnalysisDriver driver = analysisServer.driverMap.remove(folder);
+      driver.dispose();
+    } else {
+      AnalysisContext context = analysisServer.folderMap.remove(folder);
+      sendAnalysisNotificationFlushResults(analysisServer, flushedFiles);
 
-    analysisServer.operationQueue.contextRemoved(context);
-    analysisServer._onContextsChangedController
-        .add(new ContextsChangedEvent(removed: [context]));
-    analysisServer.sendContextAnalysisDoneNotifications(
-        context, AnalysisDoneReason.CONTEXT_REMOVED);
-    context.dispose();
+      analysisServer.operationQueue.contextRemoved(context);
+      analysisServer._onContextsChangedController
+          .add(new ContextsChangedEvent(removed: [context]));
+      analysisServer.sendContextAnalysisDoneNotifications(
+          context, AnalysisDoneReason.CONTEXT_REMOVED);
+      context.dispose();
+    }
   }
 
   @override
@@ -1617,57 +1963,22 @@ class ServerContextManagerCallbacks extends ContextManagerCallbacks {
   }
 
   /**
-   * Set up a [SourceFactory] that resolves packages as appropriate for the
-   * given [disposition].
+   * Run [f] in a new [Future].
+   *
+   * This method is used to delay sending notifications. If there is a more
+   * important consumer of an analysis results, specifically a code completion
+   * computer, we want it to run before spending time of sending notifications.
+   *
+   * TODO(scheglov) Consider replacing this with full priority based scheduler.
+   *
+   * TODO(scheglov) Alternatively, if code completion work in a way that does
+   * not produce (at first) fully resolved unit, but only part of it - a single
+   * method, or a top-level declaration, we would not have this problem - the
+   * completion computer would be the only consumer of the partial analysis
+   * result.
    */
-  SourceFactory _createSourceFactory(InternalAnalysisContext context,
-      AnalysisOptions options, FolderDisposition disposition, Folder folder) {
-    List<UriResolver> resolvers = [];
-    List<UriResolver> packageUriResolvers =
-        disposition.createPackageUriResolvers(resourceProvider);
-
-    EmbedderUriResolver embedderUriResolver;
-
-    // First check for a resolver provider.
-    ContextManager contextManager = analysisServer.contextManager;
-    if (contextManager is ContextManagerImpl) {
-      EmbeddedResolverProvider resolverProvider =
-          contextManager.embeddedUriResolverProvider;
-      if (resolverProvider != null) {
-        embedderUriResolver = resolverProvider(folder);
-      }
-    }
-
-    // If no embedded URI resolver was provided, defer to a locator-backed one.
-    embedderUriResolver ??= new EmbedderUriResolver(
-        context.embedderYamlLocator.embedderYamls);
-    if (embedderUriResolver.length == 0) {
-      // The embedder uri resolver has no mappings. Use the default Dart SDK
-      // uri resolver.
-      resolvers.add(new DartUriResolver(
-          analysisServer.sdkManager.getSdkForOptions(options)));
-    } else {
-      // The embedder uri resolver has mappings, use it instead of the default
-      // Dart SDK uri resolver.
-      resolvers.add(embedderUriResolver);
-    }
-
-    resolvers.addAll(packageUriResolvers);
-    resolvers.add(new ResourceUriResolver(resourceProvider));
-    return new SourceFactory(resolvers, disposition.packages);
-  }
-
-  /// If [disposition] has a package map, attempt to locate `_embedder.yaml`
-  /// files.
-  void _locateEmbedderYamls(
-      InternalAnalysisContext context, FolderDisposition disposition) {
-    Map<String, List<Folder>> packageMap;
-    if (disposition is PackageMapDisposition) {
-      packageMap = disposition.packageMap;
-    } else if (disposition is PackagesFileDisposition) {
-      packageMap = disposition.buildPackageMap(resourceProvider);
-    }
-    context.embedderYamlLocator.refresh(packageMap);
+  void _runDelayed(f()) {
+    new Future(f);
   }
 }
 
@@ -1771,4 +2082,11 @@ class ServerPerformanceStatistics {
    * The [PerformanceTag] for time spent in split store microtasks.
    */
   static PerformanceTag splitStore = new PerformanceTag('splitStore');
+}
+
+class _NullStringSink implements StringSink {
+  void write(Object obj) {}
+  void writeAll(Iterable objects, [String separator = ""]) {}
+  void writeCharCode(int charCode) {}
+  void writeln([Object obj = ""]) {}
 }

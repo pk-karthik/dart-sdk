@@ -92,6 +92,7 @@ abstract class PartialFunctionMixin implements BaseFunctionElementX {
         p.parseFunction(beginToken, getOrSet);
       }
     }
+
     cachedNode = parse(parsing, this, declarationSite, parseFunction);
     return cachedNode;
   }
@@ -373,7 +374,7 @@ class PartialClassElement extends ClassElementX with PartialElement {
       parsing.measure(() {
         MemberListener listener = new MemberListener(
             parsing.getScannerOptionsFor(this), reporter, this);
-        Parser parser = new ClassElementParser(listener, parsing.parserOptions);
+        Parser parser = new ClassElementParser(listener);
         try {
           Token token = parser.parseTopLevelDeclaration(beginToken);
           assert(identical(token, endToken.next));
@@ -439,7 +440,7 @@ Node parse(ParsingContext parsing, ElementX element, PartialElement partial,
         if (partial.hasParseError) {
           listener.suppressParseErrors = true;
         }
-        doParse(new Parser(listener, parsing.parserOptions));
+        doParse(new Parser(listener));
       } on ParserError catch (e) {
         partial.hasParseError = true;
         return new ErrorNode(element.position, e.reason);

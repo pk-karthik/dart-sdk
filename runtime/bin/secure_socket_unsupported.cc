@@ -11,6 +11,9 @@
 namespace dart {
 namespace bin {
 
+const char* commandline_root_certs_file = NULL;
+const char* commandline_root_certs_cache = NULL;
+
 void FUNCTION_NAME(SecureSocket_Init)(Dart_NativeArguments args) {
   Dart_ThrowException(DartUtils::NewDartArgumentError(
       "Secure Sockets unsupported on this platform"));
@@ -68,15 +71,13 @@ void FUNCTION_NAME(SecureSocket_ProcessBuffer)(Dart_NativeArguments args) {
 }
 
 
-void FUNCTION_NAME(SecureSocket_InitializeLibrary)
-    (Dart_NativeArguments args) {
+void FUNCTION_NAME(SecureSocket_InitializeLibrary)(Dart_NativeArguments args) {
   Dart_ThrowException(DartUtils::NewDartArgumentError(
       "Secure Sockets unsupported on this platform"));
 }
 
 
-void FUNCTION_NAME(SecureSocket_PeerCertificate)
-    (Dart_NativeArguments args) {
+void FUNCTION_NAME(SecureSocket_PeerCertificate)(Dart_NativeArguments args) {
   Dart_ThrowException(DartUtils::NewDartArgumentError(
       "Secure Sockets unsupported on this platform"));
 }

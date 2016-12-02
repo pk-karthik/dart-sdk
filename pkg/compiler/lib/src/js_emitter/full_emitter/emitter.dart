@@ -614,9 +614,9 @@ class Emitter implements js_emitter.Emitter {
     // If the outputUnit does not contain any static non-final fields, then
     // [fields] is `null`.
     if (fields != null) {
-      for (Element element in fields) {
+      for (FieldElement element in fields) {
         reporter.withCurrentElement(element, () {
-          ConstantValue constant = handler.getInitialValueFor(element);
+          ConstantValue constant = handler.getConstantValue(element.constant);
           parts.add(buildInitialization(element, constantReference(constant)));
         });
       }
@@ -1067,9 +1067,28 @@ class Emitter implements js_emitter.Emitter {
           var cls = function () {};
           cls.prototype = {'p': {}};
           var object = new cls();
-          return object.__proto__ &&
-                 object.__proto__.p === cls.prototype.p;
-         })();
+          if (!(object.__proto__ && object.__proto__.p === cls.prototype.p))
+            return false;
+    
+          try {
+            // Are we running on a platform where the performance is good?
+            // (i.e. Chrome or d8).
+
+            // Chrome userAgent?
+            if (typeof navigator != "undefined" &&
+                typeof navigator.userAgent == "string" &&
+                navigator.userAgent.indexOf("Chrome/") >= 0) return true;
+
+            // d8 version() looks like "N.N.N.N", jsshell version() like "N".
+            if (typeof version == "function" &&
+                version.length == 0) {
+              var v = version();
+              if (/^\d+\.\d+\.\d+\.\d+$/.test(v)) return true;
+            }
+          } catch(_) {}
+          
+          return false;
+        })();
       ''');
     }
 
@@ -1087,8 +1106,10 @@ class Emitter implements js_emitter.Emitter {
       }
     }
 
-    String libraryName = (!compiler.options.enableMinification ||
-        backend.mustRetainLibraryNames) ? library.libraryName : "";
+    String libraryName =
+        (!compiler.options.enableMinification || backend.mustRetainLibraryNames)
+            ? library.libraryName
+            : "";
 
     jsAst.Fun metadata = task.metadataCollector.buildMetadataFunction(library);
 
@@ -1131,7 +1152,7 @@ class Emitter implements js_emitter.Emitter {
         .add(new jsAst.FunctionDeclaration(constructorName, constructorAst));
 
     String fieldNamesProperty = FIELD_NAMES_PROPERTY_NAME;
-    bool hasIsolateSupport = compiler.hasIsolateSupport;
+    bool hasIsolateSupport = compiler.resolverWorld.hasIsolateSupport;
     jsAst.Node fieldNamesArray;
     if (hasIsolateSupport) {
       fieldNamesArray =
@@ -2093,7 +2114,7 @@ function(originalDescriptor, name, holder, isStatic, globalFunctionsAccess) {
 
   jsAst.Comment buildGeneratedBy() {
     List<String> options = [];
-    if (compiler.mirrorsLibrary != null) options.add('mirrors');
+    if (compiler.commonElements.mirrorsLibrary != null) options.add('mirrors');
     if (compiler.options.useContentSecurityPolicy) options.add("CSP");
     return new jsAst.Comment(generatedBy(compiler, flavor: options.join(", ")));
   }
@@ -2129,7 +2150,7 @@ function(originalDescriptor, name, holder, isStatic, globalFunctionsAccess) {
   void invalidateCaches() {
     if (!compiler.options.hasIncrementalSupport) return;
     if (cachedElements.isEmpty) return;
-    for (Element element in compiler.enqueuer.codegen.newlyEnqueuedElements) {
+    for (Element element in backend.codegenEnqueuer.newlyEnqueuedElements) {
       if (element.isInstanceMember) {
         cachedClassBuilders.remove(element.enclosingClass);
 

@@ -23,11 +23,22 @@ class DeclaredVariables {
   HashMap<String, String> _declaredVariables = new HashMap<String, String>();
 
   /**
+   * Return the names of the variables for which a value has been defined.
+   */
+  Iterable<String> get variableNames => _declaredVariables.keys;
+
+  /**
    * Define a variable with the given [name] to have the given [value].
    */
   void define(String name, String value) {
     _declaredVariables[name] = value;
   }
+
+  /**
+   * Return the raw string value of the variable with the given [name],
+   * or `null` of the variable is not defined.
+   */
+  String get(String name) => _declaredVariables[name];
 
   /**
    * Return the value of the variable with the given [name] interpreted as a

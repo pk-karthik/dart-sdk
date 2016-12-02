@@ -2,17 +2,17 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import 'package:analyzer/src/generated/error.dart';
+import 'package:analyzer/src/error/codes.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 
-import '../reflective_tests.dart';
-import '../utils.dart';
 import 'resolver_test_case.dart';
 
 main() {
-  initializeTestEnvironment();
-  runReflectiveTests(ErrorSuppressionTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(ErrorSuppressionTest);
+  });
 }
 
 @reflectiveTest
@@ -80,6 +80,14 @@ const y = x; // ignore: const_initialized_with_non_constant_value
 ''');
     computeLibrarySourceErrors(source);
     assertErrors(source, [StaticTypeWarningCode.INVALID_ASSIGNMENT]);
+  }
+
+  void test_ignore_upper_case() {
+    Source source = addSource('''
+int x = ''; // ignore: INVALID_ASSIGNMENT
+''');
+    computeLibrarySourceErrors(source);
+    assertErrors(source, []);
   }
 
   void test_invalid_error_code() {

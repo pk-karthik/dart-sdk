@@ -4,102 +4,206 @@
 
 library vm_connect_element;
 
-import 'dart:convert';
 import 'dart:html';
-
-import 'observatory_element.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'package:observatory/models.dart' as M;
 import 'package:observatory/app.dart';
-import 'package:observatory/elements.dart';
-import 'package:observatory/service_html.dart';
-import 'package:polymer/polymer.dart';
+import 'package:observatory/src/elements/helpers/tag.dart';
+import 'package:observatory/src/elements/helpers/rendering_scheduler.dart';
+import 'package:observatory/src/elements/helpers/nav_bar.dart';
+import 'package:observatory/src/elements/helpers/uris.dart';
+import 'package:observatory/src/elements/nav/notify.dart';
+import 'package:observatory/src/elements/nav/top_menu.dart';
+import 'package:observatory/src/elements/view_footer.dart';
+import 'package:observatory/src/elements/vm_connect_target.dart';
 
-void _connectToVM(ObservatoryApplication app, WebSocketVMTarget target) {
-  app.vm = new WebSocketVM(target);
-}
+typedef void CrashDumpLoadCallback(Map dump);
 
-@CustomTag('vm-connect-target')
-class VMConnectTargetElement extends ObservatoryElement {
-  @published WebSocketVMTarget target;
+class VMConnectElement extends HtmlElement implements Renderable {
+  static const tag =
+      const Tag<VMConnectElement>('vm-connect', dependencies: const [
+    NavTopMenuElement.tag,
+    NavNotifyElement.tag,
+    ViewFooterElement.tag,
+    VMConnectTargetElement.tag
+  ]);
 
-  VMConnectTargetElement.created() : super.created();
+  RenderingScheduler _r;
 
-  bool get isCurrentTarget {
-    if (app.vm == null) {
-      return false;
-    }
-    return (app.vm as WebSocketVM).target == target;
+  Stream<RenderedEvent<VMConnectElement>> get onRendered => _r.onRendered;
+
+  CrashDumpLoadCallback _loadDump;
+  M.NotificationRepository _notifications;
+  M.TargetRepository _targets;
+  StreamSubscription _targetsSubscription;
+
+  String _address;
+
+  factory VMConnectElement(M.TargetRepository targets,
+      CrashDumpLoadCallback loadDump, M.NotificationRepository notifications,
+      {String address: '', RenderingQueue queue}) {
+    assert(address != null);
+    assert(loadDump != null);
+    assert(notifications != null);
+    assert(targets != null);
+    VMConnectElement e = document.createElement(tag.name);
+    e._r = new RenderingScheduler(e, queue: queue);
+    e._address = address;
+    e._loadDump = loadDump;
+    e._notifications = notifications;
+    e._targets = targets;
+    return e;
   }
 
-  void connectToVm(MouseEvent event, var detail, Element node) {
-    if (event.button > 0 || event.metaKey || event.ctrlKey ||
-        event.shiftKey || event.altKey) {
-      // Not a left-click or a left-click with a modifier key:
-      // Let browser handle.
-      return;
-    }
-    event.preventDefault();
-    WebSocketVM currentVM = app.vm;
-    if ((currentVM == null) ||
-        currentVM.isDisconnected ||
-        (currentVM.target != target)) {
-      _connectToVM(app, target);
-    }
-    var href = node.attributes['href'];
-    app.locationManager.go(href);
-  }
-
-  void deleteVm(MouseEvent event, var detail, Element node) {
-    app.targets.remove(target);
-  }
-}
-
-@CustomTag('vm-connect')
-class VMConnectElement extends ObservatoryElement {
-  @published String standaloneVmAddress = '';
-
-  VMConnectElement.created() : super.created() {
-  }
-
-  void _connect(WebSocketVMTarget target) {
-    _connectToVM(app, target);
-    app.locationManager.goForwardingParameters('/vm');
-  }
+  VMConnectElement.created() : super.created();
 
   @override
   void attached() {
     super.attached();
-    var fileInput = shadowRoot.querySelector('#crashDumpFile');
-    fileInput.onChange.listen(_onCrashDumpFileChange);
+    _targetsSubscription = _targets.onChange.listen((_) => _r.dirty());
+    _r.enable();
   }
 
-  String _normalizeStandaloneAddress(String networkAddress) {
-    if (networkAddress.startsWith('ws://')) {
+  @override
+  void detached() {
+    super.detached();
+    children = [];
+    _r.disable(notify: true);
+    _targetsSubscription.cancel();
+  }
+
+  void render() {
+    final host = window.location.hostname;
+    final port = window.location.port;
+    children = [
+      navBar([
+        new NavTopMenuElement(queue: _r.queue),
+        new NavNotifyElement(_notifications, queue: _r.queue)
+      ]),
+      new DivElement()
+        ..classes = ['content-centered']
+        ..children = [
+          new HeadingElement.h1()..text = 'Connect to a Dart VM',
+          new HRElement(),
+          new BRElement(),
+          new DivElement()
+            ..classes = ['flex-row']
+            ..children = [
+              new DivElement()
+                ..classes = ['flex-item-40-percent']
+                ..children = [
+                  new HeadingElement.h2()..text = 'Connect over WebSocket',
+                  new BRElement(),
+                  new UListElement()
+                    ..children = _targets.list().map((target) {
+                      final ObservatoryApplication app =
+                          ObservatoryApplication.app;
+                      final bool current = (app != null) ?
+                          app.isConnectedVMTarget(target) : false;
+                      return new LIElement()
+                        ..children = [
+                          new VMConnectTargetElement(target,
+                              current: current, queue: _r.queue)
+                            ..onConnect.listen(_connect)
+                            ..onDelete.listen(_delete)
+                        ];
+                    }).toList(),
+                  new HRElement(),
+                  new FormElement()
+                    ..autocomplete = 'on'
+                    ..children = [
+                      _createAddressBox(),
+                      new SpanElement()..text = ' ',
+                      new ButtonElement()
+                        ..classes = ['vm_connect']
+                        ..text = 'Connect'
+                        ..onClick.listen((e) {
+                          e.preventDefault();
+                          _createAndConnect();
+                        }),
+                    ],
+                  new BRElement(),
+                  new PreElement()
+                    ..classes = ['well']
+                    ..text = 'Run Standalone with: \'--observe\'',
+                ],
+              new DivElement()..classes = ['flex-item-20-percent'],
+              new DivElement()
+                ..classes = ['flex-item-40-percent']
+                ..children = [
+                  new HeadingElement.h2()..text = 'View crash dump',
+                  new BRElement(),
+                  _createCrushDumpLoader(),
+                  new BRElement(),
+                  new BRElement(),
+                  new PreElement()
+                    ..classes = ['well']
+                    ..text = 'Request a crash dump with:\n'
+                        '\'curl $host:$port/_getCrashDump > dump.json\'',
+                ]
+            ],
+        ],
+      new ViewFooterElement(queue: _r.queue)
+    ];
+  }
+
+  TextInputElement _createAddressBox() {
+    var textbox = new TextInputElement()
+      ..classes = ['textbox']
+      ..placeholder = 'http://127.0.0.1:8181/...'
+      ..value = _address
+      ..onKeyUp.where((e) => e.key == '\n').listen((e) {
+        e.preventDefault();
+        _createAndConnect();
+      });
+    textbox.onInput.listen((e) {
+      _address = textbox.value;
+    });
+    return textbox;
+  }
+
+  FileUploadInputElement _createCrushDumpLoader() {
+    FileUploadInputElement e = new FileUploadInputElement()
+      ..id = 'crashDumpFile';
+    e.onChange.listen((_) {
+      var reader = new FileReader();
+      reader.readAsText(e.files[0]);
+      reader.onLoad.listen((_) {
+        var crashDump = JSON.decode(reader.result);
+        _loadDump(crashDump);
+      });
+    });
+    return e;
+  }
+
+  void _createAndConnect() {
+    if (_address == null || _address.isEmpty) return;
+    String normalizedNetworkAddress = _normalizeStandaloneAddress(_address);
+    _targets.add(normalizedNetworkAddress);
+    var target = _targets.find(normalizedNetworkAddress);
+    assert(target != null);
+    _targets.setCurrent(target);
+    ObservatoryApplication.app.locationManager.go(Uris.vm());
+  }
+
+  void _connect(TargetEvent e) {
+    _targets.setCurrent(e.target);
+  }
+
+  void _delete(TargetEvent e) => _targets.delete(e.target);
+
+  static String _normalizeStandaloneAddress(String networkAddress) {
+    if (!networkAddress.startsWith('http') &&
+        !networkAddress.startsWith('ws')) {
+      networkAddress = 'http://$networkAddress';
+    }
+    try {
+      Uri uri = Uri.parse(networkAddress);
+      return 'ws://${uri.authority}${uri.path}ws';
+    } catch (e) {
+      print('caught exception with: $networkAddress -- $e');
       return networkAddress;
     }
-    return 'ws://${networkAddress}/ws';
-  }
-
-  void connectStandalone(Event e, var detail, Node target) {
-    // Prevent any form action.
-    e.preventDefault();
-    if (standaloneVmAddress == null) {
-      return;
-    }
-    if (standaloneVmAddress.isEmpty) {
-      return;
-    }
-    var targetAddress = _normalizeStandaloneAddress(standaloneVmAddress);
-    var target = app.targets.findOrMake(targetAddress);
-    _connect(target);
-  }
-
-  _onCrashDumpFileChange(e) {
-    var fileInput = shadowRoot.querySelector('#crashDumpFile');
-    var reader = new FileReader();
-    reader.readAsText(fileInput.files[0]);
-    reader.onLoad.listen((_) {
-      var crashDump = JSON.decode(reader.result);
-      app.loadCrashDump(crashDump);
-    });
   }
 }

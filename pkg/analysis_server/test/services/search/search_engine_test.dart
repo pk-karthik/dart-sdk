@@ -13,15 +13,15 @@ import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/member.dart';
 import 'package:analyzer/src/generated/source.dart';
+import 'package:test/test.dart';
 import 'package:test_reflective_loader/test_reflective_loader.dart';
-import 'package:unittest/unittest.dart';
 
 import '../../abstract_single_unit.dart';
-import '../../utils.dart';
 
 main() {
-  initializeTestEnvironment();
-  defineReflectiveTests(SearchEngineImplTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(SearchEngineImplTest);
+  });
 }
 
 class ExpectedMatch {
@@ -101,8 +101,9 @@ class A {
 }
 class B {
   int test = 1;
+  int testTwo = 2;
   main() {
-    int test = 2;
+    int test = 3;
   }
 }
 ''');
@@ -287,7 +288,7 @@ class A {
   }
 }
 ''');
-    FieldElement element = findElement('field');
+    FieldElement element = findElement('field', ElementKind.FIELD);
     Element main = findElement('main');
     Element fieldParameter = findElement('field', ElementKind.PARAMETER);
     var expected = [
@@ -460,6 +461,34 @@ math.Random bar() => null;
     await _verifyReferences(element, expected);
   }
 
+  test_searchReferences_ImportElement_withPrefix_forMultipleImports() async {
+    _indexTestUnit('''
+import 'dart:async' as p;
+import 'dart:math' as p;
+main() {
+  p.Random;
+  p.Future;
+}
+''');
+    Element mainElement = findElement('main');
+    var kind = MatchKind.REFERENCE;
+    var length = 'p.'.length;
+    {
+      ImportElement element = testLibraryElement.imports[0];
+      var expected = [
+        _expectId(mainElement, kind, 'p.Future;', length: length),
+      ];
+      await _verifyReferences(element, expected);
+    }
+    {
+      ImportElement element = testLibraryElement.imports[1];
+      var expected = [
+        _expectId(mainElement, kind, 'p.Random', length: length),
+      ];
+      await _verifyReferences(element, expected);
+    }
+  }
+
   test_searchReferences_LabelElement() async {
     _indexTestUnit('''
 main() {
@@ -586,6 +615,23 @@ main(A<int> a) {
       _expectIdQ(mainElement, MatchKind.INVOCATION, 'm(); // ref')
     ];
     await _verifyReferences(method, expected);
+  }
+
+  test_searchReferences_null_noUnitElement() async {
+    _indexTestUnit('''
+class A {
+  m() {}
+}
+main(A a) {
+  a.m();
+}
+''');
+    MethodElement method = findElement('m');
+    List<SearchMatch> matches = await searchEngine.searchReferences(method);
+    expect(matches, hasLength(1));
+    // Set the source contents, so the element is invalidated.
+    context.setContents(testSource, '');
+    expect(matches.single.element, isNull);
   }
 
   test_searchReferences_ParameterElement_ofConstructor() async {

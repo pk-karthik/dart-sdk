@@ -2,19 +2,18 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import 'native_testing.dart';
 
 // Test to see if novel HTML tags are interpreted as HTMLElement.
 
 @Native("HTMLElement")
 class Element {
   String dartMethod(int x) => 'dartMethod(${nativeMethod(x+1)})';
-  String nativeMethod(int x) native;
+  String nativeMethod(int x) native ;
 }
 
-makeE() native;
-makeF() native;
+makeE() native ;
+makeF() native ;
 
 void setup() native """
 // A novel HTML element.
@@ -31,16 +30,11 @@ HTMLFakeyElement.prototype.nativeMethod = function(a) {
 };
 makeF = function(){return new HTMLFakeyElement};
 
-// Make the HTMLGoofyElement look like a real host object.
-var theRealObjectToString = Object.prototype.toString;
-Object.prototype.toString = function() {
-  if (this instanceof HTMLGoofyElement) return '[object HTMLGoofyElement]';
-  return theRealObjectToString.call(this);
-}
+self.nativeConstructor(HTMLGoofyElement);
 """;
 
-
 main() {
+  nativeTesting();
   setup();
 
   var e = makeE();

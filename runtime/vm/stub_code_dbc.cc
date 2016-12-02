@@ -23,12 +23,33 @@
 namespace dart {
 
 DEFINE_FLAG(bool, inline_alloc, true, "Inline allocation of objects.");
-DEFINE_FLAG(bool, use_slow_path, false,
-    "Set to true for debugging & verifying the slow paths.");
+DEFINE_FLAG(bool,
+            use_slow_path,
+            false,
+            "Set to true for debugging & verifying the slow paths.");
 DECLARE_FLAG(bool, trace_optimized_ic_calls);
 
 void StubCode::GenerateLazyCompileStub(Assembler* assembler) {
   __ Compile();
+}
+
+
+// Not executed, but used as a stack marker when calling
+// DRT_OptimizeInvokedFunction.
+void StubCode::GenerateOptimizeFunctionStub(Assembler* assembler) {
+  __ Trap();
+}
+
+
+// Not executed, but used as a sentinel in Simulator::JumpToFrame.
+void StubCode::GenerateRunExceptionHandlerStub(Assembler* assembler) {
+  __ Trap();
+}
+
+
+// Not executed, but used as a sentinel in Simulator::JumpToFrame.
+void StubCode::GenerateDeoptForRewindStub(Assembler* assembler) {
+  __ Trap();
 }
 
 
@@ -54,7 +75,12 @@ void StubCode::GenerateMegamorphicMissStub(Assembler* assembler) {
 // These deoptimization stubs are only used to populate stack frames
 // with something meaningful to make sure GC can scan the stack during
 // the last phase of deoptimization which materializes objects.
-void StubCode::GenerateDeoptimizeLazyStub(Assembler* assembler) {
+void StubCode::GenerateDeoptimizeLazyFromReturnStub(Assembler* assembler) {
+  __ Trap();
+}
+
+
+void StubCode::GenerateDeoptimizeLazyFromThrowStub(Assembler* assembler) {
   __ Trap();
 }
 
@@ -64,12 +90,16 @@ void StubCode::GenerateDeoptimizeStub(Assembler* assembler) {
 }
 
 
+void StubCode::GenerateFrameAwaitingMaterializationStub(Assembler* assembler) {
+  __ Trap();
+}
+
+
 // Print the stop message.
 DEFINE_LEAF_RUNTIME_ENTRY(void, PrintStopMessage, 1, const char* message) {
   OS::Print("Stop message: %s\n", message);
 }
 END_LEAF_RUNTIME_ENTRY
-
 
 }  // namespace dart
 

@@ -10,12 +10,14 @@ import 'package:path/path.dart' as path;
 import 'package:async_helper/async_helper.dart';
 import 'package:expect/expect.dart';
 
+import 'launch_helper.dart' show dart2JsCommand;
+
 var tmpDir;
 
 copyDirectory(Directory sourceDir, Directory destinationDir) {
   sourceDir.listSync().forEach((FileSystemEntity element) {
-    String newPath = path.join(destinationDir.path,
-                               path.basename(element.path));
+    String newPath =
+        path.join(destinationDir.path, path.basename(element.path));
     if (element is File) {
       element.copySync(newPath);
     } else if (element is Directory) {
@@ -51,12 +53,11 @@ void cleanUp() {
 }
 
 Future launchDart2Js(_) {
-  String ext = Platform.isWindows ? '.bat' : '';
-  String command =
-      path.normalize(path.join(path.fromUri(Platform.script),
-                    '../../../../sdk/bin/dart2js${ext}'));
-  print("Running '$command --batch' from '${tmpDir}'.");
-  return Process.start(command, ['--batch'], workingDirectory: tmpDir.path);
+  return Process.start(
+      // Use an absolute path because we are changing the cwd below.
+      path.fromUri(Uri.base.resolve(Platform.executable)),
+      dart2JsCommand(['--batch']),
+      workingDirectory: tmpDir.path);
 }
 
 Future runTests(Process process) {
@@ -71,26 +72,22 @@ Future runTests(Process process) {
   process.stdin.close();
   Future<String> output = process.stdout.transform(UTF8.decoder).join();
   Future<String> errorOut = process.stderr.transform(UTF8.decoder).join();
-  return Future.wait([output, errorOut])
-        .then((result) {
-      String stdoutOutput = result[0];
-      String stderrOutput = result[1];
+  return Future.wait([output, errorOut]).then((result) {
+    String stdoutOutput = result[0];
+    String stderrOutput = result[1];
 
-      Expect.equals(4, ">>> EOF STDERR".allMatches(stderrOutput).length);
-      Expect.equals(4, ">>>".allMatches(stderrOutput).length);
+    Expect.equals(4, ">>> EOF STDERR".allMatches(stderrOutput).length);
+    Expect.equals(4, ">>>".allMatches(stderrOutput).length);
 
-      Expect.equals(2, ">>> TEST OK".allMatches(stdoutOutput).length);
-      Expect.equals(2, ">>> TEST FAIL".allMatches(stdoutOutput).length);
-      Expect.equals(4, ">>>".allMatches(stdoutOutput).length);
-    });
+    Expect.equals(2, ">>> TEST OK".allMatches(stdoutOutput).length);
+    Expect.equals(2, ">>> TEST FAIL".allMatches(stdoutOutput).length);
+    Expect.equals(4, ">>>".allMatches(stdoutOutput).length);
+  });
 }
 
 void main() {
   var tmpDir;
   asyncTest(() {
-    return setup()
-        .then(launchDart2Js)
-        .then(runTests)
-        .whenComplete(cleanUp);
+    return setup().then(launchDart2Js).then(runTests).whenComplete(cleanUp);
   });
 }

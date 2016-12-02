@@ -8,8 +8,8 @@ execfile(os.path.join(path, 'src', 'dart', 'tools', 'deps', 'dartium.deps', 'DEP
 # Now we need to override some settings and add some new ones.
 
 vars.update({
-  "dartium_chromium_commit": "b6b6b76417ce80120ee48b662a7c7ef257723494",
-  "dartium_webkit_commit": "ca3b07f5929e6adb390901b31db634f4dfe0d2bf",
+  "dartium_chromium_commit": "7558afb6379171d7f96b2db68ae9d2b64b2c5544",
+  "dartium_webkit_commit": "e46ac6cf905ae6be30852fbee231cfd385c24420",
   "chromium_base_revision": "338390",
 
   # We use mirrors of all github repos to guarantee reproducibility and
@@ -29,10 +29,10 @@ vars.update({
   "args_tag": "@0.13.0",
   "barback_rev" : "@29ee90dbcf77cfd64632fa2797a4c8a4f29a4b51",
   "charcode_tag": "@1.1.0",
-  "collection_rev": "@f6135e6350c63eb3f4dd12953b8d4363faff16fc",
+  "collection_tag": "@1.9.1",
   "crypto_rev" : "@2df57a1e26dd88e8d0614207d4b062c73209917d",
   "csslib_tag" : "@0.12.0",
-  "dart2js_info_rev" : "@0a221eaf16aec3879c45719de656680ccb80d8a1",
+  "dart2js_info_tag" : "@0.5.0",
   "glob_rev": "@704cf75e4f26b417505c5c611bdaacd8808467dd",
   "html_tag" : "@0.12.1+1",
   "http_rev" : "@9b93e1542c753090c50b46ef1592d44bc858bfe7",
@@ -45,8 +45,9 @@ vars.update({
   "mime_rev": "@75890811d4af5af080351ba8a2853ad4c8df98dd",
   "metatest_rev": "@e5aa8e4e19fc4188ac2f6d38368a47d8f07c3df1",
   "oauth2_rev": "@1bff41f4d54505c36f2d1a001b83b8b745c452f5",
-  "observatory_pub_packages_rev": "@cf90eb9077177d3d6b3fd5e8289477c2385c026a",
+  "observatory_pub_packages_rev": "@26aad88f1c1915d39bbcbff3cad589e2402fdcf1",
   "package_config_rev": "@0.1.3",
+  "package_resolver_tag": "@1.0.2",
   "path_rev": "@b657c0854d1cf41c014986fa9d2321f1173df805",
   "plugin_tag": "@0.1.0",
   "pool_rev": "@22e12aeb16ad0b626900dbe79e4a25391ddfb28c",
@@ -68,7 +69,7 @@ vars.update({
   "web_components_rev": "@6349e09f9118dce7ae1b309af5763745e25a9d61",
   "WebCore_rev": "@a86fe28efadcfc781f836037a80f27e22a5dad17",
 
-  "co19_rev": "@3f0a4bc9a080a792cdf5f093147a900f99ea301f",
+  "co19_rev": "@f05d5aee5930bfd487aedf832fbd7b832f502b15",
 })
 
 deps.update({
@@ -91,9 +92,9 @@ deps.update({
   "src/dart/third_party/pkg/csslib":
       (Var("github_mirror") % "csslib") + Var("csslib_tag"),
   "src/dart/third_party/pkg/dart2js_info":
-      (Var("github_mirror") % "dart2js_info") + Var("dart2js_info_rev"),
+      (Var("github_mirror") % "dart2js_info") + Var("dart2js_info_tag"),
   "src/dart/third_party/pkg/collection":
-      (Var("github_mirror") % "collection") + Var("collection_rev"),
+      (Var("github_mirror") % "collection") + Var("collection_tag"),
   "src/dart/third_party/pkg/glob":
       (Var("github_mirror") % "glob") + Var("glob_rev"),
   "src/dart/third_party/pkg/html":
@@ -122,8 +123,11 @@ deps.update({
   "src/dart/third_party/observatory_pub_packages":
       (Var("github_mirror") % "observatory_pub_packages") +
       Var("observatory_pub_packages_rev"),
-  "src/dart/third_party/pkg/package_config":
+  "src/dart/third_party/pkg_tested/package_config":
       (Var("github_mirror") % "package_config") + Var("package_config_rev"),
+  "src/dart/third_party/pkg_tested/package_resolver":
+      "https://github.com/dart-lang/package_resolver.git" +
+      Var("package_resolver_tag"),
   "src/dart/third_party/pkg/path":
       (Var("github_mirror") % "path") + Var("path_rev"),
   "src/dart/third_party/pkg/plugin":
@@ -225,5 +229,21 @@ hooks.append({
     "--extract",
     "--directory",
     "src/dart/tools/sdks",
+  ],
+})
+hooks.append({
+  "name": "unittest",
+  # Unittest is an early version, 0.11.6, of the package "test"
+  # Do not use it in any new tests.
+  "pattern": ".",
+  "action": [
+    "download_from_google_storage",
+    "--no_auth",
+    "--no_resume",
+    "--bucket",
+    "dart-dependencies",
+    "--extract",
+    "-s",
+    "src/dart/third_party/pkg/unittest.tar.gz.sha1",
   ],
 })

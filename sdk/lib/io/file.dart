@@ -52,7 +52,11 @@ enum FileLock {
   /// Shared file lock.
   SHARED,
   /// Exclusive file lock.
-  EXCLUSIVE
+  EXCLUSIVE,
+  /// Blocking shared file lock.
+  BLOCKING_SHARED,
+  /// Blocking exclusive file lock.
+  BLOCKING_EXCLUSIVE,
 }
 
 /**
@@ -578,9 +582,9 @@ abstract class RandomAccessFile {
   List<int> readSync(int bytes);
 
   /**
-   * Reads into an existing List<int> from the file. If [start] is present, the
-   * bytes will be filled into [buffer] from at index [start], otherwise index
-   * 0. If [end] is present, the [end] - [start] bytes will be read into
+   * Reads into an existing [List<int>] from the file. If [start] is present,
+   * the bytes will be filled into [buffer] from at index [start], otherwise
+   * index 0. If [end] is present, the [end] - [start] bytes will be read into
    * [buffer], otherwise up to [buffer.length]. If [end] == [start] nothing
    * happends.
    *
@@ -589,8 +593,8 @@ abstract class RandomAccessFile {
   Future<int> readInto(List<int> buffer, [int start = 0, int end]);
 
   /**
-   * Synchronously reads into an existing List<int> from the file. If [start] is
-   * present, the bytes will be filled into [buffer] from at index [start],
+   * Synchronously reads into an existing [List<int>] from the file. If [start]
+   * is present, the bytes will be filled into [buffer] from at index [start],
    * otherwise index 0.  If [end] is present, the [end] - [start] bytes will be
    * read into [buffer], otherwise up to [buffer.length]. If [end] == [start]
    * nothing happends.
@@ -735,6 +739,11 @@ abstract class RandomAccessFile {
    *
    * To obtain an exclusive lock on a file it must be opened for writing.
    *
+   * If [mode] is [FileLock.EXCLUSIVE] or [FileLock.SHARED], an error is
+   * signaled if the lock cannot be obtained. If [mode] is
+   * [FileLock.BLOCKING_EXCLUSIVE] or [FileLock.BLOCKING_SHARED], the
+   * returned [Future] is resolved only when the lock has been obtained.
+   *
    * *NOTE* file locking does have slight differences in behavior across
    * platforms:
    *
@@ -767,6 +776,11 @@ abstract class RandomAccessFile {
    * explicit value of `end` which is past the current length of the file.
    *
    * To obtain an exclusive lock on a file it must be opened for writing.
+   *
+   * If [mode] is [FileLock.EXCLUSIVE] or [FileLock.SHARED], an exception is
+   * thrown if the lock cannot be obtained. If [mode] is
+   * [FileLock.BLOCKING_EXCLUSIVE] or [FileLock.BLOCKING_SHARED], the
+   * call returns only after the lock has been obtained.
    *
    * *NOTE* file locking does have slight differences in behavior across
    * platforms:

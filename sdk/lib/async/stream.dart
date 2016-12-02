@@ -232,6 +232,7 @@ abstract class Stream<T> {
         onCancel: () {
           if (timer != null) timer.cancel();
           timer = null;
+          return Future._nullFuture;
         });
     return controller.stream;
   }
@@ -316,26 +317,37 @@ abstract class Stream<T> {
   /**
    * Adds a subscription to this stream.
    *
-   * On each data event from this stream, the subscriber's [onData] handler
-   * is called. If [onData] is null, nothing happens.
+   * Returns a [StreamSubscription] which handles events from the stream using
+   * the provided [onData], [onError] and [onDone] handlers.
+   * The handlers can be changed on the subscription, but they start out
+   * as the provided functions.
    *
-   * On errors from this stream, the [onError] handler is given a
-   * object describing the error.
+   * On each data event from this stream, the subscriber's [onData] handler
+   * is called. If [onData] is `null`, nothing happens.
+   *
+   * On errors from this stream, the [onError] handler is called with the
+   * error object and possibly a stack trace.
    *
    * The [onError] callback must be of type `void onError(error)` or
    * `void onError(error, StackTrace stackTrace)`. If [onError] accepts
-   * two arguments it is called with the stack trace (which could be `null` if
-   * the stream itself received an error without stack trace).
+   * two arguments it is called with the error object and the stack trace
+   * (which could be `null` if the stream itself received an error without
+   * stack trace).
    * Otherwise it is called with just the error object.
    * If [onError] is omitted, any errors on the stream are considered unhandled,
    * and will be passed to the current [Zone]'s error handler.
    * By default unhandled async errors are treated
    * as if they were uncaught top-level errors.
    *
-   * If this stream closes, the [onDone] handler is called.
+   * If this stream closes and sends a done event, the [onDone] handler is
+   * called. If [onDone] is `null`, nothing happens.
    *
-   * If [cancelOnError] is true, the subscription is ended when
-   * the first error is reported. The default is false.
+   * If [cancelOnError] is true, the subscription is automatically cancelled
+   * when the first error event is delivered. The default is `false`.
+   *
+   * While a subscription is paused, or when it has been cancelled,
+   * the subscription doesn't receive events and none of the
+   * event handler functions are called.
    */
   StreamSubscription<T> listen(void onData(T event),
                                { Function onError,
@@ -430,7 +442,7 @@ abstract class Stream<T> {
         onListen: onListen,
         onPause: () { subscription.pause(); },
         onResume: () { subscription.resume(); },
-        onCancel: () { subscription.cancel(); },
+        onCancel: () => subscription.cancel(),
         sync: true
       );
     }
@@ -488,7 +500,7 @@ abstract class Stream<T> {
         onListen: onListen,
         onPause: () { subscription.pause(); },
         onResume: () { subscription.resume(); },
-        onCancel: () { subscription.cancel(); },
+        onCancel: () => subscription.cancel(),
         sync: true
       );
     }
@@ -499,7 +511,7 @@ abstract class Stream<T> {
    * Creates a wrapper Stream that intercepts some errors from this stream.
    *
    * If this stream sends an error that matches [test], then it is intercepted
-   * by the [handle] function.
+   * by the [onError] function.
    *
    * The [onError] callback must be of type `void onError(error)` or
    * `void onError(error, StackTrace stackTrace)`. Depending on the function
@@ -507,10 +519,11 @@ abstract class Stream<T> {
    * trace. The stack trace argument might be `null` if the stream itself
    * received an error without stack trace.
    *
-   * An asynchronous error [:e:] is matched by a test function if [:test(e):]
-   * returns true. If [test] is omitted, every error is considered matching.
+   * An asynchronous error `error` is matched by a test function if
+   *`test(error)` returns true. If [test] is omitted, every error is considered
+   * matching.
    *
-   * If the error is intercepted, the [handle] function can decide what to do
+   * If the error is intercepted, the [onError] function can decide what to do
    * with it. It can throw if it wants to raise a new (or the same) error,
    * or simply return to make the stream forget the error.
    *
@@ -890,23 +903,23 @@ abstract class Stream<T> {
       => listen(null, cancelOnError: true).asFuture/*<E>*/(futureValue);
 
   /**
-   * Provides at most the first [n] values of this stream.
+   * Provides at most the first [count] data events of this stream.
    *
-   * Forwards the first [n] data events of this stream, and all error
-   * events, to the returned stream, and ends with a done event.
+   * Forwards all events of this stream to the returned stream
+   * until [count] data events have been forwarded or this stream ends,
+   * then ends the returned stream with a done event.
    *
-   * If this stream produces fewer than [count] values before it's done,
+   * If this stream produces fewer than [count] data events before it's done,
    * so will the returned stream.
    *
-   * Stops listening to the stream after the first [n] elements have been
-   * received.
+   * Starts listening to this stream when the returned stream is listened to
+   * and stops listening when the first [count] data events have been received.
    *
-   * Internally the method cancels its subscription after these elements. This
-   * means that single-subscription (non-broadcast) streams are closed and
-   * cannot be reused after a call to this method.
+   * This means that if this is a single-subscription (non-broadcast) streams
+   * it cannot be reused after the returned stream has been listened to.
    *
-   * The returned stream is a broadcast stream if this stream is.
-   * For a broadcast stream, the events are only counted from the time
+   * If this is a broadcast stream, the returned stream is a broadcast stream.
+   * In that case, the events are only counted from the time
    * the returned stream is listened to.
    */
   Stream<T> take(int count) {
@@ -917,7 +930,7 @@ abstract class Stream<T> {
    * Forwards data events while [test] is successful.
    *
    * The returned stream provides the same events as this stream as long
-   * as [test] returns [:true:] for the event data. The stream is done
+   * as [test] returns `true` for the event data. The stream is done
    * when either this stream is done, or when this stream first provides
    * a value that [test] doesn't accept.
    *
@@ -1396,7 +1409,10 @@ abstract class StreamSubscription<T> {
    * the subscription is canceled.
    *
    * Returns a future that is completed once the stream has finished
-   * its cleanup. May also return `null` if no cleanup was necessary.
+   * its cleanup.
+   *
+   * For historical reasons, may also return `null` if no cleanup was necessary.
+   * Returning `null` is deprecated and should be avoided.
    *
    * Typically, futures are returned when the stream needs to release resources.
    * For example, a stream might need to close an open file (as an asynchronous
@@ -1700,7 +1716,7 @@ abstract class StreamTransformer<S, T> {
    *             },
    *             onPause: () { subscription.pause(); },
    *             onResume: () { subscription.resume(); },
-   *             onCancel: () { subscription.cancel(); },
+   *             onCancel: () => subscription.cancel(),
    *             sync: true);
    *           return controller.stream.listen(null);
    *         });
@@ -1752,7 +1768,7 @@ abstract class StreamIterator<T> {
   factory StreamIterator(Stream<T> stream)
       // TODO(lrn): use redirecting factory constructor when type
       // arguments are supported.
-      => new _StreamIteratorImpl<T>(stream);
+      => new _StreamIterator<T>(stream);
 
   /**
    * Wait for the next stream value to be available.
@@ -1794,7 +1810,7 @@ abstract class StreamIterator<T> {
    * automatically closed, you must call [cancel] to ensure that the stream
    * is properly closed.
    *
-   * If [moveNext] has been called when the iterator is cancelled,
+   * If [moveNext] has been called when the iterator is canceled,
    * its returned future will complete with `false` as value,
    * as will all further calls to [moveNext].
    *

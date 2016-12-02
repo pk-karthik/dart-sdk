@@ -3,8 +3,10 @@
 # BSD-style license that can be found in the LICENSE file.
 
 [ $compiler == dart2js ]
+deferred_not_loaded_check_test: Fail # Issue 27577
 getter_setter_in_lib_test: Fail # Issue 23288
 method_name_test: Fail # issue 25574
+setter4_test: CompileTimeError # issue 13639
 
 async_star_cancel_while_paused_test: RuntimeError # Issue 22853
 tearoff_basic_test: Skip # Tear-off not supported
@@ -35,6 +37,39 @@ accessor_conflict_import_prefixed2_test: RuntimeError # Issue 25626
 accessor_conflict_import_prefixed_test: RuntimeError # Issue 25626
 accessor_conflict_import_test: RuntimeError # Issue 25626
 
+duplicate_part_test/01: MissingCompileTimeError # Issue 27517
+
+[ $compiler == dart2js && $fast_startup ]
+const_evaluation_test/*: Fail # mirrors not supported
+deferred_constraints_constants_test/none: Fail # mirrors not supported
+deferred_constraints_constants_test/reference_after_load: Fail # mirrors not supported
+deferred_constraints_constants_test: Pass # mirrors not supported, passes for the wrong reason
+enum_mirror_test: Fail # mirrors not supported
+field_increment_bailout_test: Fail # mirrors not supported
+instance_creation_in_function_annotation_test: Fail # mirrors not supported
+invocation_mirror2_test: Fail # mirrors not supported
+invocation_mirror_invoke_on2_test: Fail # mirrors not supported
+invocation_mirror_invoke_on_test: Fail # mirrors not supported
+issue21079_test: Fail # mirrors not supported
+library_env_test/has_mirror_support: Fail # mirrors not supported
+library_env_test/has_no_mirror_support: Pass # fails for the wrong reason.
+many_overridden_no_such_method_test: Fail # mirrors not supported
+no_such_method_test: Fail # mirrors not supported
+null_test/0*: Pass # mirrors not supported, fails for the wrong reason
+null_test/none: Fail # mirrors not supported
+overridden_no_such_method_test: Fail # mirrors not supported
+redirecting_factory_reflection_test: Fail # mirrors not supported
+regress_13462_0_test: Fail # mirrors not supported
+regress_13462_1_test: Fail # mirrors not supported
+regress_18535_test: Fail # mirrors not supported
+super_call4_test: Fail # mirrors not supported
+super_getter_setter_test: Fail # mirrors not supported
+vm/reflect_core_vm_test: Fail # mirrors not supported
+
+[ $compiler == dart2js && $fast_startup && $checked ]
+generic_local_functions_test: Fail # reified type for generic function not generated correctly
+generic_methods_generic_function_parameter_test: Fail # reified type for generic function not generated correctly
+
 [ $compiler == dart2js && $runtime == jsshell ]
 await_for_test: Skip # Jsshell does not provide periodic timers, Issue 7728
 async_star_test: RuntimeError # Jsshell does not provide non-zero timers, Issue 7728
@@ -45,14 +80,8 @@ async_star_no_cancel2_test: RuntimeError # Need triage
 [ $compiler == dart2js && $browser ]
 config_import_test: Fail # Test flag is not passed to the compiler.
 
-# Experimental feature: Syntactic support for generic methods.
-generic_functions_test: CompileTimeError # DartOptions not passed to compiler.
-generic_local_functions_test: CompileTimeError # DartOptions not passed to compiler.
-generic_methods_test: CompileTimeError # DartOptions not passed to compiler.
-generic_sends_test: CompileTimeError # DartOptions not passed to compiler.
-generic_methods_new_test: CompiletimeError # DartOptions not passed to compiler.
-generic_methods_function_type_test: CompiletimeError # DartOptions not passed to compiler.
-generic_methods_type_expression_test: CompiletimeError # DartOptions not passed to compiler.
+library_env_test/has_no_io_support: Pass # Issue 27398
+library_env_test/has_io_support: RuntimeError # Issue 27398
 
 [ $compiler == dart2js ]
 invocation_mirror_empty_arguments_test: Fail # Issue 24331
@@ -94,8 +123,7 @@ ref_before_declaration_test/04: MissingCompileTimeError
 ref_before_declaration_test/05: MissingCompileTimeError
 ref_before_declaration_test/06: MissingCompileTimeError
 
-regress_22976_test/01: CompileTimeError # Issue 23132
-regress_22976_test/02: CompileTimeError # Issue 23132
+regress_22976_test: CompileTimeError # Issue 23132
 
 if_null_assignment_behavior_test/13: Crash # Issue 23491
 if_null_assignment_behavior_test/14: Crash # Issue 23491
@@ -186,8 +214,6 @@ metadata_test: CompileTimeError # Issue 5841
 infinity_test: RuntimeError # Issue 4984
 mixin_mixin2_test: RuntimeError # Issue 13109.
 mixin_mixin3_test: RuntimeError # Issue 13109.
-mixin_mixin7_test: RuntimeError # Issue 13109.
-mixin_regress_13688_test: RuntimeError # Issue 13109.
 modulo_test: RuntimeError # Issue 15246
 truncdiv_test: RuntimeError # Issue 15246
 invocation_mirror2_test: RuntimeError # Issue 6490 (wrong retval).
@@ -221,7 +247,13 @@ round_test: Fail, OK # Common JavaScript engine Math.round bug.
 [ $compiler == dart2js && $runtime == ff ]
 round_test: Pass, Fail, OK # Fixed in ff 35. Common JavaScript engine Math.round bug.
 
-[ $compiler == dart2js && ($runtime == safari || $runtime == safarimobilesim)]
+[ $compiler == dart2js && $runtime == chrome && $system == macos ]
+await_future_test: Pass, Timeout # Issue 26735
+
+[ $compiler == dart2js && ($runtime == chrome || $runtime == ff) && $system == windows ]
+string_literals_test: RuntimeError # Issue 27533
+
+[ $compiler == dart2js && $runtime == safarimobilesim ]
 # Safari codegen bug, fixed on some versions of Safari 7.1 (Version 7.1 (9537.85.10.17.1))
 call_through_getter_test: Fail, OK
 
@@ -232,14 +264,6 @@ override_field_test/02: Pass, Slow # TODO(kasperl): Please triage.
 stack_trace_test: Fail, OK # Stack trace not preserved in minified code.
 regress_21795_test: RuntimeError # Issue 12605
 
-[ $compiler == dart2js && $runtime == d8 && $system == windows ]
-# Detection of d8 runtime does not work on Windows so the runtime result is
-# unreliable; at the time of writing, 32 passed, 31 failed with runtime error.
-# Marked with Pass,RuntimeError to avoid undetected compile-time failures.
-*deferred*: Pass,RuntimeError # Issue 17458
-cha_deopt*: Pass,RuntimeError # Issue 17458
-regress_22443_test: Pass,RuntimeError # Issue 17458
-
 [ $compiler == dart2js && $cps_ir == false ]
 accessor_conflict_export2_test: Crash # Issue 25626
 accessor_conflict_export_test: Crash # Issue 25626
@@ -247,8 +271,6 @@ generic_field_mixin4_test: Crash # Issue 18651
 generic_field_mixin5_test: Crash # Issue 18651
 many_method_calls_test: Crash # Stack overflow in HGraphVisitor.visitPostDominatorTree.visitBasicBlockAndSuccessors
 method_override5_test: RuntimeError # Issue 12809
-super_no_such_method4_test/01: RuntimeError # Issue 25716
-super_no_such_method5_test/01: RuntimeError # Issue 25716
 
 [ $compiler == dart2js && $runtime != drt && $runtime != dartium ]
 issue23244_test: RuntimeError # 23244
@@ -326,3 +348,12 @@ try_finally_regress_25333_test: Crash # Issue 24485
 
 [ $compiler == dart2js && $cps_ir && $checked ]
 *: Skip # `assert` not implemented
+
+[ $compiler == dart2js && $host_checked ]
+regress_26855_test/1: Crash # Issue 26867
+regress_26855_test/2: Crash # Issue 26867
+regress_26855_test/3: Crash # Issue 26867
+regress_26855_test/4: Crash # Issue 26867
+
+[ $compiler != dart2analyzer]
+switch_case_warn_test: SKIP # Analyzer only, see language_analyzer2.status

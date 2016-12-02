@@ -28,8 +28,12 @@ const String HOOKS_API_USAGE = """
 //    [args] is passed to [dartMainRunner].
 //
 // dartDeferredLibraryLoader(uri, successCallback, errorCallback):
-//    if this function is defined, it will be called when a deferered library
+//    if this function is defined, it will be called when a deferred library
 //    is loaded. It should load and eval the javascript of `uri`, and call
 //    successCallback. If it fails to do so, it should call errorCallback with
 //    an error.
+//
+// defaultPackagesBase:
+//    Override the location where `package:` uris are resolved from. By default
+//    they are resolved under "packages/" from the current window location.
 """;

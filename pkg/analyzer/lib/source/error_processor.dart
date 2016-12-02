@@ -4,8 +4,9 @@
 
 library analyzer.source.error_processor;
 
+import 'package:analyzer/error/error.dart';
+import 'package:analyzer/src/error/codes.dart';
 import 'package:analyzer/src/generated/engine.dart';
-import 'package:analyzer/src/generated/error.dart';
 import 'package:analyzer/src/generated/utilities_general.dart';
 import 'package:analyzer/src/task/options.dart';
 import 'package:yaml/yaml.dart';
@@ -95,8 +96,7 @@ class ErrorProcessor {
     }
 
     // Let the user configure how specific errors are processed.
-    List<ErrorProcessor> processors =
-        context.getConfigurationData(CONFIGURED_ERROR_PROCESSORS);
+    List<ErrorProcessor> processors = context.analysisOptions.errorProcessors;
 
     // Give strong mode a chance to upgrade it.
     if (context.analysisOptions.strongMode) {
@@ -121,6 +121,14 @@ class _StrongModeTypeErrorProcessor implements ErrorProcessor {
   ErrorSeverity get severity => ErrorSeverity.ERROR;
 
   /// Check if this processor applies to the given [error].
-  bool appliesTo(AnalysisError error) =>
-      error.errorCode.type == ErrorType.STATIC_TYPE_WARNING;
+  bool appliesTo(AnalysisError error) {
+    ErrorCode errorCode = error.errorCode;
+    if (errorCode is StaticTypeWarningCode) {
+      return true;
+    }
+    if (errorCode is StaticWarningCode) {
+      return errorCode.isStrongModeError;
+    }
+    return false;
+  }
 }

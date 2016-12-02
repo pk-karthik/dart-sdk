@@ -56,7 +56,7 @@ import 'dart:_foreign_helper' show
 import 'dart:_interceptors';
 import 'dart:_internal' as _symbol_dev;
 import 'dart:_internal' show
-    EfficientLength,
+    EfficientLengthIterable,
     MappedIterable,
     IterableElementError;
 
@@ -1036,7 +1036,8 @@ class Primitives {
   }
 
   static String flattenString(String str) {
-    return JS('String', "#.charCodeAt(0) == 0 ? # : #", str, str, str);
+    return JS('returns:String;depends:none;effects:none;throws:never;gvn:true',
+              "#.charCodeAt(0) == 0 ? # : #", str, str, str);
   }
 
   static String getTimeZoneName(DateTime receiver) {
@@ -1369,6 +1370,11 @@ class Primitives {
     }
 
     if (!acceptsOptionalArguments) {
+      if (namedArguments != null && namedArguments.isNotEmpty) {
+        // Tried to invoke a function that takes a fixed number of arguments
+        // with named (optional) arguments.
+        return functionNoSuchMethod(function, arguments, namedArguments);
+      }
       if (argumentCount == requiredParameterCount) {
         return JS('var', r'#.apply(#, #)', jsFunction, function, arguments);
       }
@@ -2456,8 +2462,9 @@ abstract class Closure implements Function {
    *
    * V8 will share the underlying function code objects when the same string is
    * passed to "new Function".  Shared function code objects can lead to
-   * sub-optimal performance due to polymorhism, and can be prevented by
-   * ensuring the strings are different.
+   * sub-optimal performance due to polymorphism, and can be prevented by
+   * ensuring the strings are different, for example, by generating a local
+   * variable with a name dependent on [functionCounter].
    */
   static int functionCounter = 0;
 
@@ -2559,8 +2566,9 @@ abstract class Closure implements Function {
         : isCsp
             ? JS('', 'function(a,b,c,d) {this.\$initialize(a,b,c,d)}')
             : JS('',
-                 'new Function("a,b,c,d", "this.\$initialize(a,b,c,d);" + #)',
-                 functionCounter++);
+                 'new Function("a,b,c,d" + #,'
+                 ' "this.\$initialize(a,b,c,d" + # + ")")',
+                 functionCounter, functionCounter++);
 
     // It is necessary to set the constructor property, otherwise it will be
     // "Object".
@@ -2722,12 +2730,14 @@ abstract class Closure implements Function {
     }
 
     if (arity == 0) {
+      // Incorporate functionCounter into a local.
+      String selfName = 'self${functionCounter++}';
       return JS(
           '',
           '(new Function(#))()',
           'return function(){'
-            'return this.${BoundClosure.selfFieldName()}.$stubName();'
-            '${functionCounter++}'
+            'var $selfName = this.${BoundClosure.selfFieldName()};'
+            'return $selfName.$stubName();'
           '}');
     }
     assert (1 <= arity && arity < 27);
@@ -2735,12 +2745,12 @@ abstract class Closure implements Function {
         'String',
         '"abcdefghijklmnopqrstuvwxyz".split("").splice(0,#).join(",")',
         arity);
+    arguments += '${functionCounter++}';
     return JS(
         '',
         '(new Function(#))()',
         'return function($arguments){'
           'return this.${BoundClosure.selfFieldName()}.$stubName($arguments);'
-          '${functionCounter++}'
         '}');
   }
 
@@ -4012,58 +4022,6 @@ Future<Null> _loadHunk(String hunkName) {
     JS('', 'document.body.appendChild(#)', script);
   }
   _loadingLibraries[hunkName] = completer.future;
-  return completer.future;
-}
-
-// Performs an HTTP GET of the given URI and returns the response. The response
-// is either a String or a ByteBuffer.
-Future<dynamic> readHttp(String uri) {
-  Completer completer = new Completer();
-
-  void failure([error, StackTrace stackTrace]) {
-    completer.completeError(
-        new Exception("Loading $uri failed: $error"),
-        stackTrace);
-  }
-
-  enterJsAsync();
-  completer.future.whenComplete(leaveJsAsync);
-
-  var xhr = JS('var', 'new XMLHttpRequest()');
-  JS('void', '#.open("GET", #)', xhr, uri);
-  JS('void', '#.addEventListener("load", #, false)',
-     xhr, convertDartClosureToJS((event) {
-    int status = JS('int', '#.status', xhr);
-    if (status != 200) {
-      failure("Status code: $status");
-      return;
-    }
-    String responseType = JS('String', '#.responseType', xhr);
-    var data;
-    if (responseType.isEmpty || responseType == 'text') {
-      data = JS('String', '#.response', xhr);
-      completer.complete(data);
-    } else if (responseType == 'document' || responseType == 'json') {
-      data = JS('String', '#.responseText', xhr);
-      completer.complete(data);
-    } else if (responseType == 'arraybuffer') {
-      data = JS('var', '#.response', xhr);
-      completer.complete(data);
-    } else if (responseType == 'blob') {
-      var reader = JS('var', 'new FileReader()');
-      JS('void', '#.addEventListener("loadend", #, false)',
-          reader, convertDartClosureToJS((event) {
-            data = JS('var', '#.result', reader);
-            completer.complete(data);
-          }, 1));
-    } else {
-      failure('Result had unexpected type: $responseType');
-    }
-  }, 1));
-
-  JS('void', '#.addEventListener("error", #, false)', xhr, failure);
-  JS('void', '#.addEventListener("abort", #, false)', xhr, failure);
-  JS('void', '#.send()', xhr);
   return completer.future;
 }
 

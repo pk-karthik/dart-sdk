@@ -19,13 +19,11 @@ import 'package:analysis_server/starter.dart';
 import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:analyzer/instrumentation/file_instrumentation.dart';
 import 'package:analyzer/instrumentation/instrumentation.dart';
-import 'package:analyzer/plugin/embedded_resolver_provider.dart';
 import 'package:analyzer/plugin/resolver_provider.dart';
+import 'package:analyzer/src/dart/sdk/sdk.dart';
 import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/incremental_logger.dart';
-import 'package:analyzer/src/generated/java_io.dart';
 import 'package:analyzer/src/generated/sdk.dart';
-import 'package:analyzer/src/generated/sdk_io.dart';
 import 'package:args/args.dart';
 import 'package:linter/src/plugin/linter_plugin.dart';
 import 'package:plugin/manager.dart';
@@ -245,6 +243,21 @@ class Driver implements ServerStarter {
       "incremental-resolution-validation";
 
   /**
+   * The name of the option used to enable using the new analysis driver.
+   */
+  static const String ENABLE_NEW_ANALYSIS_DRIVER = 'enable-new-analysis-driver';
+
+  /**
+   * The name of the option used to enable using pub summary manager.
+   */
+  static const String ENABLE_PUB_SUMMARY_MANAGER = 'enable-pub-summary-manager';
+
+  /**
+   * The name of the option used to enable fined grained invalidation.
+   */
+  static const String FINER_GRAINED_INVALIDATION = 'finer-grained-invalidation';
+
+  /**
    * The name of the option used to cause instrumentation to also be written to
    * a local file.
    */
@@ -261,6 +274,11 @@ class Driver implements ServerStarter {
    * console instead of being intercepted.
    */
   static const String INTERNAL_PRINT_TO_CONSOLE = "internal-print-to-console";
+
+  /**
+   * The name of the option used to describe the new analysis driver logger.
+   */
+  static const String NEW_ANALYSIS_DRIVER_LOG = 'new-analysis-driver-log';
 
   /**
    * The name of the flag used to disable error notifications.
@@ -298,10 +316,10 @@ class Driver implements ServerStarter {
   InstrumentationServer instrumentationServer;
 
   /**
-   * The embedded library URI resolver provider used to override the way
-   * embedded library URI's are resolved in some contexts.
+   * The file resolver provider used to override the way file URI's are
+   * resolved in some contexts.
    */
-  EmbeddedResolverProvider embeddedUriResolverProvider;
+  ResolverProvider fileResolverProvider;
 
   /**
    * The package resolver provider used to override the way package URI's are
@@ -375,11 +393,19 @@ class Driver implements ServerStarter {
         results[ENABLE_INCREMENTAL_RESOLUTION_API];
     analysisServerOptions.enableIncrementalResolutionValidation =
         results[INCREMENTAL_RESOLUTION_VALIDATION];
+    analysisServerOptions.enableNewAnalysisDriver =
+        results[ENABLE_NEW_ANALYSIS_DRIVER];
+    analysisServerOptions.enablePubSummaryManager =
+        results[ENABLE_PUB_SUMMARY_MANAGER];
+    analysisServerOptions.finerGrainedInvalidation =
+        results[FINER_GRAINED_INVALIDATION];
     analysisServerOptions.noErrorNotification = results[NO_ERROR_NOTIFICATION];
     analysisServerOptions.noIndex = results[NO_INDEX];
     analysisServerOptions.useAnalysisHighlight2 =
         results[USE_ANALISYS_HIGHLIGHT2];
     analysisServerOptions.fileReadMode = results[FILE_READ_MODE];
+    analysisServerOptions.newAnalysisDriverLog =
+        results[NEW_ANALYSIS_DRIVER_LOG];
 
     _initIncrementalLogger(results[INCREMENTAL_RESOLUTION_LOG]);
 
@@ -399,24 +425,22 @@ class Driver implements ServerStarter {
     ExtensionManager manager = new ExtensionManager();
     manager.processPlugins(plugins);
 
-    JavaFile defaultSdkDirectory;
+    String defaultSdkPath;
     if (results[SDK_OPTION] != null) {
-      defaultSdkDirectory = new JavaFile(results[SDK_OPTION]);
+      defaultSdkPath = results[SDK_OPTION];
     } else {
       // No path to the SDK was provided.
       // Use DirectoryBasedDartSdk.defaultSdkDirectory, which will make a guess.
-      defaultSdkDirectory = DirectoryBasedDartSdk.defaultSdkDirectory;
+      defaultSdkPath = FolderBasedDartSdk
+          .defaultSdkDirectory(PhysicalResourceProvider.INSTANCE)
+          .path;
     }
-    SdkCreator defaultSdkCreator = (AnalysisOptions options) {
-      DirectoryBasedDartSdk sdk =
-          new DirectoryBasedDartSdk(defaultSdkDirectory);
-      sdk.analysisOptions = options;
-      return sdk;
-    };
+    bool useSummaries = analysisServerOptions.fileReadMode == 'as-is' ||
+        analysisServerOptions.enableNewAnalysisDriver;
     // TODO(brianwilkerson) It would be nice to avoid creating an SDK that
     // cannot be re-used, but the SDK is needed to create a package map provider
     // in the case where we need to run `pub` in order to get the package map.
-    DirectoryBasedDartSdk defaultSdk = defaultSdkCreator(null);
+    DartSdk defaultSdk = _createDefaultSdk(defaultSdkPath, useSummaries);
     //
     // Initialize the instrumentation service.
     //
@@ -440,11 +464,11 @@ class Driver implements ServerStarter {
     //
     socketServer = new SocketServer(
         analysisServerOptions,
-        defaultSdkCreator,
+        new DartSdkManager(defaultSdkPath, useSummaries),
         defaultSdk,
         service,
         serverPlugin,
-        embeddedUriResolverProvider,
+        fileResolverProvider,
         packageResolverProvider,
         useSingleContextManager);
     httpServer = new HttpAnalysisServer(socketServer);
@@ -523,6 +547,18 @@ class Driver implements ServerStarter {
         help: "enable validation of incremental resolution results (slow)",
         defaultsTo: false,
         negatable: false);
+    parser.addFlag(ENABLE_NEW_ANALYSIS_DRIVER,
+        help: "enable using new analysis driver",
+        defaultsTo: false,
+        negatable: false);
+    parser.addFlag(ENABLE_PUB_SUMMARY_MANAGER,
+        help: "enable using summaries for pub cache packages",
+        defaultsTo: false,
+        negatable: false);
+    parser.addFlag(FINER_GRAINED_INVALIDATION,
+        help: "enable finer grained invalidation",
+        defaultsTo: false,
+        negatable: false);
     parser.addOption(INSTRUMENTATION_LOG_FILE,
         help:
             "the path of the file to which instrumentation data will be written");
@@ -530,6 +566,8 @@ class Driver implements ServerStarter {
         help: "enable sending `print` output to the console",
         defaultsTo: false,
         negatable: false);
+    parser.addOption(NEW_ANALYSIS_DRIVER_LOG,
+        help: "set a destination for the new analysis driver's log");
     parser.addOption(PORT_OPTION,
         help: "the http diagnostic port on which the server provides"
             " status and performance information");
@@ -558,6 +596,15 @@ class Driver implements ServerStarter {
         defaultsTo: "as-is");
 
     return parser;
+  }
+
+  DartSdk _createDefaultSdk(String defaultSdkPath, bool useSummaries) {
+    PhysicalResourceProvider resourceProvider =
+        PhysicalResourceProvider.INSTANCE;
+    FolderBasedDartSdk sdk = new FolderBasedDartSdk(
+        resourceProvider, resourceProvider.getFolder(defaultSdkPath));
+    sdk.useSummary = useSummaries;
+    return sdk;
   }
 
   /**

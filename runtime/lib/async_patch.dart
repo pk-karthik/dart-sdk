@@ -124,6 +124,7 @@ class _AsyncStarStreamController {
     whenDoneAdding.then((_) {
       isAdding = false;
       scheduleGenerator();
+      if (!isScheduled) isSuspendedAtYield = true;
     });
     return false;
   }
@@ -188,4 +189,4 @@ class _AsyncStarStreamController {
   }
 }
 
-patch void _rethrow(Object error, StackTrace stackTrace) native "Async_rethrow";
+@patch void _rethrow(Object error, StackTrace stackTrace) native "Async_rethrow";

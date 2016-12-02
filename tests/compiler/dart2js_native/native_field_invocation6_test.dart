@@ -2,19 +2,18 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-import "dart:_js_helper";
-import "package:expect/expect.dart";
+import "native_testing.dart";
 
-makeA() native;
-nativeFirst(x, y) native;
+makeA() native ;
+nativeFirst(x, y) native ;
 
 void setup() native """
 nativeFirst = function(x, y) { return x; }
 
 function A() {}
 makeA = function() { return new A; }
+self.nativeConstructor(A);
 """;
-
 
 @Native("A")
 class A {
@@ -40,6 +39,7 @@ class D {
 }
 
 main() {
+  nativeTesting();
   setup();
   var a = makeA();
   a.init();

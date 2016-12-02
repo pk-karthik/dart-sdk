@@ -65,7 +65,6 @@ TEST_CASE(IsolateReload_FunctionReplacement) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_EQ(10, SimpleInvoke(lib, "main"));
 }
 
@@ -83,7 +82,6 @@ TEST_CASE(IsolateReload_BadClass) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_EQ(4, SimpleInvoke(lib, "main"));
 
   const char* kReloadScript =
@@ -99,7 +97,6 @@ TEST_CASE(IsolateReload_BadClass) {
 
   Dart_Handle result = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_ERROR(result, "unexpected token");
-
   EXPECT_EQ(4, SimpleInvoke(lib, "main"));
 }
 
@@ -114,7 +111,6 @@ TEST_CASE(IsolateReload_StaticValuePreserved) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("init()=old value,value=old value",
                SimpleInvokeStr(lib, "main"));
 
@@ -128,7 +124,6 @@ TEST_CASE(IsolateReload_StaticValuePreserved) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("init()=new value,value=old value",
                SimpleInvokeStr(lib, "main"));
 }
@@ -149,7 +144,6 @@ TEST_CASE(IsolateReload_SavedClosure) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("antediluvian!", SimpleInvokeStr(lib, "main"));
 
   // Remove the original closure from the source code.  The closure is
@@ -166,7 +160,6 @@ TEST_CASE(IsolateReload_SavedClosure) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("postapocalyptic!", SimpleInvokeStr(lib, "main"));
 }
 
@@ -180,7 +173,6 @@ TEST_CASE(IsolateReload_TopLevelFieldAdded) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("value1=10", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
@@ -192,9 +184,7 @@ TEST_CASE(IsolateReload_TopLevelFieldAdded) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
-  EXPECT_STREQ("value1=10,value2=20",
-               SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("value1=10,value2=20", SimpleInvokeStr(lib, "main"));
 }
 
 
@@ -210,7 +200,6 @@ TEST_CASE(IsolateReload_ClassFieldAdded) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_EQ(44, SimpleInvoke(lib, "main"));
 
   const char* kReloadScript =
@@ -224,7 +213,40 @@ TEST_CASE(IsolateReload_ClassFieldAdded) {
       "}\n";
 
   lib = TestCase::ReloadTestScript(kReloadScript);
-  EXPECT_ERROR(lib, "Number of instance fields changed");
+  EXPECT_VALID(lib);
+  EXPECT_EQ(44, SimpleInvoke(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_ClassFieldAdded2) {
+  const char* kScript =
+      "class Foo {\n"
+      "  var x;\n"
+      "  var y;\n"
+      "}\n"
+      "main() {\n"
+      "  new Foo();\n"
+      "  return 44;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(44, SimpleInvoke(lib, "main"));
+
+  const char* kReloadScript =
+      "class Foo {\n"
+      "  var x;\n"
+      "  var y;\n"
+      "  var z;\n"
+      "}\n"
+      "main() {\n"
+      "  new Foo();\n"
+      "  return 44;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(44, SimpleInvoke(lib, "main"));
 }
 
 
@@ -241,7 +263,6 @@ TEST_CASE(IsolateReload_ClassFieldRemoved) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_EQ(44, SimpleInvoke(lib, "main"));
 
   const char* kReloadScript =
@@ -254,7 +275,8 @@ TEST_CASE(IsolateReload_ClassFieldRemoved) {
       "}\n";
 
   lib = TestCase::ReloadTestScript(kReloadScript);
-  EXPECT_ERROR(lib, "Number of instance fields changed");
+  EXPECT_VALID(lib);
+  EXPECT_EQ(44, SimpleInvoke(lib, "main"));
 }
 
 
@@ -266,7 +288,6 @@ TEST_CASE(IsolateReload_ClassAdded) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("hello", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
@@ -280,7 +301,6 @@ TEST_CASE(IsolateReload_ClassAdded) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("hello from A", SimpleInvokeStr(lib, "main"));
 }
 
@@ -293,8 +313,7 @@ TEST_CASE(IsolateReload_LibraryImportAdded) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
-  EXPECT_ERROR(SimpleInvokeError(lib, "main"), "max");;
+  EXPECT_ERROR(SimpleInvokeError(lib, "main"), "max");
 
   const char* kReloadScript =
       "import 'dart:math';\n"
@@ -304,7 +323,6 @@ TEST_CASE(IsolateReload_LibraryImportAdded) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_EQ(4, SimpleInvoke(lib, "main"));
 }
 
@@ -318,7 +336,6 @@ TEST_CASE(IsolateReload_LibraryImportRemoved) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_EQ(4, SimpleInvoke(lib, "main"));
 
   const char* kReloadScript =
@@ -329,7 +346,7 @@ TEST_CASE(IsolateReload_LibraryImportRemoved) {
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
 
-  EXPECT_ERROR(SimpleInvokeError(lib, "main"), "max");;
+  EXPECT_ERROR(SimpleInvokeError(lib, "main"), "max");
 }
 
 
@@ -388,7 +405,6 @@ TEST_CASE(IsolateReload_ImplicitConstructorChanged) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("saved:20 new:20", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
@@ -403,7 +419,6 @@ TEST_CASE(IsolateReload_ImplicitConstructorChanged) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("saved:20 new:10", SimpleInvokeStr(lib, "main"));
 }
 
@@ -422,7 +437,6 @@ TEST_CASE(IsolateReload_ConstructorChanged) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("saved:20 new:20", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
@@ -439,7 +453,6 @@ TEST_CASE(IsolateReload_ConstructorChanged) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("saved:20 new:10", SimpleInvokeStr(lib, "main"));
 }
 
@@ -457,7 +470,6 @@ TEST_CASE(IsolateReload_SuperClassChanged) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("(true/false, true/true)", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
@@ -473,7 +485,6 @@ TEST_CASE(IsolateReload_SuperClassChanged) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("(true/true, false/true)", SimpleInvokeStr(lib, "main"));
 }
 
@@ -493,7 +504,6 @@ TEST_CASE(IsolateReload_Generics) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("Instance of 'B<A>'", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
@@ -507,8 +517,105 @@ TEST_CASE(IsolateReload_Generics) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("Instance of 'B<A>'", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_TypeIdentity) {
+  const char* kScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class T { }\n"
+      "getType() => T;\n"
+      "main() {\n"
+      "  var oldType = getType();\n"
+      "  reloadTest();\n"
+      "  var newType = getType();\n"
+      "  return identical(oldType, newType).toString();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class T extends Stopwatch { }\n"
+      "getType() => T;\n"
+      "main() {\n"
+      "  var oldType = getType();\n"
+      "  reloadTest();\n"
+      "  var newType = getType();\n"
+      "  return identical(oldType, newType).toString();\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_STREQ("true", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_TypeIdentityGeneric) {
+  const char* kScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class T<G> { }\n"
+      "getType() => new T<int>().runtimeType;\n"
+      "main() {\n"
+      "  var oldType = getType();\n"
+      "  reloadTest();\n"
+      "  var newType = getType();\n"
+      "  return identical(oldType, newType).toString();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class T<G> extends Stopwatch { }\n"
+      "getType() => new T<int>().runtimeType;\n"
+      "main() {\n"
+      "  var oldType = getType();\n"
+      "  reloadTest();\n"
+      "  var newType = getType();\n"
+      "  return identical(oldType, newType).toString();\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_STREQ("true", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_TypeIdentityParameter) {
+  const char* kScript =
+      "import 'dart:mirrors';\n"
+      "import 'test:isolate_reload_helper';\n"
+      "class T<G> { }\n"
+      "getTypeVar() => reflectType(T).typeVariables[0];\n"
+      "main() {\n"
+      "  var oldType = getTypeVar();\n"
+      "  reloadTest();\n"
+      "  var newType = getTypeVar();\n"
+      "  return (oldType == newType).toString();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'dart:mirrors';\n"
+      "import 'test:isolate_reload_helper';\n"
+      "class T<G> extends Stopwatch { }\n"
+      "getTypeVar() => reflectType(T).typeVariables[0];\n"
+      "main() {\n"
+      "  var oldType = getTypeVar();\n"
+      "  reloadTest();\n"
+      "  var newType = getTypeVar();\n"
+      "  return (oldType == newType).toString();\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_STREQ("true", SimpleInvokeStr(lib, "main"));
 }
 
 
@@ -527,9 +634,7 @@ TEST_CASE(IsolateReload_MixinChanged) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
-  EXPECT_STREQ("saved:field=mixin1,func=mixin1",
-               SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("saved:field=mixin1,func=mixin1", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
       "class Mixin2 {\n"
@@ -550,9 +655,10 @@ TEST_CASE(IsolateReload_MixinChanged) {
 
   // The saved instance of B retains its old field value from mixin1,
   // but it gets the new implementation of func from mixin2.
-  EXPECT_STREQ("saved:field=mixin1,func=mixin2 "
-               "newer:field=mixin2,func=mixin2",
-               SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ(
+      "saved:field=mixin1,func=mixin2 "
+      "newer:field=mixin2,func=mixin2",
+      SimpleInvokeStr(lib, "main"));
 }
 
 
@@ -577,11 +683,11 @@ TEST_CASE(IsolateReload_ComplexInheritanceChange) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
-  EXPECT_STREQ("(a is A(true)/ B(false)/ C(false),"
-               " b is A(true)/ B(true)/ C(false),"
-               " c is A(true)/ B(true)/ C(true))",
-               SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ(
+      "(a is A(true)/ B(false)/ C(false),"
+      " b is A(true)/ B(true)/ C(false),"
+      " c is A(true)/ B(true)/ C(true))",
+      SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
       "class C {\n"
@@ -604,12 +710,12 @@ TEST_CASE(IsolateReload_ComplexInheritanceChange) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
-  EXPECT_STREQ("(a is A(true)/ C(true)/ X(true),"
-               " b is A(true)/ C(true)/ X(true),"  // still extends A...
-               " c is A(false)/ C(true)/ X(false),"
-               " x is A(false)/ C(true)/ X(true))",
-               SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ(
+      "(a is A(true)/ C(true)/ X(true),"
+      " b is A(true)/ C(true)/ X(true),"  // still extends A...
+      " c is A(false)/ C(true)/ X(false),"
+      " x is A(false)/ C(true)/ X(true))",
+      SimpleInvokeStr(lib, "main"));
 
   // Revive the class B and make sure all allocated instances take
   // their place in the inheritance hierarchy.
@@ -637,18 +743,18 @@ TEST_CASE(IsolateReload_ComplexInheritanceChange) {
 
   lib = TestCase::ReloadTestScript(kReloadScript2);
   EXPECT_VALID(lib);
-
-  EXPECT_STREQ("(a is A(true)/ B(false)/ C(false)/ X(true),"
-               " b is A(false)/ B(true)/ C(false)/ X(true),"
-               " c is A(true)/ B(false)/ C(true)/ X(true),"
-               " x is A(false)/ B(false)/ C(false)/ X(true))",
-               SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ(
+      "(a is A(true)/ B(false)/ C(false)/ X(true),"
+      " b is A(false)/ B(true)/ C(false)/ X(true),"
+      " c is A(true)/ B(false)/ C(true)/ X(true),"
+      " x is A(false)/ B(false)/ C(false)/ X(true))",
+      SimpleInvokeStr(lib, "main"));
 }
 
 
 TEST_CASE(IsolateReload_LiveStack) {
   const char* kScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "helper() => 7;\n"
       "alpha() { var x = helper(); reloadTest(); return x + helper(); }\n"
       "foo() => alpha();\n"
@@ -661,7 +767,7 @@ TEST_CASE(IsolateReload_LiveStack) {
   EXPECT_VALID(lib);
 
   const char* kReloadScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "helper() => 100;\n"
       "alpha() => 5 + helper();\n"
       "foo() => alpha();\n"
@@ -676,59 +782,60 @@ TEST_CASE(IsolateReload_LiveStack) {
 
   lib = TestCase::GetReloadErrorOrRootLibrary();
   EXPECT_VALID(lib);
-
   EXPECT_EQ(105, SimpleInvoke(lib, "main"));
 }
 
 
 TEST_CASE(IsolateReload_LibraryLookup) {
+  const char* kImportScript = "importedFunc() => 'a';\n";
+  TestCase::AddTestLib("test:lib1", kImportScript);
+
   const char* kScript =
       "main() {\n"
       "  return importedFunc();\n"
       "}\n";
-
   Dart_Handle result;
-
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_ERROR(SimpleInvokeError(lib, "main"), "importedFunc");
 
-  // Fail to find 'importable_test_lib' in the isolate.
-  result = Dart_LookupLibrary(NewString("importable_test_lib"));
+  // Fail to find 'test:lib1' in the isolate.
+  result = Dart_LookupLibrary(NewString("test:lib1"));
   EXPECT(Dart_IsError(result));
 
   const char* kReloadScript =
-      "import 'importable_test_lib';\n"
+      "import 'test:lib1';\n"
       "main() {\n"
       "  return importedFunc();\n"
       "}\n";
 
-  // Reload and add 'importable_test_lib' to isolate.
+  // Reload and add 'test:lib1' to isolate.
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("a", SimpleInvokeStr(lib, "main"));
 
-  // Find 'importable_test_lib' in the isolate.
-  result = Dart_LookupLibrary(NewString("importable_test_lib"));
+  // Find 'test:lib1' in the isolate.
+  result = Dart_LookupLibrary(NewString("test:lib1"));
   EXPECT(Dart_IsLibrary(result));
 
   // Reload and remove 'dart:math' from isolate.
   lib = TestCase::ReloadTestScript(kScript);
   EXPECT_VALID(lib);
 
-  // Fail to find 'importable_test_lib' in the isolate.
-  result = Dart_LookupLibrary(NewString("importable_test_lib"));
+  // Fail to find 'test:lib1' in the isolate.
+  result = Dart_LookupLibrary(NewString("test:lib1"));
   EXPECT(Dart_IsError(result));
 }
 
 
 TEST_CASE(IsolateReload_LibraryHide) {
-  // Import 'importable_test_lib' with importedFunc hidden. Will result in an
+  const char* kImportScript = "importedFunc() => 'a';\n";
+  TestCase::AddTestLib("test:lib1", kImportScript);
+
+  // Import 'test:lib1' with importedFunc hidden. Will result in an
   // error.
   const char* kScript =
-      "import 'importable_test_lib' hide importedFunc;\n"
+      "import 'test:lib1' hide importedFunc;\n"
       "main() {\n"
       "  return importedFunc();\n"
       "}\n";
@@ -737,28 +844,31 @@ TEST_CASE(IsolateReload_LibraryHide) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_ERROR(SimpleInvokeError(lib, "main"), "importedFunc");
 
-  // Import 'importable_test_lib'.
+  // Import 'test:lib1'.
   const char* kReloadScript =
-      "import 'importable_test_lib';\n"
+      "import 'test:lib1';\n"
       "main() {\n"
       "  return importedFunc();\n"
       "}\n";
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("a", SimpleInvokeStr(lib, "main"));
 }
 
 
 TEST_CASE(IsolateReload_LibraryShow) {
-  // Import 'importable_test_lib' with importedIntFunc visible. Will result in
+  const char* kImportScript =
+      "importedFunc() => 'a';\n"
+      "importedIntFunc() => 4;\n";
+  TestCase::AddTestLib("test:lib1", kImportScript);
+
+  // Import 'test:lib1' with importedIntFunc visible. Will result in
   // an error when 'main' is invoked.
   const char* kScript =
-      "import 'importable_test_lib' show importedIntFunc;\n"
+      "import 'test:lib1' show importedIntFunc;\n"
       "main() {\n"
       "  return importedFunc();\n"
       "}\n"
@@ -775,10 +885,10 @@ TEST_CASE(IsolateReload_LibraryShow) {
   // Results in an error.
   EXPECT_ERROR(SimpleInvokeError(lib, "main"), "importedFunc");
 
-  // Import 'importable_test_lib' with importedFunc visible. Will result in
+  // Import 'test:lib1' with importedFunc visible. Will result in
   // an error when 'mainInt' is invoked.
   const char* kReloadScript =
-      "import 'importable_test_lib' show importedFunc;\n"
+      "import 'test:lib1' show importedFunc;\n"
       "main() {\n"
       "  return importedFunc();\n"
       "}\n"
@@ -799,9 +909,12 @@ TEST_CASE(IsolateReload_LibraryShow) {
 // Verifies that we clear the ICs for the functions live on the stack in a way
 // that is compatible with the fast path smi stubs.
 TEST_CASE(IsolateReload_SmiFastPathStubs) {
+  const char* kImportScript = "importedIntFunc() => 4;\n";
+  TestCase::AddTestLib("test:lib1", kImportScript);
+
   const char* kScript =
-      "import 'isolate_reload_test_helper';\n"
-      "import 'importable_test_lib' show importedIntFunc;\n"
+      "import 'test:isolate_reload_helper';\n"
+      "import 'test:lib1' show importedIntFunc;\n"
       "main() {\n"
       "  var x = importedIntFunc();\n"
       "  var y = importedIntFunc();\n"
@@ -823,8 +936,14 @@ TEST_CASE(IsolateReload_SmiFastPathStubs) {
 // Verifies that we assign the correct patch classes for imported
 // mixins when we reload.
 TEST_CASE(IsolateReload_ImportedMixinFunction) {
+  const char* kImportScript =
+      "class ImportedMixin {\n"
+      "  mixinFunc() => 'mixin';\n"
+      "}\n";
+  TestCase::AddTestLib("test:lib1", kImportScript);
+
   const char* kScript =
-      "import 'importable_test_lib' show ImportedMixin;\n"
+      "import 'test:lib1' show ImportedMixin;\n"
       "class A extends Object with ImportedMixin {\n"
       "}"
       "var func = new A().mixinFunc;\n"
@@ -838,7 +957,7 @@ TEST_CASE(IsolateReload_ImportedMixinFunction) {
   EXPECT_STREQ("mixin", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
-      "import 'importable_test_lib' show ImportedMixin;\n"
+      "import 'test:lib1' show ImportedMixin;\n"
       "class A extends Object with ImportedMixin {\n"
       "}"
       "var func;\n"
@@ -848,7 +967,6 @@ TEST_CASE(IsolateReload_ImportedMixinFunction) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("mixin", SimpleInvokeStr(lib, "main"));
 }
 
@@ -861,7 +979,6 @@ TEST_CASE(IsolateReload_TopLevelParseError) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_EQ(4, SimpleInvoke(lib, "main"));
 
   const char* kReloadScript =
@@ -877,7 +994,7 @@ TEST_CASE(IsolateReload_TopLevelParseError) {
 
 TEST_CASE(IsolateReload_PendingUnqualifiedCall_StaticToInstance) {
   const char* kScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "class C {\n"
       "  static foo() => 'static';\n"
       "  test() {\n"
@@ -893,7 +1010,7 @@ TEST_CASE(IsolateReload_PendingUnqualifiedCall_StaticToInstance) {
   EXPECT_VALID(lib);
 
   const char* kReloadScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "class C {\n"
       "  foo() => 'instance';\n"
       "  test() {\n"
@@ -907,18 +1024,17 @@ TEST_CASE(IsolateReload_PendingUnqualifiedCall_StaticToInstance) {
 
   TestCase::SetReloadTestScript(kReloadScript);
 
-  EXPECT_EQ("instance", SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("instance", SimpleInvokeStr(lib, "main"));
 
   lib = TestCase::GetReloadErrorOrRootLibrary();
   EXPECT_VALID(lib);
-
-  EXPECT_EQ("instance", SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("instance", SimpleInvokeStr(lib, "main"));
 }
 
 
 TEST_CASE(IsolateReload_PendingUnqualifiedCall_InstanceToStatic) {
   const char* kScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "class C {\n"
       "  foo() => 'instance';\n"
       "  test() {\n"
@@ -934,7 +1050,7 @@ TEST_CASE(IsolateReload_PendingUnqualifiedCall_InstanceToStatic) {
   EXPECT_VALID(lib);
 
   const char* kReloadScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "class C {\n"
       "  static foo() => 'static';\n"
       "  test() {\n"
@@ -948,18 +1064,17 @@ TEST_CASE(IsolateReload_PendingUnqualifiedCall_InstanceToStatic) {
 
   TestCase::SetReloadTestScript(kReloadScript);
 
-  EXPECT_EQ("static", SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("static", SimpleInvokeStr(lib, "main"));
 
   lib = TestCase::GetReloadErrorOrRootLibrary();
   EXPECT_VALID(lib);
-
-  EXPECT_EQ("static", SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("static", SimpleInvokeStr(lib, "main"));
 }
 
 
 TEST_CASE(IsolateReload_PendingConstructorCall_AbstractToConcrete) {
   const char* kScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "abstract class Foo {}\n"
       "class C {\n"
       "  test() {\n"
@@ -980,7 +1095,7 @@ TEST_CASE(IsolateReload_PendingConstructorCall_AbstractToConcrete) {
   EXPECT_VALID(lib);
 
   const char* kReloadScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "class Foo {}\n"
       "class C {\n"
       "  test() {\n"
@@ -999,18 +1114,17 @@ TEST_CASE(IsolateReload_PendingConstructorCall_AbstractToConcrete) {
 
   TestCase::SetReloadTestScript(kReloadScript);
 
-  EXPECT_EQ("okay", SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("okay", SimpleInvokeStr(lib, "main"));
 
   lib = TestCase::GetReloadErrorOrRootLibrary();
   EXPECT_VALID(lib);
-
-  EXPECT_EQ("okay", SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("okay", SimpleInvokeStr(lib, "main"));
 }
 
 
 TEST_CASE(IsolateReload_PendingConstructorCall_ConcreteToAbstract) {
   const char* kScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "class Foo {}\n"
       "class C {\n"
       "  test() {\n"
@@ -1031,7 +1145,7 @@ TEST_CASE(IsolateReload_PendingConstructorCall_ConcreteToAbstract) {
   EXPECT_VALID(lib);
 
   const char* kReloadScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "abstract class Foo {}\n"
       "class C {\n"
       "  test() {\n"
@@ -1050,18 +1164,17 @@ TEST_CASE(IsolateReload_PendingConstructorCall_ConcreteToAbstract) {
 
   TestCase::SetReloadTestScript(kReloadScript);
 
-  EXPECT_EQ("exception", SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("exception", SimpleInvokeStr(lib, "main"));
 
   lib = TestCase::GetReloadErrorOrRootLibrary();
   EXPECT_VALID(lib);
-
-  EXPECT_EQ("exception", SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("exception", SimpleInvokeStr(lib, "main"));
 }
 
 
 TEST_CASE(IsolateReload_PendingStaticCall_DefinedToNSM) {
   const char* kScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "class C {\n"
       "  static foo() => 'static'\n"
       "  test() {\n"
@@ -1081,7 +1194,7 @@ TEST_CASE(IsolateReload_PendingStaticCall_DefinedToNSM) {
   EXPECT_VALID(lib);
 
   const char* kReloadScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "class C {\n"
       "  test() {\n"
       "    reloadTest();\n"
@@ -1098,18 +1211,17 @@ TEST_CASE(IsolateReload_PendingStaticCall_DefinedToNSM) {
 
   TestCase::SetReloadTestScript(kReloadScript);
 
-  EXPECT_EQ("exception", SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("exception", SimpleInvokeStr(lib, "main"));
 
   lib = TestCase::GetReloadErrorOrRootLibrary();
   EXPECT_VALID(lib);
-
-  EXPECT_EQ("exception", SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("exception", SimpleInvokeStr(lib, "main"));
 }
 
 
 TEST_CASE(IsolateReload_PendingStaticCall_NSMToDefined) {
   const char* kScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "class C {\n"
       "  test() {\n"
       "    reloadTest();\n"
@@ -1128,7 +1240,7 @@ TEST_CASE(IsolateReload_PendingStaticCall_NSMToDefined) {
   EXPECT_VALID(lib);
 
   const char* kReloadScript =
-      "import 'isolate_reload_test_helper';\n"
+      "import 'test:isolate_reload_helper';\n"
       "class C {\n"
       "  static foo() => 'static'\n"
       "  test() {\n"
@@ -1146,12 +1258,696 @@ TEST_CASE(IsolateReload_PendingStaticCall_NSMToDefined) {
 
   TestCase::SetReloadTestScript(kReloadScript);
 
-  EXPECT_EQ("static", SimpleInvokeStr(lib, "main"));
+  EXPECT_STREQ("static", SimpleInvokeStr(lib, "main"));
 
   lib = TestCase::GetReloadErrorOrRootLibrary();
   EXPECT_VALID(lib);
+  EXPECT_STREQ("static", SimpleInvokeStr(lib, "main"));
+}
 
-  EXPECT_EQ("static", SimpleInvokeStr(lib, "main"));
+
+TEST_CASE(IsolateReload_PendingSuperCall) {
+  const char* kScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class S {\n"
+      "  foo() => 1;\n"
+      "}\n"
+      "class C extends S {\n"
+      "  foo() => 100;\n"
+      "  test() {\n"
+      "    var n = super.foo();\n"
+      "    reloadTest();\n"
+      "    return n + super.foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  return new C().test();\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class S {\n"
+      "  foo() => 10;\n"
+      "}\n"
+      "class C extends S {\n"
+      "  foo() => 100;\n"
+      "  test() {\n"
+      "    var n = super.foo();\n"
+      "    reloadTest();\n"
+      "    return n + super.foo();\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  return new C().test();\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_EQ(11, SimpleInvoke(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_TearOff_Instance_Equality) {
+  const char* kScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  foo() => 'old';\n"
+      "}\n"
+      "main() {\n"
+      "  var c = new C();\n"
+      "  var f1 = c.foo;\n"
+      "  reloadTest();\n"
+      "  var f2 = c.foo;\n"
+      "  return '${f1()} ${f2()} ${f1 == f2} ${identical(f1, f2)}';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  foo() => 'new';\n"
+      "}\n"
+      "main() {\n"
+      "  var c = new C();\n"
+      "  var f1 = c.foo;\n"
+      "  reloadTest();\n"
+      "  var f2 = c.foo;\n"
+      "  return '${f1()} ${f2()} ${f1 == f2} ${identical(f1, f2)}';\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_STREQ("new new true false", SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+}
+
+
+TEST_CASE(IsolateReload_TearOff_Class_Identity) {
+  const char* kScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  static foo() => 'old';\n"
+      "}\n"
+      "getFoo() => C.foo;\n"
+      "main() {\n"
+      "  var f1 = getFoo();\n"
+      "  reloadTest();\n"
+      "  var f2 = getFoo();\n"
+      "  return '${f1()} ${f2()} ${f1 == f2} ${identical(f1, f2)}';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  static foo() => 'new';\n"
+      "}\n"
+      "getFoo() => C.foo;\n"
+      "main() {\n"
+      "  var f1 = getFoo();\n"
+      "  reloadTest();\n"
+      "  var f2 = getFoo();\n"
+      "  return '${f1()} ${f2()} ${f1 == f2} ${identical(f1, f2)}';\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_STREQ("new new true true", SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+}
+
+
+TEST_CASE(IsolateReload_TearOff_Library_Identity) {
+  const char* kScript =
+      "import 'test:isolate_reload_helper';\n"
+      "foo() => 'old';\n"
+      "getFoo() => foo;\n"
+      "main() {\n"
+      "  var f1 = getFoo();\n"
+      "  reloadTest();\n"
+      "  var f2 = getFoo();\n"
+      "  return '${f1()} ${f2()} ${f1 == f2} ${identical(f1, f2)}';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'test:isolate_reload_helper';\n"
+      "foo() => 'new';\n"
+      "getFoo() => foo;\n"
+      "main() {\n"
+      "  var f1 = getFoo();\n"
+      "  reloadTest();\n"
+      "  var f2 = getFoo();\n"
+      "  return '${f1()} ${f2()} ${f1 == f2} ${identical(f1, f2)}';\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_STREQ("new new true true", SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+}
+
+
+TEST_CASE(IsolateReload_TearOff_List_Set) {
+  const char* kScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  foo() => 'old';\n"
+      "}\n"
+      "List list = new List(2);\n"
+      "Set set = new Set();\n"
+      "main() {\n"
+      "  var c = new C();\n"
+      "  list[0] = c.foo;\n"
+      "  list[1] = c#foo;\n"
+      "  set.add(c.foo);\n"
+      "  set.add(c#foo);\n"
+      "  int countBefore = set.length;\n"
+      "  reloadTest();\n"
+      "  list[1] = c.foo;\n"
+      "  set.add(c.foo);\n"
+      "  set.add(c#foo);\n"
+      "  int countAfter = set.length;\n"
+      "  return '${list[0]()} ${list[1]()} ${list[0] == list[1]} '\n"
+      "         '${countBefore == 1} ${countAfter == 1} ${(set.first)()} '\n"
+      "         '${set.first == c.foo} ${set.first == c#foo} '\n"
+      "         '${set.remove(c#foo)}';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  foo() => 'new';\n"
+      "}\n"
+      "List list = new List(2);\n"
+      "Set set = new Set();\n"
+      "main() {\n"
+      "  var c = new C();\n"
+      "  list[0] = c.foo;\n"
+      "  list[1] = c#foo;\n"
+      "  set.add(c.foo);\n"
+      "  set.add(c#foo);\n"
+      "  int countBefore = set.length;\n"
+      "  reloadTest();\n"
+      "  list[1] = c.foo;\n"
+      "  set.add(c.foo);\n"
+      "  set.add(c#foo);\n"
+      "  int countAfter = set.length;\n"
+      "  return '${list[0]()} ${list[1]()} ${list[0] == list[1]} '\n"
+      "         '${countBefore == 1} ${countAfter == 1} ${(set.first)()} '\n"
+      "         '${set.first == c.foo} ${set.first == c#foo} '\n"
+      "         '${set.remove(c#foo)}';\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_STREQ("new new true true true new true true true",
+               SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+}
+
+
+TEST_CASE(IsolateReload_DanglingGetter_Instance) {
+  const char* kScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  var x = 3;\n"
+      "  var y = 4;\n"
+      "}\n"
+      "invoke(f) {\n"
+      "  try {\n"
+      "    return f();\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  var c = new C();\n"
+      "  var f = c#y;\n"
+      "  var r1 = invoke(f);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  var x = 3;\n"
+      "}\n"
+      "invoke(f) {\n"
+      "  try {\n"
+      "    return f();\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  var c = new C();\n"
+      "  var f = c#y;\n"
+      "  var r1 = invoke(f);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_STREQ("4 NoSuchMethodError: Class 'C' has no instance getter 'y'.",
+               SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+}
+
+
+TEST_CASE(IsolateReload_DanglingGetter_Class) {
+  const char* kScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  static var x;\n"
+      "  static var y;\n"
+      "}\n"
+      "invoke(f) {\n"
+      "  try {\n"
+      "    return f();\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  C.x = 3;\n"
+      "  C.y = 4;\n"
+      "  var f = C#y;\n"
+      "  var r1 = invoke(f);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  static var x;\n"
+      "}\n"
+      "invoke(f) {\n"
+      "  try {\n"
+      "    return f();\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  C.x = 3;\n"
+      "  C.y = 4;\n"
+      "  var f = C#y;\n"
+      "  var r1 = invoke(f);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_STREQ(
+      "4 NoSuchMethodError: No static getter 'y' declared "
+      "in class 'C'.",
+      SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+}
+
+
+static void IsolateReload_DanlingGetter_LibraryReload(
+    Dart_NativeArguments native_args) {
+  const char* kImportScript2 = "var x;\n";
+  TestCase::AddTestLib("test:other", kImportScript2);
+
+  DART_CHECK_VALID(TestCase::TriggerReload());
+}
+
+
+static Dart_NativeFunction IsolateReload_DanlingGetter_LibraryNativeResolver(
+    Dart_Handle name,
+    int num_of_arguments,
+    bool* auto_setup_scope) {
+  return IsolateReload_DanlingGetter_LibraryReload;
+}
+
+
+TEST_CASE(IsolateReload_DanglingGetter_Library) {
+  const char* kImportScript =
+      "var x;\n"
+      "var y;\n";
+  TestCase::AddTestLib("test:other", kImportScript);
+
+  const char* kScript =
+      "import 'test:other' as prefix;\n"
+      "reloadTest() native 'ReloadTest';\n"
+      "invoke(f) {\n"
+      "  try {\n"
+      "    return f();\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  prefix.x = 3;\n"
+      "  prefix.y = 4;\n"
+      "  var f = prefix#y;\n"
+      "  var r1 = invoke(f);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(
+      kScript, IsolateReload_DanlingGetter_LibraryNativeResolver);
+  EXPECT_VALID(lib);
+
+  TestCase::SetReloadTestScript(kScript);  // Root library does not change.
+
+  EXPECT_STREQ("4 NoSuchMethodError: No top-level getter 'y' declared.",
+               SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+}
+
+
+TEST_CASE(IsolateReload_DanglingSetter_Instance) {
+  const char* kScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  var x = 3;\n"
+      "  var y = 4;\n"
+      "}\n"
+      "invoke(f, a) {\n"
+      "  try {\n"
+      "    return f(a);\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  var c = new C();\n"
+      "  var f = c#y=;\n"
+      "  var r1 = invoke(f, 5);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f, 6);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  var x = 3;\n"
+      "}\n"
+      "invoke(f, a) {\n"
+      "  try {\n"
+      "    return f(a);\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  var c = new C();\n"
+      "  var f = c#y=;\n"
+      "  var r1 = invoke(f, 5);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f, 6);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_STREQ("null NoSuchMethodError: Class 'C' has no instance setter 'y='.",
+               SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+}
+
+
+TEST_CASE(IsolateReload_DanglingSetter_Class) {
+  const char* kScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  static var x;\n"
+      "  static var y;\n"
+      "}\n"
+      "invoke(f, a) {\n"
+      "  try {\n"
+      "    return f(a);\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  C.x = 3;\n"
+      "  C.y = 4;\n"
+      "  var f = C#y=;\n"
+      "  var r1 = invoke(f, 5);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f, 6);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  static var x;\n"
+      "}\n"
+      "invoke(f, a) {\n"
+      "  try {\n"
+      "    return f(a);\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  C.x = 3;\n"
+      "  C.y = 4;\n"
+      "  var f = C#y=;\n"
+      "  var r1 = invoke(f, 5);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f, 6);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_STREQ(
+      "5 NoSuchMethodError: No static setter 'y=' declared in "
+      "class 'C'.",
+      SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+}
+
+
+static void IsolateReload_DanlingSetter_LibraryReload(
+    Dart_NativeArguments native_args) {
+  const char* kImportScript2 = "var x;\n";
+  TestCase::AddTestLib("test:other", kImportScript2);
+
+  DART_CHECK_VALID(TestCase::TriggerReload());
+}
+
+
+static Dart_NativeFunction IsolateReload_DanlingSetter_LibraryNativeResolver(
+    Dart_Handle name,
+    int num_of_arguments,
+    bool* auto_setup_scope) {
+  return IsolateReload_DanlingSetter_LibraryReload;
+}
+
+
+TEST_CASE(IsolateReload_DanglingSetter_Library) {
+  const char* kImportScript =
+      "var x;\n"
+      "var y;\n";
+  TestCase::AddTestLib("test:other", kImportScript);
+
+  const char* kScript =
+      "import 'test:other' as prefix;\n"
+      "reloadTest() native 'ReloadTest';\n"
+      "invoke(f, a) {\n"
+      "  try {\n"
+      "    return f(a);\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  prefix.x = 3;\n"
+      "  prefix.y = 4;\n"
+      "  var f = prefix#y=;\n"
+      "  var r1 = invoke(f, 5);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f, 6);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(
+      kScript, IsolateReload_DanlingSetter_LibraryNativeResolver);
+  EXPECT_VALID(lib);
+
+  TestCase::SetReloadTestScript(kScript);  // Root library does not change.
+
+  EXPECT_STREQ("5 NoSuchMethodError: No top-level setter 'y=' declared.",
+               SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+}
+
+
+TEST_CASE(IsolateReload_TearOff_AddArguments) {
+  const char* kScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  foo(x) => x;\n"
+      "}\n"
+      "invoke(f, a) {\n"
+      "  try {\n"
+      "    return f(a);\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  var c = new C();\n"
+      "  var f = c#foo;\n"
+      "  var r1 = invoke(f, 1);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f, 1);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  foo(x, y, z) => x + y + z;\n"
+      "}\n"
+      "invoke(f, a) {\n"
+      "  try {\n"
+      "    return f(a);\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  var c = new C();\n"
+      "  var f = c#foo;\n"
+      "  var r1 = invoke(f, 1);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f, 1);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_STREQ(
+      "1 NoSuchMethodError: Class 'C' has no instance method "
+      "'foo' with matching arguments.",
+      SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
+}
+
+
+TEST_CASE(IsolateReload_TearOff_AddArguments2) {
+  const char* kScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  static foo(x) => x;\n"
+      "}\n"
+      "invoke(f, a) {\n"
+      "  try {\n"
+      "    return f(a);\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  var f = C#foo;\n"
+      "  var r1 = invoke(f, 1);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f, 1);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "import 'test:isolate_reload_helper';\n"
+      "class C {\n"
+      "  static foo(x, y, z) => x + y + z;\n"
+      "}\n"
+      "invoke(f, a) {\n"
+      "  try {\n"
+      "    return f(a);\n"
+      "  } catch (e) {\n"
+      "    return e.toString().split('\\n').first;\n"
+      "  }\n"
+      "}\n"
+      "main() {\n"
+      "  var f = C#foo;\n"
+      "  var r1 = invoke(f, 1);\n"
+      "  reloadTest();\n"
+      "  var r2 = invoke(f, 1);\n"
+      "  return '$r1 $r2';\n"
+      "}\n";
+
+  TestCase::SetReloadTestScript(kReloadScript);
+
+  EXPECT_STREQ(
+      "1 NoSuchMethodError: Closure call with mismatched arguments: "
+      "function 'C.foo'",
+      SimpleInvokeStr(lib, "main"));
+
+  lib = TestCase::GetReloadErrorOrRootLibrary();
+  EXPECT_VALID(lib);
 }
 
 
@@ -1188,7 +1984,6 @@ TEST_CASE(IsolateReload_EnumEquality) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("yes", SimpleInvokeStr(lib, "main"));
 }
 
@@ -1207,7 +2002,6 @@ TEST_CASE(IsolateReload_EnumIdentical) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
@@ -1226,7 +2020,6 @@ TEST_CASE(IsolateReload_EnumIdentical) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("yes", SimpleInvokeStr(lib, "main"));
 }
 
@@ -1245,7 +2038,6 @@ TEST_CASE(IsolateReload_EnumReorderIdentical) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
@@ -1264,7 +2056,6 @@ TEST_CASE(IsolateReload_EnumReorderIdentical) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("yes", SimpleInvokeStr(lib, "main"));
 }
 
@@ -1282,7 +2073,6 @@ TEST_CASE(IsolateReload_EnumAddition) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
@@ -1301,7 +2091,6 @@ TEST_CASE(IsolateReload_EnumAddition) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("0/Fruit.Apple 1/Fruit.Cantalope 2/Fruit.Banana",
                SimpleInvokeStr(lib, "main"));
 }
@@ -1318,7 +2107,6 @@ TEST_CASE(IsolateReload_EnumToNotEnum) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
@@ -1344,7 +2132,6 @@ TEST_CASE(IsolateReload_NotEnumToEnum) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("yes", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
@@ -1369,129 +2156,31 @@ TEST_CASE(IsolateReload_EnumDelete) {
       "}\n"
       "var x;\n"
       "main() {\n"
-      "  return Fruit.Apple.toString();\n"
-      "}\n";
-
-  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
-  EXPECT_VALID(lib);
-
-  EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
-
-  // Delete 'Cantalope'.
-
-  const char* kReloadScript =
-      "enum Fruit {\n"
-      "  Apple,\n"
-      "  Banana,\n"
-      "}\n"
-      "var x;\n"
-      "main() {\n"
-      "  String r = '${Fruit.Apple.index}/${Fruit.Apple} ';\n"
-      "  r += '${Fruit.Banana.index}/${Fruit.Banana} ';\n"
-      "  r += '${Fruit.Cantalope.index}/${Fruit.Cantalope}';\n"
-      "  return r;\n"
-      "}\n";
-
-  lib = TestCase::ReloadTestScript(kReloadScript);
-  EXPECT_VALID(lib);
-
-  EXPECT_STREQ("0/Fruit.Apple 1/Fruit.Banana 2/Fruit.Cantalope",
-               SimpleInvokeStr(lib, "main"));
-}
-
-
-TEST_CASE(IsolateReload_EnumComplex) {
-  const char* kScript =
-      "enum Fruit {\n"
-      "  Apple,\n"
-      "  Banana,\n"
-      "  Cantalope,\n"
-      "}\n"
-      "var x;\n"
-      "var y;\n"
-      "var z;\n"
-      "main() {\n"
-      "  x = Fruit.Apple;\n"
-      "  y = Fruit.Banana;\n"
-      "  z = Fruit.Cantalope;\n"
-      "  return Fruit.Apple.toString();\n"
-      "}\n";
-
-  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
-  EXPECT_VALID(lib);
-
-  EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
-
-  // Delete 'Cantalope'. Add 'Dragon'. Move 'Apple' and 'Banana'.
-
-  const char* kReloadScript =
-      "enum Fruit {\n"
-      "  Dragon,\n"
-      "  Apple,\n"
-      "  Banana,\n"
-      "}\n"
-      "var x;\n"
-      "var y;\n"
-      "var z;\n"
-      "main() {\n"
-      "  String r = '';\n"
-      "  r += '${identical(x, Fruit.Apple)}';\n"
-      "  r += ' ${identical(y, Fruit.Banana)}';\n"
-      "  r += ' ${identical(z, Fruit.Cantalope)}';\n"
-      "  r += ' ${Fruit.Dragon}';\n"
-      "  return r;\n"
-      "}\n";
-
-  lib = TestCase::ReloadTestScript(kReloadScript);
-  EXPECT_VALID(lib);
-
-  EXPECT_STREQ("true true true Fruit.Dragon", SimpleInvokeStr(lib, "main"));
-}
-
-
-TEST_CASE(IsolateReload_EnumValuesArray) {
-  const char* kScript =
-      "enum Fruit {\n"
-      "  Cantalope,\n"
-      "  Apple,\n"
-      "  Banana,\n"
-      "}\n"
-      "var x;\n"
-      "main() {\n"
       "  x = Fruit.Cantalope;\n"
       "  return Fruit.Apple.toString();\n"
       "}\n";
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
 
-  // Delete 'Cantalope'.
+  // Delete 'Cantalope' but make sure that we can still invoke toString,
+  // and access the hashCode and index properties.
 
   const char* kReloadScript =
       "enum Fruit {\n"
+      "  Apple,\n"
       "  Banana,\n"
-      "  Apple\n"
       "}\n"
       "var x;\n"
-      "bool identityCheck(Fruit f) {\n"
-      "  return identical(Fruit.values[f.index], f);\n"
-      "}\n"
       "main() {\n"
-      "  if ((x is Fruit) && identical(x, Fruit.Cantalope)) {\n"
-      "    String r = '${identityCheck(Fruit.Apple)}';\n"
-      "    r += ' ${identityCheck(Fruit.Banana)}';\n"
-      "    r += ' ${identityCheck(Fruit.Cantalope)}';\n"
-      "    r += ' ${identityCheck(x)}';\n"
-      "    return r;\n"
-      "  }\n"
+      "  String r = '$x ${x.hashCode is int} ${x.index}';\n"
+      "  return r;\n"
       "}\n";
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
-  EXPECT_STREQ("true true true true",
+  EXPECT_STREQ("Deleted enum value from Fruit true -1",
                SimpleInvokeStr(lib, "main"));
 }
 
@@ -1519,7 +2208,6 @@ TEST_CASE(IsolateReload_EnumIdentityReload) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("Fruit.Apple", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
@@ -1551,7 +2239,6 @@ TEST_CASE(IsolateReload_EnumIdentityReload) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("true true true true true true true true true ",
                SimpleInvokeStr(lib, "main"));
 }
@@ -1572,7 +2259,6 @@ TEST_CASE(IsolateReload_ConstantIdentical) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("Pear", SimpleInvokeStr(lib, "main"));
 
   const char* kReloadScript =
@@ -1592,7 +2278,6 @@ TEST_CASE(IsolateReload_ConstantIdentical) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("yes", SimpleInvokeStr(lib, "main"));
 }
 
@@ -1614,7 +2299,6 @@ TEST_CASE(IsolateReload_EnumValuesToString) {
 
   Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("Fruit.Apple Fruit.Banana", SimpleInvokeStr(lib, "main"));
 
   // Insert 'Cantalope'.
@@ -1638,7 +2322,6 @@ TEST_CASE(IsolateReload_EnumValuesToString) {
 
   lib = TestCase::ReloadTestScript(kReloadScript);
   EXPECT_VALID(lib);
-
   EXPECT_STREQ("Fruit.Apple Fruit.Cantalope Fruit.Banana",
                SimpleInvokeStr(lib, "main"));
 }
@@ -1825,6 +2508,911 @@ TEST_CASE(IsolateReload_DirectSubclasses_Failure) {
   new_subclass = subclasses.At(subclasses.Length() - 1);
   name = Class::Cast(new_subclass).Name();
   EXPECT_STREQ("AIterator", name.ToCString());
+}
+
+
+// Tests reload succeeds when instance format changes.
+// Change: Foo {a, b, c:42}  -> Foo {c:42}
+// Validate: c keeps the value in the retained Foo object.
+TEST_CASE(IsolateReload_ChangeInstanceFormat0) {
+  const char* kScript =
+      "class Foo {\n"
+      "  var a;\n"
+      "  var b;\n"
+      "  var c;\n"
+      "}\n"
+      "var f;\n"
+      "main() {\n"
+      "  f = new Foo();\n"
+      "  f.c = 42;\n"
+      "  return f.c;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(42, SimpleInvoke(lib, "main"));
+
+  const char* kReloadScript =
+      "class Foo {\n"
+      "  var c;\n"
+      "}\n"
+      "var f;\n"
+      "main() {\n"
+      "  return f.c;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(42, SimpleInvoke(lib, "main"));
+}
+
+
+// Tests reload succeeds when instance format changes.
+// Change: Foo {}  -> Foo {c:null}
+// Validate: c is initialized to null the retained Foo object.
+TEST_CASE(IsolateReload_ChangeInstanceFormat1) {
+  const char* kScript =
+      "class Foo {\n"
+      "}\n"
+      "var f;\n"
+      "main() {\n"
+      "  f = new Foo();\n"
+      "  return 42;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(42, SimpleInvoke(lib, "main"));
+
+  const char* kReloadScript =
+      "class Foo {\n"
+      "  var c;\n"
+      "}\n"
+      "var f;\n"
+      "main() {\n"
+      "  return (f.c == null) ? 42: 21;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(42, SimpleInvoke(lib, "main"));
+}
+
+// Tests reload succeeds when instance format changes.
+// Change: Foo {c:42}  -> Foo {}
+// Validate: running the after script fails.
+TEST_CASE(IsolateReload_ChangeInstanceFormat2) {
+  const char* kScript =
+      "class Foo {\n"
+      "  var c;\n"
+      "}\n"
+      "var f;\n"
+      "main() {\n"
+      "  f = new Foo();\n"
+      "  f.c = 42;\n"
+      "  return f.c;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(42, SimpleInvoke(lib, "main"));
+
+  const char* kReloadScript =
+      "class Foo {\n"
+      "}\n"
+      "var f;\n"
+      "main() {\n"
+      "  try {\n"
+      "    return f.c;\n"
+      "  } catch (e) {\n"
+      "    return 24;\n"
+      "  }\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(24, SimpleInvoke(lib, "main"));
+}
+
+
+// Tests reload succeeds when instance format changes.
+// Change: Foo {a, b, c:42, d}  -> Foo {c:42, g}
+// Validate: c keeps the value in the retained Foo object.
+TEST_CASE(IsolateReload_ChangeInstanceFormat3) {
+  const char* kScript =
+      "class Foo<A,B> {\n"
+      "  var a;\n"
+      "  var b;\n"
+      "  var c;\n"
+      "  var d;\n"
+      "}\n"
+      "var f;\n"
+      "main() {\n"
+      "  f = new Foo();\n"
+      "  f.a = 1;\n"
+      "  f.b = 2;\n"
+      "  f.c = 3;\n"
+      "  f.d = 4;\n"
+      "  return f.c;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(3, SimpleInvoke(lib, "main"));
+
+  const char* kReloadScript =
+      "class Foo<A,B> {\n"
+      "  var c;\n"
+      "  var g;\n"
+      "}\n"
+      "var f;\n"
+      "main() {\n"
+      "  return f.c;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(3, SimpleInvoke(lib, "main"));
+}
+
+
+// Tests reload succeeds when instance format changes.
+// Change: Bar {c:42}, Foo : Bar {d, e} -> Foo {c:42}
+// Validate: c keeps the value in the retained Foo object.
+TEST_CASE(IsolateReload_ChangeInstanceFormat4) {
+  const char* kScript =
+      "class Bar{\n"
+      "  var c;\n"
+      "}\n"
+      "class Foo extends Bar{\n"
+      "  var d;\n"
+      "  var e;\n"
+      "}\n"
+      "var f;\n"
+      "main() {\n"
+      "  f = new Foo();\n"
+      "  f.c = 44;\n"
+      "  return f.c;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(44, SimpleInvoke(lib, "main"));
+
+  const char* kReloadScript =
+      "class Foo {\n"
+      "  var c;\n"
+      "}\n"
+      "var f;\n"
+      "main() {\n"
+      "  return f.c;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(44, SimpleInvoke(lib, "main"));
+}
+
+
+// Tests reload succeeds when instance format changes.
+// Change: Bar {a, b}, Foo : Bar {c:42} -> Bar {c:42}, Foo : Bar {}
+// Validate: c keeps the value in the retained Foo object.
+TEST_CASE(IsolateReload_ChangeInstanceFormat5) {
+  const char* kScript =
+      "class Bar{\n"
+      "  var a;\n"
+      "  var b;\n"
+      "}\n"
+      "class Foo extends Bar{\n"
+      "  var c;\n"
+      "}\n"
+      "var f;\n"
+      "main() {\n"
+      "  f = new Foo();\n"
+      "  f.c = 44;\n"
+      "  return f.c;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(44, SimpleInvoke(lib, "main"));
+
+  const char* kReloadScript =
+      "class Bar{\n"
+      "  var c;\n"
+      "}\n"
+      "class Foo extends Bar {\n"
+      "}\n"
+      "var f;\n"
+      "main() {\n"
+      "  return f.c;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(44, SimpleInvoke(lib, "main"));
+}
+
+
+// Tests reload fails when type parameters change.
+// Change: Foo<A,B> {a, b}  -> Foo<A> {a}
+// Validate: the right error message is returned.
+TEST_CASE(IsolateReload_ChangeInstanceFormat6) {
+  const char* kScript =
+      "class Foo<A, B> {\n"
+      "  var a;\n"
+      "  var b;\n"
+      "}\n"
+      "main() {\n"
+      "  new Foo();\n"
+      "  return 43;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(43, SimpleInvoke(lib, "main"));
+
+  const char* kReloadScript =
+      "class Foo<A> {\n"
+      "  var a;\n"
+      "}\n";
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_ERROR(lib, "type parameters have changed");
+}
+
+// Tests reload succeeds when type parameters are changed for allocated class.
+// Change: Foo<A,B> {a, b} -> Foo<A> {a}
+// Validate: return value from main is correct.
+// Please note: This test works because no instances are created from Foo.
+TEST_CASE(IsolateReload_ChangeInstanceFormat7) {
+  const char* kScript =
+      "class Foo<A, B> {\n"
+      "  var a;\n"
+      "  var b;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+
+  const char* kReloadScript =
+      "class Foo<A> {\n"
+      "  var a;\n"
+      "}\n";
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+}
+
+
+// Regression for handle sharing bug: Change the shape of two classes and see
+// that their instances don't change class.
+TEST_CASE(IsolateReload_ChangeInstanceFormat8) {
+  const char* kScript =
+      "class A{\n"
+      "  var x;\n"
+      "}\n"
+      "class B {\n"
+      "  var x, y, z, w;\n"
+      "}\n"
+      "var a, b;\n"
+      "main() {\n"
+      "  a = new A();\n"
+      "  b = new B();\n"
+      "  return '$a $b';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("Instance of 'A' Instance of 'B'", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadScript =
+      "class A{\n"
+      "  var x, y;\n"
+      "}\n"
+      "class B {\n"
+      "  var x, y, z, w, v;\n"
+      "}\n"
+      "var a, b;\n"
+      "main() {\n"
+      "  return '$a $b';\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("Instance of 'A' Instance of 'B'", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_ShapeChangeRetainsHash) {
+  const char* kScript =
+      "class A{\n"
+      "  var x;\n"
+      "}\n"
+      "var a, hash1, hash2;\n"
+      "main() {\n"
+      "  a = new A();\n"
+      "  hash1 = a.hashCode;\n"
+      "  return 'okay';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("okay", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadScript =
+      "class A{\n"
+      "  var x, y, z;\n"
+      "}\n"
+      "var a, hash1, hash2;\n"
+      "main() {\n"
+      "  hash2 = a.hashCode;\n"
+      "  return (hash1 == hash2).toString();\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("true", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_StaticTearOffRetainsHash) {
+  const char* kScript =
+      "foo() {}\n"
+      "var hash1, hash2;\n"
+      "main() {\n"
+      "  hash1 = foo.hashCode;\n"
+      "  return 'okay';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("okay", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadScript =
+      "foo() {}\n"
+      "var hash1, hash2;\n"
+      "main() {\n"
+      "  hash2 = foo.hashCode;\n"
+      "  return (hash1 == hash2).toString();\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("true", SimpleInvokeStr(lib, "main"));
+}
+
+
+static bool NothingModifiedCallback(const char* url, int64_t since) {
+  return false;
+}
+
+
+TEST_CASE(IsolateReload_NoLibsModified) {
+  const char* kImportScript = "importedFunc() => 'fancy';";
+  TestCase::AddTestLib("test:lib1", kImportScript);
+
+  const char* kScript =
+      "import 'test:lib1';\n"
+      "main() {\n"
+      "  return importedFunc() + ' feast';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("fancy feast", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadImportScript = "importedFunc() => 'bossy';";
+  TestCase::AddTestLib("test:lib1", kReloadImportScript);
+
+  const char* kReloadScript =
+      "import 'test:lib1';\n"
+      "main() {\n"
+      "  return importedFunc() + ' pants';\n"
+      "}\n";
+
+  Dart_SetFileModifiedCallback(&NothingModifiedCallback);
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  Dart_SetFileModifiedCallback(NULL);
+
+  // No reload occurred because no files were "modified".
+  EXPECT_STREQ("fancy feast", SimpleInvokeStr(lib, "main"));
+}
+
+
+static bool MainModifiedCallback(const char* url, int64_t since) {
+  if (strcmp(url, "test-lib") == 0) {
+    return true;
+  }
+  return false;
+}
+
+
+TEST_CASE(IsolateReload_MainLibModified) {
+  const char* kImportScript = "importedFunc() => 'fancy';";
+  TestCase::AddTestLib("test:lib1", kImportScript);
+
+  const char* kScript =
+      "import 'test:lib1';\n"
+      "main() {\n"
+      "  return importedFunc() + ' feast';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("fancy feast", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadImportScript = "importedFunc() => 'bossy';";
+  TestCase::AddTestLib("test:lib1", kReloadImportScript);
+
+  const char* kReloadScript =
+      "import 'test:lib1';\n"
+      "main() {\n"
+      "  return importedFunc() + ' pants';\n"
+      "}\n";
+
+  Dart_SetFileModifiedCallback(&MainModifiedCallback);
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  Dart_SetFileModifiedCallback(NULL);
+
+  // Imported library is not reloaded.
+  EXPECT_STREQ("fancy pants", SimpleInvokeStr(lib, "main"));
+}
+
+
+static bool ImportModifiedCallback(const char* url, int64_t since) {
+  if (strcmp(url, "test:lib1") == 0) {
+    return true;
+  }
+  return false;
+}
+
+
+TEST_CASE(IsolateReload_ImportedLibModified) {
+  const char* kImportScript = "importedFunc() => 'fancy';";
+  TestCase::AddTestLib("test:lib1", kImportScript);
+
+  const char* kScript =
+      "import 'test:lib1';\n"
+      "main() {\n"
+      "  return importedFunc() + ' feast';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("fancy feast", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadImportScript = "importedFunc() => 'bossy';";
+  TestCase::AddTestLib("test:lib1", kReloadImportScript);
+
+  const char* kReloadScript =
+      "import 'test:lib1';\n"
+      "main() {\n"
+      "  return importedFunc() + ' pants';\n"
+      "}\n";
+
+  Dart_SetFileModifiedCallback(&ImportModifiedCallback);
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  Dart_SetFileModifiedCallback(NULL);
+
+  // Modification of an imported library propagates to the importing library.
+  EXPECT_STREQ("bossy pants", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_PrefixImportedLibModified) {
+  const char* kImportScript = "importedFunc() => 'fancy';";
+  TestCase::AddTestLib("test:lib1", kImportScript);
+
+  const char* kScript =
+      "import 'test:lib1' as cobra;\n"
+      "main() {\n"
+      "  return cobra.importedFunc() + ' feast';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("fancy feast", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadImportScript = "importedFunc() => 'bossy';";
+  TestCase::AddTestLib("test:lib1", kReloadImportScript);
+
+  const char* kReloadScript =
+      "import 'test:lib1' as cobra;\n"
+      "main() {\n"
+      "  return cobra.importedFunc() + ' pants';\n"
+      "}\n";
+
+  Dart_SetFileModifiedCallback(&ImportModifiedCallback);
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  Dart_SetFileModifiedCallback(NULL);
+
+  // Modification of an prefix-imported library propagates to the
+  // importing library.
+  EXPECT_STREQ("bossy pants", SimpleInvokeStr(lib, "main"));
+}
+
+
+static bool ExportModifiedCallback(const char* url, int64_t since) {
+  if (strcmp(url, "test:exportlib") == 0) {
+    return true;
+  }
+  return false;
+}
+
+
+TEST_CASE(IsolateReload_ExportedLibModified) {
+  const char* kImportScript = "export 'test:exportlib';";
+  TestCase::AddTestLib("test:importlib", kImportScript);
+
+  const char* kExportScript = "exportedFunc() => 'fancy';";
+  TestCase::AddTestLib("test:exportlib", kExportScript);
+
+  const char* kScript =
+      "import 'test:importlib';\n"
+      "main() {\n"
+      "  return exportedFunc() + ' feast';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("fancy feast", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadExportScript = "exportedFunc() => 'bossy';";
+  TestCase::AddTestLib("test:exportlib", kReloadExportScript);
+
+  const char* kReloadScript =
+      "import 'test:importlib';\n"
+      "main() {\n"
+      "  return exportedFunc() + ' pants';\n"
+      "}\n";
+
+  Dart_SetFileModifiedCallback(&ExportModifiedCallback);
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  Dart_SetFileModifiedCallback(NULL);
+
+  // Modification of an exported library propagates.
+  EXPECT_STREQ("bossy pants", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_SimpleConstFieldUpdate) {
+  const char* kScript =
+      "const value = 'a';\n"
+      "main() {\n"
+      "  return 'value=${value}';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("value=a", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadScript =
+      "const value = 'b';\n"
+      "main() {\n"
+      "  return 'value=${value}';\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("value=b", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_ConstFieldUpdate) {
+  const char* kScript =
+      "const value = const Duration(seconds: 1);\n"
+      "main() {\n"
+      "  return 'value=${value}';\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("value=0:00:01.000000", SimpleInvokeStr(lib, "main"));
+
+  const char* kReloadScript =
+      "const value = const Duration(seconds: 2);\n"
+      "main() {\n"
+      "  return 'value=${value}';\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  EXPECT_STREQ("value=0:00:02.000000", SimpleInvokeStr(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_RunNewFieldInitializers) {
+  const char* kScript =
+      "class Foo {\n"
+      "  int x = 4;\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  value = new Foo();\n"
+      "  return value.x;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(4, SimpleInvoke(lib, "main"));
+
+  // Add the field y.
+  const char* kReloadScript =
+      "class Foo {\n"
+      "  int x = 4;\n"
+      "  int y = 7;\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  return value.y;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  // Verify that we ran field initializers on existing instances.
+  EXPECT_EQ(7, SimpleInvoke(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_RunNewFieldInitializersReferenceStaticField) {
+  const char* kScript =
+      "int myInitialValue = 8 * 7;\n"
+      "class Foo {\n"
+      "  int x = 4;\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  value = new Foo();\n"
+      "  return value.x;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(4, SimpleInvoke(lib, "main"));
+
+  // Add the field y.
+  const char* kReloadScript =
+      "int myInitialValue = 8 * 7;\n"
+      "class Foo {\n"
+      "  int x = 4;\n"
+      "  int y = myInitialValue;\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  return value.y;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  // Verify that we ran field initializers on existing instances.
+  EXPECT_EQ(56, SimpleInvoke(lib, "main"));
+}
+
+
+TEST_CASE(IsolateReload_RunNewFieldInitializersMutateStaticField) {
+  const char* kScript =
+      "int myInitialValue = 8 * 7;\n"
+      "class Foo {\n"
+      "  int x = 4;\n"
+      "}\n"
+      "Foo value;\n"
+      "Foo value1;\n"
+      "main() {\n"
+      "  value = new Foo();\n"
+      "  value1 = new Foo();\n"
+      "  return value.x;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(4, SimpleInvoke(lib, "main"));
+
+  // Add the field y.
+  const char* kReloadScript =
+      "int myInitialValue = 8 * 7;\n"
+      "class Foo {\n"
+      "  int x = 4;\n"
+      "  int y = myInitialValue++;\n"
+      "}\n"
+      "Foo value;\n"
+      "Foo value1;\n"
+      "main() {\n"
+      "  return myInitialValue;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  // Verify that we ran field initializers on existing instances and that
+  // they affected the value of the field myInitialValue.
+  EXPECT_EQ(58, SimpleInvoke(lib, "main"));
+}
+
+
+// When an initializer expression throws, we leave the field as null.
+TEST_CASE(IsolateReload_RunNewFieldInitializersThrows) {
+  const char* kScript =
+      "class Foo {\n"
+      "  int x = 4;\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  value = new Foo();\n"
+      "  return value.x;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(4, SimpleInvoke(lib, "main"));
+
+  // Add the field y.
+  const char* kReloadScript =
+      "class Foo {\n"
+      "  int x = 4;\n"
+      "  int y = throw 'a';\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  return '${value.y == null}';"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  // Verify that we ran field initializers on existing instances.
+  EXPECT_STREQ("true", SimpleInvokeStr(lib, "main"));
+}
+
+
+// When an initializer expression has a syntax error, we detect it at reload
+// time.
+TEST_CASE(IsolateReload_RunNewFieldInitializersSyntaxError) {
+  const char* kScript =
+      "class Foo {\n"
+      "  int x = 4;\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  value = new Foo();\n"
+      "  return value.x;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(4, SimpleInvoke(lib, "main"));
+
+  // Add the field y with a syntax error in the initializing expression.
+  const char* kReloadScript =
+      "class Foo {\n"
+      "  int x = 4;\n"
+      "  int y = ......;\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  return '${value.y == null}';"
+      "}\n";
+
+  // The reload fails because the initializing expression is parsed at
+  // class finalization time.
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_ERROR(lib, "......");
+}
+
+
+// When an initializer expression has a syntax error, we detect it at reload
+// time.
+TEST_CASE(IsolateReload_RunNewFieldInitializersSyntaxError2) {
+  const char* kScript =
+      "class Foo {\n"
+      "  Foo() { /* default constructor */ }\n"
+      "  int x = 4;\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  value = new Foo();\n"
+      "  return value.x;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(4, SimpleInvoke(lib, "main"));
+
+  // Add the field y with a syntax error in the initializing expression.
+  const char* kReloadScript =
+      "class Foo {\n"
+      "  Foo() { /* default constructor */ }\n"
+      "  int x = 4;\n"
+      "  int y = ......;\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  return '${value.y == null}';"
+      "}\n";
+
+  // The reload fails because the initializing expression is parsed at
+  // class finalization time.
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_ERROR(lib, "......");
+}
+
+
+// When an initializer expression has a syntax error, we detect it at reload
+// time.
+TEST_CASE(IsolateReload_RunNewFieldInitializersSyntaxError3) {
+  const char* kScript =
+      "class Foo {\n"
+      "  Foo() { /* default constructor */ }\n"
+      "  int x = 4;\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  value = new Foo();\n"
+      "  return value.x;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(4, SimpleInvoke(lib, "main"));
+
+  // Add the field y with a syntax error in the initializing expression.
+  const char* kReloadScript =
+      "class Foo {\n"
+      "  Foo() { /* default constructor */ }\n"
+      "  int x = 4;\n"
+      "  int y = ......\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  return '${value.y == null}';"
+      "}\n";
+
+  // The reload fails because the initializing expression is parsed at
+  // class finalization time.
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_ERROR(lib, "......");
+}
+
+
+TEST_CASE(IsolateREload_RunNewFieldInitialiazersSuperClass) {
+  const char* kScript =
+      "class Super {\n"
+      "  static var foo = 'right';\n"
+      "}\n"
+      "class Foo extends Super {\n"
+      "  static var foo = 'wrong';\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  Super.foo;\n"
+      "  Foo.foo;\n"
+      "  value = new Foo();\n"
+      "  return 0;\n"
+      "}\n";
+
+  Dart_Handle lib = TestCase::LoadTestScript(kScript, NULL);
+  EXPECT_VALID(lib);
+  EXPECT_EQ(0, SimpleInvoke(lib, "main"));
+
+  const char* kReloadScript =
+      "class Super {\n"
+      "  static var foo = 'right';\n"
+      "  var newField = foo;\n"
+      "}\n"
+      "class Foo extends Super {\n"
+      "  static var foo = 'wrong';\n"
+      "}\n"
+      "Foo value;\n"
+      "main() {\n"
+      "  return value.newField;\n"
+      "}\n";
+
+  lib = TestCase::ReloadTestScript(kReloadScript);
+  EXPECT_VALID(lib);
+  // Verify that we ran field initializers on existing instances in the
+  // correct scope.
+  EXPECT_STREQ("right", SimpleInvokeStr(lib, "main"));
 }
 
 #endif  // !PRODUCT

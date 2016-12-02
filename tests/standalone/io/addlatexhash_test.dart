@@ -9,9 +9,19 @@ import 'dart:io';
 import 'package:path/path.dart' as path;
 import '../../../tools/addlatexhash.dart';
 
-final scriptDir = path.dirname(path.fromUri(Platform.script));
-final dartRootDir = path.dirname(path.dirname(path.dirname(scriptDir)));
+final execDir = path.dirname(path.fromUri(Platform.executable));
+final dartRootDir = path.dirname(path.dirname(execDir));
 final dartRootPath = dartRootDir.toString();
+
+List<String> packageOptions() {
+  if (Platform.packageRoot != null) {
+    return <String>['--package-root=${Platform.packageRoot}'];
+  } else if (Platform.packageConfig != null) {
+    return <String>['--packages=${Platform.packageConfig}'];
+  } else {
+    return <String>[];
+  }
+}
 
 // Check that the given ProcessResult indicates success; if so
 // return the standard output, otherwise report the failure
@@ -81,13 +91,13 @@ testSameHash(String tmpDirPath) {
 
   // actions to take
   runAddHash() {
-    var args = [
-      '--package-root=${Platform.packageRoot}',
+    var args = packageOptions();
+    args.addAll([
       path.join(dartRootPath, "tools", "addlatexhash.dart"),
       tmpPar8timesPath,
       hashPath,
       listPath
-    ];
+    ]);
     return Process.runSync(dartExecutable, args);
   }
 
@@ -154,13 +164,13 @@ testSameDVI(String tmpDirPath) {
       Process.runSync("latex", [fileName], workingDirectory: workingDirectory);
 
   runAddHash() {
-    var args = [
-      '--package-root=${Platform.packageRoot}',
+    var args = packageOptions();
+    args.addAll([
       path.join(dartRootPath, "tools", "addlatexhash.dart"),
       tmpSpecPath,
       hashPath,
       listPath
-    ];
+    ]);
     return Process.runSync(dartExecutable, args);
   }
 

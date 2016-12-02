@@ -14,8 +14,6 @@ import 'package:analyzer/src/dart/element/element.dart';
 import 'package:analyzer/src/dart/element/handle.dart'
     show ConstructorElementHandle;
 import 'package:analyzer/src/dart/element/member.dart';
-import 'package:analyzer/src/generated/engine.dart';
-import 'package:analyzer/src/generated/source.dart' show Source;
 import 'package:analyzer/src/task/dart.dart';
 
 ConstructorElementImpl getConstructorImpl(ConstructorElement constructor) {
@@ -45,6 +43,13 @@ class ConstantAstCloner extends AstCloner {
     ConstructorName name = super.visitConstructorName(node);
     name.staticElement = node.staticElement;
     return name;
+  }
+
+  @override
+  Annotation visitAnnotation(Annotation node) {
+    Annotation annotation = super.visitAnnotation(node);
+    annotation.element = node.element;
+    return annotation;
   }
 
   @override
@@ -156,10 +161,6 @@ class ConstantExpressionsDependenciesFinder extends RecursiveAstVisitor {
  * those compilation units.
  */
 class ConstantFinder extends RecursiveAstVisitor<Object> {
-  final AnalysisContext context;
-  final Source source;
-  final Source librarySource;
-
   /**
    * The elements and AST nodes whose constant values need to be computed.
    */
@@ -171,8 +172,6 @@ class ConstantFinder extends RecursiveAstVisitor<Object> {
    * treated as "const".
    */
   bool treatFinalInstanceVarAsConst = false;
-
-  ConstantFinder(this.context, this.source, this.librarySource);
 
   @override
   Object visitAnnotation(Annotation node) {

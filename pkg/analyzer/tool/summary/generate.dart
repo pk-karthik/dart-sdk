@@ -24,6 +24,7 @@ import 'dart:io' hide File;
 
 import 'package:analyzer/analyzer.dart';
 import 'package:analyzer/dart/ast/token.dart';
+import 'package:analyzer/error/listener.dart';
 import 'package:analyzer/file_system/file_system.dart';
 import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:analyzer/src/codegen/tools.dart';
@@ -119,7 +120,7 @@ class _CodeGenerator {
         }
       }
       Map<int, String> idsUsed = <int, String>{};
-      for (idlModel.FieldDeclaration field in cls.fields) {
+      for (idlModel.FieldDeclaration field in cls.allFields) {
         String fieldName = field.name;
         idlModel.FieldType type = field.type;
         if (type.isList) {
@@ -451,6 +452,7 @@ class _CodeGenerator {
     out("import 'flat_buffers.dart' as fb;");
     out("import 'idl.dart' as idl;");
     out("import 'dart:convert' as convert;");
+    out("import 'api_signature.dart' as api_sig;");
     out();
     for (idlModel.EnumDeclaration enm in _idl.enums.values) {
       _generateEnumReader(enm);
@@ -544,9 +546,7 @@ class _CodeGenerator {
     out('class $builderName extends Object with $mixinName '
         'implements ${idlPrefix(name)} {');
     indent(() {
-      out('bool _finished = false;');
       // Generate fields.
-      out();
       for (idlModel.FieldDeclaration field in cls.fields) {
         String fieldName = field.name;
         idlModel.FieldType type = field.type;
@@ -569,20 +569,19 @@ class _CodeGenerator {
           out();
           outDoc(field.documentation);
           constructorParams.add('$typeStr $fieldName');
-          out('void set $fieldName($typeStr _value) {');
+          out('void set $fieldName($typeStr value) {');
           indent(() {
             String stateFieldName = '_' + fieldName;
-            out('assert(!_finished);');
             // Validate that int(s) are non-negative.
             if (fieldType.typeName == 'int') {
               if (!fieldType.isList) {
-                out('assert(_value == null || _value >= 0);');
+                out('assert(value == null || value >= 0);');
               } else {
-                out('assert(_value == null || _value.every((e) => e >= 0));');
+                out('assert(value == null || value.every((e) => e >= 0));');
               }
             }
             // Set the value.
-            out('$stateFieldName = _value;');
+            out('this.$stateFieldName = value;');
           });
           out('}');
         }
@@ -621,6 +620,44 @@ class _CodeGenerator {
         });
         out('}');
       }
+      // Generate collectApiSignature().
+      {
+        out();
+        out('/**');
+        out(' * Accumulate non-[informative] data into [signature].');
+        out(' */');
+        out('void collectApiSignature(api_sig.ApiSignature signature) {');
+        indent(() {
+          List<idlModel.FieldDeclaration> sortedFields = cls.fields.toList()
+            ..sort((idlModel.FieldDeclaration a, idlModel.FieldDeclaration b) =>
+                a.id.compareTo(b.id));
+          for (idlModel.FieldDeclaration field in sortedFields) {
+            if (field.isInformative) {
+              continue;
+            }
+            String ref = 'this._${field.name}';
+            if (field.type.isList) {
+              out('if ($ref == null) {');
+              indent(() {
+                out('signature.addInt(0);');
+              });
+              out('} else {');
+              indent(() {
+                out('signature.addInt($ref.length);');
+                out('for (var x in $ref) {');
+                indent(() {
+                  _generateSignatureCall(field.type.typeName, 'x', false);
+                });
+                out('}');
+              });
+              out('}');
+            } else {
+              _generateSignatureCall(field.type.typeName, ref, true);
+            }
+          }
+        });
+        out('}');
+      }
       // Generate finish.
       if (cls.isTopLevel) {
         out();
@@ -637,8 +674,6 @@ class _CodeGenerator {
       out();
       out('fb.Offset finish(fb.Builder fbBuilder) {');
       indent(() {
-        out('assert(!_finished);');
-        out('_finished = true;');
         // Write objects and remember Offset(s).
         for (idlModel.FieldDeclaration field in cls.fields) {
           idlModel.FieldType fieldType = field.type;
@@ -825,7 +860,8 @@ class _CodeGenerator {
         } else {
           out('$returnType get $fieldName {');
           indent(() {
-            String readExpr = '$readCode.vTableGet(_bc, _bcOffset, $index, $def)';
+            String readExpr =
+                '$readCode.vTableGet(_bc, _bcOffset, $index, $def)';
             out('_$fieldName ??= $readExpr;');
             out('return _$fieldName;');
           });
@@ -920,6 +956,56 @@ class _CodeGenerator {
       out('return const _${name}Reader().read(rootRef, 0);');
     });
     out('}');
+  }
+
+  /**
+   * Generate a call to the appropriate method of [ApiSignature] for the type
+   * [typeName], using the data named by [ref].  If [couldBeNull] is `true`,
+   * generate code to handle the possibility that [ref] is `null` (substituting
+   * in the appropriate default value).
+   */
+  void _generateSignatureCall(String typeName, String ref, bool couldBeNull) {
+    if (_idl.enums.containsKey(typeName)) {
+      if (couldBeNull) {
+        out('signature.addInt($ref == null ? 0 : $ref.index);');
+      } else {
+        out('signature.addInt($ref.index);');
+      }
+    } else if (_idl.classes.containsKey(typeName)) {
+      if (couldBeNull) {
+        out('signature.addBool($ref != null);');
+      }
+      out('$ref?.collectApiSignature(signature);');
+    } else {
+      switch (typeName) {
+        case 'String':
+          if (couldBeNull) {
+            ref += " ?? ''";
+          }
+          out("signature.addString($ref);");
+          break;
+        case 'int':
+          if (couldBeNull) {
+            ref += ' ?? 0';
+          }
+          out('signature.addInt($ref);');
+          break;
+        case 'bool':
+          if (couldBeNull) {
+            ref += ' == true';
+          }
+          out('signature.addBool($ref);');
+          break;
+        case 'double':
+          if (couldBeNull) {
+            ref += ' ?? 0.0';
+          }
+          out('signature.addDouble($ref);');
+          break;
+        default:
+          throw "Don't know how to generate signature call for $typeName";
+      }
+    }
   }
 
   /**

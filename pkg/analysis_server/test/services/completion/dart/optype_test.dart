@@ -11,15 +11,15 @@ import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/src/generated/engine.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:plugin/manager.dart';
+import 'package:test/test.dart';
 import 'package:test_reflective_loader/test_reflective_loader.dart';
-import 'package:unittest/unittest.dart';
 
 import '../../../abstract_context.dart';
-import '../../../utils.dart';
 
 main() {
-  initializeTestEnvironment();
-  defineReflectiveTests(OpTypeTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(OpTypeTest);
+  });
 }
 
 @reflectiveTest
@@ -140,6 +140,16 @@ class OpTypeTest {
     // SimpleIdentifier  TypeName  AsExpression
     addTestSource('class A {var b; X _c; foo() {var a; (a as ^).foo();}');
     assertOpType(typeNames: true);
+  }
+
+  test_AsIdentifier() {
+    addTestSource('class A {var asdf; foo() {as^}');
+    assertOpType(returnValue: true, typeNames: true, voidReturn: true);
+  }
+
+  test_AsIdentifier2() {
+    addTestSource('class A {var asdf; foo() {A as^}');
+    assertOpType();
   }
 
   test_Assert() {
@@ -1359,6 +1369,11 @@ class C2 {
     assertOpType(returnValue: true, typeNames: true, voidReturn: true);
   }
 
+  test_SwitchStatement_body_end2() {
+    addTestSource('main() {switch(k) {case 1:as^}}');
+    assertOpType(returnValue: true, typeNames: true, voidReturn: true);
+  }
+
   test_SwitchStatement_expression1() {
     // SimpleIdentifier  SwitchStatement  Block
     addTestSource('main() {switch(^k) {case 1:{}}}');
@@ -1556,6 +1571,9 @@ class _TestSource implements Source {
 
   @override
   Source get source => this;
+
+  @override
+  Uri get uri => new Uri.file(fullName);
 
   noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

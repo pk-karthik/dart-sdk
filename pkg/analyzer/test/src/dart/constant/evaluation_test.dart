@@ -8,28 +8,31 @@ import 'package:analyzer/context/declared_variables.dart';
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/element/element.dart';
+import 'package:analyzer/error/error.dart';
+import 'package:analyzer/error/listener.dart';
 import 'package:analyzer/src/dart/element/element.dart';
+import 'package:analyzer/src/error/codes.dart';
 import 'package:analyzer/src/generated/constant.dart';
 import 'package:analyzer/src/generated/engine.dart';
-import 'package:analyzer/src/generated/error.dart';
 import 'package:analyzer/src/generated/resolver.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart';
-import 'package:analyzer/src/generated/testing/ast_factory.dart';
+import 'package:analyzer/src/generated/testing/ast_test_factory.dart';
 import 'package:analyzer/src/generated/testing/test_type_provider.dart';
 import 'package:analyzer/src/task/dart.dart';
 import 'package:path/path.dart';
-import 'package:unittest/unittest.dart';
+import 'package:test/test.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 
 import '../../../generated/resolver_test_case.dart';
 import '../../../generated/test_support.dart';
-import '../../../reflective_tests.dart';
-import '../../../utils.dart';
 
 main() {
-  initializeTestEnvironment();
-  runReflectiveTests(ConstantValueComputerTest);
-  runReflectiveTests(ConstantVisitorTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(ConstantValueComputerTest);
+    defineReflectiveTests(ConstantVisitorTest);
+    defineReflectiveTests(StrongConstantValueComputerTest);
+  });
 }
 
 /**
@@ -275,7 +278,7 @@ class C {
       analysisContext.computeErrors(source);
       expect(unit, isNotNull);
       ConstantValueComputer computer = _makeConstantValueComputer();
-      computer.add(unit, source, source);
+      computer.add(unit);
       computer.computeValues();
       NodeList<CompilationUnitMember> members = unit.declarations;
       expect(members, hasLength(3));
@@ -296,7 +299,7 @@ const int a = 0;''');
         analysisContext.resolveCompilationUnit(source, libraryElement);
     expect(unit, isNotNull);
     ConstantValueComputer computer = _makeConstantValueComputer();
-    computer.add(unit, source, source);
+    computer.add(unit);
     computer.computeValues();
     NodeList<CompilationUnitMember> members = unit.declarations;
     expect(members, hasLength(2));
@@ -331,8 +334,8 @@ const int d = c;''');
         analysisContext.resolveCompilationUnit(partSource, libraryElement);
     expect(partUnit, isNotNull);
     ConstantValueComputer computer = _makeConstantValueComputer();
-    computer.add(libraryUnit, librarySource, librarySource);
-    computer.add(partUnit, partSource, librarySource);
+    computer.add(libraryUnit);
+    computer.add(partUnit);
     computer.computeValues();
     NodeList<CompilationUnitMember> libraryMembers = libraryUnit.declarations;
     expect(libraryMembers, hasLength(2));
@@ -353,7 +356,7 @@ const int d = c;''');
         analysisContext.resolveCompilationUnit(source, libraryElement);
     expect(unit, isNotNull);
     ConstantValueComputer computer = _makeConstantValueComputer();
-    computer.add(unit, source, source);
+    computer.add(unit);
     computer.computeValues();
     NodeList<CompilationUnitMember> members = unit.declarations;
     expect(members, hasLength(1));
@@ -370,7 +373,7 @@ const E e = E.id0;
         analysisContext.resolveCompilationUnit(source, libraryElement);
     expect(unit, isNotNull);
     ConstantValueComputer computer = _makeConstantValueComputer();
-    computer.add(unit, source, source);
+    computer.add(unit);
     computer.computeValues();
     TopLevelVariableDeclaration declaration = unit.declarations
         .firstWhere((member) => member is TopLevelVariableDeclaration);
@@ -1193,14 +1196,14 @@ const A a = const A();
   }
 
   void _assertProperDependencies(String sourceText,
-      [List<ErrorCode> expectedErrorCodes = ErrorCode.EMPTY_LIST]) {
+      [List<ErrorCode> expectedErrorCodes = const <ErrorCode>[]]) {
     Source source = addSource(sourceText);
     LibraryElement element = resolve2(source);
     CompilationUnit unit =
         analysisContext.resolveCompilationUnit(source, element);
     expect(unit, isNotNull);
     ConstantValueComputer computer = _makeConstantValueComputer();
-    computer.add(unit, source, source);
+    computer.add(unit);
     computer.computeValues();
     assertErrors(source, expectedErrorCodes);
   }
@@ -1380,7 +1383,6 @@ class A {
     ConstantEvaluationValidator_ForTest validator =
         new ConstantEvaluationValidator_ForTest(analysisContext2);
     validator.computer = new ConstantValueComputer(
-        analysisContext2,
         analysisContext2.typeProvider,
         analysisContext2.declaredVariables,
         validator,
@@ -1405,10 +1407,10 @@ class A {
 @reflectiveTest
 class ConstantVisitorTest extends ResolverTestCase {
   void test_visitBinaryExpression_questionQuestion_notNull_notNull() {
-    Expression left = AstFactory.string2('a');
-    Expression right = AstFactory.string2('b');
-    Expression expression =
-        AstFactory.binaryExpression(left, TokenType.QUESTION_QUESTION, right);
+    Expression left = AstTestFactory.string2('a');
+    Expression right = AstTestFactory.string2('b');
+    Expression expression = AstTestFactory.binaryExpression(
+        left, TokenType.QUESTION_QUESTION, right);
 
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
@@ -1421,10 +1423,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitBinaryExpression_questionQuestion_null_notNull() {
-    Expression left = AstFactory.nullLiteral();
-    Expression right = AstFactory.string2('b');
-    Expression expression =
-        AstFactory.binaryExpression(left, TokenType.QUESTION_QUESTION, right);
+    Expression left = AstTestFactory.nullLiteral();
+    Expression right = AstTestFactory.string2('b');
+    Expression expression = AstTestFactory.binaryExpression(
+        left, TokenType.QUESTION_QUESTION, right);
 
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
@@ -1437,10 +1439,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitBinaryExpression_questionQuestion_null_null() {
-    Expression left = AstFactory.nullLiteral();
-    Expression right = AstFactory.nullLiteral();
-    Expression expression =
-        AstFactory.binaryExpression(left, TokenType.QUESTION_QUESTION, right);
+    Expression left = AstTestFactory.nullLiteral();
+    Expression right = AstTestFactory.nullLiteral();
+    Expression expression = AstTestFactory.binaryExpression(
+        left, TokenType.QUESTION_QUESTION, right);
 
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
@@ -1452,10 +1454,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitConditionalExpression_false() {
-    Expression thenExpression = AstFactory.integer(1);
-    Expression elseExpression = AstFactory.integer(0);
-    ConditionalExpression expression = AstFactory.conditionalExpression(
-        AstFactory.booleanLiteral(false), thenExpression, elseExpression);
+    Expression thenExpression = AstTestFactory.integer(1);
+    Expression elseExpression = AstTestFactory.integer(0);
+    ConditionalExpression expression = AstTestFactory.conditionalExpression(
+        AstTestFactory.booleanLiteral(false), thenExpression, elseExpression);
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
         new ErrorReporter(errorListener, _dummySource());
@@ -1464,10 +1466,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitConditionalExpression_nonBooleanCondition() {
-    Expression thenExpression = AstFactory.integer(1);
-    Expression elseExpression = AstFactory.integer(0);
-    NullLiteral conditionExpression = AstFactory.nullLiteral();
-    ConditionalExpression expression = AstFactory.conditionalExpression(
+    Expression thenExpression = AstTestFactory.integer(1);
+    Expression elseExpression = AstTestFactory.integer(0);
+    NullLiteral conditionExpression = AstTestFactory.nullLiteral();
+    ConditionalExpression expression = AstTestFactory.conditionalExpression(
         conditionExpression, thenExpression, elseExpression);
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
@@ -1479,10 +1481,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitConditionalExpression_nonConstantElse() {
-    Expression thenExpression = AstFactory.integer(1);
-    Expression elseExpression = AstFactory.identifier3("x");
-    ConditionalExpression expression = AstFactory.conditionalExpression(
-        AstFactory.booleanLiteral(true), thenExpression, elseExpression);
+    Expression thenExpression = AstTestFactory.integer(1);
+    Expression elseExpression = AstTestFactory.identifier3("x");
+    ConditionalExpression expression = AstTestFactory.conditionalExpression(
+        AstTestFactory.booleanLiteral(true), thenExpression, elseExpression);
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
         new ErrorReporter(errorListener, _dummySource());
@@ -1493,10 +1495,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitConditionalExpression_nonConstantThen() {
-    Expression thenExpression = AstFactory.identifier3("x");
-    Expression elseExpression = AstFactory.integer(0);
-    ConditionalExpression expression = AstFactory.conditionalExpression(
-        AstFactory.booleanLiteral(true), thenExpression, elseExpression);
+    Expression thenExpression = AstTestFactory.identifier3("x");
+    Expression elseExpression = AstTestFactory.integer(0);
+    ConditionalExpression expression = AstTestFactory.conditionalExpression(
+        AstTestFactory.booleanLiteral(true), thenExpression, elseExpression);
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
         new ErrorReporter(errorListener, _dummySource());
@@ -1507,10 +1509,10 @@ class ConstantVisitorTest extends ResolverTestCase {
   }
 
   void test_visitConditionalExpression_true() {
-    Expression thenExpression = AstFactory.integer(1);
-    Expression elseExpression = AstFactory.integer(0);
-    ConditionalExpression expression = AstFactory.conditionalExpression(
-        AstFactory.booleanLiteral(true), thenExpression, elseExpression);
+    Expression thenExpression = AstTestFactory.integer(1);
+    Expression elseExpression = AstTestFactory.integer(0);
+    ConditionalExpression expression = AstTestFactory.conditionalExpression(
+        AstTestFactory.booleanLiteral(true), thenExpression, elseExpression);
     GatheringErrorListener errorListener = new GatheringErrorListener();
     ErrorReporter errorReporter =
         new ErrorReporter(errorListener, _dummySource());
@@ -1599,5 +1601,13 @@ const b = 3;''');
         lexicalEnvironment: lexicalEnvironment));
     errorListener.assertNoErrors();
     return result;
+  }
+}
+
+@reflectiveTest
+class StrongConstantValueComputerTest extends ConstantValueComputerTest {
+  void setUp() {
+    super.setUp();
+    resetWithOptions(new AnalysisOptionsImpl()..strongMode = true);
   }
 }

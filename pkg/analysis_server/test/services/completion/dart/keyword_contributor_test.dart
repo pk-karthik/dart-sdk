@@ -8,15 +8,15 @@ import 'package:analysis_server/plugin/protocol/protocol.dart';
 import 'package:analysis_server/src/provisional/completion/dart/completion_dart.dart';
 import 'package:analysis_server/src/services/completion/dart/keyword_contributor.dart';
 import 'package:analyzer/dart/ast/token.dart';
+import 'package:test/test.dart';
 import 'package:test_reflective_loader/test_reflective_loader.dart';
-import 'package:unittest/unittest.dart';
 
-import '../../../utils.dart';
 import 'completion_contributor_util.dart';
 
 main() {
-  initializeTestEnvironment();
-  defineReflectiveTests(KeywordContributorTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(KeywordContributorTest);
+  });
 }
 
 @reflectiveTest
@@ -369,6 +369,22 @@ class KeywordContributorTest extends DartCompletionContributorTest {
     await computeSuggestions();
     assertSuggestKeywords(EXPRESSION_START_NO_INSTANCE,
         pseudoKeywords: ['async', 'async*', 'sync*']);
+  }
+
+  test_anonymous_function_async6() async {
+    addTestSource('main() {foo("bar", () as^{}}');
+    await computeSuggestions();
+    assertSuggestKeywords([],
+        pseudoKeywords: ['async', 'async*', 'sync*'],
+        relevance: DART_RELEVANCE_HIGH);
+  }
+
+  test_anonymous_function_async7() async {
+    addTestSource('main() {foo("bar", () as^ => null');
+    await computeSuggestions();
+    assertSuggestKeywords([],
+        pseudoKeywords: ['async', 'async*', 'sync*'],
+        relevance: DART_RELEVANCE_HIGH);
   }
 
   test_argument() async {
@@ -1179,6 +1195,12 @@ class A {
     assertSuggestKeywords([Keyword.IS], relevance: DART_RELEVANCE_HIGH);
   }
 
+  test_is_expression_partial() async {
+    addTestSource('main() {if (x i^)}');
+    await computeSuggestions();
+    assertSuggestKeywords([Keyword.IS], relevance: DART_RELEVANCE_HIGH);
+  }
+
   test_library() async {
     addTestSource('library foo;^');
     await computeSuggestions();
@@ -1338,6 +1360,18 @@ class A {
     addTestSource('class A { foo() {return ^}}');
     await computeSuggestions();
     assertSuggestKeywords(EXPRESSION_START_INSTANCE);
+  }
+
+  test_method_invocation() async {
+    addTestSource('class A { foo() {bar.^}}');
+    await computeSuggestions();
+    assertNoSuggestions();
+  }
+
+  test_method_invocation2() async {
+    addTestSource('class A { foo() {bar.as^}}');
+    await computeSuggestions();
+    assertNoSuggestions();
   }
 
   test_method_param() async {

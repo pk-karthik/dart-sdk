@@ -27,6 +27,68 @@ class NodeListener extends ElementListener {
     pushNode(tag);
   }
 
+  void endLibraryName(Token libraryKeyword, Token semicolon) {
+    Expression name = popNode();
+    pushNode(new LibraryName(
+        libraryKeyword,
+        name,
+        // TODO(sigmund): Import AST nodes have pointers to MetadataAnnotation
+        // (element) instead of Metatada (node).
+        null));
+  }
+
+  void endImport(Token importKeyword, Token deferredKeyword, Token asKeyword,
+      Token semicolon) {
+    NodeList combinators = popNode();
+    Identifier prefix = asKeyword != null ? popNode() : null;
+    NodeList conditionalUris = popNode();
+    StringNode uri = popLiteralString();
+    pushNode(new Import(
+        importKeyword,
+        uri,
+        conditionalUris,
+        prefix,
+        combinators,
+        // TODO(sigmund): Import AST nodes have pointers to MetadataAnnotation
+        // (element) instead of Metatada (node).
+        null,
+        isDeferred: deferredKeyword != null));
+  }
+
+  void endExport(Token exportKeyword, Token semicolon) {
+    NodeList combinators = popNode();
+    NodeList conditionalUris = popNode();
+    StringNode uri = popLiteralString();
+    pushNode(new Export(
+        exportKeyword,
+        uri,
+        conditionalUris,
+        combinators,
+        // TODO(sigmund): Import AST nodes have pointers to MetadataAnnotation
+        // (element) instead of Metatada (node).
+        null));
+  }
+
+  void endPart(Token partKeyword, Token semicolon) {
+    StringNode uri = popLiteralString();
+    pushNode(new Part(
+        partKeyword,
+        uri,
+        // TODO(sigmund): Import AST nodes have pointers to MetadataAnnotation
+        // (element) instead of Metatada (node).
+        null));
+  }
+
+  void endPartOf(Token partKeyword, Token semicolon) {
+    Expression name = popNode(); // name
+    pushNode(new PartOf(
+        partKeyword,
+        name,
+        // TODO(sigmund): Import AST nodes have pointers to MetadataAnnotation
+        // (element) instead of Metatada (node).
+        null));
+  }
+
   void endClassDeclaration(int interfacesCount, Token beginToken,
       Token extendsKeyword, Token implementsKeyword, Token endToken) {
     NodeList body = popNode();
@@ -38,6 +100,15 @@ class NodeListener extends ElementListener {
     Modifiers modifiers = popNode();
     pushNode(new ClassNode(modifiers, name, typeParameters, supertype,
         interfaces, beginToken, extendsKeyword, body, endToken));
+  }
+
+  void endTopLevelDeclaration(Token token) {
+    // TODO(sigmund): consider moving metadata into each declaration
+    // element instead.
+    Node node = popNode(); // top-level declaration
+    popNode(); // Discard metadata
+    pushNode(node);
+    super.endTopLevelDeclaration(token);
   }
 
   void endCompilationUnit(int count, Token token) {
@@ -82,15 +153,15 @@ class NodeListener extends ElementListener {
   }
 
   void endTopLevelMethod(Token beginToken, Token getOrSet, Token endToken) {
-    popNode(); // body
-    popNode(); // formalParameters
-    popNode(); // typeVariables
+    Statement body = popNode();
+    AsyncModifier asyncModifier = popNode();
+    NodeList formals = popNode();
+    NodeList typeVariables = popNode();
     Identifier name = popNode();
-    popNode(); // type
+    TypeAnnotation type = popNode();
     Modifiers modifiers = popNode();
-    PartialFunctionElement element = new PartialFunctionElement(name.source,
-        beginToken, getOrSet, endToken, modifiers, compilationUnitElement);
-    pushElement(element);
+    pushNode(new FunctionExpression(name, typeVariables, formals, body, type,
+        modifiers, null, getOrSet, asyncModifier));
   }
 
   void endFormalParameter(Token thisKeyword) {
@@ -265,11 +336,11 @@ class NodeListener extends ElementListener {
     pushNode(new Cascade(popNode()));
   }
 
-  void handleAsOperator(Token operathor, Token endToken) {
+  void handleAsOperator(Token operator, Token endToken) {
     TypeAnnotation type = popNode();
     Expression expression = popNode();
     NodeList arguments = new NodeList.singleton(type);
-    pushNode(new Send(expression, new Operator(operathor), arguments));
+    pushNode(new Send(expression, new Operator(operator), arguments));
   }
 
   void handleAssignmentExpression(Token token) {
@@ -309,10 +380,10 @@ class NodeListener extends ElementListener {
 
   void endSend(Token token) {
     NodeList arguments = popNode();
-    popNode(); // typeArguments
+    NodeList typeArguments = popNode();
     Node selector = popNode();
     // TODO(ahe): Handle receiver.
-    pushNode(new Send(null, selector, arguments));
+    pushNode(new Send(null, selector, arguments, typeArguments));
   }
 
   void endFunctionBody(int count, Token beginToken, Token endToken) {
@@ -479,6 +550,15 @@ class NodeListener extends ElementListener {
 
   void handleNoInitializers() {
     pushNode(null);
+  }
+
+  void endMember() {
+    // TODO(sigmund): consider moving metadata into each declaration
+    // element instead.
+    Node node = popNode(); // member
+    popNode(); // Discard metadata
+    pushNode(node);
+    super.endMember();
   }
 
   void endFields(int count, Token beginToken, Token endToken) {
@@ -693,13 +773,10 @@ class NodeListener extends ElementListener {
   }
 
   void endMetadataStar(int count, bool forParameter) {
-    // TODO(johnniwinther): Handle metadata for all node kinds.
-    if (forParameter) {
-      if (0 == count) {
-        pushNode(null);
-      } else {
-        pushNode(makeNodeList(count, null, null, ' '));
-      }
+    if (0 == count) {
+      pushNode(null);
+    } else {
+      pushNode(makeNodeList(count, null, null, ' '));
     }
   }
 
@@ -759,7 +836,7 @@ class NodeListener extends ElementListener {
         Modifiers.EMPTY, null, null, asyncModifier));
   }
 
-  void handleIsOperator(Token operathor, Token not, Token endToken) {
+  void handleIsOperator(Token operator, Token not, Token endToken) {
     TypeAnnotation type = popNode();
     Expression expression = popNode();
     Node argument;
@@ -770,7 +847,7 @@ class NodeListener extends ElementListener {
     }
 
     NodeList arguments = new NodeList.singleton(argument);
-    pushNode(new Send(expression, new Operator(operathor), arguments));
+    pushNode(new Send(expression, new Operator(operator), arguments));
   }
 
   void handleLabel(Token colon) {

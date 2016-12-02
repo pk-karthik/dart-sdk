@@ -14,16 +14,6 @@ namespace dart {
 
 DECLARE_FLAG(bool, remove_script_timestamps_for_test);
 
-#define NEW_OBJECT(type)                                                       \
-  ((Snapshot::IsFull(kind)) ? reader->New##type() : type::New())
-
-#define NEW_OBJECT_WITH_LEN(type, len)                                         \
-  ((Snapshot::IsFull(kind)) ? reader->New##type(len) : type::New(len))
-
-#define NEW_OBJECT_WITH_LEN_SPACE(type, len, kind)                             \
-  ((Snapshot::IsFull(kind)) ?                                                  \
-  reader->New##type(len) : type::New(len, HEAP_SPACE(kind)))
-
 #define OFFSET_OF_FROM(obj)                                                    \
   obj.raw()->from() - reinterpret_cast<RawObject**>(obj.raw()->ptr())
 
@@ -35,8 +25,7 @@ DECLARE_FLAG(bool, remove_script_timestamps_for_test);
   for (intptr_t i = 0; i <= num_flds; i++) {                                   \
     (*reader->PassiveObjectHandle()) =                                         \
         reader->ReadObjectImpl(as_reference, object_id, (i + from_offset));    \
-    object.StorePointer(((from) + i),                                          \
-                        reader->PassiveObjectHandle()->raw());                 \
+    object.StorePointer(((from) + i), reader->PassiveObjectHandle()->raw());   \
   }
 
 RawClass* Class::ReadFrom(SnapshotReader* reader,
@@ -48,21 +37,16 @@ RawClass* Class::ReadFrom(SnapshotReader* reader,
 
   Class& cls = Class::ZoneHandle(reader->zone(), Class::null());
   bool is_in_fullsnapshot = reader->Read<bool>();
-  if (Snapshot::IsFull(kind) ||
-      (kind == Snapshot::kScript && !is_in_fullsnapshot)) {
+  if ((kind == Snapshot::kScript) && !is_in_fullsnapshot) {
     // Read in the base information.
     classid_t class_id = reader->ReadClassIDValue();
 
     // Allocate class object of specified kind.
-    if (Snapshot::IsFull(kind)) {
-      cls = reader->NewClass(class_id);
+    if (class_id < kNumPredefinedCids) {
+      ASSERT((class_id >= kInstanceCid) && (class_id <= kMirrorReferenceCid));
+      cls = reader->isolate()->class_table()->At(class_id);
     } else {
-      if (class_id < kNumPredefinedCids) {
-        ASSERT((class_id >= kInstanceCid) && (class_id <= kMirrorReferenceCid));
-        cls = reader->isolate()->class_table()->At(class_id);
-      } else {
-        cls = Class::NewInstanceClass();
-      }
+      cls = Class::NewInstanceClass();
     }
     reader->AddBackRef(object_id, &cls, kIsDeserialized);
 
@@ -80,12 +64,10 @@ RawClass* Class::ReadFrom(SnapshotReader* reader,
     cls.set_state_bits(reader->Read<uint16_t>());
 
     // Set all the object fields.
-    READ_OBJECT_FIELDS(cls,
-                       cls.raw()->from(),
-                       cls.raw()->to_snapshot(kind),
+    READ_OBJECT_FIELDS(cls, cls.raw()->from(), cls.raw()->to_snapshot(kind),
                        kAsReference);
     cls.StorePointer(&cls.raw_ptr()->dependent_code_, Array::null());
-    ASSERT(!cls.IsInFullSnapshot() || (Snapshot::IsFull(kind)));
+    ASSERT(!cls.IsInFullSnapshot());
   } else {
     cls ^= reader->ReadClassId(object_id);
     ASSERT((kind == Snapshot::kMessage) || cls.IsInFullSnapshot());
@@ -113,8 +95,7 @@ void RawClass::WriteTo(SnapshotWriter* writer,
   // to be interpreted.
   writer->Write<bool>(is_in_fullsnapshot);
 
-  if (Snapshot::IsFull(kind) ||
-      (kind == Snapshot::kScript && !is_in_fullsnapshot)) {
+  if ((kind == Snapshot::kScript) && !is_in_fullsnapshot) {
     // Write out all the non object pointer fields.
     // NOTE: cpp_vtable_ is not written.
     classid_t class_id = ptr()->id_;
@@ -159,8 +140,8 @@ RawUnresolvedClass* UnresolvedClass::ReadFrom(SnapshotReader* reader,
   ASSERT(reader != NULL);
 
   // Allocate unresolved class object.
-  UnresolvedClass& unresolved_class = UnresolvedClass::ZoneHandle(
-      reader->zone(), NEW_OBJECT(UnresolvedClass));
+  UnresolvedClass& unresolved_class =
+      UnresolvedClass::ZoneHandle(reader->zone(), UnresolvedClass::New());
   reader->AddBackRef(object_id, &unresolved_class, kIsDeserialized);
 
   // Set all non object fields.
@@ -168,10 +149,8 @@ RawUnresolvedClass* UnresolvedClass::ReadFrom(SnapshotReader* reader,
       TokenPosition::SnapshotDecode(reader->Read<int32_t>()));
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(unresolved_class,
-                     unresolved_class.raw()->from(),
-                     unresolved_class.raw()->to(),
-                     kAsReference);
+  READ_OBJECT_FIELDS(unresolved_class, unresolved_class.raw()->from(),
+                     unresolved_class.raw()->to(), kAsReference);
 
   return unresolved_class.raw();
 }
@@ -228,10 +207,12 @@ RawType* Type::ReadFrom(SnapshotReader* reader,
   bool typeclass_is_in_fullsnapshot = reader->Read<bool>();
 
   // Allocate type object.
-  Type& type = Type::ZoneHandle(reader->zone(), NEW_OBJECT(Type));
+  Type& type = Type::ZoneHandle(reader->zone(), Type::New());
   bool is_canonical = RawObject::IsCanonical(tags);
-  bool defer_canonicalization = is_canonical &&
-      (!Snapshot::IsFull(kind) && typeclass_is_in_fullsnapshot);
+  bool defer_canonicalization =
+      is_canonical &&
+      ((kind == Snapshot::kMessage) ||
+       (!Snapshot::IsFull(kind) && typeclass_is_in_fullsnapshot));
   reader->AddBackRef(object_id, &type, kIsDeserialized, defer_canonicalization);
 
   // Set all non object fields.
@@ -273,6 +254,11 @@ void RawType::WriteTo(SnapshotWriter* writer,
   writer->WriteIndexedObject(kTypeCid);
   writer->WriteTags(writer->GetObjectTags(this));
 
+  if (ptr()->type_class_id_->IsHeapObject()) {
+    // Type class is still an unresolved class.
+    UNREACHABLE();
+  }
+
   // Lookup the type class.
   RawSmi* raw_type_class_id = Smi::RawCast(ptr()->type_class_id_);
   RawClass* type_class =
@@ -308,13 +294,11 @@ RawTypeRef* TypeRef::ReadFrom(SnapshotReader* reader,
   ASSERT(reader != NULL);
 
   // Allocate type ref object.
-  TypeRef& type_ref = TypeRef::ZoneHandle(
-      reader->zone(), NEW_OBJECT(TypeRef));
+  TypeRef& type_ref = TypeRef::ZoneHandle(reader->zone(), TypeRef::New());
   reader->AddBackRef(object_id, &type_ref, kIsDeserialized);
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(type_ref,
-                     type_ref.raw()->from(), type_ref.raw()->to(),
+  READ_OBJECT_FIELDS(type_ref, type_ref.raw()->from(), type_ref.raw()->to(),
                      kAsReference);
 
   return type_ref.raw();
@@ -348,20 +332,20 @@ RawTypeParameter* TypeParameter::ReadFrom(SnapshotReader* reader,
   ASSERT(reader != NULL);
 
   // Allocate type parameter object.
-  TypeParameter& type_parameter = TypeParameter::ZoneHandle(
-      reader->zone(), NEW_OBJECT(TypeParameter));
+  TypeParameter& type_parameter =
+      TypeParameter::ZoneHandle(reader->zone(), TypeParameter::New());
   reader->AddBackRef(object_id, &type_parameter, kIsDeserialized);
 
   // Set all non object fields.
   type_parameter.set_token_pos(
       TokenPosition::SnapshotDecode(reader->Read<int32_t>()));
   type_parameter.set_index(reader->Read<int16_t>());
+  type_parameter.set_parent_level(reader->Read<uint8_t>());
   type_parameter.set_type_state(reader->Read<int8_t>());
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(type_parameter,
-                     type_parameter.raw()->from(), type_parameter.raw()->to(),
-                     kAsReference);
+  READ_OBJECT_FIELDS(type_parameter, type_parameter.raw()->from(),
+                     type_parameter.raw()->to(), kAsReference);
 
   // Read in the parameterized class.
   (*reader->ClassHandle()) =
@@ -391,6 +375,7 @@ void RawTypeParameter::WriteTo(SnapshotWriter* writer,
   // Write out all the non object pointer fields.
   writer->Write<int32_t>(ptr()->token_pos_.SnapshotEncode());
   writer->Write<int16_t>(ptr()->index_);
+  writer->Write<uint8_t>(ptr()->parent_level_);
   writer->Write<int8_t>(ptr()->type_state_);
 
   // Write out all the object pointer fields.
@@ -412,14 +397,13 @@ RawBoundedType* BoundedType::ReadFrom(SnapshotReader* reader,
   ASSERT(reader != NULL);
 
   // Allocate bounded type object.
-  BoundedType& bounded_type = BoundedType::ZoneHandle(
-      reader->zone(), NEW_OBJECT(BoundedType));
+  BoundedType& bounded_type =
+      BoundedType::ZoneHandle(reader->zone(), BoundedType::New());
   reader->AddBackRef(object_id, &bounded_type, kIsDeserialized);
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(bounded_type,
-                     bounded_type.raw()->from(), bounded_type.raw()->to(),
-                     kAsReference);
+  READ_OBJECT_FIELDS(bounded_type, bounded_type.raw()->from(),
+                     bounded_type.raw()->to(), kAsReference);
 
   return bounded_type.raw();
 }
@@ -473,24 +457,18 @@ RawTypeArguments* TypeArguments::ReadFrom(SnapshotReader* reader,
   intptr_t len = reader->ReadSmiValue();
 
   TypeArguments& type_arguments = TypeArguments::ZoneHandle(
-      reader->zone(), NEW_OBJECT_WITH_LEN_SPACE(TypeArguments, len, kind));
+      reader->zone(), TypeArguments::New(len, HEAP_SPACE(kind)));
   bool is_canonical = RawObject::IsCanonical(tags);
   bool defer_canonicalization = is_canonical && (!Snapshot::IsFull(kind));
-  reader->AddBackRef(object_id,
-                     &type_arguments,
-                     kIsDeserialized,
+  reader->AddBackRef(object_id, &type_arguments, kIsDeserialized,
                      defer_canonicalization);
 
   // Set the instantiations field, which is only read from a full snapshot.
-  if (Snapshot::IsFull(kind)) {
-    *(reader->ArrayHandle()) ^= reader->ReadObjectImpl(kAsInlinedObject);
-    type_arguments.set_instantiations(*(reader->ArrayHandle()));
-  } else {
-    type_arguments.set_instantiations(Object::zero_array());
-  }
+  type_arguments.set_instantiations(Object::zero_array());
 
   // Now set all the type fields.
-  intptr_t offset = type_arguments.TypeAddr(0) -
+  intptr_t offset =
+      type_arguments.TypeAddr(0) -
       reinterpret_cast<RawAbstractType**>(type_arguments.raw()->ptr());
   for (intptr_t i = 0; i < len; i++) {
     *reader->TypeHandle() ^=
@@ -523,11 +501,6 @@ void RawTypeArguments::WriteTo(SnapshotWriter* writer,
   // Write out the length field.
   writer->Write<RawObject*>(ptr()->length_);
 
-  // Write out the instantiations field, but only in a full snapshot.
-  if (Snapshot::IsFull(kind)) {
-    writer->WriteObjectImpl(ptr()->instantiations_, kAsInlinedObject);
-  }
-
   // Write out the individual types.
   intptr_t len = Smi::Value(ptr()->length_);
   for (intptr_t i = 0; i < len; i++) {
@@ -542,16 +515,15 @@ RawPatchClass* PatchClass::ReadFrom(SnapshotReader* reader,
                                     Snapshot::Kind kind,
                                     bool as_reference) {
   ASSERT(reader != NULL);
+  ASSERT(kind == Snapshot::kScript);
 
   // Allocate function object.
-  PatchClass& cls = PatchClass::ZoneHandle(reader->zone(),
-                                            NEW_OBJECT(PatchClass));
+  PatchClass& cls = PatchClass::ZoneHandle(reader->zone(), PatchClass::New());
   reader->AddBackRef(object_id, &cls, kIsDeserialized);
 
   // Set all the object fields.
   READ_OBJECT_FIELDS(cls, cls.raw()->from(), cls.raw()->to(), kAsReference);
 
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
   return cls.raw();
 }
 
@@ -561,7 +533,7 @@ void RawPatchClass::WriteTo(SnapshotWriter* writer,
                             Snapshot::Kind kind,
                             bool as_reference) {
   ASSERT(writer != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Write out the serialization header value for this object.
   writer->WriteInlinedObjectHeader(object_id);
@@ -580,24 +552,8 @@ RawClosure* Closure::ReadFrom(SnapshotReader* reader,
                               intptr_t tags,
                               Snapshot::Kind kind,
                               bool as_reference) {
-  ASSERT(reader != NULL);
-  ASSERT(Snapshot::IsFull(kind));
-
-  // Allocate closure object.
-  Closure& closure = Closure::ZoneHandle(
-      reader->zone(), NEW_OBJECT(Closure));
-  reader->AddBackRef(object_id, &closure, kIsDeserialized);
-
-  // Set all the object fields.
-  READ_OBJECT_FIELDS(closure,
-                     closure.raw()->from(), closure.raw()->to(),
-                     kAsReference);
-
-  // Set the canonical bit.
-  if (RawObject::IsCanonical(tags)) {
-    closure.SetCanonical();
-  }
-  return closure.raw();
+  UNREACHABLE();
+  return Closure::null();
 }
 
 
@@ -606,27 +562,17 @@ void RawClosure::WriteTo(SnapshotWriter* writer,
                          Snapshot::Kind kind,
                          bool as_reference) {
   ASSERT(writer != NULL);
-  if ((kind == Snapshot::kMessage) || (kind == Snapshot::kScript)) {
-    // Check if closure is serializable, throw an exception otherwise.
-    RawFunction* func = writer->IsSerializableClosure(this);
-    if (func != Function::null()) {
-      writer->WriteStaticImplicitClosure(object_id,
-                                         func,
-                                         writer->GetObjectTags(this));
-      return;
-    }
+  ASSERT((kind == Snapshot::kMessage) || (kind == Snapshot::kScript));
+
+  // Check if closure is serializable, throw an exception otherwise.
+  RawFunction* func = writer->IsSerializableClosure(this);
+  if (func != Function::null()) {
+    writer->WriteStaticImplicitClosure(object_id, func,
+                                       writer->GetObjectTags(this));
+    return;
   }
 
-  // Write out the serialization header value for this object.
-  writer->WriteInlinedObjectHeader(object_id);
-
-  // Write out the class and tags information.
-  writer->WriteIndexedObject(kClosureCid);
-  writer->WriteTags(writer->GetObjectTags(this));
-
-  // Write out all the object pointer fields.
-  SnapshotWriterVisitor visitor(writer, kAsReference);
-  visitor.VisitPointers(from(), to());
+  UNREACHABLE();
 }
 
 
@@ -636,16 +582,15 @@ RawClosureData* ClosureData::ReadFrom(SnapshotReader* reader,
                                       Snapshot::Kind kind,
                                       bool as_reference) {
   ASSERT(reader != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Allocate closure data object.
-  ClosureData& data = ClosureData::ZoneHandle(
-      reader->zone(), NEW_OBJECT(ClosureData));
+  ClosureData& data =
+      ClosureData::ZoneHandle(reader->zone(), ClosureData::New());
   reader->AddBackRef(object_id, &data, kIsDeserialized);
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(data,
-                     data.raw()->from(), data.raw()->to(),
+  READ_OBJECT_FIELDS(data, data.raw()->from(), data.raw()->to(),
                      kAsInlinedObject);
 
   return data.raw();
@@ -657,7 +602,7 @@ void RawClosureData::WriteTo(SnapshotWriter* writer,
                              Snapshot::Kind kind,
                              bool as_reference) {
   ASSERT(writer != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Write out the serialization header value for this object.
   writer->WriteInlinedObjectHeader(object_id);
@@ -669,8 +614,7 @@ void RawClosureData::WriteTo(SnapshotWriter* writer,
   // Context scope.
   if (ptr()->context_scope_ == Object::empty_context_scope().raw()) {
     writer->WriteVMIsolateObject(kEmptyContextScopeObject);
-  } else if (ptr()->context_scope_->ptr()->is_implicit_ ||
-             (kind == Snapshot::kAppWithJIT)) {
+  } else if (ptr()->context_scope_->ptr()->is_implicit_) {
     writer->WriteObjectImpl(ptr()->context_scope_, kAsInlinedObject);
   } else {
     // We don't write non implicit context scopes in the snapshot.
@@ -694,17 +638,15 @@ RawRedirectionData* RedirectionData::ReadFrom(SnapshotReader* reader,
                                               Snapshot::Kind kind,
                                               bool as_reference) {
   ASSERT(reader != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Allocate redirection data object.
-  RedirectionData& data = RedirectionData::ZoneHandle(
-      reader->zone(), NEW_OBJECT(RedirectionData));
+  RedirectionData& data =
+      RedirectionData::ZoneHandle(reader->zone(), RedirectionData::New());
   reader->AddBackRef(object_id, &data, kIsDeserialized);
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(data,
-                     data.raw()->from(), data.raw()->to(),
-                     kAsReference);
+  READ_OBJECT_FIELDS(data, data.raw()->from(), data.raw()->to(), kAsReference);
 
   return data.raw();
 }
@@ -715,7 +657,7 @@ void RawRedirectionData::WriteTo(SnapshotWriter* writer,
                                  Snapshot::Kind kind,
                                  bool as_reference) {
   ASSERT(writer != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Write out the serialization header value for this object.
   writer->WriteInlinedObjectHeader(object_id);
@@ -736,13 +678,12 @@ RawFunction* Function::ReadFrom(SnapshotReader* reader,
                                 Snapshot::Kind kind,
                                 bool as_reference) {
   ASSERT(reader != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   bool is_in_fullsnapshot = reader->Read<bool>();
-  if ((Snapshot::IsFull(kind)) || !is_in_fullsnapshot) {
+  if (!is_in_fullsnapshot) {
     // Allocate function object.
-    Function& func = Function::ZoneHandle(
-        reader->zone(), NEW_OBJECT(Function));
+    Function& func = Function::ZoneHandle(reader->zone(), Function::New());
     reader->AddBackRef(object_id, &func, kIsDeserialized);
 
     // Set all the non object fields. Read the token positions now but
@@ -754,52 +695,26 @@ RawFunction* Function::ReadFrom(SnapshotReader* reader,
     func.set_kind_tag(reader->Read<uint32_t>());
     func.set_token_pos(TokenPosition::SnapshotDecode(token_pos));
     func.set_end_token_pos(TokenPosition::SnapshotDecode(end_token_pos));
-    if (kind == Snapshot::kAppNoJIT) {
-      func.set_usage_counter(0);
-      func.set_deoptimization_counter(0);
-      func.set_optimized_instruction_count(0);
-      func.set_optimized_call_site_count(0);
-    } else {
-      func.set_usage_counter(reader->Read<int32_t>());
-      func.set_deoptimization_counter(reader->Read<int8_t>());
-      func.set_optimized_instruction_count(reader->Read<uint16_t>());
-      func.set_optimized_call_site_count(reader->Read<uint16_t>());
-    }
+    func.set_usage_counter(reader->Read<int32_t>());
+    func.set_deoptimization_counter(reader->Read<int8_t>());
+    func.set_optimized_instruction_count(reader->Read<uint16_t>());
+    func.set_optimized_call_site_count(reader->Read<uint16_t>());
+    func.set_kernel_function(NULL);
     func.set_was_compiled(false);
 
     // Set all the object fields.
-    READ_OBJECT_FIELDS(func,
-                       func.raw()->from(), func.raw()->to_snapshot(),
+    READ_OBJECT_FIELDS(func, func.raw()->from(), func.raw()->to_snapshot(),
                        kAsReference);
     // Initialize all fields that are not part of the snapshot.
-    if (kind == Snapshot::kAppNoJIT) {
-      // Read the code object and fixup entry point.
-      func.ClearICDataArray();
-      func.ClearCode();
-      (*reader->CodeHandle()) ^= reader->ReadObjectImpl(kAsInlinedObject);
-      func.SetInstructions(*reader->CodeHandle());
-    } else if (kind == Snapshot::kAppWithJIT) {
+    bool is_optimized = func.usage_counter() != 0;
+    if (is_optimized) {
+      // Read the ic data array as the function is an optimized one.
       (*reader->ArrayHandle()) ^= reader->ReadObjectImpl(kAsReference);
       func.set_ic_data_array(*reader->ArrayHandle());
-      (*reader->CodeHandle()) ^= reader->ReadObjectImpl(kAsInlinedObject);
-      func.set_unoptimized_code(*reader->CodeHandle());
-      if (!reader->CodeHandle()->IsNull()) {
-        func.SetInstructions(*reader->CodeHandle());
-        func.set_was_compiled(true);
-      } else {
-        func.ClearCode();
-      }
     } else {
-      bool is_optimized = func.usage_counter() != 0;
-      if (is_optimized) {
-        // Read the ic data array as the function is an optimized one.
-        (*reader->ArrayHandle()) ^= reader->ReadObjectImpl(kAsReference);
-        func.set_ic_data_array(*reader->ArrayHandle());
-      } else {
-        func.ClearICDataArray();
-      }
-      func.ClearCode();
+      func.ClearICDataArray();
     }
+    func.ClearCode();
     return func.raw();
   } else {
     return reader->ReadFunctionId(object_id);
@@ -812,17 +727,18 @@ void RawFunction::WriteTo(SnapshotWriter* writer,
                           Snapshot::Kind kind,
                           bool as_reference) {
   ASSERT(writer != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
   bool is_in_fullsnapshot = false;
   bool owner_is_class = false;
   if ((kind == Snapshot::kScript) && !Function::IsSignatureFunction(this)) {
     intptr_t tags = writer->GetObjectTags(ptr()->owner_);
     intptr_t cid = ClassIdTag::decode(tags);
     owner_is_class = (cid == kClassCid);
-    is_in_fullsnapshot = owner_is_class ?
-        Class::IsInFullSnapshot(reinterpret_cast<RawClass*>(ptr()->owner_)) :
-        PatchClass::IsInFullSnapshot(
-            reinterpret_cast<RawPatchClass*>(ptr()->owner_));
+    is_in_fullsnapshot =
+        owner_is_class ? Class::IsInFullSnapshot(
+                             reinterpret_cast<RawClass*>(ptr()->owner_))
+                       : PatchClass::IsInFullSnapshot(
+                             reinterpret_cast<RawPatchClass*>(ptr()->owner_));
   }
 
   // Write out the serialization header value for this object.
@@ -837,40 +753,32 @@ void RawFunction::WriteTo(SnapshotWriter* writer,
   // to be interpreted.
   writer->Write<bool>(is_in_fullsnapshot);
 
-  if (Snapshot::IsFull(kind) || !is_in_fullsnapshot) {
+  if (!is_in_fullsnapshot) {
     bool is_optimized = Code::IsOptimized(ptr()->code_);
 
-    // Write out all the non object fields.
+// Write out all the non object fields.
+#if !defined(DART_PRECOMPILED_RUNTIME)
     writer->Write<int32_t>(ptr()->token_pos_.SnapshotEncode());
     writer->Write<int32_t>(ptr()->end_token_pos_.SnapshotEncode());
+#endif
     writer->Write<int16_t>(ptr()->num_fixed_parameters_);
     writer->Write<int16_t>(ptr()->num_optional_parameters_);
     writer->Write<uint32_t>(ptr()->kind_tag_);
-    if (kind == Snapshot::kAppNoJIT) {
-      // Omit fields used to support de/reoptimization.
+#if !defined(DART_PRECOMPILED_RUNTIME)
+    if (is_optimized) {
+      writer->Write<int32_t>(FLAG_optimization_counter_threshold);
     } else {
-      if (is_optimized) {
-        writer->Write<int32_t>(FLAG_optimization_counter_threshold);
-      } else {
-        writer->Write<int32_t>(0);
-      }
-      writer->Write<int8_t>(ptr()->deoptimization_counter_);
-      writer->Write<uint16_t>(ptr()->optimized_instruction_count_);
-      writer->Write<uint16_t>(ptr()->optimized_call_site_count_);
+      writer->Write<int32_t>(0);
     }
+    writer->Write<int8_t>(ptr()->deoptimization_counter_);
+    writer->Write<uint16_t>(ptr()->optimized_instruction_count_);
+    writer->Write<uint16_t>(ptr()->optimized_call_site_count_);
+#endif
 
     // Write out all the object pointer fields.
     SnapshotWriterVisitor visitor(writer, kAsReference);
     visitor.VisitPointers(from(), to_snapshot());
-    if (kind == Snapshot::kAppNoJIT) {
-      ASSERT(ptr()->ic_data_array_ == Array::null());
-      ASSERT((ptr()->code_ == ptr()->unoptimized_code_) ||
-             (ptr()->unoptimized_code_ == Code::null()));
-      writer->WriteObjectImpl(ptr()->code_, kAsInlinedObject);
-    } else if (kind == Snapshot::kAppWithJIT) {
-      writer->WriteObjectImpl(ptr()->ic_data_array_, kAsReference);
-      writer->WriteObjectImpl(ptr()->unoptimized_code_, kAsInlinedObject);
-    } else if (is_optimized) {
+    if (is_optimized) {
       // Write out the ic data array as the function is optimized.
       writer->WriteObjectImpl(ptr()->ic_data_array_, kAsReference);
     }
@@ -886,28 +794,21 @@ RawField* Field::ReadFrom(SnapshotReader* reader,
                           Snapshot::Kind kind,
                           bool as_reference) {
   ASSERT(reader != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Allocate field object.
-  Field& field = Field::ZoneHandle(reader->zone(), NEW_OBJECT(Field));
+  Field& field = Field::ZoneHandle(reader->zone(), Field::New());
   reader->AddBackRef(object_id, &field, kIsDeserialized);
 
   // Set all non object fields.
-  if (kind == Snapshot::kAppNoJIT) {
-    field.set_token_pos(TokenPosition::kNoSource);
-    ASSERT(!FLAG_use_field_guards);
-  } else {
-    field.set_token_pos(
-        TokenPosition::SnapshotDecode(reader->Read<int32_t>()));
-    field.set_guarded_cid(reader->Read<int32_t>());
-    field.set_is_nullable(reader->Read<int32_t>());
-  }
+  field.set_token_pos(TokenPosition::SnapshotDecode(reader->Read<int32_t>()));
+  field.set_guarded_cid(reader->Read<int32_t>());
+  field.set_is_nullable(reader->Read<int32_t>());
   field.set_kind_bits(reader->Read<uint8_t>());
+  field.set_kernel_field(NULL);
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(field,
-                     field.raw()->from(),
-                     field.raw()->to_snapshot(kind),
+  READ_OBJECT_FIELDS(field, field.raw()->from(), field.raw()->to_snapshot(kind),
                      kAsReference);
   field.StorePointer(&field.raw_ptr()->dependent_code_, Array::null());
 
@@ -929,7 +830,7 @@ void RawField::WriteTo(SnapshotWriter* writer,
                        Snapshot::Kind kind,
                        bool as_reference) {
   ASSERT(writer != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Write out the serialization header value for this object.
   writer->WriteInlinedObjectHeader(object_id);
@@ -939,11 +840,9 @@ void RawField::WriteTo(SnapshotWriter* writer,
   writer->WriteTags(writer->GetObjectTags(this));
 
   // Write out all the non object fields.
-  if (kind != Snapshot::kAppNoJIT) {
-    writer->Write<int32_t>(ptr()->token_pos_.SnapshotEncode());
-    writer->Write<int32_t>(ptr()->guarded_cid_);
-    writer->Write<int32_t>(ptr()->is_nullable_);
-  }
+  writer->Write<int32_t>(ptr()->token_pos_.SnapshotEncode());
+  writer->Write<int32_t>(ptr()->guarded_cid_);
+  writer->Write<int32_t>(ptr()->is_nullable_);
   writer->Write<uint8_t>(ptr()->kind_bits_);
 
   // Write out the name.
@@ -954,11 +853,7 @@ void RawField::WriteTo(SnapshotWriter* writer,
   writer->WriteObjectImpl(ptr()->type_, kAsReference);
   // Write out the initial static value or field offset.
   if (Field::StaticBit::decode(ptr()->kind_bits_)) {
-    if (kind == Snapshot::kAppNoJIT) {
-      // For precompiled static fields, the value was already reset and
-      // initializer_ now contains a Function.
-      writer->WriteObjectImpl(ptr()->value_.static_value_, kAsReference);
-    } else if (Field::ConstBit::decode(ptr()->kind_bits_)) {
+    if (Field::ConstBit::decode(ptr()->kind_bits_)) {
       // Do not reset const fields.
       writer->WriteObjectImpl(ptr()->value_.static_value_, kAsReference);
     } else {
@@ -969,15 +864,9 @@ void RawField::WriteTo(SnapshotWriter* writer,
     writer->WriteObjectImpl(ptr()->value_.offset_, kAsReference);
   }
   // Write out the initializer function or saved initial value.
-  if (kind == Snapshot::kAppNoJIT) {
-    writer->WriteObjectImpl(ptr()->initializer_.precompiled_, kAsReference);
-  } else {
-    writer->WriteObjectImpl(ptr()->initializer_.saved_value_, kAsReference);
-  }
-  if (kind != Snapshot::kAppNoJIT) {
-    // Write out the guarded list length.
-    writer->WriteObjectImpl(ptr()->guarded_list_length_, kAsReference);
-  }
+  writer->WriteObjectImpl(ptr()->initializer_.saved_value_, kAsReference);
+  // Write out the guarded list length.
+  writer->WriteObjectImpl(ptr()->guarded_list_length_, kAsReference);
 }
 
 
@@ -990,8 +879,8 @@ RawLiteralToken* LiteralToken::ReadFrom(SnapshotReader* reader,
   ASSERT(kind != Snapshot::kMessage);
 
   // Create the literal token object.
-  LiteralToken& literal_token = LiteralToken::ZoneHandle(
-      reader->zone(), NEW_OBJECT(LiteralToken));
+  LiteralToken& literal_token =
+      LiteralToken::ZoneHandle(reader->zone(), LiteralToken::New());
   reader->AddBackRef(object_id, &literal_token, kIsDeserialized);
 
   // Read the token attributes.
@@ -999,9 +888,8 @@ RawLiteralToken* LiteralToken::ReadFrom(SnapshotReader* reader,
   literal_token.set_kind(token_kind);
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(literal_token,
-                     literal_token.raw()->from(), literal_token.raw()->to(),
-                     kAsReference);
+  READ_OBJECT_FIELDS(literal_token, literal_token.raw()->from(),
+                     literal_token.raw()->to(), kAsReference);
 
   return literal_token.raw();
 }
@@ -1036,14 +924,14 @@ RawTokenStream* TokenStream::ReadFrom(SnapshotReader* reader,
                                       Snapshot::Kind kind,
                                       bool as_reference) {
   ASSERT(reader != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Read the length so that we can determine number of tokens to read.
   intptr_t len = reader->ReadSmiValue();
 
   // Create the token stream object.
-  TokenStream& token_stream = TokenStream::ZoneHandle(
-      reader->zone(), NEW_OBJECT_WITH_LEN(TokenStream, len));
+  TokenStream& token_stream =
+      TokenStream::ZoneHandle(reader->zone(), TokenStream::New(len));
   reader->AddBackRef(object_id, &token_stream, kIsDeserialized);
 
   // Read the stream of tokens into the TokenStream object for script
@@ -1070,7 +958,7 @@ void RawTokenStream::WriteTo(SnapshotWriter* writer,
                              Snapshot::Kind kind,
                              bool as_reference) {
   ASSERT(writer != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Write out the serialization header value for this object.
   writer->WriteInlinedObjectHeader(object_id);
@@ -1098,18 +986,17 @@ RawScript* Script::ReadFrom(SnapshotReader* reader,
                             Snapshot::Kind kind,
                             bool as_reference) {
   ASSERT(reader != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Allocate script object.
-  Script& script = Script::ZoneHandle(reader->zone(), NEW_OBJECT(Script));
+  Script& script = Script::ZoneHandle(reader->zone(), Script::New());
   reader->AddBackRef(object_id, &script, kIsDeserialized);
 
   script.StoreNonPointer(&script.raw_ptr()->line_offset_,
                          reader->Read<int32_t>());
   script.StoreNonPointer(&script.raw_ptr()->col_offset_,
                          reader->Read<int32_t>());
-  script.StoreNonPointer(&script.raw_ptr()->kind_,
-                         reader->Read<int8_t>());
+  script.StoreNonPointer(&script.raw_ptr()->kind_, reader->Read<int8_t>());
 
   *reader->StringHandle() ^= String::null();
   script.set_source(*reader->StringHandle());
@@ -1126,8 +1013,8 @@ RawScript* Script::ReadFrom(SnapshotReader* reader,
                         reader->PassiveObjectHandle()->raw());
   }
 
-  script.set_load_timestamp(FLAG_remove_script_timestamps_for_test
-                            ? 0 : OS::GetCurrentTimeMillis());
+  script.set_load_timestamp(
+      FLAG_remove_script_timestamps_for_test ? 0 : OS::GetCurrentTimeMillis());
 
   return script.raw();
 }
@@ -1139,7 +1026,7 @@ void RawScript::WriteTo(SnapshotWriter* writer,
                         bool as_reference) {
   ASSERT(writer != NULL);
   ASSERT(tokens_ != TokenStream::null());
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Write out the serialization header value for this object.
   writer->WriteInlinedObjectHeader(object_id);
@@ -1178,7 +1065,7 @@ RawLibrary* Library::ReadFrom(SnapshotReader* reader,
     ASSERT(library.is_in_fullsnapshot());
   } else {
     // Allocate library object.
-    library = NEW_OBJECT(Library);
+    library = Library::New();
 
     // Set all non object fields.
     library.StoreNonPointer(&library.raw_ptr()->index_,
@@ -1193,9 +1080,6 @@ RawLibrary* Library::ReadFrom(SnapshotReader* reader,
                             reader->Read<bool>());
     library.StoreNonPointer(&library.raw_ptr()->debuggable_,
                             reader->Read<bool>());
-    if (Snapshot::IsFull(kind)) {
-      is_in_fullsnapshot = true;
-    }
     library.StoreNonPointer(&library.raw_ptr()->is_in_fullsnapshot_,
                             is_in_fullsnapshot);
     // The native resolver and symbolizer are not serialized.
@@ -1213,13 +1097,9 @@ RawLibrary* Library::ReadFrom(SnapshotReader* reader,
     }
     // Initialize cache of resolved names.
     const intptr_t kInitialNameCacheSize = 64;
-    if (!Snapshot::IsFull(kind)) {
-      // The cache of resolved names in library scope is not serialized.
-      library.InitResolvedNamesCache(kInitialNameCacheSize);
-      library.Register(reader->thread());
-    } else {
-      library.InitResolvedNamesCache(kInitialNameCacheSize, reader);
-    }
+    // The cache of resolved names in library scope is not serialized.
+    library.InitResolvedNamesCache(kInitialNameCacheSize);
+    library.Register(reader->thread());
     library.StorePointer(&library.raw_ptr()->exported_names_, Array::null());
     // Initialize cache of loaded scripts.
     library.StorePointer(&library.raw_ptr()->loaded_scripts_, Array::null());
@@ -1251,7 +1131,7 @@ void RawLibrary::WriteTo(SnapshotWriter* writer,
     // Write out library URL so that it can be looked up when reading.
     writer->WriteObjectImpl(ptr()->url_, kAsInlinedObject);
   } else {
-    ASSERT((Snapshot::IsFull(kind)) || !ptr()->is_in_fullsnapshot_);
+    ASSERT(!ptr()->is_in_fullsnapshot_);
     // Write out all non object fields.
     ASSERT(ptr()->index_ != static_cast<classid_t>(-1));
     writer->WriteClassIDValue(ptr()->index_);
@@ -1279,11 +1159,11 @@ RawLibraryPrefix* LibraryPrefix::ReadFrom(SnapshotReader* reader,
                                           Snapshot::Kind kind,
                                           bool as_reference) {
   ASSERT(reader != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Allocate library prefix object.
-  LibraryPrefix& prefix = LibraryPrefix::ZoneHandle(
-      reader->zone(), NEW_OBJECT(LibraryPrefix));
+  LibraryPrefix& prefix =
+      LibraryPrefix::ZoneHandle(reader->zone(), LibraryPrefix::New());
   reader->AddBackRef(object_id, &prefix, kIsDeserialized);
 
   // Set all non object fields.
@@ -1291,19 +1171,13 @@ RawLibraryPrefix* LibraryPrefix::ReadFrom(SnapshotReader* reader,
                          reader->Read<int16_t>());
   prefix.StoreNonPointer(&prefix.raw_ptr()->is_deferred_load_,
                          reader->Read<bool>());
-  prefix.StoreNonPointer(&prefix.raw_ptr()->is_loaded_, reader->Read<bool>());
+  prefix.StoreNonPointer(&prefix.raw_ptr()->is_loaded_,
+                         !prefix.raw_ptr()->is_deferred_load_);
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(prefix,
-                     prefix.raw()->from(),
-                     prefix.raw()->to_snapshot(kind),
-                     kAsReference);
-  if (kind == Snapshot::kAppNoJIT) {
-    prefix.StorePointer(&prefix.raw_ptr()->imports_,
-                        Object::empty_array().raw());
-  }
-  prefix.StorePointer(&prefix.raw_ptr()->dependent_code_,
-                      Array::null());
+  READ_OBJECT_FIELDS(prefix, prefix.raw()->from(),
+                     prefix.raw()->to_snapshot(kind), kAsReference);
+  prefix.StorePointer(&prefix.raw_ptr()->dependent_code_, Array::null());
 
   return prefix.raw();
 }
@@ -1314,7 +1188,7 @@ void RawLibraryPrefix::WriteTo(SnapshotWriter* writer,
                                Snapshot::Kind kind,
                                bool as_reference) {
   ASSERT(writer != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Write out the serialization header value for this object.
   writer->WriteInlinedObjectHeader(object_id);
@@ -1326,7 +1200,6 @@ void RawLibraryPrefix::WriteTo(SnapshotWriter* writer,
   // Write out all non object fields.
   writer->Write<int16_t>(ptr()->num_imports_);
   writer->Write<bool>(ptr()->is_deferred_load_);
-  writer->Write<bool>(ptr()->is_loaded_);
 
   // Write out all the object pointer fields.
   SnapshotWriterVisitor visitor(writer, kAsReference);
@@ -1340,11 +1213,10 @@ RawNamespace* Namespace::ReadFrom(SnapshotReader* reader,
                                   Snapshot::Kind kind,
                                   bool as_reference) {
   ASSERT(reader != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Allocate Namespace object.
-  Namespace& ns = Namespace::ZoneHandle(
-      reader->zone(), NEW_OBJECT(Namespace));
+  Namespace& ns = Namespace::ZoneHandle(reader->zone(), Namespace::New());
   reader->AddBackRef(object_id, &ns, kIsDeserialized);
 
   // Set all the object fields.
@@ -1359,7 +1231,7 @@ void RawNamespace::WriteTo(SnapshotWriter* writer,
                            Snapshot::Kind kind,
                            bool as_reference) {
   ASSERT(writer != NULL);
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Write out the serialization header value for this object.
   writer->WriteInlinedObjectHeader(object_id);
@@ -1374,94 +1246,13 @@ void RawNamespace::WriteTo(SnapshotWriter* writer,
 }
 
 
-#if defined(DEBUG)
-static uword Checksum(uword entry, intptr_t size) {
-  uword sum = 0;
-  uword* start = reinterpret_cast<uword*>(entry);
-  uword* end = reinterpret_cast<uword*>(entry + size);
-  for (uword* cursor = start; cursor < end; cursor++) {
-    sum ^= *cursor;
-  }
-  return sum;
-}
-#endif
-
-
 RawCode* Code::ReadFrom(SnapshotReader* reader,
                         intptr_t object_id,
                         intptr_t tags,
                         Snapshot::Kind kind,
                         bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  Code& result = Code::ZoneHandle(reader->zone(), NEW_OBJECT_WITH_LEN(Code, 0));
-  reader->AddBackRef(object_id, &result, kIsDeserialized);
-
-  result.set_compile_timestamp(0);
-  result.set_state_bits(reader->Read<int32_t>());
-  result.set_lazy_deopt_pc_offset(-1);
-
-  int32_t text_offset = reader->Read<int32_t>();
-  RawInstructions* instr = reinterpret_cast<RawInstructions*>(
-      reader->GetInstructionsAt(text_offset) + kHeapObjectTag);
-  uword entry_point = Instructions::EntryPoint(instr);
-
-#if defined(DEBUG)
-  ASSERT(instr->IsMarked());
-  ASSERT(instr->IsVMHeapObject());
-  uword expected_check = reader->Read<uword>();
-  intptr_t instructions_size = Utils::RoundUp(instr->size_,
-                                              OS::PreferredCodeAlignment());
-  uword actual_check = Checksum(entry_point, instructions_size);
-  ASSERT(expected_check == actual_check);
-#endif
-
-  result.StoreNonPointer(&result.raw_ptr()->entry_point_, entry_point);
-
-  result.StorePointer(&result.raw_ptr()->active_instructions_, instr);
-  result.StorePointer(&result.raw_ptr()->instructions_, instr);
-
-  (*reader->PassiveObjectHandle()) ^= reader->ReadObjectImpl(kAsReference);
-  result.StorePointer(reinterpret_cast<RawObject*const*>(
-                          &result.raw_ptr()->object_pool_),
-                      reader->PassiveObjectHandle()->raw());
-
-  (*reader->PassiveObjectHandle()) ^= reader->ReadObjectImpl(kAsReference);
-  result.StorePointer(&result.raw_ptr()->owner_,
-                      reader->PassiveObjectHandle()->raw());
-
-  (*reader->PassiveObjectHandle()) ^= reader->ReadObjectImpl(kAsReference);
-  result.StorePointer(reinterpret_cast<RawObject*const*>(
-                          &result.raw_ptr()->exception_handlers_),
-                      reader->PassiveObjectHandle()->raw());
-
-  (*reader->PassiveObjectHandle()) ^= reader->ReadObjectImpl(kAsReference);
-  result.StorePointer(reinterpret_cast<RawObject*const*>(
-                          &result.raw_ptr()->pc_descriptors_),
-                      reader->PassiveObjectHandle()->raw());
-
-  (*reader->PassiveObjectHandle()) ^= reader->ReadObjectImpl(kAsReference);
-  result.StorePointer(reinterpret_cast<RawObject*const*>(
-                          &result.raw_ptr()->stackmaps_),
-                      reader->PassiveObjectHandle()->raw());
-
-  result.StorePointer(&result.raw_ptr()->deopt_info_array_,
-                      Array::null());
-  result.StorePointer(&result.raw_ptr()->static_calls_target_table_,
-                      Array::null());
-  result.StorePointer(&result.raw_ptr()->var_descriptors_,
-                      LocalVarDescriptors::null());
-  result.StorePointer(&result.raw_ptr()->inlined_metadata_,
-                      Array::null());
-  result.StorePointer(&result.raw_ptr()->code_source_map_,
-                      CodeSourceMap::null());
-  result.StorePointer(&result.raw_ptr()->comments_,
-                      Array::null());
-  result.StorePointer(&result.raw_ptr()->return_address_metadata_,
-                      Object::null());
-
-  return result.raw();
+  UNREACHABLE();
+  return Code::null();
 }
 
 
@@ -1469,55 +1260,7 @@ void RawCode::WriteTo(SnapshotWriter* writer,
                       intptr_t object_id,
                       Snapshot::Kind kind,
                       bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  intptr_t pointer_offsets_length =
-      Code::PtrOffBits::decode(ptr()->state_bits_);
-  if (pointer_offsets_length != 0) {
-    FATAL("Cannot serialize code with embedded pointers");
-  }
-  if (kind == Snapshot::kAppNoJIT) {
-    // No disabled code in precompilation.
-    ASSERT(ptr()->instructions_ == ptr()->active_instructions_);
-  } else {
-    ASSERT(kind == Snapshot::kAppWithJIT);
-    // We never include optimized code in JIT precompilation. Deoptimization
-    // requires code patching and we cannot patch code that is shared between
-    // isolates and should not mutate memory allocated by the embedder.
-    bool is_optimized = Code::PtrOffBits::decode(ptr()->state_bits_);
-    if (is_optimized) {
-      FATAL("Cannot include optimized code in a JIT snapshot");
-    }
-  }
-
-  // Write out the serialization header value for this object.
-  writer->WriteInlinedObjectHeader(object_id);
-
-  // Write out the class and tags information.
-  writer->WriteVMIsolateObject(kCodeCid);
-  writer->WriteTags(writer->GetObjectTags(this));
-
-  // Write out all the non object fields.
-  writer->Write<int32_t>(ptr()->state_bits_);
-
-  RawInstructions* instr = ptr()->instructions_;
-  int32_t text_offset = writer->GetInstructionsId(instr, this);
-  writer->Write<int32_t>(text_offset);
-
-#if defined(DEBUG)
-  uword entry = ptr()->entry_point_;
-  intptr_t instructions_size = Utils::RoundUp(instr->size_,
-                                              OS::PreferredCodeAlignment());
-  uword check = Checksum(entry, instructions_size);
-  writer->Write<uword>(check);
-#endif
-
-  writer->WriteObjectImpl(ptr()->object_pool_, kAsReference);
-  writer->WriteObjectImpl(ptr()->owner_, kAsReference);
-  writer->WriteObjectImpl(ptr()->exception_handlers_, kAsReference);
-  writer->WriteObjectImpl(ptr()->pc_descriptors_, kAsReference);
-  writer->WriteObjectImpl(ptr()->stackmaps_, kAsReference);
+  UNREACHABLE();
 }
 
 
@@ -1544,62 +1287,8 @@ RawObjectPool* ObjectPool::ReadFrom(SnapshotReader* reader,
                                     intptr_t tags,
                                     Snapshot::Kind kind,
                                     bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  intptr_t len = reader->Read<intptr_t>();
-  ObjectPool* result = NULL;
-  DeserializeState state;
-  if (!as_reference) {
-    result = reinterpret_cast<ObjectPool*>(reader->GetBackRef(object_id));
-    state = kIsDeserialized;
-  } else {
-    state = kIsNotDeserialized;
-  }
-  if (result == NULL) {
-    result = &(ObjectPool::ZoneHandle(
-        reader->zone(), NEW_OBJECT_WITH_LEN(ObjectPool, len)));
-    reader->AddBackRef(object_id, result, state);
-  }
-  if (!as_reference) {
-    // Read all the individual elements for inlined objects.
-    const TypedData& info_array =
-        TypedData::Handle(reader->NewTypedData(kTypedDataInt8ArrayCid, len));
-    result->set_info_array(info_array);
-
-    NoSafepointScope no_safepoint;
-    for (intptr_t i = 0; i < len; i++) {
-      ObjectPool::EntryType entry_type =
-          static_cast<ObjectPool::EntryType>(reader->Read<int8_t>());
-      *reinterpret_cast<int8_t*>(info_array.DataAddr(i)) = entry_type;
-      switch (entry_type) {
-        case ObjectPool::kTaggedObject: {
-          (*reader->PassiveObjectHandle()) =
-              reader->ReadObjectImpl(kAsReference);
-          result->SetObjectAt(i, *(reader->PassiveObjectHandle()));
-          break;
-        }
-        case ObjectPool::kImmediate: {
-          intptr_t raw_value = reader->Read<intptr_t>();
-          result->SetRawValueAt(i, raw_value);
-          break;
-        }
-        case ObjectPool::kNativeEntry: {
-#if !defined(TARGET_ARCH_DBC)
-          // Read nothing. Initialize with the lazy link entry.
-          uword new_entry = NativeEntry::LinkNativeCallEntry();
-          result->SetRawValueAt(i, static_cast<intptr_t>(new_entry));
-#else
-          UNREACHABLE();  // DBC does not support lazy native call linking.
-#endif
-          break;
-        }
-        default:
-          UNREACHABLE();
-      }
-    }
-  }
-  return result->raw();
+  UNREACHABLE();
+  return ObjectPool::null();
 }
 
 
@@ -1607,68 +1296,7 @@ void RawObjectPool::WriteTo(SnapshotWriter* writer,
                             intptr_t object_id,
                             Snapshot::Kind kind,
                             bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-  intptr_t tags = writer->GetObjectTags(this);
-  intptr_t length = ptr()->length_;
-
-  if (as_reference) {
-    // Write out the serialization header value for this object.
-    writer->WriteInlinedObjectHeader(kOmittedObjectId);
-
-    // Write out the class information.
-    writer->WriteVMIsolateObject(kObjectPoolCid);
-    writer->WriteTags(tags);
-
-    // Write out the length field.
-    writer->Write<intptr_t>(length);
-  } else {
-    // Write out the serialization header value for this object.
-    writer->WriteInlinedObjectHeader(object_id);
-
-    // Write out the class and tags information.
-    writer->WriteVMIsolateObject(kObjectPoolCid);
-    writer->WriteTags(tags);
-
-    RawTypedData* info_array = ptr()->info_array_->ptr();
-    ASSERT(info_array != TypedData::null());
-
-    writer->Write<intptr_t>(length);
-    for (intptr_t i = 0; i < length; i++) {
-      ObjectPool::EntryType entry_type =
-          static_cast<ObjectPool::EntryType>(info_array->data()[i]);
-      writer->Write<int8_t>(entry_type);
-      Entry& entry = ptr()->data()[i];
-      switch (entry_type) {
-        case ObjectPool::kTaggedObject: {
-#if !defined(TARGET_ARCH_DBC)
-          if (entry.raw_obj_ == StubCode::CallNativeCFunction_entry()->code()) {
-            // Natives can run while precompiling, becoming linked and switching
-            // their stub. Reset to the initial stub used for lazy-linking.
-            writer->WriteObjectImpl(
-                StubCode::CallBootstrapCFunction_entry()->code(), kAsReference);
-            break;
-          }
-#endif
-          writer->WriteObjectImpl(entry.raw_obj_, kAsReference);
-          break;
-        }
-        case ObjectPool::kImmediate: {
-          writer->Write<intptr_t>(entry.raw_value_);
-          break;
-        }
-        case ObjectPool::kNativeEntry: {
-          // Write nothing. Will initialize with the lazy link entry.
-#if defined(TARGET_ARCH_DBC)
-          UNREACHABLE();   // DBC does not support lazy native call linking.
-#endif
-          break;
-        }
-        default:
-          UNREACHABLE();
-      }
-    }
-  }
+  UNREACHABLE();
 }
 
 
@@ -1677,15 +1305,8 @@ RawPcDescriptors* PcDescriptors::ReadFrom(SnapshotReader* reader,
                                           intptr_t tags,
                                           Snapshot::Kind kind,
                                           bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  intptr_t offset = reader->Read<int32_t>();
-  PcDescriptors& result = PcDescriptors::ZoneHandle(reader->zone());
-  result ^= reader->GetObjectAt(offset);
-  reader->AddBackRef(object_id, &result, kIsDeserialized);
-
-  return result.raw();
+  UNREACHABLE();
+  return PcDescriptors::null();
 }
 
 
@@ -1693,15 +1314,7 @@ void RawPcDescriptors::WriteTo(SnapshotWriter* writer,
                                intptr_t object_id,
                                Snapshot::Kind kind,
                                bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  // Write out the serialization header value for this object.
-  writer->WriteInlinedObjectHeader(object_id);
-  writer->WriteIndexedObject(kPcDescriptorsCid);
-  writer->WriteTags(writer->GetObjectTags(this));
-
-  writer->Write<int32_t>(writer->GetObjectId(this));
+  UNREACHABLE();
 }
 
 
@@ -1710,23 +1323,8 @@ RawCodeSourceMap* CodeSourceMap::ReadFrom(SnapshotReader* reader,
                                           intptr_t tags,
                                           Snapshot::Kind kind,
                                           bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  const int32_t length = reader->Read<int32_t>();
-  CodeSourceMap& result =
-      CodeSourceMap::ZoneHandle(reader->zone(),
-                                NEW_OBJECT_WITH_LEN(CodeSourceMap, length));
-  reader->AddBackRef(object_id, &result, kIsDeserialized);
-
-  if (result.Length() > 0) {
-    NoSafepointScope no_safepoint;
-    intptr_t len = result.Length();
-    uint8_t* data = result.UnsafeMutableNonPointer(result.raw_ptr()->data());
-    reader->ReadBytes(data, len);
-  }
-
-  return result.raw();
+  UNREACHABLE();
+  return CodeSourceMap::null();
 }
 
 
@@ -1734,19 +1332,7 @@ void RawCodeSourceMap::WriteTo(SnapshotWriter* writer,
                                intptr_t object_id,
                                Snapshot::Kind kind,
                                bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  // Write out the serialization header value for this object.
-  writer->WriteInlinedObjectHeader(object_id);
-  writer->WriteIndexedObject(kCodeSourceMapCid);
-  writer->WriteTags(writer->GetObjectTags(this));
-  writer->Write<int32_t>(ptr()->length_);
-  if (ptr()->length_ > 0) {
-    intptr_t len = ptr()->length_;
-    uint8_t* data = reinterpret_cast<uint8_t*>(ptr()->data());
-    writer->WriteBytes(data, len);
-  }
+  UNREACHABLE();
 }
 
 
@@ -1755,15 +1341,8 @@ RawStackmap* Stackmap::ReadFrom(SnapshotReader* reader,
                                 intptr_t tags,
                                 Snapshot::Kind kind,
                                 bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  intptr_t offset = reader->Read<int32_t>();
-  Stackmap& result = Stackmap::ZoneHandle(reader->zone());
-  result ^= reader->GetObjectAt(offset);
-  reader->AddBackRef(object_id, &result, kIsDeserialized);
-
-  return result.raw();
+  UNREACHABLE();
+  return Stackmap::null();
 }
 
 
@@ -1771,15 +1350,7 @@ void RawStackmap::WriteTo(SnapshotWriter* writer,
                           intptr_t object_id,
                           Snapshot::Kind kind,
                           bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  // Write out the serialization header value for this object.
-  writer->WriteInlinedObjectHeader(object_id);
-  writer->WriteIndexedObject(kStackmapCid);
-  writer->WriteTags(writer->GetObjectTags(this));
-
-  writer->Write<int32_t>(writer->GetObjectId(this));
+  UNREACHABLE();
 }
 
 
@@ -1788,32 +1359,8 @@ RawLocalVarDescriptors* LocalVarDescriptors::ReadFrom(SnapshotReader* reader,
                                                       intptr_t tags,
                                                       Snapshot::Kind kind,
                                                       bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  const int32_t num_entries = reader->Read<int32_t>();
-
-  LocalVarDescriptors& result =
-      LocalVarDescriptors::ZoneHandle(reader->zone(),
-                                      NEW_OBJECT_WITH_LEN(LocalVarDescriptors,
-                                                          num_entries));
-  reader->AddBackRef(object_id, &result, kIsDeserialized);
-
-  for (intptr_t i = 0; i < num_entries; i++) {
-    (*reader->StringHandle()) ^= reader->ReadObjectImpl(kAsReference);
-    result.StorePointer(result.raw()->nameAddrAt(i),
-                        reader->StringHandle()->raw());
-  }
-
-  if (num_entries > 0) {
-    NoSafepointScope no_safepoint;
-    intptr_t len = num_entries * sizeof(RawLocalVarDescriptors::VarInfo);
-    uint8_t* data = result.UnsafeMutableNonPointer(
-        reinterpret_cast<const uint8_t*>(result.raw()->data()));
-    reader->ReadBytes(data, len);
-  }
-
-  return result.raw();
+  UNREACHABLE();
+  return LocalVarDescriptors::null();
 }
 
 
@@ -1821,22 +1368,7 @@ void RawLocalVarDescriptors::WriteTo(SnapshotWriter* writer,
                                      intptr_t object_id,
                                      Snapshot::Kind kind,
                                      bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  // Write out the serialization header value for this object.
-  writer->WriteInlinedObjectHeader(object_id);
-  writer->WriteIndexedObject(kLocalVarDescriptorsCid);
-  writer->WriteTags(writer->GetObjectTags(this));
-  writer->Write<int32_t>(ptr()->num_entries_);
-  for (intptr_t i = 0; i < ptr()->num_entries_; i++) {
-    writer->WriteObjectImpl(ptr()->names()[i], kAsReference);
-  }
-  if (ptr()->num_entries_ > 0) {
-    intptr_t len = ptr()->num_entries_ * sizeof(VarInfo);
-    uint8_t* data = reinterpret_cast<uint8_t*>(this->data());
-    writer->WriteBytes(data, len);
-  }
+  UNREACHABLE();
 }
 
 
@@ -1845,30 +1377,8 @@ RawExceptionHandlers* ExceptionHandlers::ReadFrom(SnapshotReader* reader,
                                                   intptr_t tags,
                                                   Snapshot::Kind kind,
                                                   bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  const int32_t num_entries = reader->Read<int32_t>();
-  ExceptionHandlers& result =
-      ExceptionHandlers::ZoneHandle(reader->zone(),
-                                    NEW_OBJECT_WITH_LEN(ExceptionHandlers,
-                                                        num_entries));
-  reader->AddBackRef(object_id, &result, kIsDeserialized);
-
-  if (result.num_entries() > 0) {
-    NoSafepointScope no_safepoint;
-    const intptr_t len =
-        result.num_entries() * sizeof(RawExceptionHandlers::HandlerInfo);
-    uint8_t* data = result.UnsafeMutableNonPointer(
-        reinterpret_cast<const uint8_t*>(result.raw_ptr()->data()));
-    reader->ReadBytes(data, len);
-  }
-
-  *(reader->ArrayHandle()) ^= reader->ReadObjectImpl(kAsInlinedObject);
-  result.StorePointer(&result.raw_ptr()->handled_types_data_,
-                      reader->ArrayHandle()->raw());
-
-  return result.raw();
+  UNREACHABLE();
+  return ExceptionHandlers::null();
 }
 
 
@@ -1876,22 +1386,7 @@ void RawExceptionHandlers::WriteTo(SnapshotWriter* writer,
                                    intptr_t object_id,
                                    Snapshot::Kind kind,
                                    bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  // Write out the serialization header value for this object.
-  writer->WriteInlinedObjectHeader(object_id);
-  writer->WriteIndexedObject(kExceptionHandlersCid);
-  writer->WriteTags(writer->GetObjectTags(this));
-  writer->Write<int32_t>(ptr()->num_entries_);
-
-  if (ptr()->num_entries_ > 0) {
-    intptr_t len = ptr()->num_entries_ * sizeof(HandlerInfo);
-    uint8_t* data = reinterpret_cast<uint8_t*>(ptr()->data());
-    writer->WriteBytes(data, len);
-  }
-
-  writer->WriteObjectImpl(ptr()->handled_types_data_, kAsInlinedObject);
+  UNREACHABLE();
 }
 
 
@@ -1909,7 +1404,7 @@ RawContext* Context::ReadFrom(SnapshotReader* reader,
   if (num_vars == 0) {
     context ^= reader->object_store()->empty_context();
   } else {
-    context ^= NEW_OBJECT_WITH_LEN(Context, num_vars);
+    context ^= Context::New(num_vars);
 
     // Set all the object fields.
     // TODO(5411462): Need to assert No GC can happen here, even though
@@ -1960,37 +1455,20 @@ RawContextScope* ContextScope::ReadFrom(SnapshotReader* reader,
   bool is_implicit = reader->Read<bool>();
   if (is_implicit) {
     ContextScope& context_scope = ContextScope::ZoneHandle(reader->zone());
-    if (Snapshot::IsFull(kind)) {
-      context_scope = reader->NewContextScope(1);
-      context_scope.set_is_implicit(true);
-    } else {
-      context_scope = ContextScope::New(1, true);
-    }
+    context_scope = ContextScope::New(1, true);
     reader->AddBackRef(object_id, &context_scope, kIsDeserialized);
 
     *reader->TypeHandle() ^= reader->ReadObjectImpl(kAsInlinedObject);
 
     // Create a descriptor for 'this' variable.
     context_scope.SetTokenIndexAt(0, TokenPosition::kMinSource);
+    context_scope.SetDeclarationTokenIndexAt(0, TokenPosition::kMinSource);
     context_scope.SetNameAt(0, Symbols::This());
     context_scope.SetIsFinalAt(0, true);
     context_scope.SetIsConstAt(0, false);
     context_scope.SetTypeAt(0, *reader->TypeHandle());
     context_scope.SetContextIndexAt(0, 0);
     context_scope.SetContextLevelAt(0, 0);
-    return context_scope.raw();
-  } else if (kind == Snapshot::kAppWithJIT) {
-    int32_t num_vars = reader->Read<int32_t>();
-
-    ContextScope& context_scope = ContextScope::ZoneHandle(reader->zone());
-    context_scope = reader->NewContextScope(num_vars);
-    context_scope.set_is_implicit(false);
-    reader->AddBackRef(object_id, &context_scope, kIsDeserialized);
-
-    READ_OBJECT_FIELDS(context_scope,
-                       context_scope.raw()->from(),
-                       context_scope.raw()->to(num_vars),
-                       kAsInlinedObject);
     return context_scope.raw();
   }
   UNREACHABLE();
@@ -2022,24 +1500,43 @@ void RawContextScope::WriteTo(SnapshotWriter* writer,
     writer->WriteObjectImpl(var->type, kAsInlinedObject);
 
     return;
-  } else if (kind == Snapshot::kAppWithJIT) {
-    // Write out the serialization header value for this object.
-    writer->WriteInlinedObjectHeader(object_id);
-
-    // Write out the class and tags information.
-    writer->WriteVMIsolateObject(kContextScopeCid);
-    writer->WriteTags(writer->GetObjectTags(this));
-
-    // Write out is_implicit flag for the context scope.
-    writer->Write<bool>(false);
-    int32_t num_vars = ptr()->num_variables_;
-    writer->Write<int32_t>(num_vars);
-
-    SnapshotWriterVisitor visitor(writer, kAsInlinedObject);
-    visitor.VisitPointers(from(), to(num_vars));
-
-    return;
   }
+  UNREACHABLE();
+}
+
+
+RawSingleTargetCache* SingleTargetCache::ReadFrom(SnapshotReader* reader,
+                                                  intptr_t object_id,
+                                                  intptr_t tags,
+                                                  Snapshot::Kind kind,
+                                                  bool as_reference) {
+  UNREACHABLE();
+  return SingleTargetCache::null();
+}
+
+
+void RawSingleTargetCache::WriteTo(SnapshotWriter* writer,
+                                   intptr_t object_id,
+                                   Snapshot::Kind kind,
+                                   bool as_reference) {
+  UNREACHABLE();
+}
+
+
+RawUnlinkedCall* UnlinkedCall::ReadFrom(SnapshotReader* reader,
+                                        intptr_t object_id,
+                                        intptr_t tags,
+                                        Snapshot::Kind kind,
+                                        bool as_reference) {
+  UNREACHABLE();
+  return UnlinkedCall::null();
+}
+
+
+void RawUnlinkedCall::WriteTo(SnapshotWriter* writer,
+                              intptr_t object_id,
+                              Snapshot::Kind kind,
+                              bool as_reference) {
   UNREACHABLE();
 }
 
@@ -2049,25 +1546,20 @@ RawICData* ICData::ReadFrom(SnapshotReader* reader,
                             intptr_t tags,
                             Snapshot::Kind kind,
                             bool as_reference) {
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
-  ICData& result = ICData::ZoneHandle(reader->zone(), NEW_OBJECT(ICData));
+  ICData& result = ICData::ZoneHandle(reader->zone(), ICData::New());
   reader->AddBackRef(object_id, &result, kIsDeserialized);
 
-  result.set_deopt_id(reader->Read<int32_t>());
+  NOT_IN_PRECOMPILED(result.set_deopt_id(reader->Read<int32_t>()));
   result.set_state_bits(reader->Read<uint32_t>());
 #if defined(TAG_IC_DATA)
   result.set_tag(reader->Read<int16_t>());
 #endif
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(result,
-                     result.raw()->from(),
-                     result.raw()->to_snapshot(kind),
-                     kAsReference);
-  if (kind == Snapshot::kAppNoJIT) {
-    result.set_owner(Function::Handle(reader->zone()));
-  }
+  READ_OBJECT_FIELDS(result, result.raw()->from(),
+                     result.raw()->to_snapshot(kind), kAsReference);
 
   return result.raw();
 }
@@ -2077,7 +1569,7 @@ void RawICData::WriteTo(SnapshotWriter* writer,
                         intptr_t object_id,
                         Snapshot::Kind kind,
                         bool as_reference) {
-  ASSERT((kind == Snapshot::kScript) || (Snapshot::IsFull(kind)));
+  ASSERT(kind == Snapshot::kScript);
 
   // Write out the serialization header value for this object.
   writer->WriteInlinedObjectHeader(object_id);
@@ -2087,7 +1579,7 @@ void RawICData::WriteTo(SnapshotWriter* writer,
   writer->WriteTags(writer->GetObjectTags(this));
 
   // Write out all the non object fields.
-  writer->Write<int32_t>(ptr()->deopt_id_);
+  NOT_IN_PRECOMPILED(writer->Write<int32_t>(ptr()->deopt_id_));
   writer->Write<uint32_t>(ptr()->state_bits_);
 #if defined(TAG_IC_DATA)
   writer->Write<int16_t>(ptr()->tag_);
@@ -2106,22 +1598,8 @@ RawMegamorphicCache* MegamorphicCache::ReadFrom(SnapshotReader* reader,
                                                 intptr_t tags,
                                                 Snapshot::Kind kind,
                                                 bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  MegamorphicCache& result =
-      MegamorphicCache::ZoneHandle(reader->zone(),
-                                   NEW_OBJECT(MegamorphicCache));
-  reader->AddBackRef(object_id, &result, kIsDeserialized);
-
-  result.set_filled_entry_count(reader->Read<int32_t>());
-
-  // Set all the object fields.
-  READ_OBJECT_FIELDS(result,
-                     result.raw()->from(), result.raw()->to(),
-                     kAsReference);
-
-  return result.raw();
+  UNREACHABLE();
+  return MegamorphicCache::null();
 }
 
 
@@ -2129,22 +1607,7 @@ void RawMegamorphicCache::WriteTo(SnapshotWriter* writer,
                                   intptr_t object_id,
                                   Snapshot::Kind kind,
                                   bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  // Write out the serialization header value for this object.
-  writer->WriteInlinedObjectHeader(object_id);
-
-  // Write out the class and tags information.
-  writer->WriteVMIsolateObject(kMegamorphicCacheCid);
-  writer->WriteTags(writer->GetObjectTags(this));
-
-  // Write out all the non object fields.
-  writer->Write<int32_t>(ptr()->filled_entry_count_);
-
-  // Write out all the object pointer fields.
-  SnapshotWriterVisitor visitor(writer, kAsReference);
-  visitor.VisitPointers(from(), to());
+  UNREACHABLE();
 }
 
 
@@ -2153,22 +1616,8 @@ RawSubtypeTestCache* SubtypeTestCache::ReadFrom(SnapshotReader* reader,
                                                 intptr_t tags,
                                                 Snapshot::Kind kind,
                                                 bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  SubtypeTestCache& result =
-      SubtypeTestCache::ZoneHandle(reader->zone(),
-                                   NEW_OBJECT(SubtypeTestCache));
-  reader->AddBackRef(object_id, &result, kIsDeserialized);
-
-  // Set all the object fields.
-  // TODO(5411462): Need to assert No GC can happen here, even though
-  // allocations may happen.
-  (*reader->ArrayHandle()) ^= reader->ReadObjectImpl(kAsReference);
-  result.StorePointer(&result.raw_ptr()->cache_,
-                      reader->ArrayHandle()->raw());
-
-  return result.raw();
+  UNREACHABLE();
+  return SubtypeTestCache::null();
 }
 
 
@@ -2176,18 +1625,7 @@ void RawSubtypeTestCache::WriteTo(SnapshotWriter* writer,
                                   intptr_t object_id,
                                   Snapshot::Kind kind,
                                   bool as_reference) {
-  ASSERT(Snapshot::IncludesCode(kind));
-  ASSERT(Snapshot::IsFull(kind));
-
-  // Write out the serialization header value for this object.
-  writer->WriteInlinedObjectHeader(object_id);
-
-  // Write out the class and tags information.
-  writer->WriteVMIsolateObject(kSubtypeTestCacheCid);
-  writer->WriteTags(writer->GetObjectTags(this));
-
-  // Write out all the object pointer fields.
-  writer->WriteObjectImpl(ptr()->cache_, kAsReference);
+  UNREACHABLE();
 }
 
 
@@ -2217,13 +1655,11 @@ RawApiError* ApiError::ReadFrom(SnapshotReader* reader,
   ASSERT(reader != NULL);
 
   // Allocate ApiError object.
-  ApiError& api_error =
-      ApiError::ZoneHandle(reader->zone(), NEW_OBJECT(ApiError));
+  ApiError& api_error = ApiError::ZoneHandle(reader->zone(), ApiError::New());
   reader->AddBackRef(object_id, &api_error, kIsDeserialized);
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(api_error,
-                     api_error.raw()->from(), api_error.raw()->to(),
+  READ_OBJECT_FIELDS(api_error, api_error.raw()->from(), api_error.raw()->to(),
                      kAsReference);
 
   return api_error.raw();
@@ -2258,7 +1694,7 @@ RawLanguageError* LanguageError::ReadFrom(SnapshotReader* reader,
 
   // Allocate LanguageError object.
   LanguageError& language_error =
-      LanguageError::ZoneHandle(reader->zone(), NEW_OBJECT(LanguageError));
+      LanguageError::ZoneHandle(reader->zone(), LanguageError::New());
   reader->AddBackRef(object_id, &language_error, kIsDeserialized);
 
   // Set all non object fields.
@@ -2268,9 +1704,8 @@ RawLanguageError* LanguageError::ReadFrom(SnapshotReader* reader,
   language_error.set_kind(reader->Read<uint8_t>());
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(language_error,
-                     language_error.raw()->from(), language_error.raw()->to(),
-                     kAsReference);
+  READ_OBJECT_FIELDS(language_error, language_error.raw()->from(),
+                     language_error.raw()->to(), kAsReference);
 
   return language_error.raw();
 }
@@ -2305,13 +1740,12 @@ RawUnhandledException* UnhandledException::ReadFrom(SnapshotReader* reader,
                                                     intptr_t tags,
                                                     Snapshot::Kind kind,
                                                     bool as_reference) {
-  UnhandledException& result = UnhandledException::ZoneHandle(
-      reader->zone(), NEW_OBJECT(UnhandledException));
+  UnhandledException& result =
+      UnhandledException::ZoneHandle(reader->zone(), UnhandledException::New());
   reader->AddBackRef(object_id, &result, kIsDeserialized);
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(result,
-                     result.raw()->from(), result.raw()->to(),
+  READ_OBJECT_FIELDS(result, result.raw()->from(), result.raw()->to(),
                      kAsReference);
 
   return result.raw();
@@ -2362,19 +1796,10 @@ RawInstance* Instance::ReadFrom(SnapshotReader* reader,
   // Create an Instance object or get canonical one if it is a canonical
   // constant.
   Instance& obj = Instance::ZoneHandle(reader->zone(), Instance::null());
-  if (Snapshot::IsFull(kind)) {
-    obj = reader->NewInstance();
-    // Set the canonical bit.
-    if (RawObject::IsCanonical(tags)) {
-      obj.SetCanonical();
-    }
-  } else {
-    obj ^= Object::Allocate(kInstanceCid,
-                            Instance::InstanceSize(),
-                            HEAP_SPACE(kind));
-    if (RawObject::IsCanonical(tags)) {
-      obj = obj.CheckAndCanonicalize(reader->thread(), NULL);
-    }
+  obj ^= Object::Allocate(kInstanceCid, Instance::InstanceSize(),
+                          HEAP_SPACE(kind));
+  if (RawObject::IsCanonical(tags)) {
+    obj = obj.CheckAndCanonicalize(reader->thread(), NULL);
   }
   reader->AddBackRef(object_id, &obj, kIsDeserialized);
 
@@ -2410,32 +1835,24 @@ RawInteger* Mint::ReadFrom(SnapshotReader* reader,
   // Check if the value could potentially fit in a Smi in our current
   // architecture, if so return the object as a Smi.
   if (Smi::IsValid(value)) {
-    Smi& smi = Smi::ZoneHandle(reader->zone(),
-                               Smi::New(static_cast<intptr_t>(value)));
+    Smi& smi =
+        Smi::ZoneHandle(reader->zone(), Smi::New(static_cast<intptr_t>(value)));
     reader->AddBackRef(object_id, &smi, kIsDeserialized);
     return smi.raw();
   }
 
   // Create a Mint object or get canonical one if it is a canonical constant.
   Mint& mint = Mint::ZoneHandle(reader->zone(), Mint::null());
-  if (Snapshot::IsFull(kind)) {
-    mint = reader->NewMint(value);
-    // Set the canonical bit.
-    if (RawObject::IsCanonical(tags)) {
-      mint.SetCanonical();
-    }
+  // When reading a script snapshot we need to canonicalize only those object
+  // references that are objects from the core library (loaded from a
+  // full snapshot). Objects that are only in the script need not be
+  // canonicalized as they are already canonical.
+  // When reading a message snapshot we always have to canonicalize.
+  if (RawObject::IsCanonical(tags)) {
+    mint = Mint::NewCanonical(value);
+    ASSERT(mint.IsCanonical());
   } else {
-    // When reading a script snapshot we need to canonicalize only those object
-    // references that are objects from the core library (loaded from a
-    // full snapshot). Objects that are only in the script need not be
-    // canonicalized as they are already canonical.
-    // When reading a message snapshot we always have to canonicalize.
-    if (RawObject::IsCanonical(tags)) {
-      mint = Mint::NewCanonical(value);
-      ASSERT(mint.IsCanonical());
-    } else {
-      mint = Mint::New(value, HEAP_SPACE(kind));
-    }
+    mint = Mint::New(value, HEAP_SPACE(kind));
   }
   reader->AddBackRef(object_id, &mint, kIsDeserialized);
   return mint.raw();
@@ -2468,7 +1885,7 @@ RawBigint* Bigint::ReadFrom(SnapshotReader* reader,
   ASSERT(reader != NULL);
 
   // Allocate bigint object.
-  Bigint& obj = Bigint::ZoneHandle(reader->zone(), NEW_OBJECT(Bigint));
+  Bigint& obj = Bigint::ZoneHandle(reader->zone(), Bigint::New());
   reader->AddBackRef(object_id, &obj, kIsDeserialized);
 
   // Set all the object fields.
@@ -2480,14 +1897,9 @@ RawBigint* Bigint::ReadFrom(SnapshotReader* reader,
   // When reading a script snapshot or a message snapshot we always have
   // to canonicalize the object.
   if (RawObject::IsCanonical(tags)) {
-    if (Snapshot::IsFull(kind)) {
-      // Set the canonical bit.
-      obj.SetCanonical();
-    } else {
-      obj ^= obj.CheckAndCanonicalize(reader->thread(), NULL);
-      ASSERT(!obj.IsNull());
-      ASSERT(obj.IsCanonical());
-    }
+    obj ^= obj.CheckAndCanonicalize(reader->thread(), NULL);
+    ASSERT(!obj.IsNull());
+    ASSERT(obj.IsCanonical());
   }
   return obj.raw();
 }
@@ -2524,23 +1936,15 @@ RawDouble* Double::ReadFrom(SnapshotReader* reader,
 
   // Create a Double object or get canonical one if it is a canonical constant.
   Double& dbl = Double::ZoneHandle(reader->zone(), Double::null());
-  if (Snapshot::IsFull(kind)) {
-    dbl = reader->NewDouble(value);
-    // Set the canonical bit.
-    if (RawObject::IsCanonical(tags)) {
-      dbl.SetCanonical();
-    }
+  // When reading a script snapshot we need to canonicalize only those object
+  // references that are objects from the core library (loaded from a
+  // full snapshot). Objects that are only in the script need not be
+  // canonicalized as they are already canonical.
+  if (RawObject::IsCanonical(tags)) {
+    dbl = Double::NewCanonical(value);
+    ASSERT(dbl.IsCanonical());
   } else {
-    // When reading a script snapshot we need to canonicalize only those object
-    // references that are objects from the core library (loaded from a
-    // full snapshot). Objects that are only in the script need not be
-    // canonicalized as they are already canonical.
-    if (RawObject::IsCanonical(tags)) {
-      dbl = Double::NewCanonical(value);
-      ASSERT(dbl.IsCanonical());
-    } else {
-      dbl = Double::New(value, HEAP_SPACE(kind));
-    }
+    dbl = Double::New(value, HEAP_SPACE(kind));
   }
   reader->AddBackRef(object_id, &dbl, kIsDeserialized);
   return dbl.raw();
@@ -2583,7 +1987,7 @@ void RawString::WriteTo(SnapshotWriter* writer,
 }
 
 
-template<typename StringType, typename CharacterType, typename CallbackType>
+template <typename StringType, typename CharacterType, typename CallbackType>
 void String::ReadFromImpl(SnapshotReader* reader,
                           String* str_obj,
                           intptr_t len,
@@ -2621,39 +2025,13 @@ RawOneByteString* OneByteString::ReadFrom(SnapshotReader* reader,
                                           intptr_t tags,
                                           Snapshot::Kind kind,
                                           bool as_reference) {
-  if (Snapshot::IncludesCode(kind)) {
-    ASSERT(Snapshot::IsFull(kind));
-    intptr_t offset = reader->Read<int32_t>();
-    String& result = String::ZoneHandle(reader->zone());
-    result ^= reader->GetObjectAt(offset);
-    reader->AddBackRef(object_id, &result, kIsDeserialized);
-    return raw(result);
-  }
   // Read the length so that we can determine instance size to allocate.
   ASSERT(reader != NULL);
   intptr_t len = reader->ReadSmiValue();
-  intptr_t hash = reader->ReadSmiValue();
   String& str_obj = String::ZoneHandle(reader->zone(), String::null());
 
-  if (Snapshot::IsFull(kind)) {
-    // We currently only expect the Dart mutator to read snapshots.
-    reader->isolate()->AssertCurrentThreadIsMutator();
-    ASSERT(Thread::Current()->no_safepoint_scope_depth() != 0);
-    RawOneByteString* obj = reader->NewOneByteString(len);
-    str_obj = obj;
-    if (RawObject::IsCanonical(tags)) {
-      str_obj.SetCanonical();
-    }
-    str_obj.SetHash(hash);
-    if (len > 0) {
-      uint8_t* raw_ptr = CharAddr(str_obj, 0);
-      reader->ReadBytes(raw_ptr, len);
-    }
-    ASSERT((hash == 0) || (String::Hash(str_obj, 0, str_obj.Length()) == hash));
-  } else {
-    String::ReadFromImpl<OneByteString, uint8_t>(
-        reader, &str_obj, len, tags, Symbols::FromLatin1, kind);
-  }
+  String::ReadFromImpl<OneByteString, uint8_t>(reader, &str_obj, len, tags,
+                                               Symbols::FromLatin1, kind);
   reader->AddBackRef(object_id, &str_obj, kIsDeserialized);
   return raw(str_obj);
 }
@@ -2667,41 +2045,22 @@ RawTwoByteString* TwoByteString::ReadFrom(SnapshotReader* reader,
   // Read the length so that we can determine instance size to allocate.
   ASSERT(reader != NULL);
   intptr_t len = reader->ReadSmiValue();
-  intptr_t hash = reader->ReadSmiValue();
   String& str_obj = String::ZoneHandle(reader->zone(), String::null());
 
-  if (Snapshot::IsFull(kind)) {
-    RawTwoByteString* obj = reader->NewTwoByteString(len);
-    str_obj = obj;
-    if (RawObject::IsCanonical(tags)) {
-      str_obj.SetCanonical();
-    }
-    str_obj.SetHash(hash);
-    NoSafepointScope no_safepoint;
-    uint16_t* raw_ptr = (len > 0)? CharAddr(str_obj, 0) : NULL;
-    for (intptr_t i = 0; i < len; i++) {
-      ASSERT(CharAddr(str_obj, i) == raw_ptr);  // Will trigger assertions.
-      *raw_ptr = reader->Read<uint16_t>();
-      raw_ptr += 1;
-    }
-    ASSERT(String::Hash(str_obj, 0, str_obj.Length()) == hash);
-  } else {
-    String::ReadFromImpl<TwoByteString, uint16_t>(
-        reader, &str_obj, len, tags, Symbols::FromUTF16, kind);
-  }
+  String::ReadFromImpl<TwoByteString, uint16_t>(reader, &str_obj, len, tags,
+                                                Symbols::FromUTF16, kind);
   reader->AddBackRef(object_id, &str_obj, kIsDeserialized);
   return raw(str_obj);
 }
 
 
-template<typename T>
+template <typename T>
 static void StringWriteTo(SnapshotWriter* writer,
                           intptr_t object_id,
                           Snapshot::Kind kind,
                           intptr_t class_id,
                           intptr_t tags,
                           RawSmi* length,
-                          RawSmi* hash,
                           T* data) {
   ASSERT(writer != NULL);
   intptr_t len = Smi::Value(length);
@@ -2715,9 +2074,6 @@ static void StringWriteTo(SnapshotWriter* writer,
 
   // Write out the length field.
   writer->Write<RawObject*>(length);
-
-  // Write out the hash field.
-  writer->Write<RawObject*>(hash);
 
   // Write out the string.
   if (len > 0) {
@@ -2736,30 +2092,8 @@ void RawOneByteString::WriteTo(SnapshotWriter* writer,
                                intptr_t object_id,
                                Snapshot::Kind kind,
                                bool as_reference) {
-  if (Snapshot::IncludesCode(kind)) {
-    ASSERT(Snapshot::IncludesCode(kind));
-    ASSERT(Snapshot::IsFull(kind));
-    // Assert that hash is computed.
-    if (ptr()->hash_ == NULL) {
-      ptr()->hash_ = Smi::New(String::Hash(ptr()->data(),
-                                           Smi::Value(ptr()->length_)));
-    }
-    ASSERT(ptr()->hash_ != NULL);
-    // Write out the serialization header value for this object.
-    writer->WriteInlinedObjectHeader(object_id);
-    writer->WriteIndexedObject(kOneByteStringCid);
-    writer->WriteTags(writer->GetObjectTags(this));
-    writer->Write<int32_t>(writer->GetObjectId(this));
-    return;
-  }
-  StringWriteTo(writer,
-                object_id,
-                kind,
-                kOneByteStringCid,
-                writer->GetObjectTags(this),
-                ptr()->length_,
-                ptr()->hash_,
-                ptr()->data());
+  StringWriteTo(writer, object_id, kind, kOneByteStringCid,
+                writer->GetObjectTags(this), ptr()->length_, ptr()->data());
 }
 
 
@@ -2767,14 +2101,8 @@ void RawTwoByteString::WriteTo(SnapshotWriter* writer,
                                intptr_t object_id,
                                Snapshot::Kind kind,
                                bool as_reference) {
-  StringWriteTo(writer,
-                object_id,
-                kind,
-                kTwoByteStringCid,
-                writer->GetObjectTags(this),
-                ptr()->length_,
-                ptr()->hash_,
-                ptr()->data());
+  StringWriteTo(writer, object_id, kind, kTwoByteStringCid,
+                writer->GetObjectTags(this), ptr()->length_, ptr()->data());
 }
 
 
@@ -2805,13 +2133,8 @@ void RawExternalOneByteString::WriteTo(SnapshotWriter* writer,
                                        Snapshot::Kind kind,
                                        bool as_reference) {
   // Serialize as a non-external one byte string.
-  StringWriteTo(writer,
-                object_id,
-                kind,
-                kOneByteStringCid,
-                writer->GetObjectTags(this),
-                ptr()->length_,
-                ptr()->hash_,
+  StringWriteTo(writer, object_id, kind, kOneByteStringCid,
+                writer->GetObjectTags(this), ptr()->length_,
                 ptr()->external_data_->data());
 }
 
@@ -2821,13 +2144,8 @@ void RawExternalTwoByteString::WriteTo(SnapshotWriter* writer,
                                        Snapshot::Kind kind,
                                        bool as_reference) {
   // Serialize as a non-external two byte string.
-  StringWriteTo(writer,
-                object_id,
-                kind,
-                kTwoByteStringCid,
-                writer->GetObjectTags(this),
-                ptr()->length_,
-                ptr()->hash_,
+  StringWriteTo(writer, object_id, kind, kTwoByteStringCid,
+                writer->GetObjectTags(this), ptr()->length_,
                 ptr()->external_data_->data());
 }
 
@@ -2868,8 +2186,8 @@ RawArray* Array::ReadFrom(SnapshotReader* reader,
     state = kIsNotDeserialized;
   }
   if (array == NULL) {
-    array = &(Array::ZoneHandle(reader->zone(),
-                                NEW_OBJECT_WITH_LEN_SPACE(Array, len, kind)));
+    array =
+        &(Array::ZoneHandle(reader->zone(), Array::New(len, HEAP_SPACE(kind))));
     reader->AddBackRef(object_id, array, state);
   }
   if (!as_reference) {
@@ -2899,20 +2217,15 @@ RawImmutableArray* ImmutableArray::ReadFrom(SnapshotReader* reader,
     state = kIsNotDeserialized;
   }
   if (array == NULL) {
-    array = &(Array::ZoneHandle(
-        reader->zone(),
-        NEW_OBJECT_WITH_LEN_SPACE(ImmutableArray, len, kind)));
+    array = &(Array::ZoneHandle(reader->zone(),
+                                ImmutableArray::New(len, HEAP_SPACE(kind))));
     reader->AddBackRef(object_id, array, state);
   }
   if (!as_reference) {
     // Read all the individual elements for inlined objects.
     reader->ArrayReadFrom(object_id, *array, len, tags);
     if (RawObject::IsCanonical(tags)) {
-      if (Snapshot::IsFull(kind)) {
-        array->SetCanonical();
-      } else {
-        *array ^= array->CheckAndCanonicalize(reader->thread(), NULL);
-      }
+      *array ^= array->CheckAndCanonicalize(reader->thread(), NULL);
     }
   }
   return raw(*array);
@@ -2924,12 +2237,8 @@ void RawArray::WriteTo(SnapshotWriter* writer,
                        Snapshot::Kind kind,
                        bool as_reference) {
   ASSERT(!this->IsCanonical());
-  writer->ArrayWriteTo(object_id,
-                       kArrayCid,
-                       writer->GetObjectTags(this),
-                       ptr()->length_,
-                       ptr()->type_arguments_,
-                       ptr()->data(),
+  writer->ArrayWriteTo(object_id, kArrayCid, writer->GetObjectTags(this),
+                       ptr()->length_, ptr()->type_arguments_, ptr()->data(),
                        as_reference);
 }
 
@@ -2938,13 +2247,9 @@ void RawImmutableArray::WriteTo(SnapshotWriter* writer,
                                 intptr_t object_id,
                                 Snapshot::Kind kind,
                                 bool as_reference) {
-  writer->ArrayWriteTo(object_id,
-                       kImmutableArrayCid,
-                       writer->GetObjectTags(this),
-                       ptr()->length_,
-                       ptr()->type_arguments_,
-                       ptr()->data(),
-                       as_reference);
+  writer->ArrayWriteTo(object_id, kImmutableArrayCid,
+                       writer->GetObjectTags(this), ptr()->length_,
+                       ptr()->type_arguments_, ptr()->data(), as_reference);
 }
 
 
@@ -2958,11 +2263,7 @@ RawGrowableObjectArray* GrowableObjectArray::ReadFrom(SnapshotReader* reader,
   // Read the length so that we can determine instance size to allocate.
   GrowableObjectArray& array = GrowableObjectArray::ZoneHandle(
       reader->zone(), GrowableObjectArray::null());
-  if (Snapshot::IsFull(kind)) {
-    array = reader->NewGrowableObjectArray();
-  } else {
-    array = GrowableObjectArray::New(0, HEAP_SPACE(kind));
-  }
+  array = GrowableObjectArray::New(0, HEAP_SPACE(kind));
   reader->AddBackRef(object_id, &array, kIsDeserialized);
 
   // Read type arguments of growable array object.
@@ -3015,20 +2316,15 @@ RawLinkedHashMap* LinkedHashMap::ReadFrom(SnapshotReader* reader,
                                           bool as_reference) {
   ASSERT(reader != NULL);
 
-  LinkedHashMap& map = LinkedHashMap::ZoneHandle(
-      reader->zone(), LinkedHashMap::null());
-  if ((Snapshot::IsFull(kind) && !Snapshot::IncludesCode(kind)) ||
-      kind == Snapshot::kScript) {
+  LinkedHashMap& map =
+      LinkedHashMap::ZoneHandle(reader->zone(), LinkedHashMap::null());
+  if (kind == Snapshot::kScript) {
     // The immutable maps that seed map literals are not yet VM-internal, so
     // we don't reach this.
     UNREACHABLE();
   } else {
     // Since the map might contain itself as a key or value, allocate first.
-    if (Snapshot::IsFull(kind)) {
-      map = reader->NewLinkedHashMap();
-    } else {
-      map = LinkedHashMap::NewUninitialized(HEAP_SPACE(kind));
-    }
+    map = LinkedHashMap::NewUninitialized(HEAP_SPACE(kind));
   }
   reader->AddBackRef(object_id, &map, kIsDeserialized);
 
@@ -3045,13 +2341,11 @@ RawLinkedHashMap* LinkedHashMap::ReadFrom(SnapshotReader* reader,
   map.SetUsedData(used_data);
 
   // Allocate the data array.
-  intptr_t data_size = Utils::Maximum(
-      Utils::RoundUpToPowerOfTwo(used_data),
-      static_cast<uintptr_t>(LinkedHashMap::kInitialIndexSize));
+  intptr_t data_size =
+      Utils::Maximum(Utils::RoundUpToPowerOfTwo(used_data),
+                     static_cast<uintptr_t>(LinkedHashMap::kInitialIndexSize));
   Array& data = Array::ZoneHandle(reader->zone(),
-                                  NEW_OBJECT_WITH_LEN_SPACE(Array,
-                                                            data_size,
-                                                            kind));
+                                  Array::New(data_size, HEAP_SPACE(kind)));
   map.SetData(data);
   map.SetDeletedKeys(0);
 
@@ -3076,8 +2370,7 @@ void RawLinkedHashMap::WriteTo(SnapshotWriter* writer,
                                intptr_t object_id,
                                Snapshot::Kind kind,
                                bool as_reference) {
-  if ((Snapshot::IsFull(kind) && !Snapshot::IncludesCode(kind)) ||
-      kind == Snapshot::kScript) {
+  if (kind == Snapshot::kScript) {
     // The immutable maps that seed map literals are not yet VM-internal, so
     // we don't reach this.
   }
@@ -3137,13 +2430,8 @@ RawFloat32x4* Float32x4::ReadFrom(SnapshotReader* reader,
   float value3 = reader->Read<float>();
 
   // Create a Float32x4 object.
-  Float32x4& simd = Float32x4::ZoneHandle(reader->zone(),
-                                          Float32x4::null());
-  if (Snapshot::IsFull(kind)) {
-    simd = reader->NewFloat32x4(value0, value1, value2, value3);
-  } else {
-    simd = Float32x4::New(value0, value1, value2, value3, HEAP_SPACE(kind));
-  }
+  Float32x4& simd = Float32x4::ZoneHandle(reader->zone(), Float32x4::null());
+  simd = Float32x4::New(value0, value1, value2, value3, HEAP_SPACE(kind));
   reader->AddBackRef(object_id, &simd, kIsDeserialized);
   return simd.raw();
 }
@@ -3184,12 +2472,7 @@ RawInt32x4* Int32x4::ReadFrom(SnapshotReader* reader,
 
   // Create a Float32x4 object.
   Int32x4& simd = Int32x4::ZoneHandle(reader->zone(), Int32x4::null());
-
-  if (Snapshot::IsFull(kind)) {
-    simd = reader->NewInt32x4(value0, value1, value2, value3);
-  } else {
-    simd = Int32x4::New(value0, value1, value2, value3, HEAP_SPACE(kind));
-  }
+  simd = Int32x4::New(value0, value1, value2, value3, HEAP_SPACE(kind));
   reader->AddBackRef(object_id, &simd, kIsDeserialized);
   return simd.raw();
 }
@@ -3227,13 +2510,8 @@ RawFloat64x2* Float64x2::ReadFrom(SnapshotReader* reader,
   double value1 = reader->Read<double>();
 
   // Create a Float64x2 object.
-  Float64x2& simd = Float64x2::ZoneHandle(reader->zone(),
-                                          Float64x2::null());
-  if (Snapshot::IsFull(kind)) {
-    simd = reader->NewFloat64x2(value0, value1);
-  } else {
-    simd = Float64x2::New(value0, value1, HEAP_SPACE(kind));
-  }
+  Float64x2& simd = Float64x2::ZoneHandle(reader->zone(), Float64x2::null());
+  simd = Float64x2::New(value0, value1, HEAP_SPACE(kind));
   reader->AddBackRef(object_id, &simd, kIsDeserialized);
   return simd.raw();
 }
@@ -3261,7 +2539,7 @@ void RawFloat64x2::WriteTo(SnapshotWriter* writer,
 #define TYPED_DATA_READ(setter, type)                                          \
   for (intptr_t i = 0; i < length_in_bytes; i += element_size) {               \
     result.Set##setter(i, reader->Read<type>());                               \
-  }                                                                            \
+  }
 
 
 RawTypedData* TypedData::ReadFrom(SnapshotReader* reader,
@@ -3273,9 +2551,8 @@ RawTypedData* TypedData::ReadFrom(SnapshotReader* reader,
 
   intptr_t cid = RawObject::ClassIdTag::decode(tags);
   intptr_t len = reader->ReadSmiValue();
-  TypedData& result = TypedData::ZoneHandle(reader->zone(),
-      (Snapshot::IsFull(kind)) ? reader->NewTypedData(cid, len)
-                                : TypedData::New(cid, len, HEAP_SPACE(kind)));
+  TypedData& result = TypedData::ZoneHandle(
+      reader->zone(), TypedData::New(cid, len, HEAP_SPACE(kind)));
   reader->AddBackRef(object_id, &result, kIsDeserialized);
 
   // Setup the array elements.
@@ -3323,14 +2600,9 @@ RawTypedData* TypedData::ReadFrom(SnapshotReader* reader,
   // When reading a script snapshot or a message snapshot we always have
   // to canonicalize the object.
   if (RawObject::IsCanonical(tags)) {
-    if (Snapshot::IsFull(kind)) {
-      // Set the canonical bit.
-      result.SetCanonical();
-    } else {
-      result ^= result.CheckAndCanonicalize(reader->thread(), NULL);
-      ASSERT(!result.IsNull());
-      ASSERT(result.IsCanonical());
-    }
+    result ^= result.CheckAndCanonicalize(reader->thread(), NULL);
+    ASSERT(!result.IsNull());
+    ASSERT(result.IsCanonical());
   }
   return result.raw();
 }
@@ -3346,14 +2618,15 @@ RawExternalTypedData* ExternalTypedData::ReadFrom(SnapshotReader* reader,
   intptr_t cid = RawObject::ClassIdTag::decode(tags);
   intptr_t length = reader->ReadSmiValue();
   uint8_t* data = reinterpret_cast<uint8_t*>(reader->ReadRawPointerValue());
-  ExternalTypedData& obj = ExternalTypedData::ZoneHandle(
-      ExternalTypedData::New(cid, data, length));
+  ExternalTypedData& obj =
+      ExternalTypedData::ZoneHandle(ExternalTypedData::New(cid, data, length));
   reader->AddBackRef(object_id, &obj, kIsDeserialized);
   void* peer = reinterpret_cast<void*>(reader->ReadRawPointerValue());
   Dart_WeakPersistentHandleFinalizer callback =
       reinterpret_cast<Dart_WeakPersistentHandleFinalizer>(
           reader->ReadRawPointerValue());
-  obj.AddFinalizer(peer, callback);
+  intptr_t external_size = obj.LengthInBytes();
+  obj.AddFinalizer(peer, callback, external_size);
   return obj.raw();
 }
 
@@ -3364,7 +2637,7 @@ RawExternalTypedData* ExternalTypedData::ReadFrom(SnapshotReader* reader,
     for (intptr_t i = 0; i < len; i++) {                                       \
       writer->Write(data[i]);                                                  \
     }                                                                          \
-  }                                                                            \
+  }
 
 
 void RawTypedData::WriteTo(SnapshotWriter* writer,
@@ -3430,14 +2703,14 @@ void RawTypedData::WriteTo(SnapshotWriter* writer,
     for (intptr_t i = 0; i < len; i++) {                                       \
       writer->Write(data[i]);                                                  \
     }                                                                          \
-  }                                                                            \
+  }
 
 
 #define EXT_TYPED_DATA_WRITE(cid, type)                                        \
   writer->WriteIndexedObject(cid);                                             \
   writer->WriteTags(writer->GetObjectTags(this));                              \
   writer->Write<RawObject*>(ptr()->length_);                                   \
-  TYPED_EXT_DATA_WRITE(type)                                                   \
+  TYPED_EXT_DATA_WRITE(type)
 
 
 void RawExternalTypedData::WriteTo(SnapshotWriter* writer,
@@ -3500,8 +2773,8 @@ RawCapability* Capability::ReadFrom(SnapshotReader* reader,
                                     bool as_reference) {
   uint64_t id = reader->Read<uint64_t>();
 
-  Capability& result = Capability::ZoneHandle(reader->zone(),
-                                              Capability::New(id));
+  Capability& result =
+      Capability::ZoneHandle(reader->zone(), Capability::New(id));
   reader->AddBackRef(object_id, &result, kIsDeserialized);
   return result.raw();
 }
@@ -3552,18 +2825,13 @@ RawSendPort* SendPort::ReadFrom(SnapshotReader* reader,
                                 intptr_t tags,
                                 Snapshot::Kind kind,
                                 bool as_reference) {
-  ASSERT(kind == Snapshot::kMessage || Snapshot::IncludesCode(kind));
+  ASSERT(kind == Snapshot::kMessage);
 
   uint64_t id = reader->Read<uint64_t>();
   uint64_t origin_id = reader->Read<uint64_t>();
 
-  SendPort& result = SendPort::ZoneHandle(reader->zone());
-  if (Snapshot::IncludesCode(kind)) {
-    // TODO(rmacnak): Reset fields in precompiled snapshots and assert
-    // this is unreachable.
-  } else {
-    result = SendPort::New(id, origin_id);
-  }
+  SendPort& result =
+      SendPort::ZoneHandle(reader->zone(), SendPort::New(id, origin_id));
   reader->AddBackRef(object_id, &result, kIsDeserialized);
   return result.raw();
 }
@@ -3590,21 +2858,6 @@ RawStacktrace* Stacktrace::ReadFrom(SnapshotReader* reader,
                                     intptr_t tags,
                                     Snapshot::Kind kind,
                                     bool as_reference) {
-  if (Snapshot::IsFull(kind)) {
-    Stacktrace& result = Stacktrace::ZoneHandle(reader->zone(),
-                                                reader->NewStacktrace());
-    reader->AddBackRef(object_id, &result, kIsDeserialized);
-
-    bool expand_inlined = reader->Read<bool>();
-    result.set_expand_inlined(expand_inlined);
-
-    // Set all the object fields.
-    READ_OBJECT_FIELDS(result,
-                       result.raw()->from(), result.raw()->to(),
-                       kAsReference);
-
-    return result.raw();
-  }
   UNREACHABLE();  // Stacktraces are not sent in a snapshot.
   return Stacktrace::null();
 }
@@ -3614,29 +2867,10 @@ void RawStacktrace::WriteTo(SnapshotWriter* writer,
                             intptr_t object_id,
                             Snapshot::Kind kind,
                             bool as_reference) {
-  if (Snapshot::IsFull(kind)) {
-    ASSERT(writer != NULL);
-    ASSERT(this == Isolate::Current()->object_store()->
-           preallocated_stack_trace());
-
-    // Write out the serialization header value for this object.
-    writer->WriteInlinedObjectHeader(object_id);
-
-    // Write out the class and tags information.
-    writer->WriteIndexedObject(kStacktraceCid);
-    writer->WriteTags(writer->GetObjectTags(this));
-
-    writer->Write(ptr()->expand_inlined_);
-
-    // Write out all the object pointer fields.
-    SnapshotWriterVisitor visitor(writer, kAsReference);
-    visitor.VisitPointers(from(), to());
-  } else {
-    // Stacktraces are not allowed in other snapshot forms.
-    writer->SetWriteException(Exceptions::kArgument,
-                              "Illegal argument in isolate message"
-                              " : (object is a stacktrace)");
-  }
+  ASSERT(kind == Snapshot::kMessage);
+  writer->SetWriteException(Exceptions::kArgument,
+                            "Illegal argument in isolate message"
+                            " : (object is a stacktrace)");
 }
 
 
@@ -3648,7 +2882,7 @@ RawRegExp* RegExp::ReadFrom(SnapshotReader* reader,
   ASSERT(reader != NULL);
 
   // Allocate RegExp object.
-  RegExp& regex = RegExp::ZoneHandle(reader->zone(), NEW_OBJECT(RegExp));
+  RegExp& regex = RegExp::ZoneHandle(reader->zone(), RegExp::New());
   reader->AddBackRef(object_id, &regex, kIsDeserialized);
 
   // Read and Set all the other fields.
@@ -3658,19 +2892,14 @@ RawRegExp* RegExp::ReadFrom(SnapshotReader* reader,
   regex.set_pattern(*reader->StringHandle());
   regex.StoreNonPointer(&regex.raw_ptr()->num_registers_,
                         reader->Read<int32_t>());
-  regex.StoreNonPointer(&regex.raw_ptr()->type_flags_,
-                        reader->Read<int8_t>());
+  regex.StoreNonPointer(&regex.raw_ptr()->type_flags_, reader->Read<int8_t>());
 
-  // TODO(18854): Need to implement a way of recreating the irrexp functions.
   const Function& no_function = Function::Handle(reader->zone());
-  regex.set_function(kOneByteStringCid, no_function);
-  regex.set_function(kTwoByteStringCid, no_function);
-  regex.set_function(kExternalOneByteStringCid, no_function);
-  regex.set_function(kExternalTwoByteStringCid, no_function);
-
-  const TypedData& no_bytecode = TypedData::Handle(reader->zone());
-  regex.set_bytecode(true, no_bytecode);
-  regex.set_bytecode(false, no_bytecode);
+  for (intptr_t cid = kOneByteStringCid; cid <= kExternalTwoByteStringCid;
+       cid++) {
+    regex.set_function(cid, /*sticky=*/false, no_function);
+    regex.set_function(cid, /*sticky=*/true, no_function);
+  }
 
   return regex.raw();
 }
@@ -3705,14 +2934,13 @@ RawWeakProperty* WeakProperty::ReadFrom(SnapshotReader* reader,
   ASSERT(reader != NULL);
 
   // Allocate the weak property object.
-  WeakProperty& weak_property = WeakProperty::ZoneHandle(
-      reader->zone(), NEW_OBJECT(WeakProperty));
+  WeakProperty& weak_property =
+      WeakProperty::ZoneHandle(reader->zone(), WeakProperty::New());
   reader->AddBackRef(object_id, &weak_property, kIsDeserialized);
 
   // Set all the object fields.
-  READ_OBJECT_FIELDS(weak_property,
-                     weak_property.raw()->from(), weak_property.raw()->to(),
-                     kAsReference);
+  READ_OBJECT_FIELDS(weak_property, weak_property.raw()->from(),
+                     weak_property.raw()->to(), kAsReference);
 
   return weak_property.raw();
 }

@@ -4,23 +4,22 @@
 
 // Test the feature where the native string declares the native method's name.
 
-import "package:expect/expect.dart";
-import 'dart:_js_helper' show Native, JSName;
+import "native_testing.dart";
 
 @Native("A")
 class A {
   @JSName('fooA')
-  int foo() native;
+  int foo() native ;
 }
 
 @Native("B")
 class B extends A {
   @JSName('fooB')
-  int foo() native;
+  int foo() native ;
 }
 
-makeA() native;
-makeB() native;
+makeA() native ;
+makeB() native ;
 
 void setup() native """
 // This code is all inside 'setup' and so not accesible from the global scope.
@@ -42,6 +41,9 @@ B.prototype.fooB = function(){return 200;};
 
 makeA = function(){return new A};
 makeB = function(){return new B};
+
+self.nativeConstructor(A);
+self.nativeConstructor(B);
 """;
 
 testDynamic() {
@@ -52,11 +54,19 @@ testDynamic() {
   Expect.equals(100, a.foo());
   Expect.equals(200, b.foo());
 
-  expectNoSuchMethod((){ a.fooA(); }, 'fooA should be invisible on A');
-  expectNoSuchMethod((){ b.fooA(); }, 'fooA should be invisible on B');
+  expectNoSuchMethod(() {
+    a.fooA();
+  }, 'fooA should be invisible on A');
+  expectNoSuchMethod(() {
+    b.fooA();
+  }, 'fooA should be invisible on B');
 
-  expectNoSuchMethod((){ a.fooB(); }, 'fooB should be absent on A');
-  expectNoSuchMethod((){ b.fooB(); }, 'fooA should be invisible on B');
+  expectNoSuchMethod(() {
+    a.fooB();
+  }, 'fooB should be absent on A');
+  expectNoSuchMethod(() {
+    b.fooB();
+  }, 'fooA should be invisible on B');
 }
 
 testTyped() {
@@ -68,6 +78,7 @@ testTyped() {
 }
 
 main() {
+  nativeTesting();
   setup();
 
   testDynamic();

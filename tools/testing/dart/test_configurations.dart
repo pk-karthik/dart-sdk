@@ -31,6 +31,7 @@ final TEST_SUITE_DIRECTORIES = [
   new Path('third_party/pkg_tested'),
   new Path('runtime/tests/vm'),
   new Path('runtime/observatory/tests/service'),
+  new Path('runtime/observatory/tests/observatory_ui'),
   new Path('samples'),
   new Path('samples-dev'),
   new Path('tests/benchmark_smoke'),
@@ -41,10 +42,10 @@ final TEST_SUITE_DIRECTORIES = [
   new Path('tests/corelib'),
   new Path('tests/html'),
   new Path('tests/isolate'),
+  new Path('tests/kernel'),
   new Path('tests/language'),
   new Path('tests/lib'),
   new Path('tests/standalone'),
-  new Path('tests/try'),
   new Path('tests/utils'),
   new Path('utils/tests/css'),
   new Path('utils/tests/peg'),
@@ -56,9 +57,6 @@ Future testConfigurations(List<Map> configurations) async {
   var firstConf = configurations[0];
   var maxProcesses = firstConf['tasks'];
   var progressIndicator = firstConf['progress'];
-  // TODO(kustermann): Remove this option once the buildbots don't use it
-  // anymore.
-  var failureSummary = firstConf['failure-summary'];
   BuildbotProgressIndicator.stepName = firstConf['step_name'];
   var verbose = firstConf['verbose'];
   var printTiming = firstConf['time'];
@@ -69,7 +67,7 @@ Future testConfigurations(List<Map> configurations) async {
   var recordingPath = firstConf['record_to_file'];
   var recordingOutputPath = firstConf['replay_from_file'];
 
-  Browser.deleteCache = firstConf['clear_browser_cache'];
+  Browser.resetBrowserConfiguration = firstConf['reset_browser_configuration'];
 
   if (recordingPath != null && recordingOutputPath != null) {
     print("Fatal: Can't have the '--record_to_file' and '--replay_from_file'"
@@ -105,6 +103,7 @@ Future testConfigurations(List<Map> configurations) async {
           .map((name) => conf[name])
           .toList();
       if (conf['checked']) settings.add('checked');
+      if (conf['strong']) settings.add('strong');
       if (conf['noopt']) settings.add('noopt');
       output_words.add(settings.join('_'));
     }
@@ -134,11 +133,12 @@ Future testConfigurations(List<Map> configurations) async {
       // server for cross-domain tests can be found by calling
       // getCrossOriginPortNumber().
       var servers = new TestingServers(
-          new Path(TestUtils.buildDir(conf)),
+          TestUtils.buildDir(conf),
           useContentSecurityPolicy,
           conf['runtime'],
           null,
-          conf['package_root']);
+          conf['package_root'],
+          conf['packages']);
       serverFutures.add(servers.startServers(conf['local_ip'],
           port: conf['test_server_port'],
           crossOriginPort: conf['test_server_cross_origin_port']));
@@ -183,6 +183,13 @@ Future testConfigurations(List<Map> configurations) async {
       var suite_path = new Path(conf['suite_dir']);
       testSuites.add(new PKGTestSuite(conf, suite_path));
     } else {
+      for (final testSuiteDir in TEST_SUITE_DIRECTORIES) {
+        final name = testSuiteDir.filename;
+        if (selectors.containsKey(name)) {
+          testSuites
+              .add(new StandardTestSuite.forDirectory(conf, testSuiteDir));
+        }
+      }
       for (String key in selectors.keys) {
         if (key == 'co19') {
           testSuites.add(new Co19TestSuite(conf));
@@ -212,14 +219,6 @@ Future testConfigurations(List<Map> configurations) async {
           }
           testSuites.add(
               new PkgBuildTestSuite(conf, 'pkgbuild', 'pkg/pkgbuild.status'));
-        }
-      }
-
-      for (final testSuiteDir in TEST_SUITE_DIRECTORIES) {
-        final name = testSuiteDir.filename;
-        if (selectors.containsKey(name)) {
-          testSuites
-              .add(new StandardTestSuite.forDirectory(conf, testSuiteDir));
         }
       }
     }
@@ -280,6 +279,7 @@ Future testConfigurations(List<Map> configurations) async {
     eventListener.add(new SummaryPrinter(jsonOnly: reportInJson));
   } else {
     eventListener.add(new ExitCodeSetter());
+    eventListener.add(new IgnoredTestMonitor());
   }
 
   // If any of the configurations need to access android devices we'll first

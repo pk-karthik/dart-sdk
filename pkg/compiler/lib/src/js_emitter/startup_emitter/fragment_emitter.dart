@@ -64,13 +64,9 @@ function copyProperties(from, to) {
   }
 }
 
-var supportsDirectProtoAccess = (function () {
-  var cls = function () {};
-  cls.prototype = {'p': {}};
-  var object = new cls();
-  return object.__proto__ &&
-         object.__proto__.p === cls.prototype.p;
-})();
+// Only use direct proto access to construct the prototype chain (instead of
+// copying properties) on platforms where we know it works well (Chrome / d8).
+var supportsDirectProtoAccess = #directAccessTestExpression;
 
 var functionsHaveName = (function() {
   function t() {};
@@ -233,6 +229,7 @@ function installTearOff(
     reflectionInfo = reflectionInfo + typesOffset;
   }
   var name = funsOrNames[0];
+  fun.#stubName = name;
   var getterFunction =
       tearOff(funs, reflectionInfo, isStatic, name, isIntercepted);
   container[getterName] = getterFunction;
@@ -348,9 +345,42 @@ var #staticStateDeclaration = {};
 // Native-support uses setOrUpdateInterceptorsByTag and setOrUpdateLeafTags.
 #nativeSupport;
 
+// Sets up the js-interop support.
+#jsInteropSupport;
+
 // Invokes main (making sure that it records the 'current-script' value).
 #invokeMain;
 })()
+''';
+
+/// An expression that returns `true` if `__proto__` can be assigned to stitch
+/// together a prototype chain, and the performance is good.
+const String directAccessTestExpression = r'''
+  (function () {
+    var cls = function () {};
+    cls.prototype = {'p': {}};
+    var object = new cls();
+    if (!(object.__proto__ && object.__proto__.p === cls.prototype.p))
+      return false;
+    
+    try {
+      // Are we running on a platform where the performance is good?
+      // (i.e. Chrome or d8).
+
+      // Chrome userAgent?
+      if (typeof navigator != "undefined" &&
+          typeof navigator.userAgent == "string" &&
+          navigator.userAgent.indexOf("Chrome/") >= 0) return true;
+      // d8 version() looks like "N.N.N.N", jsshell version() like "N".
+      if (typeof version == "function" &&
+          version.length == 0) {
+        var v = version();
+        if (/^\d+\.\d+\.\d+\.\d+$/.test(v)) return true;
+      }
+    } catch(_) {}
+
+    return false;
+  })()
 ''';
 
 /// Deferred fragments (aka 'hunks') are built similarly to the main fragment.
@@ -435,6 +465,7 @@ class FragmentEmitter {
         program.holders.where((Holder holder) => !holder.isStaticStateHolder);
 
     return js.js.statement(mainBoilerplate, {
+      'directAccessTestExpression': js.js(directAccessTestExpression),
       'typeNameProperty': js.string(ModelEmitter.typeNameProperty),
       'cyclicThrow': backend.emitter
           .staticFunctionAccess(backend.helpers.cyclicThrowHelper),
@@ -455,6 +486,7 @@ class FragmentEmitter {
       'constantHolderReference': buildConstantHolderReference(program),
       'holders': emitHolders(program.holders, fragment),
       'callName': js.string(namer.callNameField),
+      'stubName': js.string(namer.stubNameField),
       'argumentCount': js.string(namer.requiredParameterField),
       'defaultArgumentValues': js.string(namer.defaultValuesField),
       'prototypes': emitPrototypes(fragment),
@@ -467,6 +499,9 @@ class FragmentEmitter {
       'embeddedGlobals': emitEmbeddedGlobals(program, deferredLoadHashes),
       'nativeSupport': program.needsNativeSupport
           ? emitNativeSupport(fragment)
+          : new js.EmptyStatement(),
+      'jsInteropSupport': backend.jsInteropAnalysis.enabledJsInterop
+          ? backend.jsInteropAnalysis.buildJsInteropBootstrap()
           : new js.EmptyStatement(),
       'invokeMain': fragment.invokeMain,
     });
@@ -600,18 +635,28 @@ class FragmentEmitter {
   ///
   /// The constructor is statically built.
   js.Expression emitConstructor(Class cls) {
-    List<js.Name> fieldNames = const <js.Name>[];
-
+    js.Name name = cls.name;
     // If the class is not directly instantiated we only need it for inheritance
     // or RTI. In either case we don't need its fields.
-    if (cls.isDirectlyInstantiated && !cls.isNative) {
-      fieldNames = cls.fields.map((Field field) => field.name).toList();
+    if (cls.isNative || !cls.isDirectlyInstantiated) {
+      return js.js('function #() { }', name);
     }
-    js.Name name = cls.name;
+
+    List<js.Name> fieldNames =
+        cls.fields.map((Field field) => field.name).toList();
+    if (cls.hasRtiField) {
+      fieldNames.add(namer.rtiFieldName);
+    }
 
     Iterable<js.Name> assignments = fieldNames.map((js.Name field) {
       return js.js("this.#field = #field", {"field": field});
     });
+
+    // TODO(sra): Cache 'this' in a one-character local for 4 or more uses of
+    // 'this'. i.e. "var _=this;_.a=a;_.b=b;..."
+
+    // TODO(sra): Separate field and field initializer parameter names so the
+    // latter may be fully minified.
 
     return js.js('function #(#) { # }', [name, fieldNames, assignments]);
   }
@@ -765,13 +810,20 @@ class FragmentEmitter {
     List<js.Expression> inheritCalls = <js.Expression>[];
     List<js.Expression> mixinCalls = <js.Expression>[];
 
+    Set<Class> classesInFragment = new Set<Class>();
+    for (Library library in fragment.libraries) {
+      classesInFragment.addAll(library.classes);
+    }
+
     Set<Class> emittedClasses = new Set<Class>();
 
     void emitInheritanceForClass(cls) {
       if (cls == null || emittedClasses.contains(cls)) return;
 
       Class superclass = cls.superclass;
-      emitInheritanceForClass(superclass);
+      if (classesInFragment.contains(superclass)) {
+        emitInheritanceForClass(superclass);
+      }
 
       js.Expression superclassReference = (superclass == null)
           ? new js.LiteralNull()
@@ -831,6 +883,9 @@ class FragmentEmitter {
     // TODO(herhut): Replace [js.LiteralNull] with [js.ArrayHole].
     if (method.optionalParameterDefaultValues is List) {
       List<ConstantValue> defaultValues = method.optionalParameterDefaultValues;
+      if (defaultValues.isEmpty) {
+        return new js.LiteralNull();
+      }
       Iterable<js.Expression> elements =
           defaultValues.map(generateConstantReference);
       return js.js('function() { return #; }',
@@ -1021,6 +1076,7 @@ class FragmentEmitter {
       return js.stringArray(fragments.map((DeferredFragment fragment) =>
           "${fragment.outputFileName}.${ModelEmitter.deferredExtension}"));
     }
+
     js.ArrayInitializer fragmentHashes(List<Fragment> fragments) {
       return new js.ArrayInitializer(fragments
           .map((fragment) => deferredLoadHashes[fragment])
@@ -1277,7 +1333,7 @@ class FragmentEmitter {
 
     Map<String, js.Expression> interceptorsByTag = <String, js.Expression>{};
     Map<String, js.Expression> leafTags = <String, js.Expression>{};
-    js.Statement subclassAssignment = new js.EmptyStatement();
+    List<js.Statement> subclassAssignments = <js.Statement>[];
 
     for (Library library in fragment.libraries) {
       for (Class cls in library.classes) {
@@ -1294,15 +1350,15 @@ class FragmentEmitter {
           }
           if (cls.nativeExtensions != null) {
             List<Class> subclasses = cls.nativeExtensions;
-            js.Expression value = js.string(cls.nativeNonLeafTags[0]);
+            js.Expression base = js.string(cls.nativeNonLeafTags[0]);
+
             for (Class subclass in subclasses) {
-              value = js.js('#.# = #', [
+              subclassAssignments.add(js.js.statement('#.# = #;', [
                 classReference(subclass),
                 NATIVE_SUPERCLASS_TAG_NAME,
-                js.string(cls.nativeNonLeafTags[0])
-              ]);
+                base
+              ]));
             }
-            subclassAssignment = new js.ExpressionStatement(value);
           }
         }
       }
@@ -1311,7 +1367,7 @@ class FragmentEmitter {
         js.objectLiteral(interceptorsByTag)));
     statements.add(
         js.js.statement("setOrUpdateLeafTags(#);", js.objectLiteral(leafTags)));
-    statements.add(subclassAssignment);
+    statements.addAll(subclassAssignments);
 
     return new js.Block(statements);
   }

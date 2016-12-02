@@ -16,7 +16,7 @@ import '../elements/elements.dart'
         PrefixElement,
         VariableElement;
 import '../resolution/operators.dart';
-import '../tree/tree.dart' show DartString;
+import '../tree/dartstring.dart' show DartString;
 import '../universe/call_structure.dart' show CallStructure;
 import 'evaluation.dart';
 import 'values.dart';
@@ -101,12 +101,7 @@ abstract class ConstantExpression {
 
   int _computeHashCode();
 
-  int get hashCode {
-    if (_hashCode == null) {
-      _hashCode = _computeHashCode();
-    }
-    return _hashCode;
-  }
+  int get hashCode => _hashCode ??= _computeHashCode();
 
   bool _equals(ConstantExpression other);
 
@@ -138,7 +133,7 @@ abstract class ConstantExpression {
   /// if it contains positional or named references, used to define constant
   /// constructors.
   // TODO(johnniwinther): Maybe make this final if we use it outside assertions.
-  bool get isPotential => true;
+  bool get isPotential => false;
 }
 
 /// A synthetic constant used to recover from errors.
@@ -198,9 +193,6 @@ class SyntheticConstantExpression extends ConstantExpression {
   }
 
   ConstantExpressionKind get kind => ConstantExpressionKind.SYNTHETIC;
-
-  @override
-  bool get isPotential => false;
 
   @override
   bool get isImplicit => false;
@@ -482,11 +474,15 @@ class MapConstantExpression extends ConstantExpression {
   @override
   ConstantValue evaluate(
       Environment environment, ConstantSystem constantSystem) {
-    return constantSystem.createMap(
-        environment.compiler,
-        type,
-        keys.map((k) => k.evaluate(environment, constantSystem)).toList(),
-        values.map((v) => v.evaluate(environment, constantSystem)).toList());
+    Map<ConstantValue, ConstantValue> valueMap =
+        <ConstantValue, ConstantValue>{};
+    for (int index = 0; index < keys.length; index++) {
+      ConstantValue key = keys[index].evaluate(environment, constantSystem);
+      ConstantValue value = values[index].evaluate(environment, constantSystem);
+      valueMap[key] = value;
+    }
+    return constantSystem.createMap(environment.compiler, type,
+        valueMap.keys.toList(), valueMap.values.toList());
   }
 
   ConstantExpression apply(NormalizedArguments arguments) {
@@ -549,7 +545,7 @@ class ConstructedConstantExpression extends ConstantExpression {
 
   @override
   void _createStructuredText(StringBuffer sb) {
-    sb.write('Constructored(type=$type,constructor=$target,'
+    sb.write('Constructed(type=$type,constructor=$target,'
         'callStructure=$callStructure,arguments=[');
     String delimiter = '';
     for (ConstantExpression value in arguments) {
@@ -561,6 +557,8 @@ class ConstructedConstantExpression extends ConstantExpression {
   }
 
   Map<FieldElement, ConstantExpression> computeInstanceFields() {
+    assert(invariant(target, target.constantConstructor != null,
+        message: "No constant constructor computed for $target."));
     return target.constantConstructor
         .computeInstanceFields(arguments, callStructure);
   }
@@ -652,7 +650,7 @@ class ConcatenateConstantExpression extends ConstantExpression {
     for (ConstantExpression expression in expressions) {
       ConstantValue value = expression.evaluate(environment, constantSystem);
       DartString valueString;
-      if (value.isNum || value.isBool) {
+      if (value.isNum || value.isBool || value.isNull) {
         PrimitiveConstantValue primitive = value;
         valueString =
             new DartString.literal(primitive.primitiveValue.toString());
@@ -868,9 +866,18 @@ class BinaryConstantExpression extends ConstantExpression {
   @override
   ConstantValue evaluate(
       Environment environment, ConstantSystem constantSystem) {
-    return constantSystem.lookupBinary(operator).fold(
-        left.evaluate(environment, constantSystem),
-        right.evaluate(environment, constantSystem));
+    ConstantValue leftValue = left.evaluate(environment, constantSystem);
+    ConstantValue rightValue = right.evaluate(environment, constantSystem);
+    switch (operator.kind) {
+      case BinaryOperatorKind.NOT_EQ:
+        BoolConstantValue equals =
+            constantSystem.equal.fold(leftValue, rightValue);
+        return equals.negate();
+      default:
+        return constantSystem
+            .lookupBinary(operator)
+            .fold(leftValue, rightValue);
+    }
   }
 
   ConstantExpression apply(NormalizedArguments arguments) {
@@ -1260,9 +1267,7 @@ class PositionalArgumentReference extends ConstantExpression {
   }
 
   @override
-  bool get isPotential {
-    return true;
-  }
+  bool get isPotential => true;
 }
 
 /// A reference to a named parameter.
@@ -1301,9 +1306,7 @@ class NamedArgumentReference extends ConstantExpression {
   }
 
   @override
-  bool get isPotential {
-    return true;
-  }
+  bool get isPotential => true;
 }
 
 abstract class FromEnvironmentConstantExpression extends ConstantExpression {

@@ -46,19 +46,17 @@ const char* StackFrame::ToCString() const {
     if (owner.IsFunction()) {
       const Function& function = Function::Cast(owner);
       return zone->PrintToString(
-          "[%-8s : sp(%#" Px ") fp(%#" Px ") pc(%#" Px ") %s ]",
-          GetName(), sp(), fp(), pc(),
-          function.ToFullyQualifiedCString());
+          "[%-8s : sp(%#" Px ") fp(%#" Px ") pc(%#" Px ") %s ]", GetName(),
+          sp(), fp(), pc(), function.ToFullyQualifiedCString());
     } else {
       return zone->PrintToString(
-          "[%-8s : sp(%#" Px ") fp(%#" Px ") pc(%#" Px ") %s ]",
-          GetName(), sp(), fp(), pc(),
-          owner.ToCString());
+          "[%-8s : sp(%#" Px ") fp(%#" Px ") pc(%#" Px ") %s ]", GetName(),
+          sp(), fp(), pc(), owner.ToCString());
     }
   } else {
-    return zone->PrintToString(
-        "[%-8s : sp(%#" Px ") fp(%#" Px ") pc(%#" Px ")]",
-        GetName(), sp(), fp(), pc());
+    return zone->PrintToString("[%-8s : sp(%#" Px ") fp(%#" Px ") pc(%#" Px
+                               ")]",
+                               GetName(), sp(), fp(), pc());
   }
 }
 
@@ -97,7 +95,7 @@ void StackFrame::VisitObjectPointers(ObjectPointerVisitor* visitor) {
   // helper functions to the raw object interface.
   NoSafepointScope no_safepoint;
   Code code;
-  code = LookupDartCode();
+  code = GetCodeObject();
   if (!code.IsNull()) {
     // Visit the code object.
     RawObject* raw_code = code.raw();
@@ -108,9 +106,8 @@ void StackFrame::VisitObjectPointers(ObjectPointerVisitor* visitor) {
     Array maps;
     maps = Array::null();
     Stackmap map;
-    const uword entry = reinterpret_cast<uword>(code.instructions()->ptr()) +
-                        Instructions::HeaderSize();
-    map = code.GetStackmap(pc() - entry, &maps, &map);
+    const uword start = Instructions::PayloadStart(code.instructions());
+    map = code.GetStackmap(pc() - start, &maps, &map);
     if (!map.IsNull()) {
 #if !defined(TARGET_ARCH_DBC)
       RawObject** first = reinterpret_cast<RawObject**>(sp());
@@ -223,9 +220,9 @@ RawFunction* StackFrame::LookupDartFunction() const {
 
 
 RawCode* StackFrame::LookupDartCode() const {
-  // We add a no gc scope to ensure that the code below does not trigger
-  // a GC as we are handling raw object references here. It is possible
-  // that the code is called while a GC is in progress, that is ok.
+// We add a no gc scope to ensure that the code below does not trigger
+// a GC as we are handling raw object references here. It is possible
+// that the code is called while a GC is in progress, that is ok.
 #if !defined(TARGET_OS_WINDOWS)
   // On Windows, the profiler calls this from a separate thread where
   // Thread::Current() is NULL, so we cannot create a NoSafepointScope.
@@ -260,7 +257,7 @@ bool StackFrame::FindExceptionHandler(Thread* thread,
   if (code.IsNull()) {
     return false;  // Stub frames do not have exception handlers.
   }
-  uword pc_offset = pc() - code.EntryPoint();
+  uword pc_offset = pc() - code.PayloadStart();
 
   REUSABLE_EXCEPTION_HANDLERS_HANDLESCOPE(thread);
   ExceptionHandlers& handlers = reused_exception_handlers_handle.Handle();
@@ -279,7 +276,7 @@ bool StackFrame::FindExceptionHandler(Thread* thread,
     if ((iter.PcOffset() == pc_offset) && (current_try_index != -1)) {
       RawExceptionHandlers::HandlerInfo handler_info;
       handlers.GetHandlerInfo(current_try_index, &handler_info);
-      *handler_pc = code.EntryPoint() + handler_info.handler_pc_offset;
+      *handler_pc = code.PayloadStart() + handler_info.handler_pc_offset;
       *needs_stacktrace = handler_info.needs_stacktrace;
       *has_catch_all = handler_info.has_catch_all;
       return true;
@@ -294,7 +291,7 @@ TokenPosition StackFrame::GetTokenPos() const {
   if (code.IsNull()) {
     return TokenPosition::kNoSource;  // Stub frames do not have token_pos.
   }
-  uword pc_offset = pc() - code.EntryPoint();
+  uword pc_offset = pc() - code.PayloadStart();
   const PcDescriptors& descriptors =
       PcDescriptors::Handle(code.pc_descriptors());
   ASSERT(!descriptors.IsNull());
@@ -354,7 +351,8 @@ StackFrameIterator::StackFrameIterator(bool validate, Thread* thread)
 }
 
 
-StackFrameIterator::StackFrameIterator(uword last_fp, bool validate,
+StackFrameIterator::StackFrameIterator(uword last_fp,
+                                       bool validate,
                                        Thread* thread)
     : validate_(validate),
       entry_(thread),
@@ -371,8 +369,11 @@ StackFrameIterator::StackFrameIterator(uword last_fp, bool validate,
 
 
 #if !defined(TARGET_ARCH_DBC)
-StackFrameIterator::StackFrameIterator(uword fp, uword sp, uword pc,
-                                       bool validate, Thread* thread)
+StackFrameIterator::StackFrameIterator(uword fp,
+                                       uword sp,
+                                       uword pc,
+                                       bool validate,
+                                       Thread* thread)
     : validate_(validate),
       entry_(thread),
       exit_(thread),
@@ -411,7 +412,8 @@ StackFrame* StackFrameIterator::NextFrame() {
       // Iteration starts from an exit frame given by its fp.
       current_frame_ = NextExitFrame();
     } else if (*(reinterpret_cast<uword*>(
-        frames_.fp_ + (kSavedCallerFpSlotFromFp * kWordSize))) == 0) {
+                   frames_.fp_ + (kSavedCallerFpSlotFromFp * kWordSize))) ==
+               0) {
       // Iteration starts from an entry frame given by its fp, sp, and pc.
       current_frame_ = NextEntryFrame();
     } else {
@@ -487,14 +489,15 @@ EntryFrame* StackFrameIterator::NextEntryFrame() {
 
 
 InlinedFunctionsIterator::InlinedFunctionsIterator(const Code& code, uword pc)
-  : index_(0),
-    num_materializations_(0),
-    code_(Code::Handle(code.raw())),
-    deopt_info_(TypedData::Handle()),
-    function_(Function::Handle()),
-    pc_(pc),
-    deopt_instructions_(),
-    object_table_(ObjectPool::Handle()) {
+    : index_(0),
+      num_materializations_(0),
+      dest_frame_size_(0),
+      code_(Code::Handle(code.raw())),
+      deopt_info_(TypedData::Handle()),
+      function_(Function::Handle()),
+      pc_(pc),
+      deopt_instructions_(),
+      object_table_(ObjectPool::Handle()) {
   ASSERT(code_.is_optimized());
   ASSERT(pc_ != 0);
   ASSERT(code.ContainsInstructionAt(pc));
@@ -512,6 +515,7 @@ InlinedFunctionsIterator::InlinedFunctionsIterator(const Code& code, uword pc)
     ASSERT(!deopt_table.IsNull());
     DeoptInfo::Unpack(deopt_table, deopt_info_, &deopt_instructions_);
     num_materializations_ = DeoptInfo::NumMaterializations(deopt_instructions_);
+    dest_frame_size_ = DeoptInfo::FrameSize(deopt_info_);
     object_table_ = code_.GetObjectPool();
     Advance();
   }
@@ -545,17 +549,33 @@ void InlinedFunctionsIterator::Advance() {
 // current frame were to be deoptimized.
 intptr_t InlinedFunctionsIterator::GetDeoptFpOffset() const {
   ASSERT(deopt_instructions_.length() != 0);
-  for (intptr_t index = index_;
-       index < deopt_instructions_.length();
-       index++) {
+  for (intptr_t index = index_; index < deopt_instructions_.length(); index++) {
     DeoptInstr* deopt_instr = deopt_instructions_[index];
     if (deopt_instr->kind() == DeoptInstr::kCallerFp) {
+#if defined(TARGET_ARCH_DBC)
+      // Stack on DBC is growing upwards but we record deopt commands
+      // in the same order we record them on other architectures as if
+      // the stack was growing downwards.
+      return dest_frame_size_ - index;
+#else
       return (index - num_materializations_);
+#endif
     }
   }
   UNREACHABLE();
   return 0;
 }
+
+
+#if defined(DEBUG)
+void ValidateFrames() {
+  StackFrameIterator frames(StackFrameIterator::kValidateFrames);
+  StackFrame* frame = frames.NextFrame();
+  while (frame != NULL) {
+    frame = frames.NextFrame();
+  }
+}
+#endif
 
 
 }  // namespace dart

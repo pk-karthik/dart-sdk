@@ -51,9 +51,18 @@ class WebSocketClient extends Client {
       return;
     }
     try {
-      socket.add(result);
-    } catch (_) {
+      if (result is String || result is Uint8List) {
+        socket.add(result);  // String or binary message.
+      } else {
+        // String message as external Uint8List.
+        assert(result is List);
+        Uint8List cstring = result[0];
+        socket.addUtf8Text(cstring);
+      }
+    } catch (e, st) {
       print("Ignoring error posting over WebSocket.");
+      print(e);
+      print(st);
     }
   }
 
@@ -79,14 +88,23 @@ class HttpRequestClient extends Client {
     close();
   }
 
-  void post(String result) {
+  void post(dynamic result) {
     if (result == null) {
       close();
       return;
     }
-    request.response..headers.contentType = jsonContentType
-                    ..write(result)
-                    ..close();
+    HttpResponse response = request.response;
+    // We closed the connection for bad origins earlier.
+    response.headers.add('Access-Control-Allow-Origin', '*');
+    response.headers.contentType = jsonContentType;
+    if (result is String) {
+      response.write(result);
+    } else {
+      assert(result is List);
+      Uint8List cstring = result[0];  // Already in UTF-8.
+      response.add(cstring);
+    }
+    response.close();
     close();
   }
 
@@ -105,33 +123,154 @@ class Server {
   final VMService _service;
   final String _ip;
   final int _port;
-
+  final bool _originCheckDisabled;
   HttpServer _server;
   bool get running => _server != null;
-  bool _displayMessages = false;
 
-  Server(this._service, this._ip, this._port) {
-    _displayMessages = (_ip != '127.0.0.1' || _port != 8181);
+  /// Returns the server address including the auth token.
+  Uri get serverAddress {
+    if (!running) {
+      return null;
+    }
+    var ip = _server.address.address;
+    var port = _server.port;
+    var path = useAuthToken ? "$serviceAuthToken/" : "/";
+    return new Uri(scheme: 'http', host: ip, port: port, path: path);
   }
 
-  void _requestHandler(HttpRequest request) {
-    // Allow cross origin requests with 'observatory' header.
-    request.response.headers.add('Access-Control-Allow-Origin', '*');
-    request.response.headers.add('Access-Control-Allow-Headers',
-                                 'Observatory-Version');
+  Server(this._service, this._ip, this._port, this._originCheckDisabled);
 
+  bool _isAllowedOrigin(String origin) {
+    Uri uri;
+    try {
+      uri = Uri.parse(origin);
+    } catch (_) {
+      return false;
+    }
+
+    // Explicitly add localhost and 127.0.0.1 on any port (necessary for
+    // adb port forwarding).
+    if ((uri.host == 'localhost') ||
+        (uri.host == '::1') ||
+        (uri.host == '127.0.0.1')) {
+      return true;
+    }
+
+    if ((uri.port == _server.port) &&
+        ((uri.host == _server.address.address) ||
+         (uri.host == _server.address.host))) {
+      return true;
+    }
+
+    return false;
+  }
+
+  bool _originCheck(HttpRequest request) {
+    if (_originCheckDisabled) {
+      // Always allow.
+      return true;
+    }
+    // First check the web-socket specific origin.
+    List<String> origins = request.headers["Sec-WebSocket-Origin"];
+    if (origins == null) {
+      // Fall back to the general Origin field.
+      origins = request.headers["Origin"];
+    }
+    if (origins == null) {
+      // No origin sent. This is a non-browser client or a same-origin request.
+      return true;
+    }
+    for (String origin in origins) {
+      if (_isAllowedOrigin(origin)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// Checks the [requestUri] for the service auth token and returns the path.
+  /// If the service auth token check fails, returns null.
+  String _checkAuthTokenAndGetPath(Uri requestUri) {
+    if (!useAuthToken) {
+      return requestUri.path == '/' ? ROOT_REDIRECT_PATH : requestUri.path;
+    }
+    final List<String> requestPathSegments = requestUri.pathSegments;
+    if (requestPathSegments.length < 2) {
+      // Malformed.
+      return null;
+    }
+    // Check that we were given the auth token.
+    final String authToken = requestPathSegments[0];
+    if (authToken != serviceAuthToken) {
+      // Malformed.
+      return null;
+    }
+    // Construct the actual request path by chopping off the auth token.
+    return (requestPathSegments[1] == '') ?
+        ROOT_REDIRECT_PATH : '/${requestPathSegments.sublist(1).join('/')}';
+  }
+
+  Future _requestHandler(HttpRequest request) async {
+    if (!_originCheck(request)) {
+      // This is a cross origin attempt to connect
+      request.response.close();
+      return;
+    }
+    if (request.method == 'PUT') {
+      // PUT requests are forwarded to DevFS for processing.
+
+      List fsNameList;
+      List fsPathList;
+      List fsPathBase64List;
+      Object fsName;
+      Object fsPath;
+
+      try {
+        // Extract the fs name and fs path from the request headers.
+        fsNameList = request.headers['dev_fs_name'];
+        fsName = fsNameList[0];
+
+        fsPathList = request.headers['dev_fs_path'];
+        fsPathBase64List = request.headers['dev_fs_path_b64'];
+        // If the 'dev_fs_path_b64' header field was sent, use that instead.
+        if ((fsPathBase64List != null) && (fsPathBase64List.length > 0)) {
+          fsPath = UTF8.decode(BASE64.decode(fsPathBase64List[0]));
+        } else {
+          fsPath = fsPathList[0];
+        }
+      } catch (e) { /* ignore */ }
+
+      String result;
+      try {
+        result = await _service.devfs.handlePutStream(
+            fsName,
+            fsPath,
+            request.transform(GZIP.decoder));
+      } catch (e) { /* ignore */ }
+
+      if (result != null) {
+        request.response.headers.contentType =
+            HttpRequestClient.jsonContentType;
+        request.response.write(result);
+      }
+      request.response.close();
+      return;
+    }
     if (request.method != 'GET') {
       // Not a GET request. Do nothing.
       request.response.close();
       return;
     }
 
-    final String path =
-          request.uri.path == '/' ? ROOT_REDIRECT_PATH : request.uri.path;
+    final String path = _checkAuthTokenAndGetPath(request.uri);
+    if (path == null) {
+      // Malformed.
+      request.response.close();
+      return;
+    }
 
     if (path == WEBSOCKET_PATH) {
-      WebSocketTransformer.upgrade(request,
-                                   compression: CompressionOptions.OFF).then(
+      WebSocketTransformer.upgrade(request).then(
                                    (WebSocket webSocket) {
         new WebSocketClient(webSocket, _service);
       });
@@ -159,32 +298,34 @@ class Server {
     }
   }
 
-  Future startup() {
+  Future startup() async {
     if (_server != null) {
       // Already running.
-      return new Future.value(this);
+      return this;
     }
 
-    var address = new InternetAddress(_ip);
     // Startup HTTP server.
-    return HttpServer.bind(address, _port).then((s) {
-      _server = s;
-      _server.listen(_requestHandler, cancelOnError: true);
-      var ip = _server.address.address.toString();
-      var port = _server.port.toString();
-      if (_displayMessages) {
-        print('Observatory listening on http://$ip:$port');
+    try {
+      var addresses = await InternetAddress.lookup(_ip);
+      var address;
+      // Prefer IPv4 addresses.
+      for (var i = 0; i < addresses.length; i++) {
+        address = addresses[i];
+        if (address.type == InternetAddressType.IP_V4) break;
       }
+      _server = await HttpServer.bind(address, _port);
+      _server.listen(_requestHandler, cancelOnError: true);
+      print('Observatory listening on $serverAddress');
       // Server is up and running.
-      _notifyServerState(ip, _server.port);
-      onServerAddressChange('http://$ip:$port');
+      _notifyServerState(serverAddress.toString());
+      onServerAddressChange('$serverAddress');
       return this;
-    }).catchError((e, st) {
+    } catch (e, st) {
       print('Could not start Observatory HTTP server:\n$e\n$st\n');
-      _notifyServerState("", 0);
+      _notifyServerState("");
       onServerAddressChange(null);
       return this;
-    });
+    }
   }
 
   Future cleanup(bool force) {
@@ -200,24 +341,18 @@ class Server {
       return new Future.value(this);
     }
 
-    // Force displaying of status messages if we are forcibly shutdown.
-    _displayMessages = _displayMessages || forced;
-
     // Shutdown HTTP server and subscription.
-    var ip = _server.address.address.toString();
-    var port = _server.port.toString();
+    Uri oldServerAddress = serverAddress;
     return cleanup(forced).then((_) {
-      if (_displayMessages) {
-        print('Observatory no longer listening on http://$ip:$port');
-      }
+      print('Observatory no longer listening on $oldServerAddress');
       _server = null;
-      _notifyServerState("", 0);
+      _notifyServerState("");
       onServerAddressChange(null);
       return this;
     }).catchError((e, st) {
       _server = null;
       print('Could not shutdown Observatory HTTP server:\n$e\n$st\n');
-      _notifyServerState("", 0);
+      _notifyServerState("");
       onServerAddressChange(null);
       return this;
     });
@@ -225,5 +360,5 @@ class Server {
 
 }
 
-void _notifyServerState(String ip, int port)
+void _notifyServerState(String uri)
     native "VMServiceIO_NotifyServerState";

@@ -3,10 +3,10 @@
 // BSD-style license that can be found in the LICENSE file.
 // Classes that describe assembly patterns as used by inline caches.
 
-#ifndef VM_INSTRUCTIONS_DBC_H_
-#define VM_INSTRUCTIONS_DBC_H_
+#ifndef RUNTIME_VM_INSTRUCTIONS_DBC_H_
+#define RUNTIME_VM_INSTRUCTIONS_DBC_H_
 
-#ifndef VM_INSTRUCTIONS_H_
+#ifndef RUNTIME_VM_INSTRUCTIONS_H_
 #error Do not include instructions_dbc.h directly; use instructions.h instead.
 #endif
 
@@ -57,12 +57,7 @@ class CallPattern : public ValueObject {
   RawCode* TargetCode() const;
   void SetTargetCode(const Code& code) const;
 
-  // This constant length is only valid for inserted call patterns used for
-  // lazy deoptimization. Regular call pattern may vary in length.
-  static int DeoptCallPatternLengthInBytes();
-  static int DeoptCallPatternLengthInInstructions();
-
-  static void InsertDeoptCallAt(uword pc, uword target_address);
+  static void InsertDeoptCallAt(uword pc);
 
  private:
   const ObjectPool& object_pool_;
@@ -98,19 +93,24 @@ class NativeCallPattern : public ValueObject {
 };
 
 
-// Instance call that can switch from an IC call to a megamorphic call
+// Instance call that can switch between a direct monomorphic call, an IC call,
+// and a megamorphic call.
+//   load guarded cid            load ICData             load MegamorphicCache
+//   load monomorphic target <-> load ICLookup stub  ->  load MMLookup stub
+//   call target.entry           call stub.entry         call stub.entry
 class SwitchableCallPattern : public ValueObject {
  public:
   SwitchableCallPattern(uword pc, const Code& code);
 
-  RawObject* cache() const;
-  void SetCache(const MegamorphicCache& cache) const;
-  void SetLookupStub(const Code& stub) const;
+  RawObject* data() const;
+  RawCode* target() const;
+  void SetData(const Object& data) const;
+  void SetTarget(const Code& target) const;
 
  private:
   const ObjectPool& object_pool_;
-  intptr_t cache_pool_index_;
-  intptr_t stub_pool_index_;
+  intptr_t data_pool_index_;
+  intptr_t target_pool_index_;
 
   DISALLOW_COPY_AND_ASSIGN(SwitchableCallPattern);
 };
@@ -135,4 +135,4 @@ class ReturnPattern : public ValueObject {
 
 }  // namespace dart
 
-#endif  // VM_INSTRUCTIONS_DBC_H_
+#endif  // RUNTIME_VM_INSTRUCTIONS_DBC_H_

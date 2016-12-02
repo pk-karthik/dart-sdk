@@ -2,129 +2,60 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
+@deprecated
 library analyzer.source.embedder;
 
 import 'dart:collection' show HashMap;
-import 'dart:core' hide Resource;
+import 'dart:core';
+import 'dart:io' as io;
 
 import 'package:analyzer/file_system/file_system.dart';
 import 'package:analyzer/source/package_map_provider.dart'
     show PackageMapProvider;
-import 'package:analyzer/src/context/context.dart';
-import 'package:analyzer/src/generated/engine.dart';
-import 'package:analyzer/src/generated/java_core.dart';
-import 'package:analyzer/src/generated/java_engine.dart';
 import 'package:analyzer/src/generated/java_io.dart' show JavaFile;
 import 'package:analyzer/src/generated/sdk.dart';
+import 'package:analyzer/src/generated/sdk_io.dart';
 import 'package:analyzer/src/generated/source.dart';
 import 'package:analyzer/src/generated/source_io.dart' show FileBasedSource;
+import 'package:analyzer/src/summary/idl.dart' show PackageBundle;
 import 'package:yaml/yaml.dart';
+
+export 'package:analyzer/src/context/builder.dart' show EmbedderYamlLocator;
 
 const String _DART_COLON_PREFIX = 'dart:';
 const String _EMBEDDED_LIB_MAP_KEY = 'embedded_libs';
 
 /// Check if this map defines embedded libraries.
+@deprecated
 bool definesEmbeddedLibs(Map map) => map[_EMBEDDED_LIB_MAP_KEY] != null;
 
 /// An SDK backed by URI mappings derived from an `_embedder.yaml` file.
-class EmbedderSdk implements DartSdk {
-  /// The resolver associated with this SDK.
-  EmbedderUriResolver _resolver;
-
-  /// The [AnalysisContext] used for this SDK's sources.
-  InternalAnalysisContext _analysisContext;
-
-  final LibraryMap _librariesMap = new LibraryMap();
-
+@deprecated
+class EmbedderSdk extends AbstractDartSdk {
   final Map<String, String> _urlMappings = new HashMap<String, String>();
-
-  /// Analysis options for this SDK.
-  AnalysisOptions analysisOptions;
 
   EmbedderSdk([Map<Folder, YamlMap> embedderYamls]) {
     embedderYamls?.forEach(_processEmbedderYaml);
-    _resolver = new EmbedderUriResolver._forSdk(this);
   }
-
-  @override
-  AnalysisContext get context {
-    if (_analysisContext == null) {
-      _analysisContext = new SdkAnalysisContext(analysisOptions);
-      SourceFactory factory = new SourceFactory([_resolver]);
-      _analysisContext.sourceFactory = factory;
-
-      ChangeSet changeSet = new ChangeSet();
-      for (String uri in uris) {
-        changeSet.addedSource(factory.forUri(uri));
-      }
-      _analysisContext.applyChanges(changeSet);
-    }
-    return _analysisContext;
-  }
-
-  @override
-  List<SdkLibrary> get sdkLibraries => _librariesMap.sdkLibraries;
 
   // TODO(danrubel) Determine SDK version
   @override
   String get sdkVersion => '0';
 
-  @override
-  List<String> get uris => _librariesMap.uris;
-
   /// The url mappings for this SDK.
   Map<String, String> get urlMappings => _urlMappings;
 
   @override
-  Source fromFileUri(Uri uri) {
-    JavaFile file = new JavaFile.fromUri(uri);
-    String filePath = file.getAbsolutePath();
-
-    String path;
-    for (SdkLibrary library in _librariesMap.sdkLibraries) {
-      String libraryPath = library.path.replaceAll('/', JavaFile.separator);
-      if (filePath == libraryPath) {
-        path = library.shortName;
-        break;
-      }
-    }
-    if (path == null) {
-      for (SdkLibrary library in _librariesMap.sdkLibraries) {
-        String libraryPath = library.path.replaceAll('/', JavaFile.separator);
-        int index = libraryPath.lastIndexOf(JavaFile.separator);
-        if (index == -1) {
-          continue;
-        }
-        String prefix = libraryPath.substring(0, index + 1);
-        if (!filePath.startsWith(prefix)) {
-          continue;
-        }
-        var relPath = filePath
-            .substring(prefix.length)
-            .replaceAll(JavaFile.separator, '/');
-        path = '${library.shortName}/$relPath';
-        break;
-      }
-    }
-
-    if (path != null) {
-      try {
-        return new FileBasedSource(file, parseUriWithException(path));
-      } on URISyntaxException catch (exception, stackTrace) {
-        AnalysisEngine.instance.logger.logInformation(
-            "Failed to create URI: $path",
-            new CaughtException(exception, stackTrace));
-        return null;
-      }
-    }
-    return null;
-  }
+  PackageBundle getLinkedBundle() => null;
 
   @override
-  SdkLibrary getSdkLibrary(String dartUri) => _librariesMap.getLibrary(dartUri);
+  String getRelativePathFromFile(JavaFile file) => file.getAbsolutePath();
 
   @override
-  Source mapDartUri(String dartUri) {
+  PackageBundle getSummarySdkBundle(bool strongMode) => null;
+
+  @override
+  FileBasedSource internalMapDartUri(String dartUri) {
     String libraryName;
     String relativePath;
     int index = dartUri.indexOf('/');
@@ -144,7 +75,7 @@ class EmbedderSdk implements DartSdk {
       srcPath = library.path;
     } else {
       String libraryPath = library.path;
-      int index = libraryPath.lastIndexOf(JavaFile.separator);
+      int index = libraryPath.lastIndexOf(io.Platform.pathSeparator);
       if (index == -1) {
         index = libraryPath.lastIndexOf('/');
         if (index == -1) {
@@ -154,11 +85,11 @@ class EmbedderSdk implements DartSdk {
       String prefix = libraryPath.substring(0, index + 1);
       srcPath = '$prefix$relativePath';
     }
-    String filePath = srcPath.replaceAll('/', JavaFile.separator);
+    String filePath = srcPath.replaceAll('/', io.Platform.pathSeparator);
     try {
       JavaFile file = new JavaFile(filePath);
-      return new FileBasedSource(file, parseUriWithException(dartUri));
-    } on URISyntaxException {
+      return new FileBasedSource(file, Uri.parse(dartUri));
+    } on FormatException {
       return null;
     }
   }
@@ -173,7 +104,7 @@ class EmbedderSdk implements DartSdk {
     _urlMappings[name] = libPath;
     SdkLibraryImpl library = new SdkLibraryImpl(name);
     library.path = libPath;
-    _librariesMap.setLibrary(name, library);
+    libraryMap.setLibrary(name, library);
   }
 
   /// Given the 'embedderYamls' from [EmbedderYamlLocator] check each one for the
@@ -205,14 +136,27 @@ class EmbedderSdk implements DartSdk {
 ///
 /// If a key doesn't begin with `dart:` it is ignored.
 ///
+/// This class is deprecated; use DartUriResolver directly. In particular, if
+/// there used to be an instance creation of the form:
+///
+/// ```
+/// new EmbedderUriResolver(embedderMap)
+/// ```
+///
+/// This should be replaced by
+///
+/// ```
+/// new DartUriResolver(new EmbedderSdk(embedderMap))
+/// ```
+@deprecated
 class EmbedderUriResolver implements DartUriResolver {
   EmbedderSdk _embedderSdk;
   DartUriResolver _dartUriResolver;
 
   /// Construct a [EmbedderUriResolver] from a package map
   /// (see [PackageMapProvider]).
-  EmbedderUriResolver(Map<Folder, YamlMap> embedderMap) :
-      this._forSdk(new EmbedderSdk(embedderMap));
+  EmbedderUriResolver(Map<Folder, YamlMap> embedderMap)
+      : this._forSdk(new EmbedderSdk(embedderMap));
 
   /// (Provisional API.)
   EmbedderUriResolver._forSdk(this._embedderSdk) {
@@ -237,73 +181,5 @@ class EmbedderUriResolver implements DartUriResolver {
     }
     Source sdkSource = dartSdk.fromFileUri(Uri.parse('file://$path'));
     return sdkSource?.uri;
-  }
-}
-
-/// Given a packageMap, check in each package's lib directory for the
-/// existence of an `_embedder.yaml` file. If the file contains a top level
-/// YamlMap, it will be added to the [embedderYamls] map.
-class EmbedderYamlLocator {
-  static const String EMBEDDER_FILE_NAME = '_embedder.yaml';
-
-  /// Map from package's library directory to the parsed YamlMap.
-  final Map<Folder, YamlMap> embedderYamls = new HashMap<Folder, YamlMap>();
-
-  EmbedderYamlLocator(Map<String, List<Folder>> packageMap) {
-    if (packageMap != null) {
-      refresh(packageMap);
-    }
-  }
-
-  /// Programatically add an _embedder.yaml mapping.
-  void addEmbedderYaml(Folder libDir, String embedderYaml) {
-    _processEmbedderYaml(libDir, embedderYaml);
-  }
-
-  void refresh(Map<String, List<Folder>> packageMap) {
-    // Clear existing.
-    embedderYamls.clear();
-    if (packageMap == null) {
-      return;
-    }
-    packageMap.forEach(_processPackage);
-  }
-
-  /// Given the yaml for an embedder ([embedderYaml]) and a folder
-  /// ([libDir]), setup the uri mapping.
-  void _processEmbedderYaml(Folder libDir, String embedderYaml) {
-    YamlNode yaml;
-    try {
-      yaml = loadYaml(embedderYaml);
-    } catch (_) {
-      return;
-    }
-    if (yaml is! YamlMap) {
-      return;
-    }
-    embedderYamls[libDir] = yaml;
-  }
-
-  /// Given a package [name] and a list of folders ([libDirs]),
-  /// add any found `_embedder.yaml` files.
-  void _processPackage(String name, List<Folder> libDirs) {
-    for (Folder libDir in libDirs) {
-      String embedderYaml = _readEmbedderYaml(libDir);
-      if (embedderYaml != null) {
-        _processEmbedderYaml(libDir, embedderYaml);
-      }
-    }
-  }
-
-  /// Read the contents of [libDir]/[EMBEDDER_FILE_NAME] as a string.
-  /// Returns null if the file doesn't exist.
-  String _readEmbedderYaml(Folder libDir) {
-    File file = libDir.getChild(EMBEDDER_FILE_NAME);
-    try {
-      return file.readAsStringSync();
-    } on FileSystemException {
-      // File can't be read.
-      return null;
-    }
   }
 }

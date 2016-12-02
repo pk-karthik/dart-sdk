@@ -13,38 +13,38 @@ import 'package:analyzer/src/dart/element/handle.dart';
 import 'package:analyzer/src/dart/element/type.dart';
 import 'package:analyzer/src/generated/engine.dart'
     show AnalysisContext, AnalysisOptionsImpl;
-import 'package:analyzer/src/generated/java_core.dart';
 import 'package:analyzer/src/generated/source_io.dart';
-import 'package:analyzer/src/generated/testing/ast_factory.dart';
+import 'package:analyzer/src/generated/testing/ast_test_factory.dart';
 import 'package:analyzer/src/generated/testing/element_factory.dart';
 import 'package:analyzer/src/generated/testing/test_type_provider.dart';
-import 'package:unittest/unittest.dart';
+import 'package:test/test.dart';
+import 'package:test_reflective_loader/test_reflective_loader.dart';
 
 import '../../../generated/analysis_context_factory.dart'
     show AnalysisContextHelper;
 import '../../../generated/resolver_test_case.dart';
 import '../../../generated/test_support.dart';
-import '../../../reflective_tests.dart';
-import '../../../utils.dart';
 
 main() {
-  initializeTestEnvironment();
-  runReflectiveTests(ElementAnnotationImplTest);
-  runReflectiveTests(FieldElementImplTest);
-  runReflectiveTests(FunctionTypeImplTest);
-  runReflectiveTests(InterfaceTypeImplTest);
-  runReflectiveTests(LocalVariableElementImplTest);
-  runReflectiveTests(TypeParameterTypeImplTest);
-  runReflectiveTests(VoidTypeImplTest);
-  runReflectiveTests(ClassElementImplTest);
-  runReflectiveTests(CompilationUnitElementImplTest);
-  runReflectiveTests(ElementLocationImplTest);
-  runReflectiveTests(ElementImplTest);
-  runReflectiveTests(LibraryElementImplTest);
-  runReflectiveTests(MethodElementImplTest);
-  runReflectiveTests(MultiplyDefinedElementImplTest);
-  runReflectiveTests(ParameterElementImplTest);
-  runReflectiveTests(TopLevelVariableElementImplTest);
+  defineReflectiveSuite(() {
+    defineReflectiveTests(ElementAnnotationImplTest);
+    defineReflectiveTests(FieldElementImplTest);
+    defineReflectiveTests(FunctionTypeImplTest);
+    defineReflectiveTests(InterfaceTypeImplTest);
+    defineReflectiveTests(LocalVariableElementImplTest);
+    defineReflectiveTests(TypeParameterTypeImplTest);
+    defineReflectiveTests(VoidTypeImplTest);
+    defineReflectiveTests(ClassElementImplTest);
+    defineReflectiveTests(CompilationUnitElementImplTest);
+    defineReflectiveTests(ElementLocationImplTest);
+    defineReflectiveTests(ElementImplTest);
+    defineReflectiveTests(LibraryElementImplTest);
+    defineReflectiveTests(MethodElementImplTest);
+    defineReflectiveTests(MultiplyDefinedElementImplTest);
+    defineReflectiveTests(ParameterElementImplTest);
+    defineReflectiveTests(PropertyAccessorElementImplTest);
+    defineReflectiveTests(TopLevelVariableElementImplTest);
+  });
 }
 
 @reflectiveTest
@@ -282,7 +282,7 @@ abstract class A<K, V> = Object with MapMixin<K, V>;
         ElementFactory.getterElement("foo", false, null);
     classA.accessors = <PropertyAccessorElement>[getter];
     // "foo" is static
-    getter.static = true;
+    getter.isStatic = true;
     expect(classA.hasStaticMember, isTrue);
   }
 
@@ -291,7 +291,7 @@ abstract class A<K, V> = Object with MapMixin<K, V>;
     MethodElementImpl method = ElementFactory.methodElement("foo", null);
     classA.methods = <MethodElement>[method];
     // "foo" is static
-    method.static = true;
+    method.isStatic = true;
     expect(classA.hasStaticMember, isTrue);
   }
 
@@ -301,14 +301,14 @@ abstract class A<K, V> = Object with MapMixin<K, V>;
         ElementFactory.setterElement("foo", false, null);
     classA.accessors = <PropertyAccessorElement>[setter];
     // "foo" is static
-    setter.static = true;
+    setter.isStatic = true;
     expect(classA.hasStaticMember, isTrue);
   }
 
   void test_isEnum() {
     String firstConst = "A";
     String secondConst = "B";
-    ClassElementImpl enumE = ElementFactory
+    EnumElementImpl enumE = ElementFactory
         .enumElement(new TestTypeProvider(), "E", [firstConst, secondConst]);
 
     // E is an enum
@@ -1329,7 +1329,7 @@ class FunctionTypeImplTest extends EngineTestCase {
   void test_creation() {
     expect(
         new FunctionTypeImpl(
-            new FunctionElementImpl.forNode(AstFactory.identifier3("f"))),
+            new FunctionElementImpl.forNode(AstTestFactory.identifier3("f"))),
         isNotNull);
   }
 
@@ -1353,7 +1353,7 @@ class FunctionTypeImplTest extends EngineTestCase {
 
   void test_getElement() {
     FunctionElementImpl typeElement =
-        new FunctionElementImpl.forNode(AstFactory.identifier3("f"));
+        new FunctionElementImpl.forNode(AstTestFactory.identifier3("f"));
     FunctionTypeImpl type = new FunctionTypeImpl(typeElement);
     expect(type.element, typeElement);
   }
@@ -1465,7 +1465,7 @@ class FunctionTypeImplTest extends EngineTestCase {
   void test_getReturnType() {
     DartType expectedReturnType = VoidTypeImpl.instance;
     FunctionElementImpl functionElement =
-        new FunctionElementImpl.forNode(AstFactory.identifier3("f"));
+        new FunctionElementImpl.forNode(AstTestFactory.identifier3("f"));
     functionElement.returnType = expectedReturnType;
     FunctionTypeImpl type = new FunctionTypeImpl(functionElement);
     DartType returnType = type.returnType;
@@ -1474,14 +1474,14 @@ class FunctionTypeImplTest extends EngineTestCase {
 
   void test_getTypeArguments() {
     FunctionTypeImpl type = new FunctionTypeImpl(
-        new FunctionElementImpl.forNode(AstFactory.identifier3("f")));
+        new FunctionElementImpl.forNode(AstTestFactory.identifier3("f")));
     List<DartType> types = type.typeArguments;
     expect(types, hasLength(0));
   }
 
   void test_hashCode_element() {
     FunctionTypeImpl type = new FunctionTypeImpl(
-        new FunctionElementImpl.forNode(AstFactory.identifier3("f")));
+        new FunctionElementImpl.forNode(AstTestFactory.identifier3("f")));
     type.hashCode;
   }
 
@@ -1841,15 +1841,15 @@ class FunctionTypeImplTest extends EngineTestCase {
     InterfaceType boolType = provider.boolType;
     InterfaceType stringType = provider.stringType;
     TypeParameterElementImpl parameterB =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("B"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("B"));
     parameterB.bound = boolType;
     TypeParameterTypeImpl typeB = new TypeParameterTypeImpl(parameterB);
     TypeParameterElementImpl parameterS =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("S"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("S"));
     parameterS.bound = stringType;
     TypeParameterTypeImpl typeS = new TypeParameterTypeImpl(parameterS);
     FunctionElementImpl functionAliasElement =
-        new FunctionElementImpl.forNode(AstFactory.identifier3("func"));
+        new FunctionElementImpl.forNode(AstTestFactory.identifier3("func"));
     functionAliasElement.parameters = <ParameterElement>[
       ElementFactory.requiredParameter2("a", typeB),
       ElementFactory.positionalParameter2("b", typeS)
@@ -1859,7 +1859,7 @@ class FunctionTypeImplTest extends EngineTestCase {
         new FunctionTypeImpl(functionAliasElement);
     functionAliasElement.type = functionAliasType;
     FunctionElementImpl functionElement =
-        new FunctionElementImpl.forNode(AstFactory.identifier3("f"));
+        new FunctionElementImpl.forNode(AstTestFactory.identifier3("f"));
     functionElement.parameters = <ParameterElement>[
       ElementFactory.requiredParameter2("c", boolType),
       ElementFactory.positionalParameter2("d", stringType)
@@ -1942,7 +1942,7 @@ class FunctionTypeImplTest extends EngineTestCase {
     // the user (and hence can't participate in circularities).
     FunctionTypeAliasElementImpl f =
         ElementFactory.functionTypeAliasElement('f');
-    f.synthetic = true;
+    f.isSynthetic = true;
     FunctionTypeImpl type = f.type;
     expect(type.newPrune, isNull);
   }
@@ -2041,7 +2041,7 @@ class FunctionTypeImplTest extends EngineTestCase {
     ClassElementImpl definingClass = ElementFactory.classElement2("C", ["E"]);
     TypeParameterType parameterType = definingClass.typeParameters[0].type;
     MethodElementImpl functionElement =
-        new MethodElementImpl.forNode(AstFactory.identifier3("m"));
+        new MethodElementImpl.forNode(AstTestFactory.identifier3("m"));
     String namedParameterName = "c";
     functionElement.parameters = <ParameterElement>[
       ElementFactory.requiredParameter2("a", parameterType),
@@ -2052,7 +2052,7 @@ class FunctionTypeImplTest extends EngineTestCase {
     definingClass.methods = <MethodElement>[functionElement];
     FunctionTypeImpl functionType = new FunctionTypeImpl(functionElement);
     InterfaceTypeImpl argumentType = new InterfaceTypeImpl(
-        new ClassElementImpl.forNode(AstFactory.identifier3("D")));
+        new ClassElementImpl.forNode(AstTestFactory.identifier3("D")));
     FunctionType result = functionType
         .substitute2(<DartType>[argumentType], <DartType>[parameterType]);
     expect(result.returnType, argumentType);
@@ -2069,15 +2069,15 @@ class FunctionTypeImplTest extends EngineTestCase {
 
   void test_substitute2_notEqual() {
     DartType returnType = new InterfaceTypeImpl(
-        new ClassElementImpl.forNode(AstFactory.identifier3("R")));
+        new ClassElementImpl.forNode(AstTestFactory.identifier3("R")));
     DartType normalParameterType = new InterfaceTypeImpl(
-        new ClassElementImpl.forNode(AstFactory.identifier3("A")));
+        new ClassElementImpl.forNode(AstTestFactory.identifier3("A")));
     DartType optionalParameterType = new InterfaceTypeImpl(
-        new ClassElementImpl.forNode(AstFactory.identifier3("B")));
+        new ClassElementImpl.forNode(AstTestFactory.identifier3("B")));
     DartType namedParameterType = new InterfaceTypeImpl(
-        new ClassElementImpl.forNode(AstFactory.identifier3("C")));
+        new ClassElementImpl.forNode(AstTestFactory.identifier3("C")));
     FunctionElementImpl functionElement =
-        new FunctionElementImpl.forNode(AstFactory.identifier3("f"));
+        new FunctionElementImpl.forNode(AstTestFactory.identifier3("f"));
     String namedParameterName = "c";
     functionElement.parameters = <ParameterElement>[
       ElementFactory.requiredParameter2("a", normalParameterType),
@@ -2087,9 +2087,9 @@ class FunctionTypeImplTest extends EngineTestCase {
     functionElement.returnType = returnType;
     FunctionTypeImpl functionType = new FunctionTypeImpl(functionElement);
     InterfaceTypeImpl argumentType = new InterfaceTypeImpl(
-        new ClassElementImpl.forNode(AstFactory.identifier3("D")));
+        new ClassElementImpl.forNode(AstTestFactory.identifier3("D")));
     TypeParameterTypeImpl parameterType = new TypeParameterTypeImpl(
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("E")));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("E")));
     FunctionType result = functionType
         .substitute2(<DartType>[argumentType], <DartType>[parameterType]);
     expect(result.returnType, returnType);
@@ -2251,7 +2251,7 @@ class FunctionTypeImplTest extends EngineTestCase {
   void test_withTypeArguments() {
     ClassElementImpl enclosingClass = ElementFactory.classElement2("C", ["E"]);
     MethodElementImpl methodElement =
-        new MethodElementImpl.forNode(AstFactory.identifier3("m"));
+        new MethodElementImpl.forNode(AstTestFactory.identifier3("m"));
     enclosingClass.methods = <MethodElement>[methodElement];
     FunctionTypeImpl type = new FunctionTypeImpl(methodElement);
     DartType expectedType = enclosingClass.typeParameters[0].type;
@@ -2755,7 +2755,58 @@ class InterfaceTypeImplTest extends EngineTestCase {
     expect(typeA.getMethod(methodName), same(methodM));
   }
 
-  void test_getMethod_parameterized() {
+  void test_getMethod_parameterized_doesNotUseTypeParameter() {
+    //
+    // class A<E> { void m() {} }
+    // class B {}
+    //
+    ClassElementImpl classA = ElementFactory.classElement2("A", ["E"]);
+    InterfaceType typeB = ElementFactory.classElement2("B").type;
+    DartType typeE = classA.type.typeArguments[0];
+    String methodName = "m";
+    MethodElementImpl methodM =
+        ElementFactory.methodElement(methodName, typeB, []);
+    classA.methods = <MethodElement>[methodM];
+    methodM.type = new FunctionTypeImpl(methodM);
+    //
+    // A<I>
+    //
+    InterfaceType typeI = ElementFactory.classElement2("I").type;
+    InterfaceTypeImpl typeAI = new InterfaceTypeImpl(classA);
+    typeAI.typeArguments = <DartType>[typeI];
+    MethodElement method = typeAI.getMethod(methodName);
+    expect(method, isNotNull);
+    FunctionType methodType = method.type;
+    expect(methodType.typeParameters, [same(typeE.element)]);
+    expect(methodType.typeArguments, [same(typeI)]);
+  }
+
+  void test_getMethod_parameterized_flushCached_whenVersionChanges() {
+    //
+    // class A<E> { E m(E p) {} }
+    //
+    ClassElementImpl classA = ElementFactory.classElement2("A", ["E"]);
+    DartType typeE = classA.type.typeArguments[0];
+    String methodName = "m";
+    MethodElementImpl methodM =
+        ElementFactory.methodElement(methodName, typeE, [typeE]);
+    classA.methods = <MethodElement>[methodM];
+    methodM.type = new FunctionTypeImpl(methodM);
+    //
+    // A<I>
+    //
+    InterfaceType typeI = ElementFactory.classElement2("I").type;
+    InterfaceTypeImpl typeAI = new InterfaceTypeImpl(classA);
+    typeAI.typeArguments = <DartType>[typeI];
+    // Methods list is cached.
+    MethodElement method = typeAI.methods.single;
+    expect(typeAI.methods.single, same(method));
+    // Methods list is flushed on version change.
+    classA.version++;
+    expect(typeAI.methods.single, isNot(same(method)));
+  }
+
+  void test_getMethod_parameterized_usesTypeParameter() {
     //
     // class A<E> { E m(E p) {} }
     //
@@ -2775,6 +2826,8 @@ class InterfaceTypeImplTest extends EngineTestCase {
     MethodElement method = typeAI.getMethod(methodName);
     expect(method, isNotNull);
     FunctionType methodType = method.type;
+    expect(methodType.typeParameters, [same(typeE.element)]);
+    expect(methodType.typeArguments, [same(typeI)]);
     expect(methodType.returnType, same(typeI));
     List<DartType> parameterTypes = methodType.normalParameterTypes;
     expect(parameterTypes, hasLength(1));
@@ -3127,7 +3180,7 @@ class InterfaceTypeImplTest extends EngineTestCase {
     InterfaceType typeA = classA.type;
     ClassElementImpl classB = ElementFactory.classElement2("B");
     TypeParameterElementImpl parameterEA =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("E"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("E"));
     TypeParameterType parameterAEType = new TypeParameterTypeImpl(parameterEA);
     parameterEA.bound = typeA;
     parameterEA.type = parameterAEType;
@@ -3729,14 +3782,14 @@ class InterfaceTypeImplTest extends EngineTestCase {
     // implementation.
     ClassElementImpl classA = ElementFactory.classElement2("A");
     TypeParameterElementImpl parameterElement =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("E"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("E"));
     InterfaceTypeImpl type = new InterfaceTypeImpl(classA);
     TypeParameterTypeImpl parameter =
         new TypeParameterTypeImpl(parameterElement);
     type.typeArguments = <DartType>[parameter];
     InterfaceType argumentType = ElementFactory.classElement2("B").type;
     TypeParameterTypeImpl parameterType = new TypeParameterTypeImpl(
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("F")));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("F")));
     InterfaceType result =
         type.substitute2(<DartType>[argumentType], <DartType>[parameterType]);
     expect(result.element, classA);
@@ -3751,7 +3804,7 @@ class LibraryElementImplTest extends EngineTestCase {
   void test_creation() {
     expect(
         new LibraryElementImpl.forNode(
-            createAnalysisContext(), AstFactory.libraryIdentifier2(["l"])),
+            createAnalysisContext(), AstTestFactory.libraryIdentifier2(["l"])),
         isNotNull);
   }
 
@@ -3762,9 +3815,9 @@ class LibraryElementImplTest extends EngineTestCase {
     LibraryElementImpl library3 = ElementFactory.library(context, "l3");
     LibraryElementImpl library4 = ElementFactory.library(context, "l4");
     PrefixElement prefixA =
-        new PrefixElementImpl.forNode(AstFactory.identifier3("a"));
+        new PrefixElementImpl.forNode(AstTestFactory.identifier3("a"));
     PrefixElement prefixB =
-        new PrefixElementImpl.forNode(AstFactory.identifier3("b"));
+        new PrefixElementImpl.forNode(AstTestFactory.identifier3("b"));
     List<ImportElementImpl> imports = [
       ElementFactory.importFor(library2, null),
       ElementFactory.importFor(library2, prefixB),
@@ -3783,9 +3836,9 @@ class LibraryElementImplTest extends EngineTestCase {
     AnalysisContext context = createAnalysisContext();
     LibraryElementImpl library = ElementFactory.library(context, "l1");
     PrefixElement prefixA =
-        new PrefixElementImpl.forNode(AstFactory.identifier3("a"));
+        new PrefixElementImpl.forNode(AstTestFactory.identifier3("a"));
     PrefixElement prefixB =
-        new PrefixElementImpl.forNode(AstFactory.identifier3("b"));
+        new PrefixElementImpl.forNode(AstTestFactory.identifier3("b"));
     List<ImportElementImpl> imports = [
       ElementFactory.importFor(ElementFactory.library(context, "l2"), null),
       ElementFactory.importFor(ElementFactory.library(context, "l3"), null),
@@ -3817,81 +3870,6 @@ class LibraryElementImplTest extends EngineTestCase {
         unorderedEquals(<CompilationUnitElement>[unitLib, unitA, unitB]));
   }
 
-  void test_getVisibleLibraries_cycle() {
-    AnalysisContext context = createAnalysisContext();
-    LibraryElementImpl library = ElementFactory.library(context, "app");
-    LibraryElementImpl libraryA = ElementFactory.library(context, "A");
-    libraryA.imports = <ImportElementImpl>[
-      ElementFactory.importFor(library, null)
-    ];
-    library.imports = <ImportElementImpl>[
-      ElementFactory.importFor(libraryA, null)
-    ];
-    List<LibraryElement> libraries = library.visibleLibraries;
-    expect(libraries, unorderedEquals(<LibraryElement>[library, libraryA]));
-  }
-
-  void test_getVisibleLibraries_directExports() {
-    AnalysisContext context = createAnalysisContext();
-    LibraryElementImpl library = ElementFactory.library(context, "app");
-    LibraryElementImpl libraryA = ElementFactory.library(context, "A");
-    library.exports = <ExportElementImpl>[ElementFactory.exportFor(libraryA)];
-    List<LibraryElement> libraries = library.visibleLibraries;
-    expect(libraries, unorderedEquals(<LibraryElement>[library]));
-  }
-
-  void test_getVisibleLibraries_directImports() {
-    AnalysisContext context = createAnalysisContext();
-    LibraryElementImpl library = ElementFactory.library(context, "app");
-    LibraryElementImpl libraryA = ElementFactory.library(context, "A");
-    library.imports = <ImportElementImpl>[
-      ElementFactory.importFor(libraryA, null)
-    ];
-    List<LibraryElement> libraries = library.visibleLibraries;
-    expect(libraries, unorderedEquals(<LibraryElement>[library, libraryA]));
-  }
-
-  void test_getVisibleLibraries_indirectExports() {
-    AnalysisContext context = createAnalysisContext();
-    LibraryElementImpl library = ElementFactory.library(context, "app");
-    LibraryElementImpl libraryA = ElementFactory.library(context, "A");
-    LibraryElementImpl libraryAA = ElementFactory.library(context, "AA");
-    libraryA.exports = <ExportElementImpl>[ElementFactory.exportFor(libraryAA)];
-    library.imports = <ImportElementImpl>[
-      ElementFactory.importFor(libraryA, null)
-    ];
-    List<LibraryElement> libraries = library.visibleLibraries;
-    expect(libraries,
-        unorderedEquals(<LibraryElement>[library, libraryA, libraryAA]));
-  }
-
-  void test_getVisibleLibraries_indirectImports() {
-    AnalysisContext context = createAnalysisContext();
-    LibraryElementImpl library = ElementFactory.library(context, "app");
-    LibraryElementImpl libraryA = ElementFactory.library(context, "A");
-    LibraryElementImpl libraryAA = ElementFactory.library(context, "AA");
-    LibraryElementImpl libraryB = ElementFactory.library(context, "B");
-    libraryA.imports = <ImportElementImpl>[
-      ElementFactory.importFor(libraryAA, null)
-    ];
-    library.imports = <ImportElementImpl>[
-      ElementFactory.importFor(libraryA, null),
-      ElementFactory.importFor(libraryB, null)
-    ];
-    List<LibraryElement> libraries = library.visibleLibraries;
-    expect(
-        libraries,
-        unorderedEquals(
-            <LibraryElement>[library, libraryA, libraryAA, libraryB]));
-  }
-
-  void test_getVisibleLibraries_noImports() {
-    AnalysisContext context = createAnalysisContext();
-    LibraryElementImpl library = ElementFactory.library(context, "app");
-    expect(
-        library.visibleLibraries, unorderedEquals(<LibraryElement>[library]));
-  }
-
   void test_invalidateLibraryCycles_withHandle() {
     AnalysisContext context = createAnalysisContext();
     context.sourceFactory = new SourceFactory([]);
@@ -3910,22 +3888,10 @@ class LibraryElementImplTest extends EngineTestCase {
     library.invalidateLibraryCycles();
   }
 
-  void test_isUpToDate() {
-    AnalysisContext context = createAnalysisContext();
-    context.sourceFactory = new SourceFactory([]);
-    LibraryElement library = ElementFactory.library(context, "foo");
-    context.setContents(library.definingCompilationUnit.source, "sdfsdff");
-    // Assert that we are not up to date if the target has an old time stamp.
-    expect(library.isUpToDate(0), isFalse);
-    // Assert that we are up to date with a target modification time in the
-    // future.
-    expect(library.isUpToDate(JavaSystem.currentTimeMillis() + 1000), isTrue);
-  }
-
   void test_setImports() {
     AnalysisContext context = createAnalysisContext();
     LibraryElementImpl library = new LibraryElementImpl.forNode(
-        context, AstFactory.libraryIdentifier2(["l1"]));
+        context, AstTestFactory.libraryIdentifier2(["l1"]));
     List<ImportElementImpl> expectedImports = [
       ElementFactory.importFor(ElementFactory.library(context, "l2"), null),
       ElementFactory.importFor(ElementFactory.library(context, "l3"), null)
@@ -4050,8 +4016,11 @@ abstract class A {
 @reflectiveTest
 class MultiplyDefinedElementImplTest extends EngineTestCase {
   void test_fromElements_conflicting() {
-    Element firstElement = ElementFactory.localVariableElement2("xx");
-    Element secondElement = ElementFactory.localVariableElement2("yy");
+    TopLevelVariableElement firstElement =
+        ElementFactory.topLevelVariableElement2('xx');
+    TopLevelVariableElement secondElement =
+        ElementFactory.topLevelVariableElement2('yy');
+    _addToLibrary([firstElement, secondElement]);
     Element result = MultiplyDefinedElementImpl.fromElements(
         null, firstElement, secondElement);
     EngineTestCase.assertInstanceOf(
@@ -4060,15 +4029,19 @@ class MultiplyDefinedElementImplTest extends EngineTestCase {
         (result as MultiplyDefinedElement).conflictingElements;
     expect(elements, hasLength(2));
     for (int i = 0; i < elements.length; i++) {
-      EngineTestCase.assertInstanceOf((obj) => obj is LocalVariableElement,
-          LocalVariableElement, elements[i]);
+      EngineTestCase.assertInstanceOf((obj) => obj is TopLevelVariableElement,
+          TopLevelVariableElement, elements[i]);
     }
   }
 
   void test_fromElements_multiple() {
-    Element firstElement = ElementFactory.localVariableElement2("xx");
-    Element secondElement = ElementFactory.localVariableElement2("yy");
-    Element thirdElement = ElementFactory.localVariableElement2("zz");
+    TopLevelVariableElement firstElement =
+        ElementFactory.topLevelVariableElement2('xx');
+    TopLevelVariableElement secondElement =
+        ElementFactory.topLevelVariableElement2('yy');
+    TopLevelVariableElement thirdElement =
+        ElementFactory.topLevelVariableElement2('zz');
+    _addToLibrary([firstElement, secondElement, thirdElement]);
     Element result = MultiplyDefinedElementImpl.fromElements(
         null,
         MultiplyDefinedElementImpl.fromElements(
@@ -4080,15 +4053,25 @@ class MultiplyDefinedElementImplTest extends EngineTestCase {
         (result as MultiplyDefinedElement).conflictingElements;
     expect(elements, hasLength(3));
     for (int i = 0; i < elements.length; i++) {
-      EngineTestCase.assertInstanceOf((obj) => obj is LocalVariableElement,
-          LocalVariableElement, elements[i]);
+      EngineTestCase.assertInstanceOf((obj) => obj is TopLevelVariableElement,
+          TopLevelVariableElement, elements[i]);
     }
   }
 
   void test_fromElements_nonConflicting() {
-    Element element = ElementFactory.localVariableElement2("xx");
+    TopLevelVariableElement element =
+        ElementFactory.topLevelVariableElement2('xx');
+    _addToLibrary([element]);
     expect(MultiplyDefinedElementImpl.fromElements(null, element, element),
         same(element));
+  }
+
+  void _addToLibrary(List<TopLevelVariableElement> variables) {
+    CompilationUnitElementImpl compilationUnit =
+        ElementFactory.compilationUnit('lib.dart');
+    LibraryElementImpl library = ElementFactory.library(null, 'lib');
+    library.definingCompilationUnit = compilationUnit;
+    compilationUnit.topLevelVariables = variables;
   }
 }
 
@@ -4184,6 +4167,39 @@ main(int p) {
   }
 }
 
+@reflectiveTest
+class PropertyAccessorElementImplTest extends EngineTestCase {
+  void test_matchesHandle_getter() {
+    CompilationUnitElementImpl compilationUnitElement =
+        ElementFactory.compilationUnit('foo.dart');
+    ElementFactory.library(null, '')
+      ..definingCompilationUnit = compilationUnitElement;
+    PropertyAccessorElementImpl element =
+        ElementFactory.getterElement('x', true, DynamicTypeImpl.instance);
+    compilationUnitElement.accessors = <PropertyAccessorElement>[element];
+    PropertyAccessorElementHandle handle =
+        new PropertyAccessorElementHandle(null, element.location);
+    expect(element.hashCode, handle.hashCode);
+    expect(element == handle, isTrue);
+    expect(handle == element, isTrue);
+  }
+
+  void test_matchesHandle_setter() {
+    CompilationUnitElementImpl compilationUnitElement =
+        ElementFactory.compilationUnit('foo.dart');
+    ElementFactory.library(null, '')
+      ..definingCompilationUnit = compilationUnitElement;
+    PropertyAccessorElementImpl element =
+        ElementFactory.setterElement('x', true, DynamicTypeImpl.instance);
+    compilationUnitElement.accessors = <PropertyAccessorElement>[element];
+    PropertyAccessorElementHandle handle =
+        new PropertyAccessorElementHandle(null, element.location);
+    expect(element.hashCode, handle.hashCode);
+    expect(element == handle, isTrue);
+    expect(handle == element, isTrue);
+  }
+}
+
 class TestElementResynthesizer extends ElementResynthesizer {
   Map<ElementLocation, Element> locationMap;
 
@@ -4231,21 +4247,21 @@ main() {
 class TypeParameterTypeImplTest extends EngineTestCase {
   void test_creation() {
     expect(
-        new TypeParameterTypeImpl(
-            new TypeParameterElementImpl.forNode(AstFactory.identifier3("E"))),
+        new TypeParameterTypeImpl(new TypeParameterElementImpl.forNode(
+            AstTestFactory.identifier3("E"))),
         isNotNull);
   }
 
   void test_getElement() {
     TypeParameterElementImpl element =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("E"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("E"));
     TypeParameterTypeImpl type = new TypeParameterTypeImpl(element);
     expect(type.element, element);
   }
 
   void test_isMoreSpecificThan_typeArguments_dynamic() {
     TypeParameterElementImpl element =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("E"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("E"));
     TypeParameterTypeImpl type = new TypeParameterTypeImpl(element);
     // E << dynamic
     expect(type.isMoreSpecificThan(DynamicTypeImpl.instance), isTrue);
@@ -4253,20 +4269,20 @@ class TypeParameterTypeImplTest extends EngineTestCase {
 
   void test_isMoreSpecificThan_typeArguments_object() {
     TypeParameterElementImpl element =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("E"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("E"));
     TypeParameterTypeImpl type = new TypeParameterTypeImpl(element);
     // E << Object
     expect(type.isMoreSpecificThan(ElementFactory.object.type), isTrue);
   }
 
-  void test_isMoreSpecificThan_typeArguments_resursive() {
+  void test_isMoreSpecificThan_typeArguments_recursive() {
     ClassElementImpl classS = ElementFactory.classElement2("A");
     TypeParameterElementImpl typeParameterU =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("U"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("U"));
     TypeParameterTypeImpl typeParameterTypeU =
         new TypeParameterTypeImpl(typeParameterU);
     TypeParameterElementImpl typeParameterT =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("T"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("T"));
     TypeParameterTypeImpl typeParameterTypeT =
         new TypeParameterTypeImpl(typeParameterT);
     typeParameterT.bound = typeParameterTypeU;
@@ -4278,7 +4294,7 @@ class TypeParameterTypeImplTest extends EngineTestCase {
 
   void test_isMoreSpecificThan_typeArguments_self() {
     TypeParameterElementImpl element =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("E"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("E"));
     TypeParameterTypeImpl type = new TypeParameterTypeImpl(element);
     // E << E
     expect(type.isMoreSpecificThan(type), isTrue);
@@ -4293,7 +4309,7 @@ class TypeParameterTypeImplTest extends EngineTestCase {
     InterfaceType typeA = classA.type;
     InterfaceType typeB = classB.type;
     TypeParameterElementImpl typeParameterT =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("T"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("T"));
     typeParameterT.bound = typeB;
     TypeParameterTypeImpl typeParameterTypeT =
         new TypeParameterTypeImpl(typeParameterT);
@@ -4305,12 +4321,12 @@ class TypeParameterTypeImplTest extends EngineTestCase {
   void test_isMoreSpecificThan_typeArguments_transitivity_typeParameters() {
     ClassElementImpl classS = ElementFactory.classElement2("A");
     TypeParameterElementImpl typeParameterU =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("U"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("U"));
     typeParameterU.bound = classS.type;
     TypeParameterTypeImpl typeParameterTypeU =
         new TypeParameterTypeImpl(typeParameterU);
     TypeParameterElementImpl typeParameterT =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("T"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("T"));
     typeParameterT.bound = typeParameterTypeU;
     TypeParameterTypeImpl typeParameterTypeT =
         new TypeParameterTypeImpl(typeParameterT);
@@ -4322,7 +4338,7 @@ class TypeParameterTypeImplTest extends EngineTestCase {
   void test_isMoreSpecificThan_typeArguments_upperBound() {
     ClassElementImpl classS = ElementFactory.classElement2("A");
     TypeParameterElementImpl typeParameterT =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("T"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("T"));
     typeParameterT.bound = classS.type;
     TypeParameterTypeImpl typeParameterTypeT =
         new TypeParameterTypeImpl(typeParameterT);
@@ -4334,7 +4350,7 @@ class TypeParameterTypeImplTest extends EngineTestCase {
   void test_resolveToBound_bound() {
     ClassElementImpl classS = ElementFactory.classElement2("A");
     TypeParameterElementImpl element =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("E"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("E"));
     element.bound = classS.type;
     TypeParameterTypeImpl type = new TypeParameterTypeImpl(element);
     expect(type.resolveToBound(null), same(classS.type));
@@ -4343,11 +4359,11 @@ class TypeParameterTypeImplTest extends EngineTestCase {
   void test_resolveToBound_nestedBound() {
     ClassElementImpl classS = ElementFactory.classElement2("A");
     TypeParameterElementImpl elementE =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("E"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("E"));
     elementE.bound = classS.type;
     TypeParameterTypeImpl typeE = new TypeParameterTypeImpl(elementE);
     TypeParameterElementImpl elementF =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("F"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("F"));
     elementF.bound = typeE;
     TypeParameterTypeImpl typeF = new TypeParameterTypeImpl(elementE);
     expect(typeF.resolveToBound(null), same(classS.type));
@@ -4355,7 +4371,7 @@ class TypeParameterTypeImplTest extends EngineTestCase {
 
   void test_resolveToBound_unbound() {
     TypeParameterTypeImpl type = new TypeParameterTypeImpl(
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("E")));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("E")));
     // Returns whatever type is passed to resolveToBound().
     expect(type.resolveToBound(VoidTypeImpl.instance),
         same(VoidTypeImpl.instance));
@@ -4363,10 +4379,10 @@ class TypeParameterTypeImplTest extends EngineTestCase {
 
   void test_substitute_equal() {
     TypeParameterElementImpl element =
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("E"));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("E"));
     TypeParameterTypeImpl type = new TypeParameterTypeImpl(element);
     InterfaceTypeImpl argument = new InterfaceTypeImpl(
-        new ClassElementImpl.forNode(AstFactory.identifier3("A")));
+        new ClassElementImpl.forNode(AstTestFactory.identifier3("A")));
     TypeParameterTypeImpl parameter = new TypeParameterTypeImpl(element);
     expect(type.substitute2(<DartType>[argument], <DartType>[parameter]),
         same(argument));
@@ -4374,11 +4390,11 @@ class TypeParameterTypeImplTest extends EngineTestCase {
 
   void test_substitute_notEqual() {
     TypeParameterTypeImpl type = new TypeParameterTypeImpl(
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("E")));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("E")));
     InterfaceTypeImpl argument = new InterfaceTypeImpl(
-        new ClassElementImpl.forNode(AstFactory.identifier3("A")));
+        new ClassElementImpl.forNode(AstTestFactory.identifier3("A")));
     TypeParameterTypeImpl parameter = new TypeParameterTypeImpl(
-        new TypeParameterElementImpl.forNode(AstFactory.identifier3("F")));
+        new TypeParameterElementImpl.forNode(AstTestFactory.identifier3("F")));
     expect(type.substitute2(<DartType>[argument], <DartType>[parameter]),
         same(type));
   }

@@ -2,8 +2,8 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef BIN_SOCKET_H_
-#define BIN_SOCKET_H_
+#ifndef RUNTIME_BIN_SOCKET_H_
+#define RUNTIME_BIN_SOCKET_H_
 
 #if defined(DART_IO_DISABLED)
 #error "socket.h can only be included on builds with IO enabled"
@@ -13,6 +13,8 @@
 // Declare the OS-specific types ahead of defining the generic class.
 #if defined(TARGET_OS_ANDROID)
 #include "bin/socket_android.h"
+#elif defined(TARGET_OS_FUCHSIA)
+#include "bin/socket_fuchsia.h"
 #elif defined(TARGET_OS_LINUX)
 #include "bin/socket_linux.h"
 #elif defined(TARGET_OS_MACOS)
@@ -23,12 +25,11 @@
 #error Unknown target os.
 #endif
 
-#include <map>
-
 #include "bin/builtin.h"
 #include "bin/dartutils.h"
 #include "bin/thread.h"
 #include "bin/utils.h"
+#include "platform/hashmap.h"
 
 namespace dart {
 namespace bin {
@@ -73,14 +74,14 @@ class SocketAddress {
 
   static intptr_t GetAddrLength(const RawAddr& addr) {
     ASSERT((addr.ss.ss_family == AF_INET) || (addr.ss.ss_family == AF_INET6));
-    return (addr.ss.ss_family == AF_INET6) ?
-        sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in);
+    return (addr.ss.ss_family == AF_INET6) ? sizeof(struct sockaddr_in6)
+                                           : sizeof(struct sockaddr_in);
   }
 
   static intptr_t GetInAddrLength(const RawAddr& addr) {
     ASSERT((addr.ss.ss_family == AF_INET) || (addr.ss.ss_family == AF_INET6));
-    return (addr.ss.ss_family == AF_INET6) ?
-        sizeof(struct in6_addr) : sizeof(struct in_addr);
+    return (addr.ss.ss_family == AF_INET6) ? sizeof(struct in6_addr)
+                                           : sizeof(struct in_addr);
   }
 
   static bool AreAddressesEqual(const RawAddr& a, const RawAddr& b) {
@@ -93,8 +94,7 @@ class SocketAddress {
       if (b.ss.ss_family != AF_INET6) {
         return false;
       }
-      return memcmp(&a.in6.sin6_addr,
-                    &b.in6.sin6_addr,
+      return memcmp(&a.in6.sin6_addr, &b.in6.sin6_addr,
                     sizeof(a.in6.sin6_addr)) == 0;
     } else {
       UNREACHABLE();
@@ -119,7 +119,7 @@ class SocketAddress {
     memset(reinterpret_cast<void*>(addr), 0, sizeof(RawAddr));
     if (len == sizeof(in_addr)) {
       addr->in.sin_family = AF_INET;
-      memmove(reinterpret_cast<void *>(&addr->in.sin_addr), data, len);
+      memmove(reinterpret_cast<void*>(&addr->in.sin_addr), data, len);
     } else {
       ASSERT(len == sizeof(in6_addr));
       addr->in6.sin6_family = AF_INET6;
@@ -164,8 +164,8 @@ class SocketAddress {
     Dart_Handle err;
     if (addr.addr.sa_family == AF_INET6) {
       err = Dart_ListSetAsBytes(
-          result, 0,
-          reinterpret_cast<const uint8_t*>(&addr.in6.sin6_addr), len);
+          result, 0, reinterpret_cast<const uint8_t*>(&addr.in6.sin6_addr),
+          len);
     } else {
       err = Dart_ListSetAsBytes(
           result, 0, reinterpret_cast<const uint8_t*>(&addr.in.sin_addr), len);
@@ -207,9 +207,7 @@ class InterfaceSocketAddress {
         interface_name_(interface_name),
         interface_index_(interface_index) {}
 
-  ~InterfaceSocketAddress() {
-    delete socket_address_;
-  }
+  ~InterfaceSocketAddress() { delete socket_address_; }
 
   SocketAddress* socket_address() const { return socket_address_; }
   const char* interface_name() const { return interface_name_; }
@@ -224,12 +222,11 @@ class InterfaceSocketAddress {
 };
 
 
-template<typename T>
+template <typename T>
 class AddressList {
  public:
   explicit AddressList(intptr_t count)
-      : count_(count),
-        addresses_(new T*[count_]) {}
+      : count_(count), addresses_(new T*[count_]) {}
 
   ~AddressList() {
     for (intptr_t i = 0; i < count_; i++) {
@@ -265,10 +262,14 @@ class Socket {
   // Send data on a socket. The port to send to is specified in the port
   // component of the passed RawAddr structure. The RawAddr structure is only
   // used for datagram sockets.
-  static intptr_t SendTo(
-      intptr_t fd, const void* buffer, intptr_t num_bytes, const RawAddr& addr);
-  static intptr_t RecvFrom(
-      intptr_t fd, void* buffer, intptr_t num_bytes, RawAddr* addr);
+  static intptr_t SendTo(intptr_t fd,
+                         const void* buffer,
+                         intptr_t num_bytes,
+                         const RawAddr& addr);
+  static intptr_t RecvFrom(intptr_t fd,
+                           void* buffer,
+                           intptr_t num_bytes,
+                           RawAddr* addr);
   // Creates a socket which is bound and connected. The port to connect to is
   // specified as the port component of the passed RawAddr structure.
   static intptr_t CreateConnect(const RawAddr& addr);
@@ -276,6 +277,9 @@ class Socket {
   // specified as the port component of the passed RawAddr structure.
   static intptr_t CreateBindConnect(const RawAddr& addr,
                                     const RawAddr& source_addr);
+  // Returns true if the given error-number is because the system was not able
+  // to bind the socket to a specific IP.
+  static bool IsBindError(intptr_t error_number);
   // Creates a datagram socket which is bound. The port to bind
   // to is specified as the port component of the RawAddr structure.
   static intptr_t CreateBindDatagram(const RawAddr& addr, bool reuseAddress);
@@ -367,39 +371,23 @@ class ServerSocket {
 
 
 class ListeningSocketRegistry {
- private:
-  struct OSSocket {
-    RawAddr address;
-    int port;
-    bool v6_only;
-    bool shared;
-    int ref_count;
-    intptr_t socketfd;
-
-    // Singly linked lists of OSSocket instances which listen on the same port
-    // but on different addresses.
-    OSSocket *next;
-
-    OSSocket(RawAddr address, int port, bool v6_only, bool shared,
-             intptr_t socketfd)
-        : address(address), port(port), v6_only(v6_only), shared(shared),
-          ref_count(0), socketfd(socketfd), next(NULL) {}
-  };
-
  public:
-  static void Initialize();
-
-  static ListeningSocketRegistry *Instance();
-
-  static void Cleanup();
-
-
-  ListeningSocketRegistry() : mutex_(new Mutex()) {}
+  ListeningSocketRegistry()
+      : sockets_by_port_(SameIntptrValue, kInitialSocketsCount),
+        sockets_by_fd_(SameIntptrValue, kInitialSocketsCount),
+        mutex_(new Mutex()) {}
 
   ~ListeningSocketRegistry() {
+    CloseAllSafe();
     delete mutex_;
     mutex_ = NULL;
   }
+
+  static void Initialize();
+
+  static ListeningSocketRegistry* Instance();
+
+  static void Cleanup();
 
   // This function should be called from a dart runtime call in order to create
   // a new (potentially shared) socket.
@@ -419,10 +407,38 @@ class ListeningSocketRegistry {
   // this function.
   bool CloseSafe(intptr_t socketfd);
 
-  Mutex *mutex() { return mutex_; }
+  Mutex* mutex() { return mutex_; }
 
  private:
-  OSSocket *findOSSocketWithAddress(OSSocket *current, const RawAddr& addr) {
+  struct OSSocket {
+    RawAddr address;
+    int port;
+    bool v6_only;
+    bool shared;
+    int ref_count;
+    intptr_t socketfd;
+
+    // Singly linked lists of OSSocket instances which listen on the same port
+    // but on different addresses.
+    OSSocket* next;
+
+    OSSocket(RawAddr address,
+             int port,
+             bool v6_only,
+             bool shared,
+             intptr_t socketfd)
+        : address(address),
+          port(port),
+          v6_only(v6_only),
+          shared(shared),
+          ref_count(0),
+          socketfd(socketfd),
+          next(NULL) {}
+  };
+
+  static const intptr_t kInitialSocketsCount = 8;
+
+  OSSocket* findOSSocketWithAddress(OSSocket* current, const RawAddr& addr) {
     while (current != NULL) {
       if (SocketAddress::AreAddressesEqual(current->address, addr)) {
         return current;
@@ -432,17 +448,39 @@ class ListeningSocketRegistry {
     return NULL;
   }
 
-  std::map<intptr_t, OSSocket*> sockets_by_port_;
-  std::map<intptr_t, OSSocket*> sockets_by_fd_;
-  Mutex *mutex_;
+  static bool SameIntptrValue(void* key1, void* key2) {
+    return reinterpret_cast<intptr_t>(key1) == reinterpret_cast<intptr_t>(key2);
+  }
 
-  typedef std::map<intptr_t, OSSocket*>::iterator SocketsIterator;
+  static uint32_t GetHashmapHashFromIntptr(intptr_t i) {
+    return static_cast<uint32_t>((i + 1) & 0xFFFFFFFF);
+  }
 
- private:
+
+  static void* GetHashmapKeyFromIntptr(intptr_t i) {
+    return reinterpret_cast<void*>(i + 1);
+  }
+
+  OSSocket* LookupByPort(intptr_t port);
+  void InsertByPort(intptr_t port, OSSocket* socket);
+  void RemoveByPort(intptr_t port);
+
+  OSSocket* LookupByFd(intptr_t fd);
+  void InsertByFd(intptr_t fd, OSSocket* socket);
+  void RemoveByFd(intptr_t fd);
+
+  bool CloseOneSafe(OSSocket* os_socket, bool update_hash_maps);
+  void CloseAllSafe();
+
+  HashMap sockets_by_port_;
+  HashMap sockets_by_fd_;
+
+  Mutex* mutex_;
+
   DISALLOW_COPY_AND_ASSIGN(ListeningSocketRegistry);
 };
 
 }  // namespace bin
 }  // namespace dart
 
-#endif  // BIN_SOCKET_H_
+#endif  // RUNTIME_BIN_SOCKET_H_

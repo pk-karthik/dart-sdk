@@ -2,8 +2,8 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef VM_OS_H_
-#define VM_OS_H_
+#ifndef RUNTIME_VM_OS_H_
+#define RUNTIME_VM_OS_H_
 
 #include "vm/globals.h"
 
@@ -25,8 +25,9 @@ class OS {
   // Returns the current process id.
   static intptr_t ProcessId();
 
-  // Returns the abbreviated time-zone name for the given instant.
-  // For example "CET" or "CEST".
+  // Returns a time-zone name for the given instant.
+  // The name is provided by the underlying platform.
+  // The returned string may be Zone allocated.
   static const char* GetTimeZoneName(int64_t seconds_since_epoch);
 
   // Returns the difference in seconds between local time and UTC for the given
@@ -63,23 +64,6 @@ class OS {
   // NOTE: This function will return -1 on OSs that are not supported.
   static int64_t GetCurrentThreadCPUMicros();
 
-  // Returns a cleared aligned array of type T with n entries.
-  // Alignment must be >= 16 and a power of two.
-  template<typename T>
-  static T* AllocateAlignedArray(intptr_t n, intptr_t alignment) {
-    T* result = reinterpret_cast<T*>(OS::AlignedAllocate(n * sizeof(*result),
-                                                         alignment));
-    memset(result, 0, n * sizeof(*result));
-    return result;
-  }
-
-  // Returns an aligned pointer in the C heap with room for size bytes.
-  // Alignment must be >= 16 and a power of two.
-  static void* AlignedAllocate(intptr_t size, intptr_t alignment);
-
-  // Frees a pointer returned from AlignedAllocate.
-  static void AlignedFree(void* ptr);
-
   // Returns the activation frame alignment constraint or one if
   // the platform doesn't care. Guaranteed to be a power of two.
   static intptr_t ActivationFrameAlignment();
@@ -98,6 +82,9 @@ class OS {
 
   // Returns number of available processor cores.
   static int NumberOfAvailableProcessors();
+
+  // Returns the maximium resident set size of this process.
+  static uintptr_t MaxRSS();
 
   // Sleep the currently executing thread for millis ms.
   static void Sleep(int64_t millis);
@@ -134,9 +121,7 @@ class OS {
   // that occur.
   static int SNPrint(char* str, size_t size, const char* format, ...)
       PRINTF_ATTRIBUTE(3, 4);
-  static int VSNPrint(char* str, size_t size,
-                      const char* format,
-                      va_list args);
+  static int VSNPrint(char* str, size_t size, const char* format, va_list args);
 
   // Allocate a string and print formatted output into the buffer.
   // Uses the zone for allocation if one if provided, and otherwise uses
@@ -169,4 +154,4 @@ class OS {
 
 }  // namespace dart
 
-#endif  // VM_OS_H_
+#endif  // RUNTIME_VM_OS_H_

@@ -184,8 +184,19 @@ class _OpTypeAstVisitor extends GeneralizingAstVisitor {
         if (elem is FunctionTypedElement) {
           List<ParameterElement> parameters = elem.parameters;
           if (parameters != null) {
-            int index =
-                node.arguments.isEmpty ? 0 : node.arguments.indexOf(entity);
+            int index;
+            if (node.arguments.isEmpty) {
+              index = 0;
+            } else if (entity == node.rightParenthesis) {
+              // Parser ignores trailing commas
+              if (node.rightParenthesis.previous?.lexeme == ',') {
+                index = node.arguments.length;
+              } else {
+                index = node.arguments.length - 1;
+              }
+            } else {
+              index = node.arguments.indexOf(entity);
+            }
             if (0 <= index && index < parameters.length) {
               ParameterElement param = parameters[index];
               if (param?.parameterKind == ParameterKind.NAMED) {
@@ -556,7 +567,7 @@ class _OpTypeAstVisitor extends GeneralizingAstVisitor {
         if (node.parent is VariableDeclaration) {
           VariableDeclaration varDeclaration =
               node.parent as VariableDeclaration;
-          localTypeAssertion = varDeclaration.element.type;
+          localTypeAssertion = varDeclaration.element?.type;
         } else if (node.parent is AssignmentExpression) {
           AssignmentExpression assignmentExpression =
               node.parent as AssignmentExpression;
@@ -772,6 +783,10 @@ class _OpTypeAstVisitor extends GeneralizingAstVisitor {
     if (identical(entity, node.expression)) {
       optype.includeReturnValueSuggestions = true;
       optype.includeTypeNameSuggestions = true;
+    } else if (node.statements.contains(entity)) {
+      optype.includeReturnValueSuggestions = true;
+      optype.includeTypeNameSuggestions = true;
+      optype.includeVoidReturnSuggestions = true;
     }
   }
 
@@ -875,14 +890,6 @@ class _OpTypeAstVisitor extends GeneralizingAstVisitor {
       optype.includeReturnValueSuggestions = true;
       optype.includeTypeNameSuggestions = true;
     }
-  }
-
-  bool _isEntityPrevToken(TokenType expectedType) {
-    Object entity = this.entity;
-    if (entity is SimpleIdentifier && entity.token.isSynthetic) {
-      return entity.token.previous.type == expectedType;
-    }
-    return false;
   }
 
   bool _isEntityPrevTokenSynthetic() {

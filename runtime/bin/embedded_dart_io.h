@@ -2,14 +2,18 @@
 // for details. All rights reserved. Use of this source code is governed by a
 // BSD-style license that can be found in the LICENSE file.
 
-#ifndef BIN_EMBEDDED_DART_IO_H_
-#define BIN_EMBEDDED_DART_IO_H_
+#ifndef RUNTIME_BIN_EMBEDDED_DART_IO_H_
+#define RUNTIME_BIN_EMBEDDED_DART_IO_H_
 
 namespace dart {
 namespace bin {
 
 // Bootstraps 'dart:io'.
 void BootstrapDartIo();
+
+// Lets dart:io know where the system temporary directory is located.
+// Currently only wired up on Android.
+void SetSystemTempDirectory(const char* system_temp);
 
 // Tells the system whether to capture Stdout events.
 void SetCaptureStdout(bool value);
@@ -26,4 +30,4 @@ bool ShouldCaptureStderr();
 }  // namespace bin
 }  // namespace dart
 
-#endif  // BIN_EMBEDDED_DART_IO_H_
+#endif  // RUNTIME_BIN_EMBEDDED_DART_IO_H_

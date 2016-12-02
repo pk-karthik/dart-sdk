@@ -7,20 +7,17 @@ library dart2js.test.memory_source_file_helper;
 import 'dart:async' show Future;
 export 'dart:io' show Platform;
 
-export 'package:compiler/src/apiimpl.dart'
-       show CompilerImpl;
+export 'package:compiler/src/apiimpl.dart' show CompilerImpl;
 
-export 'package:compiler/src/filenames.dart'
-       show currentDirectory;
+export 'package:compiler/src/filenames.dart' show currentDirectory;
 
 import 'package:compiler/src/io/source_file.dart'
-       show StringSourceFile, SourceFile;
+    show StringSourceFile, SourceFile;
 
-import 'package:compiler/src/source_file_provider.dart'
-       show SourceFileProvider;
+import 'package:compiler/src/source_file_provider.dart' show SourceFileProvider;
 
 export 'package:compiler/src/source_file_provider.dart'
-       show SourceFileProvider, FormattingDiagnosticHandler;
+    show SourceFileProvider, FormattingDiagnosticHandler;
 
 class MemorySourceFileProvider extends SourceFileProvider {
   Map<String, String> memorySourceFiles;
@@ -33,7 +30,8 @@ class MemorySourceFileProvider extends SourceFileProvider {
     }
     String source = memorySourceFiles[resourceUri.path];
     if (source == null) {
-      return new Future.error(new Exception('No such file $resourceUri'));
+      return new Future.error(new Exception(
+          'No such memory file $resourceUri in ${memorySourceFiles.keys}'));
     }
     this.sourceFiles[resourceUri] =
         new StringSourceFile.fromUri(resourceUri, source);
@@ -48,7 +46,8 @@ class MemorySourceFileProvider extends SourceFileProvider {
     }
     String source = memorySourceFiles[resourceUri.path];
     if (source == null) {
-      throw new Exception('No such file $resourceUri');
+      throw new Exception(
+          'No such memory file $resourceUri in ${memorySourceFiles.keys}');
     }
     return new StringSourceFile.fromUri(resourceUri, source);
   }

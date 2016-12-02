@@ -9,11 +9,11 @@ library dart2js.source_information.position;
 
 import '../common.dart';
 import '../elements/elements.dart'
-    show AstElement, FieldElement, ResolvedAst, ResolvedAstKind;
+    show AstElement, ResolvedAst, ResolvedAstKind;
 import '../js/js.dart' as js;
 import '../js/js_debug.dart';
 import '../js/js_source_mapping.dart';
-import '../tree/tree.dart' show FunctionExpression, Node, Send;
+import '../tree/tree.dart' show Node, Send;
 import 'code_output.dart' show CodeBuffer;
 import 'source_file.dart';
 import 'source_information.dart';
@@ -522,7 +522,7 @@ class PositionTraceListener extends TraceListener
   void onStep(js.Node node, Offset offset, StepKind kind) {
     SourceInformation sourceInformation = computeSourceInformation(node);
     if (sourceInformation == null) return;
-    int codeLocation = offset.subexpressionOffset;
+    int codeLocation = offset.value;
     if (codeLocation == null) return;
 
     void registerPosition(SourcePositionKind sourcePositionKind) {
@@ -675,6 +675,8 @@ class Offset {
 
   Offset(
       this.statementOffset, this.leftToRightOffset, this.subexpressionOffset);
+
+  int get value => subexpressionOffset;
 
   String toString() {
     return 'Offset[statementOffset=$statementOffset,'
