@@ -88,6 +88,7 @@ class Heap {
   bool NewContains(uword addr) const;
   bool OldContains(uword addr) const;
   bool CodeContains(uword addr) const;
+  bool DataContains(uword addr) const;
 
   void IterateObjects(ObjectVisitor* visitor) const;
   void IterateOldObjects(ObjectVisitor* visitor) const;
@@ -114,9 +115,7 @@ class Heap {
     return old_space_.NeedsGarbageCollection();
   }
 
-#if defined(DEBUG)
-  void WaitForSweeperTasks();
-#endif
+  void WaitForSweeperTasks(Thread* thread);
 
   // Enables growth control on the page space heaps.  This should be
   // called before any user code is executed.
@@ -350,6 +349,8 @@ class Heap {
 
   friend class Become;       // VisitObjectPointers
   friend class Precompiler;  // VisitObjects
+  friend class ObjectGraph;  // VisitObjects
+  friend class Unmarker;     // VisitObjects
   friend class ServiceEvent;
   friend class PageSpace;             // VerifyGC
   friend class IsolateReloadContext;  // VisitObjects
@@ -360,12 +361,13 @@ class Heap {
 
 class HeapIterationScope : public StackResource {
  public:
-  HeapIterationScope();
+  explicit HeapIterationScope(bool writable = false);
   ~HeapIterationScope();
 
  private:
   NoSafepointScope no_safepoint_scope_;
   PageSpace* old_space_;
+  bool writable_;
 
   DISALLOW_COPY_AND_ASSIGN(HeapIterationScope);
 };

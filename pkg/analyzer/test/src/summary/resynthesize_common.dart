@@ -5,6 +5,7 @@
 library test.src.serialization.elements_test;
 
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/constant/value.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
@@ -345,6 +346,9 @@ abstract class AbstractResynthesizeTest extends AbstractSingleUnitTest {
         } else {
           compareConstAsts(rItem.expression, oItem.expression, desc);
         }
+      } else if (oItem is AssertInitializer && rItem is AssertInitializer) {
+        compareConstAsts(rItem.condition, oItem.condition, '$desc condition');
+        compareConstAsts(rItem.message, oItem.message, '$desc message');
       } else if (oItem is SuperConstructorInvocation &&
           rItem is SuperConstructorInvocation) {
         compareElements(rItem.staticElement, oItem.staticElement, desc);
@@ -393,8 +397,9 @@ abstract class AbstractResynthesizeTest extends AbstractSingleUnitTest {
         // In 'class C {static const a = 0; static const b = a;}' the reference
         // to 'a' in 'b' is serialized as a fully qualified 'C.a' reference.
         if (r.prefix.staticElement is ClassElement) {
+          Element oElement = resolutionMap.staticElementForIdentifier(o);
           compareElements(
-              r.prefix.staticElement, o.staticElement?.enclosingElement, desc);
+              r.prefix.staticElement, oElement?.enclosingElement, desc);
           compareConstAsts(r.identifier, o, desc);
         } else {
           fail('Prefix of type ${r.prefix.staticElement.runtimeType} should not'
@@ -435,6 +440,8 @@ abstract class AbstractResynthesizeTest extends AbstractSingleUnitTest {
         checkElidablePrefix(oTarget.prefix);
         checkElidablePrefix(oTarget.identifier);
         compareConstAsts(r, o.propertyName, desc);
+      } else if (o is ThisExpression && r is ThisExpression) {
+        // Nothing to compare.
       } else if (o is NullLiteral) {
         expect(r, new isInstanceOf<NullLiteral>(), reason: desc);
       } else if (o is BooleanLiteral && r is BooleanLiteral) {
@@ -1118,7 +1125,8 @@ abstract class AbstractResynthesizeTest extends AbstractSingleUnitTest {
   /**
    * Determine the analysis options that should be used for this test.
    */
-  AnalysisOptionsImpl createOptions() => new AnalysisOptionsImpl();
+  AnalysisOptionsImpl createOptions() =>
+      new AnalysisOptionsImpl()..enableAssertInitializer = true;
 
   ElementImpl getActualElement(Element element, String desc) {
     if (element == null) {
@@ -1480,6 +1488,14 @@ class E {
 class C {}''');
   }
 
+  test_class_documented_tripleSlash() {
+    checkLibrary('''
+/// aaa
+/// bbbb
+/// cc
+class C {}''');
+  }
+
   test_class_documented_with_references() {
     checkLibrary('''
 /**
@@ -1591,6 +1607,10 @@ class E {}''');
 
   test_class_setter_implicit_return_type() {
     checkLibrary('class C { set x(int value) {} }');
+  }
+
+  test_class_setter_invalid_no_parameter() {
+    checkLibrary('class C { void set x() {} }');
   }
 
   test_class_setter_static() {
@@ -2408,6 +2428,22 @@ class C {
    */
   C();
 }''');
+  }
+
+  test_constructor_initializers_assertInvocation() {
+    checkLibrary('''
+class C {
+  const C(int x) : assert(x >= 42);
+}
+''');
+  }
+
+  test_constructor_initializers_assertInvocation_message() {
+    checkLibrary('''
+class C {
+  const C(int x) : assert(x >= 42, 'foo');
+}
+''');
   }
 
   test_constructor_initializers_field() {
@@ -3441,14 +3477,11 @@ class D extends p.C {} // Prevent "unused import" warning
   }
 
   test_import_short_absolute() {
-    if (resourceProvider.pathContext.separator == '\\') {
-      // This test fails on Windows due to
-      // https://github.com/dart-lang/path/issues/18
-      // TODO(paulberry): reenable once that bug is addressed.
-      return;
-    }
     testFile = '/my/project/bin/test.dart';
-    addLibrarySource('/a.dart', 'class C {}');
+    // Note: "/a.dart" resolves differently on Windows vs. Posix.
+    var destinationPath =
+        resourceProvider.pathContext.fromUri(Uri.parse('/a.dart'));
+    addLibrarySource(destinationPath, 'class C {}');
     checkLibrary('import "/a.dart"; C c;');
   }
 
@@ -4062,6 +4095,10 @@ class C {
     checkLibrary('@a import "foo.dart"; const a = b;');
   }
 
+  test_metadata_invalid_classDeclaration() {
+    checkLibrary('f(_) {} @f(42) class C {}');
+  }
+
   test_metadata_libraryDirective() {
     checkLibrary('@a library L; const a = null;');
   }
@@ -4300,6 +4337,21 @@ void named({x: 1}) {}
     addSource('/a.dart', 'part of my.lib;');
     addSource('/b.dart', 'part of my.lib;');
     checkLibrary('library my.lib; part "a.dart"; part "b.dart";');
+  }
+
+  test_parts_invalidUri() {
+    allowMissingFiles = true;
+    addSource('/foo/bar.dart', 'part of my.lib;');
+    checkLibrary('library my.lib; part "foo/";');
+  }
+
+  test_parts_invalidUri_nullStringValue() {
+    allowMissingFiles = true;
+    addSource('/foo/bar.dart', 'part of my.lib;');
+    checkLibrary(r'''
+library my.lib;
+part "${foo}/bar.dart";
+''');
   }
 
   test_propagated_type_refers_to_closure() {
@@ -4616,6 +4668,19 @@ typedef F();''');
     checkLibrary('f() {} g() {}');
   }
 
+  test_unresolved_annotation_instanceCreation_argument_this() {
+    checkLibrary(
+        '''
+class A {
+  const A(_);
+}
+
+@A(this)
+class C {}
+''',
+        allowErrors: true);
+  }
+
   test_unresolved_annotation_namedConstructorCall_noClass() {
     checkLibrary('@foo.bar() class C {}', allowErrors: true);
   }
@@ -4671,7 +4736,12 @@ typedef F();''');
 
   test_unresolved_import() {
     allowMissingFiles = true;
-    checkLibrary("import 'foo.dart';", allowErrors: true);
+    LibraryElementImpl library =
+        checkLibrary("import 'foo.dart';", allowErrors: true);
+    LibraryElement importedLibrary = library.imports[0].importedLibrary;
+    expect(importedLibrary.loadLibraryFunction, isNotNull);
+    expect(importedLibrary.publicNamespace, isNotNull);
+    expect(importedLibrary.exportNamespace, isNotNull);
   }
 
   test_unresolved_part() {

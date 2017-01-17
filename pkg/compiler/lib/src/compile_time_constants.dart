@@ -13,8 +13,8 @@ import 'constants/constant_system.dart';
 import 'constants/evaluation.dart';
 import 'constants/expressions.dart';
 import 'constants/values.dart';
-import 'core_types.dart' show CoreTypes;
-import 'dart_types.dart';
+import 'core_types.dart' show CommonElements;
+import 'elements/resolution_types.dart';
 import 'elements/elements.dart';
 import 'elements/modelx.dart' show ConstantVariableMixin;
 import 'resolution/operators.dart';
@@ -159,7 +159,7 @@ abstract class ConstantCompilerBase implements ConstantCompiler {
 
   DiagnosticReporter get reporter => compiler.reporter;
 
-  CoreTypes get coreTypes => compiler.coreTypes;
+  CommonElements get commonElements => compiler.commonElements;
 
   @override
   @deprecated
@@ -252,7 +252,7 @@ abstract class ConstantCompilerBase implements ConstantCompiler {
           checkType &&
           expression != null &&
           element.isField) {
-        DartType elementType = element.type;
+        ResolutionDartType elementType = element.type;
         ConstantValue value = getConstantValue(expression);
         if (elementType.isMalformed && !value.isNull) {
           if (isConst) {
@@ -272,7 +272,7 @@ abstract class ConstantCompilerBase implements ConstantCompiler {
             expression = null;
           }
         } else {
-          DartType constantType = value.getType(coreTypes);
+          ResolutionDartType constantType = value.getType(commonElements);
           if (!constantSystem.isSubtype(
               compiler.types, constantType, elementType)) {
             if (isConst) {
@@ -407,7 +407,7 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
 
   ConstantSystem get constantSystem => handler.constantSystem;
   Resolution get resolution => compiler.resolution;
-  CoreTypes get coreTypes => compiler.coreTypes;
+  CommonElements get commonElements => compiler.commonElements;
   DiagnosticReporter get reporter => compiler.reporter;
 
   AstConstant evaluate(Node node) {
@@ -470,7 +470,7 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
       argumentExpressions.add(argument.expression);
       argumentValues.add(argument.value);
     }
-    DartType type = elements.getType(node);
+    ResolutionDartType type = elements.getType(node);
     return new AstConstant(
         context,
         node,
@@ -508,7 +508,7 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
       valueExpressions.add(value.expression);
       map[key.value] = value.value;
     }
-    InterfaceType type = elements.getType(node);
+    ResolutionInterfaceType type = elements.getType(node);
     return new AstConstant(
         context,
         node,
@@ -594,7 +594,7 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
   }
 
   AstConstant visitLiteralSymbol(LiteralSymbol node) {
-    InterfaceType type = coreTypes.symbolType;
+    ResolutionInterfaceType type = commonElements.symbolType;
     String text = node.slowNameString;
     List<AstConstant> arguments = <AstConstant>[
       new AstConstant(context, node, new StringConstantExpression(text),
@@ -608,7 +608,7 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
         context, node, new SymbolConstantExpression(text), constant.value);
   }
 
-  ConstantValue makeTypeConstant(DartType elementType) {
+  ConstantValue makeTypeConstant(ResolutionDartType elementType) {
     return constantSystem.createType(compiler, elementType);
   }
 
@@ -624,7 +624,7 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
     Element element = elements[node];
     if (Elements.isClass(element) || Elements.isTypedef(element)) {
       TypeDeclarationElement typeDeclarationElement = element;
-      DartType type = typeDeclarationElement.rawType;
+      ResolutionDartType type = typeDeclarationElement.rawType;
       return new AstConstant(element, node, new TypeConstantExpression(type),
           makeTypeConstant(type));
     }
@@ -637,13 +637,13 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
     if (send.isPropertyAccess) {
       AstConstant result;
       if (Elements.isStaticOrTopLevelFunction(element)) {
-        FunctionElement function = element;
+        MethodElement function = element;
         function.computeType(resolution);
         result = new AstConstant(
             context,
             send,
             new FunctionConstantExpression(function),
-            new FunctionConstantValue(function));
+            new FunctionConstantValue(function, function.type));
       } else if (Elements.isStaticOrTopLevelField(element)) {
         ConstantExpression elementExpression;
         if (element.isConst) {
@@ -660,7 +660,7 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
         }
       } else if (Elements.isClass(element) || Elements.isTypedef(element)) {
         assert(elements.isTypeLiteral(send));
-        DartType elementType = elements.getTypeLiteralType(send);
+        ResolutionDartType elementType = elements.getTypeLiteralType(send);
         result = new AstConstant(
             context,
             send,
@@ -810,10 +810,11 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
     if (condition == null || condition.isError) {
       return condition;
     } else if (!condition.value.isBool) {
-      DartType conditionType = condition.value.getType(coreTypes);
+      ResolutionDartType conditionType =
+          condition.value.getType(commonElements);
       if (isEvaluatingConstant) {
         reporter.reportErrorMessage(node.condition, MessageKind.NOT_ASSIGNABLE,
-            {'fromType': conditionType, 'toType': coreTypes.boolType});
+            {'fromType': conditionType, 'toType': commonElements.boolType});
         return new ErroneousAstConstant(context, node);
       }
       return null;
@@ -897,16 +898,20 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
           message: MessageKind.DEFERRED_COMPILE_TIME_CONSTANT_CONSTRUCTION);
     }
 
-    InterfaceType type = elements.getType(node);
+    ResolutionInterfaceType type = elements.getType(node);
     CallStructure callStructure = elements.getSelector(send).callStructure;
 
     return createConstructorInvocation(node, type, constructor, callStructure,
         arguments: node.send.arguments);
   }
 
-  AstConstant createConstructorInvocation(Node node, InterfaceType type,
-      ConstructorElement constructor, CallStructure callStructure,
-      {Link<Node> arguments, List<AstConstant> normalizedArguments}) {
+  AstConstant createConstructorInvocation(
+      Node node,
+      ResolutionInterfaceType type,
+      ConstructorElement constructor,
+      CallStructure callStructure,
+      {Link<Node> arguments,
+      List<AstConstant> normalizedArguments}) {
     // TODO(ahe): This is nasty: we must eagerly analyze the
     // constructor to ensure the redirectionTarget has been computed
     // correctly.  Find a way to avoid this.
@@ -917,7 +922,7 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
     compiler.resolver.resolveRedirectionChain(constructor, node);
 
     bool isInvalid = false;
-    InterfaceType constructedType = type;
+    ResolutionInterfaceType constructedType = type;
     ConstructorElement implementation;
     if (constructor.isRedirectingFactory) {
       if (constructor.isEffectiveTargetMalformed) {
@@ -994,7 +999,7 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
 
   AstConstant createFromEnvironmentConstant(
       Node node,
-      InterfaceType type,
+      ResolutionInterfaceType type,
       ConstructorElement constructor,
       CallStructure callStructure,
       List<AstConstant> normalizedArguments,
@@ -1008,38 +1013,38 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
     }
 
     if (!firstArgument.isString) {
-      DartType type = defaultValue.getType(coreTypes);
+      ResolutionDartType type = defaultValue.getType(commonElements);
       return reportNotCompileTimeConstant(
           normalizedArguments[0].node,
           MessageKind.NOT_ASSIGNABLE,
-          {'fromType': type, 'toType': coreTypes.stringType});
+          {'fromType': type, 'toType': commonElements.stringType});
     }
 
     if (constructor.isIntFromEnvironmentConstructor &&
         !(defaultValue.isNull || defaultValue.isInt)) {
-      DartType type = defaultValue.getType(coreTypes);
+      ResolutionDartType type = defaultValue.getType(commonElements);
       return reportNotCompileTimeConstant(
           normalizedArguments[1].node,
           MessageKind.NOT_ASSIGNABLE,
-          {'fromType': type, 'toType': coreTypes.intType});
+          {'fromType': type, 'toType': commonElements.intType});
     }
 
     if (constructor.isBoolFromEnvironmentConstructor &&
         !(defaultValue.isNull || defaultValue.isBool)) {
-      DartType type = defaultValue.getType(coreTypes);
+      ResolutionDartType type = defaultValue.getType(commonElements);
       return reportNotCompileTimeConstant(
           normalizedArguments[1].node,
           MessageKind.NOT_ASSIGNABLE,
-          {'fromType': type, 'toType': coreTypes.boolType});
+          {'fromType': type, 'toType': commonElements.boolType});
     }
 
     if (constructor.isStringFromEnvironmentConstructor &&
         !(defaultValue.isNull || defaultValue.isString)) {
-      DartType type = defaultValue.getType(coreTypes);
+      ResolutionDartType type = defaultValue.getType(commonElements);
       return reportNotCompileTimeConstant(
           normalizedArguments[1].node,
           MessageKind.NOT_ASSIGNABLE,
-          {'fromType': type, 'toType': coreTypes.stringType});
+          {'fromType': type, 'toType': commonElements.stringType});
     }
 
     String name = firstArgument.primitiveValue.slowToString();
@@ -1092,9 +1097,9 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
       ConstantCompilerBase handler,
       Element context,
       Node node,
-      InterfaceType type,
+      ResolutionInterfaceType type,
       ConstructorElement constructor,
-      InterfaceType constructedType,
+      ResolutionInterfaceType constructedType,
       ConstructorElement target,
       CallStructure callStructure,
       List<AstConstant> concreteArguments,
@@ -1163,7 +1168,7 @@ class CompileTimeConstantEvaluator extends Visitor<AstConstant> {
 }
 
 class ConstructorEvaluator extends CompileTimeConstantEvaluator {
-  final InterfaceType constructedType;
+  final ResolutionInterfaceType constructedType;
   final ConstructorElement constructor;
   final Map<Element, AstConstant> definitions;
   final Map<Element, AstConstant> fieldValues;
@@ -1175,7 +1180,7 @@ class ConstructorEvaluator extends CompileTimeConstantEvaluator {
    * Invariant: [constructor] must be an implementation element.
    */
   ConstructorEvaluator(
-      InterfaceType this.constructedType,
+      ResolutionInterfaceType this.constructedType,
       ConstructorElement constructor,
       ConstantCompiler handler,
       Compiler compiler)
@@ -1208,8 +1213,9 @@ class ConstructorEvaluator extends CompileTimeConstantEvaluator {
 
   void potentiallyCheckType(TypedElement element, AstConstant constant) {
     if (compiler.options.enableTypeAssertions) {
-      DartType elementType = element.type.substByContext(constructedType);
-      DartType constantType = constant.value.getType(coreTypes);
+      ResolutionDartType elementType =
+          element.type.substByContext(constructedType);
+      ResolutionDartType constantType = constant.value.getType(commonElements);
       if (!constantSystem.isSubtype(
           compiler.types, constantType, elementType)) {
         reporter.withCurrentElement(constant.element, () {
@@ -1250,7 +1256,7 @@ class ConstructorEvaluator extends CompileTimeConstantEvaluator {
 
   void evaluateSuperOrRedirectSend(List<AstConstant> compiledArguments,
       CallStructure callStructure, ConstructorElement targetConstructor) {
-    InterfaceType type =
+    ResolutionInterfaceType type =
         constructedType.asInstanceOf(targetConstructor.enclosingClass);
     if (compiler.serialization.isDeserialized(targetConstructor)) {
       List<ConstantExpression> arguments =

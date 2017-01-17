@@ -100,9 +100,15 @@ class VerifyOriginId : public IsolateVisitor {
 #endif
 
 
-static uint8_t* allocator(uint8_t* ptr, intptr_t old_size, intptr_t new_size) {
+static uint8_t* malloc_allocator(uint8_t* ptr,
+                                 intptr_t old_size,
+                                 intptr_t new_size) {
   void* new_ptr = realloc(reinterpret_cast<void*>(ptr), new_size);
   return reinterpret_cast<uint8_t*>(new_ptr);
+}
+
+static void malloc_deallocator(uint8_t* ptr) {
+  free(reinterpret_cast<void*>(ptr));
 }
 
 
@@ -110,7 +116,8 @@ static void SerializeObject(const Instance& obj,
                             uint8_t** obj_data,
                             intptr_t* obj_len,
                             bool allow_any_object) {
-  MessageWriter writer(obj_data, &allocator, allow_any_object);
+  MessageWriter writer(obj_data, &malloc_allocator, &malloc_deallocator,
+                       allow_any_object);
   writer.WriteMessage(obj);
   *obj_len = writer.BytesWritten();
 }
@@ -125,6 +132,12 @@ static Message* SerializeMessage(Dart_Port dest_port, const Instance& obj) {
     SerializeObject(obj, &obj_data, &obj_len, false);
     return new Message(dest_port, obj_data, obj_len, Message::kNormalPriority);
   }
+}
+
+
+bool IsolateVisitor::IsVMInternalIsolate(Isolate* isolate) const {
+  return ((isolate == Dart::vm_isolate()) ||
+          ServiceIsolate::IsServiceIsolateDescendant(isolate));
 }
 
 
@@ -187,7 +200,7 @@ void Isolate::SendInternalLibMessage(LibMsgId msg_id, uint64_t capability) {
   msg.SetAt(2, element);
 
   uint8_t* data = NULL;
-  MessageWriter writer(&data, &allocator, false);
+  MessageWriter writer(&data, &malloc_allocator, &malloc_deallocator, false);
   writer.WriteMessage(msg);
 
   PortMap::PostMessage(new Message(main_port(), data, writer.BytesWritten(),
@@ -770,10 +783,11 @@ Isolate::Isolate(const Dart_IsolateFlags& api_flags)
       single_step_(false),
       thread_registry_(new ThreadRegistry()),
       safepoint_handler_(new SafepointHandler(this)),
+      memory_high_watermark_(0),
       message_notify_callback_(NULL),
       name_(NULL),
       debugger_name_(NULL),
-      start_time_(OS::GetCurrentTimeMicros()),
+      start_time_micros_(OS::GetCurrentMonotonicMicros()),
       main_port_(0),
       origin_id_(0),
       pause_capability_(0),
@@ -786,7 +800,6 @@ Isolate::Isolate(const Dart_IsolateFlags& api_flags)
       debugger_(NULL),
       resume_request_(false),
       last_resume_timestamp_(OS::GetCurrentTimeMillis()),
-      has_compiled_code_(false),
       random_(),
       simulator_(NULL),
       mutex_(new Mutex()),
@@ -1032,6 +1045,11 @@ void Isolate::ScheduleMessageInterrupts() {
 void Isolate::set_debugger_name(const char* name) {
   free(debugger_name_);
   debugger_name_ = strdup(name);
+}
+
+
+int64_t Isolate::UptimeMicros() const {
+  return OS::GetCurrentMonotonicMicros() - start_time_micros_;
 }
 
 
@@ -1712,7 +1730,7 @@ void Isolate::Shutdown() {
   StopBackgroundCompiler();
 
 #if defined(DEBUG)
-  if (heap_ != NULL) {
+  if (heap_ != NULL && FLAG_verify_on_transition) {
     // The VM isolate keeps all objects marked.
     heap_->Verify(this == Dart::vm_isolate() ? kRequireMarked : kForbidMarked);
   }
@@ -1984,8 +2002,9 @@ void Isolate::PrintJSON(JSONStream* stream, bool ref) {
   }
   jsobj.AddPropertyF("_originNumber", "%" Pd64 "",
                      static_cast<int64_t>(origin_id()));
-  int64_t start_time_millis = start_time() / kMicrosecondsPerMillisecond;
-  jsobj.AddPropertyTimeMillis("startTime", start_time_millis);
+  int64_t uptime_millis = UptimeMicros() / kMicrosecondsPerMillisecond;
+  int64_t start_time = OS::GetCurrentTimeMillis() - uptime_millis;
+  jsobj.AddPropertyTimeMillis("startTime", start_time);
   {
     JSONObject jsheap(&jsobj, "_heaps");
     heap()->PrintToJSONObject(Heap::kNew, &jsheap);
@@ -2031,6 +2050,12 @@ void Isolate::PrintJSON(JSONStream* stream, bool ref) {
   if (!lib.IsNull()) {
     jsobj.AddProperty("rootLib", lib);
   }
+
+  intptr_t zone_handle_count = thread_registry_->CountZoneHandles();
+  intptr_t scoped_handle_count = thread_registry_->CountScopedHandles();
+
+  jsobj.AddProperty("_numZoneHandles", zone_handle_count);
+  jsobj.AddProperty("_numScopedHandles", scoped_handle_count);
 
   if (FLAG_profiler) {
     JSONObject tagCounters(&jsobj, "_tagCounters");
@@ -2090,6 +2115,9 @@ void Isolate::PrintJSON(JSONStream* stream, bool ref) {
       }
     }
   }
+
+  jsobj.AddPropertyF("_memoryHighWatermark", "%" Pu "", memory_high_watermark_);
+  jsobj.AddProperty("_threads", thread_registry_);
 }
 #endif
 
@@ -2232,12 +2260,12 @@ RawObject* Isolate::InvokePendingServiceExtensionCalls() {
 
     if (FLAG_trace_service) {
       OS::Print("[+%" Pd64 "ms] Isolate %s invoking _runExtension for %s\n",
-                Dart::timestamp(), name(), method_name.ToCString());
+                Dart::UptimeMillis(), name(), method_name.ToCString());
     }
     result = DartEntry::InvokeFunction(run_extension, arguments);
     if (FLAG_trace_service) {
       OS::Print("[+%" Pd64 "ms] Isolate %s : _runExtension complete for %s\n",
-                Dart::timestamp(), name(), method_name.ToCString());
+                Dart::UptimeMillis(), name(), method_name.ToCString());
     }
     // Propagate the error.
     if (result.IsError()) {
@@ -2276,7 +2304,7 @@ void Isolate::AppendServiceExtensionCall(const Instance& closure,
                                          const Instance& id) {
   if (FLAG_trace_service) {
     OS::Print("[+%" Pd64 "ms] Isolate %s ENQUEUING request for extension %s\n",
-              Dart::timestamp(), name(), method_name.ToCString());
+              Dart::UptimeMillis(), name(), method_name.ToCString());
   }
   GrowableObjectArray& calls =
       GrowableObjectArray::Handle(pending_service_extension_calls());
@@ -2535,7 +2563,7 @@ void Isolate::KillLocked(LibMsgId msg_id) {
 
   {
     uint8_t* buffer = NULL;
-    ApiMessageWriter writer(&buffer, allocator);
+    ApiMessageWriter writer(&buffer, &malloc_allocator);
     bool success = writer.WriteCMessage(&kill_msg);
     ASSERT(success);
 
@@ -2571,9 +2599,7 @@ class IsolateKillerVisitor : public IsolateVisitor {
     // If a target_ is specified, then only kill the target_.
     // Otherwise, don't kill the service isolate or vm isolate.
     return (((target_ != NULL) && (isolate == target_)) ||
-            ((target_ == NULL) &&
-             !ServiceIsolate::IsServiceIsolateDescendant(isolate) &&
-             (isolate != Dart::vm_isolate())));
+            ((target_ == NULL) && !IsVMInternalIsolate(isolate)));
   }
 
   Isolate* target_;
@@ -2641,6 +2667,8 @@ Thread* Isolate::ScheduleThread(bool is_mutator, bool bypass_safepoint) {
     thread = thread_registry()->GetFreeThreadLocked(this, is_mutator);
     ASSERT(thread != NULL);
 
+    thread->ResetHighWatermark();
+
     // Set up other values and set the TLS value.
     thread->isolate_ = this;
     ASSERT(heap() != NULL);
@@ -2687,6 +2715,7 @@ void Isolate::UnscheduleThread(Thread* thread,
     // Ensure that the thread reports itself as being at a safepoint.
     thread->EnterSafepoint();
   }
+  UpdateMemoryHighWatermark();
   OSThread* os_thread = thread->os_thread();
   ASSERT(os_thread != NULL);
   os_thread->DisableThreadInterrupts();
@@ -2704,6 +2733,15 @@ void Isolate::UnscheduleThread(Thread* thread,
   ASSERT(thread->no_safepoint_scope_depth() == 0);
   // Return thread structure.
   thread_registry()->ReturnThreadLocked(is_mutator, thread);
+}
+
+
+void Isolate::UpdateMemoryHighWatermark() {
+  const uintptr_t thread_watermarks_total =
+      thread_registry()->ThreadHighWatermarksTotalLocked();
+  if (thread_watermarks_total > memory_high_watermark_) {
+    memory_high_watermark_ = thread_watermarks_total;
+  }
 }
 
 

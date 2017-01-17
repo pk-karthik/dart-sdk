@@ -15,8 +15,8 @@ import '../../common.dart';
 import '../../common/names.dart' show Names;
 import '../../compiler.dart' show Compiler;
 import '../../constants/values.dart';
-import '../../core_types.dart' show CoreClasses;
-import '../../dart_types.dart' show DartType;
+import '../../core_types.dart' show CommonElements;
+import '../../elements/resolution_types.dart' show ResolutionDartType;
 import '../../deferred_load.dart' show OutputUnit;
 import '../../elements/elements.dart'
     show
@@ -27,6 +27,7 @@ import '../../elements/elements.dart'
         FunctionElement,
         FunctionSignature,
         LibraryElement,
+        MemberElement,
         MetadataAnnotation,
         MethodElement,
         Name,
@@ -52,13 +53,15 @@ import '../../js_backend/js_backend.dart'
         TypeVariableHandler;
 import '../../universe/call_structure.dart' show CallStructure;
 import '../../universe/selector.dart' show Selector;
+import '../../universe/world_builder.dart' show CodegenWorldBuilder;
 import '../../util/characters.dart' show $$, $A, $HASH, $Z, $a, $z;
 import '../../util/uri_extras.dart' show relativize;
 import '../../util/util.dart' show equalElements;
+import '../../world.dart' show ClosedWorld;
 import '../constant_ordering.dart' show deepCompareConstants;
 import '../headers.dart';
-import '../js_emitter.dart' hide Emitter;
-import '../js_emitter.dart' as js_emitter show Emitter;
+import '../js_emitter.dart' hide Emitter, EmitterFactory;
+import '../js_emitter.dart' as js_emitter show Emitter, EmitterFactory;
 import '../model.dart';
 import '../program_builder/program_builder.dart';
 
@@ -72,6 +75,25 @@ part 'interceptor_emitter.dart';
 part 'nsm_emitter.dart';
 part 'setup_program_builder.dart';
 
+class EmitterFactory implements js_emitter.EmitterFactory {
+  final bool generateSourceMap;
+
+  EmitterFactory({this.generateSourceMap});
+
+  @override
+  String get patchVersion => "full";
+
+  @override
+  bool get supportsReflection => true;
+
+  @override
+  Emitter createEmitter(
+      CodeEmitterTask task, Namer namer, ClosedWorld closedWorld) {
+    return new Emitter(
+        task.compiler, namer, closedWorld, generateSourceMap, task);
+  }
+}
+
 class Emitter implements js_emitter.Emitter {
   final Compiler compiler;
   final CodeEmitterTask task;
@@ -83,9 +105,9 @@ class Emitter implements js_emitter.Emitter {
   List<TypedefElement> typedefsNeededForReflection;
 
   final ContainerBuilder containerBuilder = new ContainerBuilder();
-  final ClassEmitter classEmitter = new ClassEmitter();
-  final NsmEmitter nsmEmitter = new NsmEmitter();
-  final InterceptorEmitter interceptorEmitter = new InterceptorEmitter();
+  final ClassEmitter classEmitter;
+  final NsmEmitter nsmEmitter;
+  final InterceptorEmitter interceptorEmitter;
 
   // TODO(johnniwinther): Wrap these fields in a caching strategy.
   final Set<ConstantValue> cachedEmittedConstants;
@@ -106,7 +128,7 @@ class Emitter implements js_emitter.Emitter {
   ConstantEmitter constantEmitter;
   NativeEmitter get nativeEmitter => task.nativeEmitter;
   TypeTestRegistry get typeTestRegistry => task.typeTestRegistry;
-  CoreClasses get coreClasses => compiler.coreClasses;
+  CommonElements get commonElements => compiler.commonElements;
 
   // The full code that is written to each hunk part-file.
   Map<OutputUnit, CodeOutput> outputBuffers = new Map<OutputUnit, CodeOutput>();
@@ -154,18 +176,30 @@ class Emitter implements js_emitter.Emitter {
 
   final bool generateSourceMap;
 
-  Emitter(Compiler compiler, Namer namer, this.generateSourceMap, this.task)
+  Emitter(Compiler compiler, Namer namer, ClosedWorld closedWorld,
+      this.generateSourceMap, this.task)
       : this.compiler = compiler,
         this.namer = namer,
         cachedEmittedConstants = compiler.cacheStrategy.newSet(),
         cachedClassBuilders = compiler.cacheStrategy.newMap(),
-        cachedElements = compiler.cacheStrategy.newSet() {
+        cachedElements = compiler.cacheStrategy.newSet(),
+        classEmitter = new ClassEmitter(closedWorld),
+        interceptorEmitter = new InterceptorEmitter(closedWorld),
+        nsmEmitter = new NsmEmitter(closedWorld) {
     constantEmitter = new ConstantEmitter(
         compiler, namer, this.constantReference, constantListGenerator);
     containerBuilder.emitter = this;
     classEmitter.emitter = this;
     nsmEmitter.emitter = this;
     interceptorEmitter.emitter = this;
+    if (compiler.options.hasIncrementalSupport) {
+      // Much like a scout, an incremental compiler is always prepared. For
+      // mixins, classes, and lazy statics, at least.
+      needsClassSupport = true;
+      needsMixinSupport = true;
+      needsLazyInitializer = true;
+      needsStructuredMemberInfo = true;
+    }
   }
 
   DiagnosticReporter get reporter => compiler.reporter;
@@ -187,9 +221,6 @@ class Emitter implements js_emitter.Emitter {
     _cspPrecompiledFunctions.clear();
     _cspPrecompiledConstructorNames.clear();
   }
-
-  @override
-  String get patchVersion => "full";
 
   @override
   bool isConstantInlinedOrAlreadyEmitted(ConstantValue constant) {
@@ -273,9 +304,6 @@ class Emitter implements js_emitter.Emitter {
   String get globalsHolder => r"$globals$";
 
   @override
-  bool get supportsReflection => true;
-
-  @override
   jsAst.Expression generateEmbeddedGlobalAccess(String global) {
     return js(generateEmbeddedGlobalAccessString(global));
   }
@@ -299,7 +327,7 @@ class Emitter implements js_emitter.Emitter {
   }
 
   @override
-  jsAst.Expression isolateStaticClosureAccess(FunctionElement element) {
+  jsAst.Expression isolateStaticClosureAccess(MethodElement element) {
     return jsAst.js('#.#()',
         [namer.globalObjectFor(element), namer.staticClosureName(element)]);
   }
@@ -340,7 +368,7 @@ class Emitter implements js_emitter.Emitter {
     switch (builtin) {
       case JsBuiltin.dartObjectConstructor:
         return jsAst.js
-            .expressionTemplateYielding(typeAccess(coreClasses.objectClass));
+            .expressionTemplateYielding(typeAccess(commonElements.objectClass));
 
       case JsBuiltin.isCheckPropertyToJsConstructorName:
         int isPrefixLength = namer.operatorIsPrefix.length;
@@ -413,13 +441,13 @@ class Emitter implements js_emitter.Emitter {
   /// In minified mode we want to keep the name for the most common core types.
   bool _isNativeTypeNeedingReflectionName(Element element) {
     if (!element.isClass) return false;
-    return (element == coreClasses.intClass ||
-        element == coreClasses.doubleClass ||
-        element == coreClasses.numClass ||
-        element == coreClasses.stringClass ||
-        element == coreClasses.boolClass ||
-        element == coreClasses.nullClass ||
-        element == coreClasses.listClass);
+    return (element == commonElements.intClass ||
+        element == commonElements.doubleClass ||
+        element == commonElements.numClass ||
+        element == commonElements.stringClass ||
+        element == commonElements.boolClass ||
+        element == commonElements.nullClass ||
+        element == commonElements.listClass);
   }
 
   /// Returns the "reflection name" of an [Element] or [Selector].
@@ -911,10 +939,14 @@ class Emitter implements js_emitter.Emitter {
 
             prototype[getterName] = function () {
               var result = this[fieldName];
+              if (result == sentinelInProgress) {
+                // In minified mode, static name is not provided, so fall back
+                // to the minified fieldName.
+                #cyclicThrow(staticName || fieldName);
+              }
               try {
                 if (result === sentinelUndefined) {
                   this[fieldName] = sentinelInProgress;
-
                   try {
                     result = this[fieldName] = lazyValue();
                   } finally {
@@ -923,13 +955,7 @@ class Emitter implements js_emitter.Emitter {
                     if (result === sentinelUndefined)
                       this[fieldName] = null;
                   }
-                } else {
-                  if (result === sentinelInProgress)
-                    // In minified mode, static name is not provided, so fall
-                    // back to the minified fieldName.
-                    #cyclicThrow(staticName || fieldName);
                 }
-
                 return result;
               } finally {
                 this[getterName] = function() { return this[fieldName]; };
@@ -1152,7 +1178,7 @@ class Emitter implements js_emitter.Emitter {
         .add(new jsAst.FunctionDeclaration(constructorName, constructorAst));
 
     String fieldNamesProperty = FIELD_NAMES_PROPERTY_NAME;
-    bool hasIsolateSupport = compiler.resolverWorld.hasIsolateSupport;
+    bool hasIsolateSupport = backend.hasIsolateSupport;
     jsAst.Node fieldNamesArray;
     if (hasIsolateSupport) {
       fieldNamesArray =
@@ -1196,7 +1222,7 @@ class Emitter implements js_emitter.Emitter {
     for (TypedefElement typedef in typedefsNeededForReflection) {
       LibraryElement library = typedef.library;
       // TODO(karlklose): add a TypedefBuilder and move this code there.
-      DartType type = typedef.alias;
+      ResolutionDartType type = typedef.alias;
       // TODO(zarah): reify type variables once reflection on type arguments of
       // typedefs is supported.
       jsAst.Expression typeIndex =
@@ -1210,8 +1236,8 @@ class Emitter implements js_emitter.Emitter {
       // We can be pretty sure that the objectClass is initialized, since
       // typedefs are only emitted with reflection, which requires lots of
       // classes.
-      assert(coreClasses.objectClass != null);
-      builder.superName = namer.className(coreClasses.objectClass);
+      assert(commonElements.objectClass != null);
+      builder.superName = namer.className(commonElements.objectClass);
       jsAst.Node declaration = builder.toObjectInitializer();
       jsAst.Name mangledName = namer.globalPropertyName(typedef);
       String reflectionName = getReflectionName(typedef, mangledName);
@@ -1863,7 +1889,8 @@ function(originalDescriptor, name, holder, isStatic, globalFunctionsAccess) {
       // specific to the class. For now, not supported for native classes and
       // native elements.
       ClassElement cls = element.enclosingClassOrCompilationUnit.declaration;
-      if (compiler.codegenWorld.directlyInstantiatedClasses.contains(cls) &&
+      if (compiler.codegenWorldBuilder.directlyInstantiatedClasses
+              .contains(cls) &&
           !backend.isNative(cls) &&
           compiler.deferredLoadTask.outputUnitForElement(element) ==
               compiler.deferredLoadTask.outputUnitForElement(cls)) {

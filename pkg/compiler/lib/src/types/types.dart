@@ -9,11 +9,12 @@ import '../common.dart' show invariant;
 import '../common/tasks.dart' show CompilerTask;
 import '../compiler.dart' show Compiler;
 import '../elements/elements.dart';
-import '../inferrer/type_graph_inferrer.dart'
-    show TypeGraphInferrer, TypeInformationSystem;
+import '../inferrer/type_graph_inferrer.dart' show TypeGraphInferrer;
+import '../inferrer/type_system.dart';
 import '../tree/tree.dart';
 import '../universe/selector.dart' show Selector;
 import '../util/util.dart' show Maplet;
+import '../world.dart' show ClosedWorld, ClosedWorldRefiner;
 
 import 'masks.dart';
 export 'masks.dart';
@@ -184,8 +185,8 @@ abstract class TypesInferrer {
 class GlobalTypeInferenceResults {
   // TODO(sigmund): store relevant data & drop reference to inference engine.
   final TypeGraphInferrer _inferrer;
-  final Compiler compiler;
-  final TypeMask dynamicType;
+  final ClosedWorld closedWorld;
+  final Compiler _compiler;
   final Map<Element, GlobalTypeInferenceElementResult> _elementResults = {};
 
   // TODO(sigmund,johnniwinther): compute result objects eagerly and make it an
@@ -206,13 +207,14 @@ class GlobalTypeInferenceResults {
             element,
             _inferrer.inferrer.inTreeData[key],
             _inferrer,
-            compiler.backend.isJsInterop(element),
+            _compiler.backend.isJsInterop(element),
             dynamicType));
   }
 
-  GlobalTypeInferenceResults(this._inferrer, this.compiler, CommonMasks masks,
-      TypeInformationSystem types)
-      : dynamicType = masks.dynamicType;
+  GlobalTypeInferenceResults(
+      this._inferrer, this._compiler, this.closedWorld, TypeSystem types);
+
+  TypeMask get dynamicType => closedWorld.commonMasks.dynamicType;
 
   /// Returns the type of a [selector] when applied to a receiver with the given
   /// type [mask].
@@ -245,14 +247,15 @@ class GlobalTypeInferenceTask extends CompilerTask {
         super(compiler.measurer);
 
   /// Runs the global type-inference algorithm once.
-  void runGlobalTypeInference(Element mainElement) {
+  void runGlobalTypeInference(Element mainElement, ClosedWorld closedWorld,
+      ClosedWorldRefiner closedWorldRefiner) {
     measure(() {
-      CommonMasks masks = compiler.closedWorld.commonMasks;
-      typesInferrerInternal ??= new TypeGraphInferrer(compiler, masks);
+      typesInferrerInternal ??=
+          new TypeGraphInferrer(compiler, closedWorld, closedWorldRefiner);
       typesInferrerInternal.analyzeMain(mainElement);
       typesInferrerInternal.clear();
       results = new GlobalTypeInferenceResults(typesInferrerInternal, compiler,
-          masks, typesInferrerInternal.inferrer.types);
+          closedWorld, typesInferrerInternal.inferrer.types);
     });
   }
 }

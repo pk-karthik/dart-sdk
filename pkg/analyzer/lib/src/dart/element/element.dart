@@ -116,7 +116,8 @@ abstract class AbstractClassElementImpl extends ElementImpl
   ElementKind get kind => ElementKind.CLASS;
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitClassElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitClassElement(this);
 
   @override
   NamedCompilationUnitMember computeNode() {
@@ -1212,7 +1213,10 @@ class ClassElementImpl extends AbstractClassElementImpl
         if (e.kind == UnlinkedExecutableKind.getter) {
           fieldType = accessor.returnType;
         } else {
-          fieldType = accessor.parameters[0].type;
+          List<ParameterElement> parameters = accessor.parameters;
+          fieldType = parameters.isNotEmpty
+              ? parameters[0].type
+              : DynamicTypeImpl.instance;
         }
         // Create or update the implicit field.
         String fieldName = accessor.displayName;
@@ -1621,7 +1625,8 @@ class CompilationUnitElementImpl extends UriReferencedElementImpl
       object is CompilationUnitElementImpl && source == object.source;
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitCompilationUnitElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitCompilationUnitElement(this);
 
   /**
    * This method is invoked after this unit was incrementally resolved.
@@ -2171,7 +2176,8 @@ class ConstructorElementImpl extends ExecutableElementImpl
   }
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitConstructorElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitConstructorElement(this);
 
   @override
   void appendTo(StringBuffer buffer) {
@@ -2233,6 +2239,9 @@ class ConstructorElementImpl extends ExecutableElementImpl
                     .buildExpression(this, serialized.expression));
         initializer.fieldName.staticElement = enclosingElement.getField(name);
         return initializer;
+      case UnlinkedConstructorInitializerKind.assertInvocation:
+        return AstTestFactory.assertInitializer(
+            arguments[0], arguments.length > 1 ? arguments[1] : null);
       case UnlinkedConstructorInitializerKind.superInvocation:
         SuperConstructorInvocation initializer =
             AstTestFactory.superConstructorInvocation2(
@@ -2434,7 +2443,7 @@ class DynamicElementImpl extends ElementImpl implements TypeDefiningElement {
   ElementKind get kind => ElementKind.DYNAMIC;
 
   @override
-  accept(ElementVisitor visitor) => null;
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) => null;
 }
 
 /**
@@ -4157,12 +4166,13 @@ class ExportElementImpl extends UriReferencedElementImpl
   }
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitExportElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitExportElement(this);
 
   @override
   void appendTo(StringBuffer buffer) {
     buffer.write("export ");
-    (exportedLibrary as LibraryElementImpl).appendTo(buffer);
+    LibraryElementImpl.getImpl(exportedLibrary).appendTo(buffer);
   }
 }
 
@@ -4242,7 +4252,8 @@ class FieldElementImpl extends PropertyInducingElementImpl
   ElementKind get kind => ElementKind.FIELD;
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitFieldElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitFieldElement(this);
 
   @override
   AstNode computeNode() {
@@ -4319,7 +4330,7 @@ class FieldFormalParameterElementImpl extends ParameterElementImpl
   }
 
   @override
-  accept(ElementVisitor visitor) =>
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
       visitor.visitFieldFormalParameterElement(this);
 }
 
@@ -4421,7 +4432,8 @@ class FunctionElementImpl extends ExecutableElementImpl
   }
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitFunctionElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitFunctionElement(this);
 
   @override
   void appendTo(StringBuffer buffer) {
@@ -4764,7 +4776,8 @@ class FunctionTypeAliasElementImpl extends ElementImpl
       _unlinkedTypedef.typeParameters;
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitFunctionTypeAliasElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitFunctionTypeAliasElement(this);
 
   @override
   void appendTo(StringBuffer buffer) {
@@ -4782,12 +4795,13 @@ class FunctionTypeAliasElementImpl extends ElementImpl
       buffer.write(">");
     }
     buffer.write("(");
-    int parameterCount = _parameters.length;
+    List<ParameterElement> parameterList = parameters;
+    int parameterCount = parameterList.length;
     for (int i = 0; i < parameterCount; i++) {
       if (i > 0) {
         buffer.write(", ");
       }
-      (_parameters[i] as ParameterElementImpl).appendTo(buffer);
+      (parameterList[i] as ParameterElementImpl).appendTo(buffer);
     }
     buffer.write(")");
     if (type != null) {
@@ -5109,12 +5123,13 @@ class ImportElementImpl extends UriReferencedElementImpl
   }
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitImportElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitImportElement(this);
 
   @override
   void appendTo(StringBuffer buffer) {
     buffer.write("import ");
-    (importedLibrary as LibraryElementImpl).appendTo(buffer);
+    LibraryElementImpl.getImpl(importedLibrary).appendTo(buffer);
   }
 
   @override
@@ -5238,7 +5253,8 @@ class LabelElementImpl extends ElementImpl implements LabelElement {
   }
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitLabelElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitLabelElement(this);
 
   /**
    * Create and return [LabelElement]s for the given [unlinkedLabels].
@@ -5788,7 +5804,8 @@ class LibraryElementImpl extends ElementImpl implements LibraryElement {
   }
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitLibraryElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitLibraryElement(this);
 
   /**
    * Create the [FunctionElement] to be returned by [loadLibraryFunction],
@@ -5920,6 +5937,16 @@ class LibraryElementImpl extends ElementImpl implements LibraryElement {
     safelyVisitChildren(exports, visitor);
     safelyVisitChildren(imports, visitor);
     safelyVisitChildren(_parts, visitor);
+  }
+
+  /**
+   * Return the [LibraryElementImpl] of the given [element].
+   */
+  static LibraryElementImpl getImpl(LibraryElement element) {
+    if (element is LibraryElementHandle) {
+      return getImpl(element.actualElement);
+    }
+    return element as LibraryElementImpl;
   }
 
   /**
@@ -6078,7 +6105,8 @@ class LocalVariableElementImpl extends NonParameterVariableElementImpl
   }
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitLocalVariableElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitLocalVariableElement(this);
 
   @override
   void appendTo(StringBuffer buffer) {
@@ -6198,7 +6226,8 @@ class MethodElementImpl extends ExecutableElementImpl implements MethodElement {
   }
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitMethodElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitMethodElement(this);
 
   @override
   void appendTo(StringBuffer buffer) {
@@ -6489,7 +6518,8 @@ class MultiplyDefinedElementImpl implements MultiplyDefinedElement {
   CompilationUnit get unit => null;
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitMultiplyDefinedElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitMultiplyDefinedElement(this);
 
   @override
   String computeDocumentationComment() => null;
@@ -7181,7 +7211,8 @@ class ParameterElementImpl extends VariableElementImpl
   UnlinkedExpr get _unlinkedConst => _unlinkedParam?.initializer?.bodyExpr;
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitParameterElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitParameterElement(this);
 
   @override
   void appendTo(StringBuffer buffer) {
@@ -7421,7 +7452,8 @@ class PrefixElementImpl extends ElementImpl implements PrefixElement {
   }
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitPrefixElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitPrefixElement(this);
 
   @override
   void appendTo(StringBuffer buffer) {
@@ -7593,7 +7625,8 @@ class PropertyAccessorElementImpl extends ExecutableElementImpl
   }
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitPropertyAccessorElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitPropertyAccessorElement(this);
 
   @override
   void appendTo(StringBuffer buffer) {
@@ -7933,7 +7966,8 @@ class TopLevelVariableElementImpl extends PropertyInducingElementImpl
   ElementKind get kind => ElementKind.TOP_LEVEL_VARIABLE;
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitTopLevelVariableElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitTopLevelVariableElement(this);
 
   @override
   VariableDeclaration computeNode() =>
@@ -8081,7 +8115,8 @@ class TypeParameterElementImpl extends ElementImpl
   }
 
   @override
-  accept(ElementVisitor visitor) => visitor.visitTypeParameterElement(this);
+  /*=T*/ accept/*<T>*/(ElementVisitor<dynamic/*=T*/ > visitor) =>
+      visitor.visitTypeParameterElement(this);
 
   @override
   void appendTo(StringBuffer buffer) {

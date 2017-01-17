@@ -19,11 +19,8 @@ class KernelReader;
 
 class BuildingTranslationHelper : public TranslationHelper {
  public:
-  BuildingTranslationHelper(KernelReader* reader,
-                            dart::Thread* thread,
-                            dart::Zone* zone,
-                            Isolate* isolate)
-      : TranslationHelper(thread, zone, isolate), reader_(reader) {}
+  BuildingTranslationHelper(KernelReader* reader, dart::Thread* thread)
+      : TranslationHelper(thread), reader_(reader) {}
   virtual ~BuildingTranslationHelper() {}
 
   virtual RawLibrary* LookupLibraryByKernelLibrary(Library* library);
@@ -84,7 +81,7 @@ class KernelReader {
   // Otherwise return klass.
   const Object& ClassForScriptAt(const dart::Class& klass,
                                  intptr_t source_uri_index);
-  Script& ScriptAt(intptr_t source_uri_index);
+  Script& ScriptAt(intptr_t source_uri_index, String* import_uri = NULL);
 
   void GenerateFieldAccessors(const dart::Class& klass,
                               const dart::Field& field,

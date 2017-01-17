@@ -23,7 +23,6 @@ const List<String> defaultTestSelectors = const [
   'benchmark_smoke',
   'utils',
   'lib',
-  'pkg',
   'analyze_library',
   'service',
   'kernel',
@@ -64,7 +63,7 @@ class TestOptionsParser {
           '''Specify any compilation step (if needed).
 
    none: Do not compile the Dart code (run native Dart code on the VM).
-         (only valid with the following runtimes: vm, drt)
+         (only valid with the following runtimes: vm, flutter, drt)
 
    dart2js: Compile dart code to JavaScript by running dart2js.
          (only valid with the following runtimes: d8, drt, chrome,
@@ -89,8 +88,6 @@ class TestOptionsParser {
             'dart2js',
             'dart2analyzer',
             'app_jit',
-            'dart2app',  // TODO(rmacnak): Remove after updating bots.
-            'dart2appjit',  // TODO(rmacnak): Remove after updating bots.
             'dartk',
             'dartkp'
           ],
@@ -100,6 +97,8 @@ class TestOptionsParser {
           'runtime',
           '''Where the tests should be run.
     vm: Run Dart code on the standalone dart vm.
+
+    flutter: Run Dart code on the flutter engine.
 
     dart_precompiled: Run a precompiled snapshot on a variant of the standalone
                       dart vm lacking a JIT.
@@ -121,13 +120,18 @@ class TestOptionsParser {
     [ff | chrome | safari | ie9 | ie10 | ie11 | opera | chromeOnAndroid]:
         Run JavaScript in the specified browser.
 
+    self_check: Pass each test or its compiled output to every file under
+        `pkg` whose name ends with `_self_check.dart`.
+        Each test is given to the self_check tester as a filename on stdin using
+        the batch-mode protocol.
+
     none: No runtime, compile only (for example, used for dart2analyzer static
           analysis tests).''',
           ['-r', '--runtime'],
           [
             'vm',
+            'flutter',
             'dart_precompiled',
-            'dart_app',  // TODO(rmacnak): Remove after updating bots.
             'd8',
             'jsshell',
             'drt',
@@ -144,6 +148,7 @@ class TestOptionsParser {
             'safarimobilesim',
             'ContentShellOnAndroid',
             'DartiumOnAndroid',
+            'self_check',
             'none'
           ],
           'vm'),
@@ -200,9 +205,6 @@ class TestOptionsParser {
           ['--cps-ir'],
           [],
           false,
-          type: 'bool'),
-      new _TestOptionSpecification(
-          'noopt', 'Run an in-place precompilation', ['--noopt'], [], false,
           type: 'bool'),
       new _TestOptionSpecification(
           'fast_startup',
@@ -303,6 +305,8 @@ class TestOptionsParser {
           type: 'bool'),
       new _TestOptionSpecification(
           'dart', 'Path to dart executable', ['--dart'], [], ''),
+      new _TestOptionSpecification(
+          'flutter', 'Path to flutter executable', ['--flutter'], [], ''),
       new _TestOptionSpecification(
           'drt', // TODO(antonm): fix the option name.
           'Path to content shell executable',
@@ -477,8 +481,19 @@ Note: currently only implemented for dart2js.''',
           'Exclude suites from default selector, only works when no'
           ' selector has been specified on the command line',
           ['--exclude-suite'],
-          defaultTestSelectors,
+          [],
           null),
+      new _TestOptionSpecification(
+          'skip-compilation',
+          'Skip the compilation step, using the compilation artifacts left in '
+          ' the output folder from a previous run.'
+          'This flag will often cause false positves and negatives, but can be'
+          ' useful for quick-and-dirty offline testing when not making changes'
+          ' that affect the compiler.',
+          ['--skip-compilation'],
+          [],
+          false,
+          type: 'bool')
     ];
   }
 
@@ -612,6 +627,7 @@ Note: currently only implemented for dart2js.''',
     'chrome',
     'copy_coredumps',
     'dart',
+    'flutter',
     'dartium',
     'drt',
     'exclude_suite',
@@ -697,7 +713,7 @@ Note: currently only implemented for dart2js.''',
         break;
       case 'app_jit':
       case 'dartk':
-        validRuntimes = const ['vm'];
+        validRuntimes = const ['vm', 'self_check', 'none'];
         break;
       case 'precompiler':
       case 'dartkp':
@@ -706,6 +722,7 @@ Note: currently only implemented for dart2js.''',
       case 'none':
         validRuntimes = const [
           'vm',
+          'flutter',
           'drt',
           'dartium',
           'ContentShellOnAndroid',
@@ -721,7 +738,7 @@ Note: currently only implemented for dart2js.''',
     }
     if (config['ie'] && Platform.operatingSystem != 'windows') {
       isValid = false;
-      print("Warning cannot run Internet Explorer on non-Windows operating"
+      print("Warning: cannot run Internet Explorer on non-Windows operating"
           " system.");
     }
     if (config['shard'] < 1 || config['shard'] > config['shards']) {
@@ -735,6 +752,15 @@ Note: currently only implemented for dart2js.''',
       print("Cannot have both --use-repository-packages and "
           "--use-public-packages");
     }
+    if ((config['runtime'] == 'flutter') && (config['flutter'] == '')) {
+      isValid = false;
+      print("-rflutter requires the flutter engine executable to "
+          "be specified using --flutter=");
+    }
+    if ((config['runtime'] == 'flutter') && (config['arch'] != 'x64')) {
+      isValid = false;
+      print("-rflutter is applicable only for --arch=x64");
+    }
 
     return isValid;
   }
@@ -744,15 +770,6 @@ Note: currently only implemented for dart2js.''',
    * into a list of configurations with exactly one value per key.
    */
   List<Map> _expandConfigurations(Map configuration) {
-    // TODO(rmacnak): Remove after updating bots.
-    if (configuration['runtime'] == 'dart_app') {
-      configuration['runtime'] = 'vm';
-    }
-    if (configuration['compiler'] == 'dart2app' ||
-        configuration['compiler'] == 'dart2appjit') {
-      configuration['compiler'] = 'app_jit';
-    }
-
     // Expand the pseudo-values such as 'all'.
     if (configuration['arch'] == 'all') {
       configuration['arch'] = 'ia32,x64,simarm,simarm64,simmips,simdbc64';
@@ -815,8 +832,7 @@ Note: currently only implemented for dart2js.''',
           if (selectors.contains(exclude)) {
             selectors.remove(exclude);
           } else {
-            print("Error: default selectors does not contain $exclude");
-            exit(1);
+            print("Warning: default selectors does not contain $exclude");
           }
         }
       }

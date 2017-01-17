@@ -43,7 +43,13 @@ class Zone::Segment {
 
 void Zone::Segment::DeleteSegmentList(Segment* head) {
   Segment* current = head;
+  Thread* current_thread = Thread::Current();
   while (current != NULL) {
+    if (current_thread != NULL) {
+      // TODO(bkonyi) Handle special case of segment deletion within native
+      // isolate.
+      current_thread->DecrementMemoryUsage(current->size());
+    }
     Segment* next = current->next();
 #ifdef DEBUG
     // Zap the entire current segment (including the header).
@@ -68,6 +74,11 @@ Zone::Segment* Zone::Segment::New(intptr_t size, Zone::Segment* next) {
 #endif
   result->next_ = next;
   result->size_ = size;
+  if (Thread::Current() != NULL) {
+    // TODO(bkonyi) Handle special case of segment creation within native
+    // isolate.
+    Thread::Current()->IncrementMemoryUsage(size);
+  }
   return result;
 }
 
@@ -133,6 +144,22 @@ intptr_t Zone::SizeInBytes() const {
     size += s->size();
   }
   return size + (position_ - head_->start());
+}
+
+
+intptr_t Zone::CapacityInBytes() const {
+  intptr_t size = 0;
+  for (Segment* s = large_segments_; s != NULL; s = s->next()) {
+    size += s->size();
+  }
+  if (head_ == NULL) {
+    return size + initial_buffer_.size();
+  }
+  size += initial_buffer_.size();
+  for (Segment* s = head_; s != NULL; s = s->next()) {
+    size += s->size();
+  }
+  return size;
 }
 
 
@@ -258,6 +285,18 @@ char* Zone::PrintToString(const char* format, ...) {
 char* Zone::VPrint(const char* format, va_list args) {
   return OS::VSCreate(this, format, args);
 }
+
+
+#ifndef PRODUCT
+void Zone::PrintJSON(JSONStream* stream) const {
+  JSONObject jsobj(stream);
+  intptr_t capacity = CapacityInBytes();
+  intptr_t used_size = SizeInBytes();
+  jsobj.AddProperty("type", "_Zone");
+  jsobj.AddProperty("capacity", capacity);
+  jsobj.AddProperty("used", used_size);
+}
+#endif
 
 
 StackZone::StackZone(Thread* thread) : StackResource(thread), zone_() {

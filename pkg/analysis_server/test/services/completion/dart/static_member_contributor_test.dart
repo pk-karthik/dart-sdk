@@ -14,6 +14,7 @@ import 'completion_contributor_util.dart';
 main() {
   defineReflectiveSuite(() {
     defineReflectiveTests(StaticMemberContributorTest);
+    defineReflectiveTests(StaticMemberContributorTest_Driver);
   });
 }
 
@@ -237,7 +238,7 @@ void main() {async.Future..w^()}''');
 import "dart:async" as async;
 void main() {async.Future.^.w()}''');
     await computeSuggestions();
-    assertSuggestMethod('wait', 'Future', 'Future<dynamic>');
+    assertSuggestMethod('wait', 'Future', 'Future<List<T>>');
   }
 
   test_PrefixedIdentifier_class_const() async {
@@ -286,4 +287,10 @@ void main() {async.Future.^.w()}''');
     assertNotSuggested('Object');
     assertNotSuggested('==');
   }
+}
+
+@reflectiveTest
+class StaticMemberContributorTest_Driver extends StaticMemberContributorTest {
+  @override
+  bool get enableNewAnalysisDriver => true;
 }

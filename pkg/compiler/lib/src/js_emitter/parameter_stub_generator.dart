@@ -10,15 +10,17 @@ class ParameterStubGenerator {
   final Namer namer;
   final Compiler compiler;
   final JavaScriptBackend backend;
+  final ClosedWorld closedWorld;
 
-  ParameterStubGenerator(this.compiler, this.namer, this.backend);
+  ParameterStubGenerator(
+      this.compiler, this.namer, this.backend, this.closedWorld);
 
   Emitter get emitter => backend.emitter.emitter;
   CodeEmitterTask get emitterTask => backend.emitter;
   DiagnosticReporter get reporter => compiler.reporter;
 
   bool needsSuperGetter(FunctionElement element) =>
-      compiler.codegenWorld.methodsNeedingSuperGetter.contains(element);
+      compiler.codegenWorldBuilder.methodsNeedingSuperGetter.contains(element);
 
   /**
    * Generates stubs to handle invocation of methods with optional
@@ -212,12 +214,12 @@ class ParameterStubGenerator {
 
     // Only instance members (not static methods) need stubs.
     if (member.isInstanceMember) {
-      selectors = compiler.codegenWorld.invocationsByName(member.name);
+      selectors = compiler.codegenWorldBuilder.invocationsByName(member.name);
     }
 
     if (canTearOff) {
       String call = namer.closureInvocationSelectorName;
-      callSelectors = compiler.codegenWorld.invocationsByName(call);
+      callSelectors = compiler.codegenWorldBuilder.invocationsByName(call);
     }
 
     assert(emptySelectorSet.isEmpty);
@@ -267,8 +269,7 @@ class ParameterStubGenerator {
     for (Selector selector in selectors.keys) {
       if (renamedCallSelectors.contains(selector)) continue;
       if (!selector.appliesUnnamed(member)) continue;
-      if (!selectors[selector]
-          .applies(member, selector, compiler.closedWorld)) {
+      if (!selectors[selector].applies(member, selector, closedWorld)) {
         continue;
       }
 

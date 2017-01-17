@@ -187,7 +187,7 @@ class NoSuchMethodRegistry {
 
   bool isDefaultNoSuchMethodImplementation(FunctionElement element) {
     ClassElement classElement = element.enclosingClass;
-    return classElement == _compiler.coreClasses.objectClass ||
+    return classElement == _compiler.commonElements.objectClass ||
         classElement == _backend.helpers.jsInterceptorClass ||
         classElement == _backend.helpers.jsNullClass;
   }
@@ -219,7 +219,8 @@ class NoSuchMethodRegistry {
     }
     if (expr is Send && expr.isTypeCast) {
       Send sendExpr = expr;
-      var typeName = sendExpr.typeAnnotationFromIsCheckOrCast.typeName;
+      var typeAnnotation = sendExpr.typeAnnotationFromIsCheckOrCast;
+      var typeName = typeAnnotation.asNominalTypeAnnotation()?.typeName;
       if (typeName is Identifier && typeName.source == "dynamic") {
         expr = sendExpr.receiver;
       }
@@ -267,4 +268,9 @@ class NoSuchMethodRegistry {
   }
 }
 
-enum NsmCategory { DEFAULT, THROWING, NOT_APPLICABLE, OTHER, }
+enum NsmCategory {
+  DEFAULT,
+  THROWING,
+  NOT_APPLICABLE,
+  OTHER,
+}

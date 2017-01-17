@@ -18,7 +18,7 @@ library dart2js.universe.use;
 
 import '../closure.dart' show BoxFieldElement;
 import '../common.dart';
-import '../dart_types.dart';
+import '../elements/types.dart';
 import '../elements/elements.dart';
 import '../util/util.dart' show Hashing;
 import '../world.dart' show World;
@@ -26,7 +26,11 @@ import 'call_structure.dart' show CallStructure;
 import 'selector.dart' show Selector;
 import 'world_builder.dart' show ReceiverConstraint;
 
-enum DynamicUseKind { INVOKE, GET, SET, }
+enum DynamicUseKind {
+  INVOKE,
+  GET,
+  SET,
+}
 
 /// The use of a dynamic property. [selector] defined the name and kind of the
 /// property and [mask] defines the known constraint for the object on which
@@ -284,7 +288,7 @@ class StaticUse {
   }
 
   /// Read access of an instance field or boxed field [element].
-  factory StaticUse.fieldGet(Element element) {
+  factory StaticUse.fieldGet(FieldElement element) {
     assert(invariant(
         element, element.isInstanceMember || element is BoxFieldElement,
         message: "Field init element $element must be an instance "
@@ -293,7 +297,7 @@ class StaticUse {
   }
 
   /// Write access of an instance field or boxed field [element].
-  factory StaticUse.fieldSet(Element element) {
+  factory StaticUse.fieldSet(FieldElement element) {
     assert(invariant(
         element, element.isInstanceMember || element is BoxFieldElement,
         message: "Field init element $element must be an instance "
@@ -337,7 +341,7 @@ enum TypeUseKind {
   NATIVE_INSTANTIATION,
 }
 
-/// Use of a [DartType].
+/// Use of a [ResolutionDartType].
 class TypeUse {
   final DartType type;
   final TypeUseKind kind;

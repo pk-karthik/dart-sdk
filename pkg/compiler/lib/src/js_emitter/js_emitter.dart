@@ -15,15 +15,15 @@ import '../common/names.dart' show Identifiers;
 import '../common/tasks.dart' show CompilerTask;
 import '../compiler.dart' show Compiler;
 import '../constants/values.dart';
-import '../core_types.dart' show CoreClasses;
-import '../dart_types.dart'
+import '../core_types.dart' show CommonElements;
+import '../elements/resolution_types.dart'
     show
-        DartType,
-        FunctionType,
-        InterfaceType,
-        TypedefType,
+        ResolutionDartType,
+        ResolutionFunctionType,
+        ResolutionInterfaceType,
+        ResolutionTypedefType,
         Types,
-        TypeVariableType;
+        ResolutionTypeVariableType;
 import '../deferred_load.dart' show OutputUnit;
 import '../elements/elements.dart'
     show
@@ -31,6 +31,7 @@ import '../elements/elements.dart'
         ConstructorElement,
         Element,
         ElementKind,
+        Entity,
         FieldElement,
         FunctionElement,
         FunctionSignature,
@@ -56,8 +57,10 @@ import '../js_backend/js_backend.dart'
         TypeVariableHandler;
 import '../universe/call_structure.dart' show CallStructure;
 import '../universe/selector.dart' show Selector;
-import '../universe/world_builder.dart' show SelectorConstraints;
+import '../universe/world_builder.dart'
+    show CodegenWorldBuilder, SelectorConstraints;
 import '../util/util.dart' show Setlet;
+import '../world.dart' show ClosedWorld;
 import 'full_emitter/emitter.dart' as full_js_emitter;
 import 'lazy_emitter/emitter.dart' as lazy_js_emitter;
 import 'model.dart';

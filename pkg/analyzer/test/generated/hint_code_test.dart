@@ -12,7 +12,6 @@ import 'package:analyzer/src/generated/source_io.dart';
 import 'package:test/test.dart';
 import 'package:test_reflective_loader/test_reflective_loader.dart';
 
-import 'analysis_context_factory.dart';
 import 'resolver_test_case.dart';
 
 main() {
@@ -25,8 +24,10 @@ main() {
 class HintCodeTest extends ResolverTestCase {
   @override
   void reset() {
-    analysisContext2 = AnalysisContextFactory.contextWithCoreAndPackages({
-      'package:meta/meta.dart': r'''
+    super.resetWith(packages: [
+      [
+        'meta',
+        r'''
 library meta;
 
 const _Factory factory = const _Factory();
@@ -55,17 +56,21 @@ class _Required {
   final String reason;
   const _Required([this.reason]));
 }
-''',
-      'package:js/js.dart': r'''
+'''
+      ],
+      [
+        'js',
+        r'''
 library js;
 class JS {
   const JS([String js]) { }
 }
 '''
-    }, resourceProvider: resourceProvider);
+      ]
+    ]);
   }
 
-  void test_abstractSuperMemberReference_getter() {
+  test_abstractSuperMemberReference_getter() async {
     Source source = addSource(r'''
 abstract class A {
   int get test;
@@ -77,12 +82,12 @@ class B extends A {
   }
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.ABSTRACT_SUPER_MEMBER_REFERENCE]);
     verify([source]);
   }
 
-  void test_abstractSuperMemberReference_method_invocation() {
+  test_abstractSuperMemberReference_method_invocation() async {
     Source source = addSource(r'''
 abstract class A {
   void test();
@@ -93,12 +98,12 @@ class B extends A {
   }
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.ABSTRACT_SUPER_MEMBER_REFERENCE]);
     verify([source]);
   }
 
-  void test_abstractSuperMemberReference_method_reference() {
+  test_abstractSuperMemberReference_method_reference() async {
     Source source = addSource(r'''
 abstract class A {
   void test();
@@ -109,12 +114,12 @@ class B extends A {
   }
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.ABSTRACT_SUPER_MEMBER_REFERENCE]);
     verify([source]);
   }
 
-  void test_abstractSuperMemberReference_setter() {
+  test_abstractSuperMemberReference_setter() async {
     Source source = addSource(r'''
 abstract class A {
   void set test(int v);
@@ -125,12 +130,12 @@ class B extends A {
   }
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.ABSTRACT_SUPER_MEMBER_REFERENCE]);
     verify([source]);
   }
 
-  void test_argumentTypeNotAssignable_functionType() {
+  test_argumentTypeNotAssignable_functionType() async {
     Source source = addSource(r'''
 m() {
   var a = new A();
@@ -139,42 +144,52 @@ m() {
 class A {
   n(void f(int i)) {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.ARGUMENT_TYPE_NOT_ASSIGNABLE]);
     verify([source]);
   }
 
-  void test_argumentTypeNotAssignable_message() {
+  test_argumentTypeNotAssignable_message() async {
     // The implementation of HintCode.ARGUMENT_TYPE_NOT_ASSIGNABLE assumes that
     // StaticWarningCode.ARGUMENT_TYPE_NOT_ASSIGNABLE has the same message.
     expect(StaticWarningCode.ARGUMENT_TYPE_NOT_ASSIGNABLE.message,
         HintCode.ARGUMENT_TYPE_NOT_ASSIGNABLE.message);
   }
 
-  void test_argumentTypeNotAssignable_type() {
+  test_argumentTypeNotAssignable_type() async {
     Source source = addSource(r'''
 m() {
   var i = '';
   n(i);
 }
 n(int i) {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.ARGUMENT_TYPE_NOT_ASSIGNABLE]);
     verify([source]);
   }
 
-  void test_canBeNullAfterNullAware_false_methodInvocation() {
+  test_async_future_object_without_return() async {
+    Source source = addSource('''
+import 'dart:async';
+Future<Object> f() async {}
+''');
+    await computeAnalysisResult(source);
+    assertErrors(source, [HintCode.MISSING_RETURN]);
+    verify([source]);
+  }
+
+  test_canBeNullAfterNullAware_false_methodInvocation() async {
     Source source = addSource(r'''
 m(x) {
   x?.a()?.b();
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_canBeNullAfterNullAware_false_null() {
+  test_canBeNullAfterNullAware_false_null() async {
     Source source = addSource(r'''
 m(x) {
   x?.a.hashCode;
@@ -185,217 +200,217 @@ m(x) {
   x?.b().toString();
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_canBeNullAfterNullAware_false_propertyAccess() {
+  test_canBeNullAfterNullAware_false_propertyAccess() async {
     Source source = addSource(r'''
 m(x) {
   x?.a?.b;
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_canBeNullAfterNullAware_methodInvocation() {
+  test_canBeNullAfterNullAware_methodInvocation() async {
     Source source = addSource(r'''
 m(x) {
   x?.a.b();
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.CAN_BE_NULL_AFTER_NULL_AWARE]);
     verify([source]);
   }
 
-  void test_canBeNullAfterNullAware_parenthesized() {
+  test_canBeNullAfterNullAware_parenthesized() async {
     Source source = addSource(r'''
 m(x) {
   (x?.a).b;
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.CAN_BE_NULL_AFTER_NULL_AWARE]);
     verify([source]);
   }
 
-  void test_canBeNullAfterNullAware_propertyAccess() {
+  test_canBeNullAfterNullAware_propertyAccess() async {
     Source source = addSource(r'''
 m(x) {
   x?.a.b;
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.CAN_BE_NULL_AFTER_NULL_AWARE]);
     verify([source]);
   }
 
-  void test_deadCode_deadBlock_conditionalElse() {
+  test_deadCode_deadBlock_conditionalElse() async {
     Source source = addSource(r'''
 f() {
   true ? 1 : 2;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadBlock_conditionalElse_nested() {
+  test_deadCode_deadBlock_conditionalElse_nested() async {
     // test that a dead else-statement can't generate additional violations
     Source source = addSource(r'''
 f() {
   true ? true : false && false;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadBlock_conditionalIf() {
+  test_deadCode_deadBlock_conditionalIf() async {
     Source source = addSource(r'''
 f() {
   false ? 1 : 2;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadBlock_conditionalIf_nested() {
+  test_deadCode_deadBlock_conditionalIf_nested() async {
     // test that a dead then-statement can't generate additional violations
     Source source = addSource(r'''
 f() {
   false ? false && false : true;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadBlock_else() {
+  test_deadCode_deadBlock_else() async {
     Source source = addSource(r'''
 f() {
   if(true) {} else {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadBlock_else_nested() {
+  test_deadCode_deadBlock_else_nested() async {
     // test that a dead else-statement can't generate additional violations
     Source source = addSource(r'''
 f() {
   if(true) {} else {if (false) {}}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadBlock_if() {
+  test_deadCode_deadBlock_if() async {
     Source source = addSource(r'''
 f() {
   if(false) {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadBlock_if_nested() {
+  test_deadCode_deadBlock_if_nested() async {
     // test that a dead then-statement can't generate additional violations
     Source source = addSource(r'''
 f() {
   if(false) {if(false) {}}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadBlock_while() {
+  test_deadCode_deadBlock_while() async {
     Source source = addSource(r'''
 f() {
   while(false) {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadBlock_while_nested() {
+  test_deadCode_deadBlock_while_nested() async {
     // test that a dead while body can't generate additional violations
     Source source = addSource(r'''
 f() {
   while(false) {if(false) {}}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadCatch_catchFollowingCatch() {
+  test_deadCode_deadCatch_catchFollowingCatch() async {
     Source source = addSource(r'''
 class A {}
 f() {
   try {} catch (e) {} catch (e) {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE_CATCH_FOLLOWING_CATCH]);
     verify([source]);
   }
 
-  void test_deadCode_deadCatch_catchFollowingCatch_nested() {
+  test_deadCode_deadCatch_catchFollowingCatch_nested() async {
     // test that a dead catch clause can't generate additional violations
     Source source = addSource(r'''
 class A {}
 f() {
   try {} catch (e) {} catch (e) {if(false) {}}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE_CATCH_FOLLOWING_CATCH]);
     verify([source]);
   }
 
-  void test_deadCode_deadCatch_catchFollowingCatch_object() {
+  test_deadCode_deadCatch_catchFollowingCatch_object() async {
     Source source = addSource(r'''
 f() {
   try {} on Object catch (e) {} catch (e) {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE_CATCH_FOLLOWING_CATCH]);
     verify([source]);
   }
 
-  void test_deadCode_deadCatch_catchFollowingCatch_object_nested() {
+  test_deadCode_deadCatch_catchFollowingCatch_object_nested() async {
     // test that a dead catch clause can't generate additional violations
     Source source = addSource(r'''
 f() {
   try {} on Object catch (e) {} catch (e) {if(false) {}}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE_CATCH_FOLLOWING_CATCH]);
     verify([source]);
   }
 
-  void test_deadCode_deadCatch_onCatchSubtype() {
+  test_deadCode_deadCatch_onCatchSubtype() async {
     Source source = addSource(r'''
 class A {}
 class B extends A {}
 f() {
   try {} on A catch (e) {} on B catch (e) {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE_ON_CATCH_SUBTYPE]);
     verify([source]);
   }
 
-  void test_deadCode_deadCatch_onCatchSubtype_nested() {
+  test_deadCode_deadCatch_onCatchSubtype_nested() async {
     // test that a dead catch clause can't generate additional violations
     Source source = addSource(r'''
 class A {}
@@ -403,12 +418,12 @@ class B extends A {}
 f() {
   try {} on A catch (e) {} on B catch (e) {if(false) {}}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE_ON_CATCH_SUBTYPE]);
     verify([source]);
   }
 
-  void test_deadCode_deadFinalReturnInCase() {
+  test_deadCode_deadFinalReturnInCase() async {
     Source source = addSource(r'''
 f() {
   switch (true) {
@@ -423,12 +438,12 @@ f() {
     break;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadFinalStatementInCase() {
+  test_deadCode_deadFinalStatementInCase() async {
     Source source = addSource(r'''
 f() {
   switch (true) {
@@ -443,55 +458,55 @@ f() {
     break;
   }
 }''');
-    computeLibrarySourceErrors(source);
     // A single dead statement at the end of a switch case that is not a
     // terminating statement will yield two errors.
+    await computeAnalysisResult(source);
     assertErrors(source,
         [HintCode.DEAD_CODE, StaticWarningCode.CASE_BLOCK_NOT_TERMINATED]);
     verify([source]);
   }
 
-  void test_deadCode_deadOperandLHS_and() {
+  test_deadCode_deadOperandLHS_and() async {
     Source source = addSource(r'''
 f() {
   bool b = false && false;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadOperandLHS_and_nested() {
+  test_deadCode_deadOperandLHS_and_nested() async {
     Source source = addSource(r'''
 f() {
   bool b = false && (false && false);
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadOperandLHS_or() {
+  test_deadCode_deadOperandLHS_or() async {
     Source source = addSource(r'''
 f() {
   bool b = true || true;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_deadOperandLHS_or_nested() {
+  test_deadCode_deadOperandLHS_or_nested() async {
     Source source = addSource(r'''
 f() {
   bool b = true || (false && false);
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterBreak_inDefaultCase() {
+  test_deadCode_statementAfterBreak_inDefaultCase() async {
     Source source = addSource(r'''
 f(v) {
   switch(v) {
@@ -501,12 +516,12 @@ f(v) {
       var a;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterBreak_inForEachStatement() {
+  test_deadCode_statementAfterBreak_inForEachStatement() async {
     Source source = addSource(r'''
 f() {
   var list;
@@ -515,12 +530,12 @@ f() {
     var a;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterBreak_inForStatement() {
+  test_deadCode_statementAfterBreak_inForStatement() async {
     Source source = addSource(r'''
 f() {
   for(;;) {
@@ -528,12 +543,12 @@ f() {
     var a;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterBreak_inSwitchCase() {
+  test_deadCode_statementAfterBreak_inSwitchCase() async {
     Source source = addSource(r'''
 f(v) {
   switch(v) {
@@ -542,12 +557,12 @@ f(v) {
       var a;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterBreak_inWhileStatement() {
+  test_deadCode_statementAfterBreak_inWhileStatement() async {
     Source source = addSource(r'''
 f(v) {
   while(v) {
@@ -555,12 +570,12 @@ f(v) {
     var a;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterContinue_inForEachStatement() {
+  test_deadCode_statementAfterContinue_inForEachStatement() async {
     Source source = addSource(r'''
 f() {
   var list;
@@ -569,12 +584,12 @@ f() {
     var a;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterContinue_inForStatement() {
+  test_deadCode_statementAfterContinue_inForStatement() async {
     Source source = addSource(r'''
 f() {
   for(;;) {
@@ -582,12 +597,12 @@ f() {
     var a;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterContinue_inWhileStatement() {
+  test_deadCode_statementAfterContinue_inWhileStatement() async {
     Source source = addSource(r'''
 f(v) {
   while(v) {
@@ -595,12 +610,12 @@ f(v) {
     var a;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterExitingIf_returns() {
+  test_deadCode_statementAfterExitingIf_returns() async {
     Source source = addSource(r'''
 f() {
   if (1 > 2) {
@@ -610,12 +625,12 @@ f() {
   }
   var one = 1;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterRethrow() {
+  test_deadCode_statementAfterRethrow() async {
     Source source = addSource(r'''
 f() {
   try {
@@ -625,24 +640,24 @@ f() {
     var two = 2;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterReturn_function() {
+  test_deadCode_statementAfterReturn_function() async {
     Source source = addSource(r'''
 f() {
   var one = 1;
   return;
   var two = 2;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterReturn_ifStatement() {
+  test_deadCode_statementAfterReturn_ifStatement() async {
     Source source = addSource(r'''
 f(bool b) {
   if(b) {
@@ -651,12 +666,12 @@ f(bool b) {
     var two = 2;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterReturn_method() {
+  test_deadCode_statementAfterReturn_method() async {
     Source source = addSource(r'''
 class A {
   m() {
@@ -665,24 +680,24 @@ class A {
     var two = 2;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterReturn_nested() {
+  test_deadCode_statementAfterReturn_nested() async {
     Source source = addSource(r'''
 f() {
   var one = 1;
   return;
   if(false) {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterReturn_twoReturns() {
+  test_deadCode_statementAfterReturn_twoReturns() async {
     Source source = addSource(r'''
 f() {
   var one = 1;
@@ -691,24 +706,24 @@ f() {
   return;
   var three = 3;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deadCode_statementAfterThrow() {
+  test_deadCode_statementAfterThrow() async {
     Source source = addSource(r'''
 f() {
   var one = 1;
   throw 'Stop here';
   var two = 2;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEAD_CODE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_assignment() {
+  test_deprecatedAnnotationUse_assignment() async {
     Source source = addSource(r'''
 class A {
   @deprecated
@@ -718,12 +733,12 @@ f(A a) {
   A b;
   a += b;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_call() {
+  test_deprecatedAnnotationUse_call() async {
     Source source = addSource(r'''
 class A {
   @deprecated
@@ -733,36 +748,36 @@ class A {
     a();
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_deprecated() {
+  test_deprecatedAnnotationUse_deprecated() async {
     Source source = addSource(r'''
 class A {
   @deprecated
   m() {}
   n() {m();}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_Deprecated() {
+  test_deprecatedAnnotationUse_Deprecated() async {
     Source source = addSource(r'''
 class A {
   @Deprecated('0.9')
   m() {}
   n() {m();}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_export() {
+  test_deprecatedAnnotationUse_export() async {
     Source source = addSource("export 'deprecated_library.dart';");
     addNamedSource(
         "/deprecated_library.dart",
@@ -770,12 +785,12 @@ class A {
 @deprecated
 library deprecated_library;
 class A {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_field() {
+  test_deprecatedAnnotationUse_field() async {
     Source source = addSource(r'''
 class A {
   @deprecated
@@ -784,12 +799,12 @@ class A {
 f(A a) {
   return a.x;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_getter() {
+  test_deprecatedAnnotationUse_getter() async {
     Source source = addSource(r'''
 class A {
   @deprecated
@@ -798,12 +813,12 @@ class A {
 f(A a) {
   return a.m;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_import() {
+  test_deprecatedAnnotationUse_import() async {
     Source source = addSource(r'''
 import 'deprecated_library.dart';
 f(A a) {}''');
@@ -813,12 +828,12 @@ f(A a) {}''');
 @deprecated
 library deprecated_library;
 class A {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_indexExpression() {
+  test_deprecatedAnnotationUse_indexExpression() async {
     Source source = addSource(r'''
 class A {
   @deprecated
@@ -827,12 +842,12 @@ class A {
 f(A a) {
   return a[1];
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_instanceCreation() {
+  test_deprecatedAnnotationUse_instanceCreation() async {
     Source source = addSource(r'''
 class A {
   @deprecated
@@ -841,12 +856,12 @@ class A {
 f() {
   A a = new A(1);
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_instanceCreation_namedConstructor() {
+  test_deprecatedAnnotationUse_instanceCreation_namedConstructor() async {
     Source source = addSource(r'''
 class A {
   @deprecated
@@ -855,23 +870,23 @@ class A {
 f() {
   A a = new A.named(1);
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_named() {
+  test_deprecatedAnnotationUse_named() async {
     Source source = addSource(r'''
 class A {
   m({@deprecated int x}) {}
   n() {m(x: 1);}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_operator() {
+  test_deprecatedAnnotationUse_operator() async {
     Source source = addSource(r'''
 class A {
   @deprecated
@@ -881,23 +896,23 @@ f(A a) {
   A b;
   return a + b;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_positional() {
+  test_deprecatedAnnotationUse_positional() async {
     Source source = addSource(r'''
 class A {
   m([@deprecated int x]) {}
   n() {m(1);}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_setter() {
+  test_deprecatedAnnotationUse_setter() async {
     Source source = addSource(r'''
 class A {
   @deprecated
@@ -906,12 +921,12 @@ class A {
 f(A a) {
   return a.s = 1;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_superConstructor() {
+  test_deprecatedAnnotationUse_superConstructor() async {
     Source source = addSource(r'''
 class A {
   @deprecated
@@ -920,12 +935,12 @@ class A {
 class B extends A {
   B() : super() {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_deprecatedAnnotationUse_superConstructor_namedConstructor() {
+  test_deprecatedAnnotationUse_superConstructor_namedConstructor() async {
     Source source = addSource(r'''
 class A {
   @deprecated
@@ -934,32 +949,32 @@ class A {
 class B extends A {
   B() : super.named() {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DEPRECATED_MEMBER_USE]);
     verify([source]);
   }
 
-  void test_divisionOptimization_double() {
+  test_divisionOptimization_double() async {
     Source source = addSource(r'''
 f(double x, double y) {
   var v = (x / y).toInt();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DIVISION_OPTIMIZATION]);
     verify([source]);
   }
 
-  void test_divisionOptimization_int() {
+  test_divisionOptimization_int() async {
     Source source = addSource(r'''
 f(int x, int y) {
   var v = (x / y).toInt();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DIVISION_OPTIMIZATION]);
     verify([source]);
   }
 
-  void test_divisionOptimization_propagatedType() {
+  test_divisionOptimization_propagatedType() async {
     // Tests the propagated type information of the '/' method
     Source source = addSource(r'''
 f(x, y) {
@@ -967,22 +982,22 @@ f(x, y) {
   y = 1;
   var v = (x / y).toInt();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DIVISION_OPTIMIZATION]);
     verify([source]);
   }
 
-  void test_divisionOptimization_wrappedBinaryExpression() {
+  test_divisionOptimization_wrappedBinaryExpression() async {
     Source source = addSource(r'''
 f(int x, int y) {
   var v = (((x / y))).toInt();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DIVISION_OPTIMIZATION]);
     verify([source]);
   }
 
-  void test_duplicateImport() {
+  test_duplicateImport() async {
     Source source = addSource(r'''
 library L;
 import 'lib1.dart';
@@ -993,12 +1008,12 @@ A a;''');
         r'''
 library lib1;
 class A {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DUPLICATE_IMPORT]);
     verify([source]);
   }
 
-  void test_duplicateImport2() {
+  test_duplicateImport2() async {
     Source source = addSource(r'''
 library L;
 import 'lib1.dart';
@@ -1010,13 +1025,13 @@ A a;''');
         r'''
 library lib1;
 class A {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(
         source, [HintCode.DUPLICATE_IMPORT, HintCode.DUPLICATE_IMPORT]);
     verify([source]);
   }
 
-  void test_duplicateImport3() {
+  test_duplicateImport3() async {
     Source source = addSource(r'''
 library L;
 import 'lib1.dart' as M show A hide B;
@@ -1028,12 +1043,12 @@ M.A a;''');
 library lib1;
 class A {}
 class B {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.DUPLICATE_IMPORT]);
     verify([source]);
   }
 
-  void test_factory__expr_return_null_OK() {
+  test_factory__expr_return_null_OK() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -1044,12 +1059,12 @@ class Stateful {
 
 class State { }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_factory_abstract_OK() {
+  test_factory_abstract_OK() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -1060,12 +1075,12 @@ abstract class Stateful {
 
 class State { }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_factory_bad_return() {
+  test_factory_bad_return() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -1078,12 +1093,12 @@ class Stateful {
 
 class State { }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.INVALID_FACTORY_METHOD_IMPL]);
     verify([source]);
   }
 
-  void test_factory_block_OK() {
+  test_factory_block_OK() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -1096,12 +1111,12 @@ class Stateful {
 
 class State { }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_factory_block_return_null_OK() {
+  test_factory_block_return_null_OK() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -1114,12 +1129,12 @@ class Stateful {
 
 class State { }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_factory_expr_OK() {
+  test_factory_expr_OK() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -1130,12 +1145,12 @@ class Stateful {
 
 class State { }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_factory_misplaced_annotation() {
+  test_factory_misplaced_annotation() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -1148,7 +1163,7 @@ class X {
 @factory
 main() { }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [
       HintCode.INVALID_FACTORY_ANNOTATION,
       HintCode.INVALID_FACTORY_ANNOTATION,
@@ -1157,7 +1172,7 @@ main() { }
     verify([source]);
   }
 
-  void test_factory_no_return_type_OK() {
+  test_factory_no_return_type_OK() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -1168,13 +1183,13 @@ class Stateful {
   }
 }
 ''');
-    computeLibrarySourceErrors(source);
     // Null return types will get flagged elsewhere, no need to pile-on here.
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_factory_subclass_OK() {
+  test_factory_subclass_OK() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -1194,12 +1209,12 @@ class MyThing extends Stateful {
 class State { }
 class MyState extends State { }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_factory_void_return() {
+  test_factory_void_return() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -1208,13 +1223,13 @@ class Stateful {
   void createState() {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.INVALID_FACTORY_METHOD_DECL]);
     verify([source]);
   }
 
-  void test_importDeferredLibraryWithLoadFunction() {
-    resolveWithErrors(<String>[
+  test_importDeferredLibraryWithLoadFunction() async {
+    await resolveWithErrors(<String>[
       r'''
 library lib1;
 loadLibrary() {}
@@ -1228,7 +1243,7 @@ main() { lib1.f(); }'''
     ]);
   }
 
-  void test_invalidAssignment_instanceVariable() {
+  test_invalidAssignment_instanceVariable() async {
     Source source = addSource(r'''
 class A {
   int x;
@@ -1239,31 +1254,31 @@ f(var y) {
     a.x = y;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.INVALID_ASSIGNMENT]);
     verify([source]);
   }
 
-  void test_invalidAssignment_localVariable() {
+  test_invalidAssignment_localVariable() async {
     Source source = addSource(r'''
 f(var y) {
   if(y is String) {
     int x = y;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.INVALID_ASSIGNMENT]);
     verify([source]);
   }
 
-  void test_invalidAssignment_message() {
+  test_invalidAssignment_message() async {
     // The implementation of HintCode.INVALID_ASSIGNMENT assumes that
     // StaticTypeWarningCode.INVALID_ASSIGNMENT has the same message.
     expect(StaticTypeWarningCode.INVALID_ASSIGNMENT.message,
         HintCode.INVALID_ASSIGNMENT.message);
   }
 
-  void test_invalidAssignment_staticVariable() {
+  test_invalidAssignment_staticVariable() async {
     Source source = addSource(r'''
 class A {
   static int x;
@@ -1273,12 +1288,12 @@ f(var y) {
     A.x = y;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.INVALID_ASSIGNMENT]);
     verify([source]);
   }
 
-  void test_invalidAssignment_variableDeclaration() {
+  test_invalidAssignment_variableDeclaration() async {
     // 17971
     Source source = addSource(r'''
 class Point {
@@ -1293,12 +1308,12 @@ main() {
   var p2 = new Point(10, 10);
   int n = p1 + p2;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.INVALID_ASSIGNMENT]);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_closure() {
+  test_invalidUseOfProtectedMember_closure() async {
     Source source = addNamedSource(
         '/lib1.dart',
         r'''
@@ -1319,13 +1334,14 @@ void main() {
   print(leak);
 }
 ''');
-    computeLibrarySourceErrors(source2);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(source2, [HintCode.INVALID_USE_OF_PROTECTED_MEMBER]);
     assertNoErrors(source);
     verify([source, source2]);
   }
 
-  void test_invalidUseOfProtectedMember_field() {
+  test_invalidUseOfProtectedMember_field() async {
     Source source = addNamedSource(
         '/lib1.dart',
         r'''
@@ -1344,13 +1360,14 @@ abstract class B {
   int b() => new A().a;
 }
 ''');
-    computeLibrarySourceErrors(source2);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(source2, [HintCode.INVALID_USE_OF_PROTECTED_MEMBER]);
     assertNoErrors(source);
     verify([source, source2]);
   }
 
-  void test_invalidUseOfProtectedMember_field_OK() {
+  test_invalidUseOfProtectedMember_field_OK() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1360,12 +1377,12 @@ class A {
 abstract class B implements A {
   int b() => a;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_function() {
+  test_invalidUseOfProtectedMember_function() async {
     Source source = addNamedSource(
         '/lib1.dart',
         r'''
@@ -1384,13 +1401,14 @@ main() {
   new A().a();
 }
 ''');
-    computeLibrarySourceErrors(source2);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(source2, [HintCode.INVALID_USE_OF_PROTECTED_MEMBER]);
     assertNoErrors(source);
     verify([source, source2]);
   }
 
-  void test_invalidUseOfProtectedMember_function_OK() {
+  test_invalidUseOfProtectedMember_function_OK() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1401,12 +1419,12 @@ class A {
 abstract class B implements A {
   int b() => a();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_function_OK2() {
+  test_invalidUseOfProtectedMember_function_OK2() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1416,12 +1434,12 @@ class A {
 main() {
   new A().a();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_getter() {
+  test_invalidUseOfProtectedMember_getter() async {
     Source source = addNamedSource(
         '/lib1.dart',
         r'''
@@ -1441,13 +1459,14 @@ class B {
   int b() => a.a;
 }
 ''');
-    computeLibrarySourceErrors(source2);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(source2, [HintCode.INVALID_USE_OF_PROTECTED_MEMBER]);
     assertNoErrors(source);
     verify([source, source2]);
   }
 
-  void test_invalidUseOfProtectedMember_getter_OK() {
+  test_invalidUseOfProtectedMember_getter_OK() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1457,12 +1476,12 @@ class A {
 abstract class B implements A {
   int b() => a;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_in_docs_OK() {
+  test_invalidUseOfProtectedMember_in_docs_OK() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -1478,12 +1497,12 @@ class A {
 /// OK: [A.a], [A.b], [A.c].
 f() {}
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_message() {
+  test_invalidUseOfProtectedMember_message() async {
     Source source = addNamedSource(
         '/lib1.dart',
         r'''
@@ -1502,13 +1521,13 @@ class B {
   void b() => new A().a();
 }
 ''');
-    List<AnalysisError> errors = analysisContext2.computeErrors(source2);
-    expect(errors, hasLength(1));
-    expect(errors[0].errorCode, HintCode.INVALID_USE_OF_PROTECTED_MEMBER);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
+    assertErrors(source2, [HintCode.INVALID_USE_OF_PROTECTED_MEMBER]);
     verify([source, source2]);
   }
 
-  void test_invalidUseOfProtectedMember_method_1() {
+  test_invalidUseOfProtectedMember_method_1() async {
     Source source = addNamedSource(
         '/lib1.dart',
         r'''
@@ -1528,13 +1547,14 @@ class B {
 }
 ''');
 
-    computeLibrarySourceErrors(source2);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(source2, [HintCode.INVALID_USE_OF_PROTECTED_MEMBER]);
     assertNoErrors(source);
     verify([source, source2]);
   }
 
-  void test_invalidUseOfProtectedMember_method_OK() {
+  test_invalidUseOfProtectedMember_method_OK() async {
     // https://github.com/dart-lang/linter/issues/257
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
@@ -1552,12 +1572,12 @@ class Button extends State<Object> {
   }
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_OK_1() {
+  test_invalidUseOfProtectedMember_OK_1() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1567,12 +1587,12 @@ class A {
 class B extends A {
   void b() => a();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_OK_2() {
+  test_invalidUseOfProtectedMember_OK_2() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1582,12 +1602,12 @@ class A {
 class B extends Object with A {
   void b() => a();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_OK_3() {
+  test_invalidUseOfProtectedMember_OK_3() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1596,12 +1616,12 @@ class A {
 class B extends A {
   static m2(A a) => a.m1();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_OK_4() {
+  test_invalidUseOfProtectedMember_OK_4() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1614,12 +1634,12 @@ class B extends A {
 main() {
   new B().a();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_OK_field() {
+  test_invalidUseOfProtectedMember_OK_field() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1630,12 +1650,12 @@ class B extends A {
   int b() => a;
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_OK_getter() {
+  test_invalidUseOfProtectedMember_OK_getter() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1646,12 +1666,12 @@ class B extends A {
   int b() => a;
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_OK_setter() {
+  test_invalidUseOfProtectedMember_OK_setter() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1664,12 +1684,12 @@ class B extends A {
   }
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_OK_setter_2() {
+  test_invalidUseOfProtectedMember_OK_setter_2() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1681,12 +1701,12 @@ class A {
   }
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_setter() {
+  test_invalidUseOfProtectedMember_setter() async {
     Source source = addNamedSource(
         '/lib1.dart',
         r'''
@@ -1708,13 +1728,14 @@ class B{
   }
 }
 ''');
-    computeLibrarySourceErrors(source2);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(source2, [HintCode.INVALID_USE_OF_PROTECTED_MEMBER]);
     assertNoErrors(source);
     verify([source, source2]);
   }
 
-  void test_invalidUseOfProtectedMember_setter_OK() {
+  test_invalidUseOfProtectedMember_setter_OK() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1726,12 +1747,12 @@ abstract class B implements A {
     a = i;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_invalidUseOfProtectedMember_topLevelVariable() {
+  test_invalidUseOfProtectedMember_topLevelVariable() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 @protected
@@ -1739,50 +1760,50 @@ int x = 0;
 main() {
   print(x);
 }''');
-    computeLibrarySourceErrors(source);
     // TODO(brianwilkerson) This should produce a hint because the annotation is
     // being applied to the wrong kind of declaration.
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_isDouble() {
+  test_isDouble() async {
     AnalysisOptionsImpl options = new AnalysisOptionsImpl();
     options.dart2jsHint = true;
-    resetWithOptions(options);
+    resetWith(options: options);
     Source source = addSource("var v = 1 is double;");
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.IS_DOUBLE]);
     verify([source]);
   }
 
   @failingTest
-  void test_isInt() {
+  test_isInt() async {
     Source source = addSource("var v = 1 is int;");
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.IS_INT]);
     verify([source]);
   }
 
-  void test_isNotDouble() {
+  test_isNotDouble() async {
     AnalysisOptionsImpl options = new AnalysisOptionsImpl();
     options.dart2jsHint = true;
-    resetWithOptions(options);
+    resetWith(options: options);
     Source source = addSource("var v = 1 is! double;");
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.IS_NOT_DOUBLE]);
     verify([source]);
   }
 
   @failingTest
-  void test_isNotInt() {
+  test_isNotInt() async {
     Source source = addSource("var v = 1 is! int;");
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.IS_NOT_INT]);
     verify([source]);
   }
 
-  void test_js_lib_OK() {
+  test_js_lib_OK() async {
     Source source = addSource(r'''
 @JS()
 library foo;
@@ -1792,12 +1813,12 @@ import 'package:js/js.dart';
 @JS()
 class A { }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_missingJsLibAnnotation_class() {
+  test_missingJsLibAnnotation_class() async {
     Source source = addSource(r'''
 library foo;
 
@@ -1806,12 +1827,12 @@ import 'package:js/js.dart';
 @JS()
 class A { }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_JS_LIB_ANNOTATION]);
     verify([source]);
   }
 
-  void test_missingJsLibAnnotation_externalField() {
+  test_missingJsLibAnnotation_externalField() async {
     // https://github.com/dart-lang/sdk/issues/26987
     Source source = addSource(r'''
 import 'package:js/js.dart';
@@ -1819,13 +1840,13 @@ import 'package:js/js.dart';
 @JS()
 external dynamic exports;
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source,
         [ParserErrorCode.EXTERNAL_FIELD, HintCode.MISSING_JS_LIB_ANNOTATION]);
     verify([source]);
   }
 
-  void test_missingJsLibAnnotation_function() {
+  test_missingJsLibAnnotation_function() async {
     Source source = addSource(r'''
 library foo;
 
@@ -1834,12 +1855,12 @@ import 'package:js/js.dart';
 @JS('acxZIndex')
 set _currentZIndex(int value) { }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_JS_LIB_ANNOTATION]);
     verify([source]);
   }
 
-  void test_missingJsLibAnnotation_method() {
+  test_missingJsLibAnnotation_method() async {
     Source source = addSource(r'''
 library foo;
 
@@ -1850,62 +1871,62 @@ class A {
   void a() { }
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_JS_LIB_ANNOTATION]);
     verify([source]);
   }
 
-  void test_missingJsLibAnnotation_variable() {
+  test_missingJsLibAnnotation_variable() async {
     Source source = addSource(r'''
 import 'package:js/js.dart';
 
 @JS()
 dynamic variable;
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_JS_LIB_ANNOTATION]);
     verify([source]);
   }
 
-  void test_missingReturn_async() {
+  test_missingReturn_async() async {
     Source source = addSource('''
 import 'dart:async';
 Future<int> f() async {}
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_RETURN]);
     verify([source]);
   }
 
-  void test_missingReturn_factory() {
+  test_missingReturn_factory() async {
     Source source = addSource(r'''
 class A {
   factory A() {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_RETURN]);
     verify([source]);
   }
 
-  void test_missingReturn_function() {
+  test_missingReturn_function() async {
     Source source = addSource("int f() {}");
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_RETURN]);
     verify([source]);
   }
 
-  void test_missingReturn_method() {
+  test_missingReturn_method() async {
     Source source = addSource(r'''
 class A {
   int m() {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_RETURN]);
     verify([source]);
   }
 
-  void test_mustCallSuper() {
+  test_mustCallSuper() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1918,12 +1939,12 @@ class B extends A {
   {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MUST_CALL_SUPER]);
     verify([source]);
   }
 
-  void test_mustCallSuper_fromInterface() {
+  test_mustCallSuper_fromInterface() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1935,12 +1956,12 @@ class C implements A {
   void a() {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, []);
     verify([source]);
   }
 
-  void test_mustCallSuper_indirect() {
+  test_mustCallSuper_indirect() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1958,12 +1979,12 @@ class D extends C {
   void a() {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MUST_CALL_SUPER]);
     verify([source]);
   }
 
-  void test_mustCallSuper_overridden() {
+  test_mustCallSuper_overridden() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -1977,177 +1998,177 @@ class C extends A {
   }
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, []);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_assert() {
+  test_nullAwareInCondition_assert() async {
     Source source = addSource(r'''
 m(x) {
   assert (x?.a);
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_conditionalExpression() {
+  test_nullAwareInCondition_conditionalExpression() async {
     Source source = addSource(r'''
 m(x) {
   return x?.a ? 0 : 1;
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_do() {
+  test_nullAwareInCondition_do() async {
     Source source = addSource(r'''
 m(x) {
   do {} while (x?.a);
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_for() {
+  test_nullAwareInCondition_for() async {
     Source source = addSource(r'''
 m(x) {
   for (var v = x; v?.a; v = v.next) {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_if() {
+  test_nullAwareInCondition_if() async {
     Source source = addSource(r'''
 m(x) {
   if (x?.a) {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_if_conditionalAnd_first() {
+  test_nullAwareInCondition_if_conditionalAnd_first() async {
     Source source = addSource(r'''
 m(x) {
   if (x?.a && x.b) {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_if_conditionalAnd_second() {
+  test_nullAwareInCondition_if_conditionalAnd_second() async {
     Source source = addSource(r'''
 m(x) {
   if (x.a && x?.b) {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_if_conditionalAnd_third() {
+  test_nullAwareInCondition_if_conditionalAnd_third() async {
     Source source = addSource(r'''
 m(x) {
   if (x.a && x.b && x?.c) {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_if_conditionalOr_first() {
+  test_nullAwareInCondition_if_conditionalOr_first() async {
     Source source = addSource(r'''
 m(x) {
   if (x?.a || x.b) {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_if_conditionalOr_second() {
+  test_nullAwareInCondition_if_conditionalOr_second() async {
     Source source = addSource(r'''
 m(x) {
   if (x.a || x?.b) {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_if_conditionalOr_third() {
+  test_nullAwareInCondition_if_conditionalOr_third() async {
     Source source = addSource(r'''
 m(x) {
   if (x.a || x.b || x?.c) {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_if_not() {
+  test_nullAwareInCondition_if_not() async {
     Source source = addSource(r'''
 m(x) {
   if (!x?.a) {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_if_parenthesized() {
+  test_nullAwareInCondition_if_parenthesized() async {
     Source source = addSource(r'''
 m(x) {
   if ((x?.a)) {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
-  void test_nullAwareInCondition_while() {
+  test_nullAwareInCondition_while() async {
     Source source = addSource(r'''
 m(x) {
   while (x?.a) {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.NULL_AWARE_IN_CONDITION]);
     verify([source]);
   }
 
   @failingTest
-  void test_overrideEqualsButNotHashCode() {
+  test_overrideEqualsButNotHashCode() async {
     Source source = addSource(r'''
 class A {
   bool operator ==(x) {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.OVERRIDE_EQUALS_BUT_NOT_HASH_CODE]);
     verify([source]);
   }
 
-  void test_overrideOnNonOverridingField_invalid() {
+  test_overrideOnNonOverridingField_invalid() async {
     Source source = addSource(r'''
 class A {
 }
@@ -2155,12 +2176,12 @@ class B extends A {
   @override
   final int m = 1;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.OVERRIDE_ON_NON_OVERRIDING_FIELD]);
     verify([source]);
   }
 
-  void test_overrideOnNonOverridingGetter_invalid() {
+  test_overrideOnNonOverridingGetter_invalid() async {
     Source source = addSource(r'''
 class A {
 }
@@ -2168,12 +2189,12 @@ class B extends A {
   @override
   int get m => 1;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.OVERRIDE_ON_NON_OVERRIDING_GETTER]);
     verify([source]);
   }
 
-  void test_overrideOnNonOverridingMethod_invalid() {
+  test_overrideOnNonOverridingMethod_invalid() async {
     Source source = addSource(r'''
 class A {
 }
@@ -2181,12 +2202,12 @@ class B extends A {
   @override
   int m() => 1;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.OVERRIDE_ON_NON_OVERRIDING_METHOD]);
     verify([source]);
   }
 
-  void test_overrideOnNonOverridingSetter_invalid() {
+  test_overrideOnNonOverridingSetter_invalid() async {
     Source source = addSource(r'''
 class A {
 }
@@ -2194,12 +2215,12 @@ class B extends A {
   @override
   set m(int x) {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.OVERRIDE_ON_NON_OVERRIDING_SETTER]);
     verify([source]);
   }
 
-  void test_required_constructor_param() {
+  test_required_constructor_param() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -2211,12 +2232,12 @@ main() {
   new C();
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM_WITH_DETAILS]);
     verify([source]);
   }
 
-  void test_required_constructor_param_no_reason() {
+  test_required_constructor_param_no_reason() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -2228,12 +2249,12 @@ main() {
   new C();
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM]);
     verify([source]);
   }
 
-  void test_required_constructor_param_null_reason() {
+  test_required_constructor_param_null_reason() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -2245,12 +2266,12 @@ main() {
   new C();
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM]);
     verify([source]);
   }
 
-  void test_required_constructor_param_OK() {
+  test_required_constructor_param_OK() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -2262,12 +2283,12 @@ main() {
   new C(a: 2);
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_required_constructor_param_redirecting_cons_call() {
+  test_required_constructor_param_redirecting_cons_call() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -2276,12 +2297,12 @@ class C {
   C.named() : this();
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM]);
     verify([source]);
   }
 
-  void test_required_constructor_param_super_call() {
+  test_required_constructor_param_super_call() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -2293,12 +2314,12 @@ class D extends C {
   D() : super();
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM_WITH_DETAILS]);
     verify([source]);
   }
 
-  void test_required_function_param() {
+  test_required_function_param() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -2308,12 +2329,12 @@ main() {
   f();
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM_WITH_DETAILS]);
     verify([source]);
   }
 
-  void test_required_method_param() {
+  test_required_method_param() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 class A {
@@ -2323,12 +2344,12 @@ f() {
   new A().m();
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM_WITH_DETAILS]);
     verify([source]);
   }
 
-  void test_required_method_param_in_other_lib() {
+  test_required_method_param_in_other_lib() async {
     addNamedSource(
         '/a_lib.dart',
         r'''
@@ -2346,12 +2367,12 @@ f() {
 }
 ''');
 
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM_WITH_DETAILS]);
     verify([source]);
   }
 
-  void test_required_typedef_function_param() {
+  test_required_typedef_function_param() async {
     Source source = addSource(r'''
 import 'package:meta/meta.dart';
 
@@ -2363,32 +2384,32 @@ class C {
   F m() => ({@required String x}) => null;
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.MISSING_REQUIRED_PARAM]);
     verify([source]);
   }
 
-  void test_typeCheck_type_is_Null() {
+  test_typeCheck_type_is_Null() async {
     Source source = addSource(r'''
 m(i) {
   bool b = i is Null;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.TYPE_CHECK_IS_NULL]);
     verify([source]);
   }
 
-  void test_typeCheck_type_not_Null() {
+  test_typeCheck_type_not_Null() async {
     Source source = addSource(r'''
 m(i) {
   bool b = i is! Null;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.TYPE_CHECK_IS_NOT_NULL]);
     verify([source]);
   }
 
-  void test_undefinedGetter() {
+  test_undefinedGetter() async {
     Source source = addSource(r'''
 class A {}
 f(var a) {
@@ -2396,11 +2417,11 @@ f(var a) {
     return a.m;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNDEFINED_GETTER]);
   }
 
-  void test_undefinedGetter_message() {
+  test_undefinedGetter_message() async {
     // The implementation of HintCode.UNDEFINED_SETTER assumes that
     // UNDEFINED_SETTER in StaticTypeWarningCode and StaticWarningCode are the
     // same, this verifies that assumption.
@@ -2408,59 +2429,59 @@ f(var a) {
         StaticTypeWarningCode.UNDEFINED_GETTER.message);
   }
 
-  void test_undefinedIdentifier_exportHide() {
+  test_undefinedIdentifier_exportHide() async {
     Source source = addSource(r'''
 library L;
 export 'lib1.dart' hide a;''');
     addNamedSource("/lib1.dart", "library lib1;");
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNDEFINED_HIDDEN_NAME]);
     verify([source]);
   }
 
-  void test_undefinedIdentifier_exportShow() {
+  test_undefinedIdentifier_exportShow() async {
     Source source = addSource(r'''
 library L;
 export 'lib1.dart' show a;''');
     addNamedSource("/lib1.dart", "library lib1;");
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNDEFINED_SHOWN_NAME]);
     verify([source]);
   }
 
-  void test_undefinedIdentifier_importHide() {
+  test_undefinedIdentifier_importHide() async {
     Source source = addSource(r'''
 library L;
 import 'lib1.dart' hide a;''');
     addNamedSource("/lib1.dart", "library lib1;");
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(
         source, [HintCode.UNUSED_IMPORT, HintCode.UNDEFINED_HIDDEN_NAME]);
     verify([source]);
   }
 
-  void test_undefinedIdentifier_importShow() {
+  test_undefinedIdentifier_importShow() async {
     Source source = addSource(r'''
 library L;
 import 'lib1.dart' show a;''');
     addNamedSource("/lib1.dart", "library lib1;");
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(
         source, [HintCode.UNUSED_IMPORT, HintCode.UNDEFINED_SHOWN_NAME]);
     verify([source]);
   }
 
-  void test_undefinedMethod() {
+  test_undefinedMethod() async {
     Source source = addSource(r'''
 f() {
   var a = 'str';
   a.notAMethodOnString();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNDEFINED_METHOD]);
   }
 
-  void test_undefinedMethod_assignmentExpression() {
+  test_undefinedMethod_assignmentExpression() async {
     Source source = addSource(r'''
 class A {}
 class B {
@@ -2470,11 +2491,11 @@ class B {
     a += a2;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNDEFINED_METHOD]);
   }
 
-  void test_undefinedOperator_binaryExpression() {
+  test_undefinedOperator_binaryExpression() async {
     Source source = addSource(r'''
 class A {}
 f(var a) {
@@ -2482,11 +2503,11 @@ f(var a) {
     a + 1;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNDEFINED_OPERATOR]);
   }
 
-  void test_undefinedOperator_indexBoth() {
+  test_undefinedOperator_indexBoth() async {
     Source source = addSource(r'''
 class A {}
 f(var a) {
@@ -2494,11 +2515,11 @@ f(var a) {
     a[0]++;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNDEFINED_OPERATOR]);
   }
 
-  void test_undefinedOperator_indexGetter() {
+  test_undefinedOperator_indexGetter() async {
     Source source = addSource(r'''
 class A {}
 f(var a) {
@@ -2506,11 +2527,11 @@ f(var a) {
     a[0];
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNDEFINED_OPERATOR]);
   }
 
-  void test_undefinedOperator_indexSetter() {
+  test_undefinedOperator_indexSetter() async {
     Source source = addSource(r'''
 class A {}
 f(var a) {
@@ -2518,11 +2539,11 @@ f(var a) {
     a[0] = 1;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNDEFINED_OPERATOR]);
   }
 
-  void test_undefinedOperator_postfixExpression() {
+  test_undefinedOperator_postfixExpression() async {
     Source source = addSource(r'''
 class A {}
 f(var a) {
@@ -2530,11 +2551,11 @@ f(var a) {
     a++;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNDEFINED_OPERATOR]);
   }
 
-  void test_undefinedOperator_prefixExpression() {
+  test_undefinedOperator_prefixExpression() async {
     Source source = addSource(r'''
 class A {}
 f(var a) {
@@ -2542,11 +2563,11 @@ f(var a) {
     ++a;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNDEFINED_OPERATOR]);
   }
 
-  void test_undefinedSetter() {
+  test_undefinedSetter() async {
     Source source = addSource(r'''
 class A {}
 f(var a) {
@@ -2554,11 +2575,11 @@ f(var a) {
     a.m = 0;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNDEFINED_SETTER]);
   }
 
-  void test_undefinedSetter_message() {
+  test_undefinedSetter_message() async {
     // The implementation of HintCode.UNDEFINED_SETTER assumes that
     // UNDEFINED_SETTER in StaticTypeWarningCode and StaticWarningCode are the
     // same, this verifies that assumption.
@@ -2566,27 +2587,27 @@ f(var a) {
         StaticTypeWarningCode.UNDEFINED_SETTER.message);
   }
 
-  void test_unnecessaryCast_type_supertype() {
+  test_unnecessaryCast_type_supertype() async {
     Source source = addSource(r'''
 m(int i) {
   var b = i as Object;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNNECESSARY_CAST]);
     verify([source]);
   }
 
-  void test_unnecessaryCast_type_type() {
+  test_unnecessaryCast_type_type() async {
     Source source = addSource(r'''
 m(num i) {
   var b = i as num;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNNECESSARY_CAST]);
     verify([source]);
   }
 
-  void test_unnecessaryNoSuchMethod_blockBody() {
+  test_unnecessaryNoSuchMethod_blockBody() async {
     Source source = addSource(r'''
 class A {
   noSuchMethod(x) => super.noSuchMethod(x);
@@ -2597,12 +2618,12 @@ class B extends A {
     return super.noSuchMethod(y);
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNNECESSARY_NO_SUCH_METHOD]);
     verify([source]);
   }
 
-  void test_unnecessaryNoSuchMethod_expressionBody() {
+  test_unnecessaryNoSuchMethod_expressionBody() async {
     Source source = addSource(r'''
 class A {
   noSuchMethod(x) => super.noSuchMethod(x);
@@ -2611,77 +2632,77 @@ class B extends A {
   mmm();
   noSuchMethod(y) => super.noSuchMethod(y);
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNNECESSARY_NO_SUCH_METHOD]);
     verify([source]);
   }
 
-  void test_unnecessaryTypeCheck_null_is_Null() {
+  test_unnecessaryTypeCheck_null_is_Null() async {
     Source source = addSource("bool b = null is Null;");
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNNECESSARY_TYPE_CHECK_TRUE]);
     verify([source]);
   }
 
-  void test_unnecessaryTypeCheck_null_not_Null() {
+  test_unnecessaryTypeCheck_null_not_Null() async {
     Source source = addSource("bool b = null is! Null;");
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNNECESSARY_TYPE_CHECK_FALSE]);
     verify([source]);
   }
 
-  void test_unnecessaryTypeCheck_type_is_dynamic() {
+  test_unnecessaryTypeCheck_type_is_dynamic() async {
     Source source = addSource(r'''
 m(i) {
   bool b = i is dynamic;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNNECESSARY_TYPE_CHECK_TRUE]);
     verify([source]);
   }
 
-  void test_unnecessaryTypeCheck_type_is_object() {
+  test_unnecessaryTypeCheck_type_is_object() async {
     Source source = addSource(r'''
 m(i) {
   bool b = i is Object;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNNECESSARY_TYPE_CHECK_TRUE]);
     verify([source]);
   }
 
-  void test_unnecessaryTypeCheck_type_not_dynamic() {
+  test_unnecessaryTypeCheck_type_not_dynamic() async {
     Source source = addSource(r'''
 m(i) {
   bool b = i is! dynamic;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNNECESSARY_TYPE_CHECK_FALSE]);
     verify([source]);
   }
 
-  void test_unnecessaryTypeCheck_type_not_object() {
+  test_unnecessaryTypeCheck_type_not_object() async {
     Source source = addSource(r'''
 m(i) {
   bool b = i is! Object;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNNECESSARY_TYPE_CHECK_FALSE]);
     verify([source]);
   }
 
-  void test_unusedElement_class_isUsed_extends() {
+  test_unusedElement_class_isUsed_extends() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class _A {}
 class B extends _A {}
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_class_isUsed_fieldDeclaration() {
+  test_unusedElement_class_isUsed_fieldDeclaration() async {
     enableUnusedElement = true;
     var src = r'''
 class Foo {
@@ -2692,35 +2713,35 @@ class _Bar {
 }
 ''';
     Source source = addSource(src);
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_class_isUsed_implements() {
+  test_unusedElement_class_isUsed_implements() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class _A {}
 class B implements _A {}
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_class_isUsed_instanceCreation() {
+  test_unusedElement_class_isUsed_instanceCreation() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class _A {}
 main() {
   new _A();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_class_isUsed_staticFieldAccess() {
+  test_unusedElement_class_isUsed_staticFieldAccess() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class _A {
@@ -2729,12 +2750,12 @@ class _A {
 main() {
   _A.F;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_class_isUsed_staticMethodInvocation() {
+  test_unusedElement_class_isUsed_staticMethodInvocation() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class _A {
@@ -2743,12 +2764,12 @@ class _A {
 main() {
   _A.m();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_class_isUsed_typeArgument() {
+  test_unusedElement_class_isUsed_typeArgument() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class _A {}
@@ -2756,12 +2777,12 @@ main() {
   var v = new List<_A>();
   print(v);
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_class_notUsed_inClassMember() {
+  test_unusedElement_class_notUsed_inClassMember() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class _A {
@@ -2773,12 +2794,12 @@ class _A {
   }
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_class_notUsed_inConstructorName() {
+  test_unusedElement_class_notUsed_inConstructorName() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class _A {
@@ -2786,12 +2807,12 @@ class _A {
   _A.named() {}
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_class_notUsed_isExpression() {
+  test_unusedElement_class_notUsed_isExpression() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class _A {}
@@ -2800,23 +2821,23 @@ main(p) {
   }
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_class_notUsed_noReference() {
+  test_unusedElement_class_notUsed_noReference() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class _A {}
 main() {
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_class_notUsed_variableDeclaration() {
+  test_unusedElement_class_notUsed_variableDeclaration() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class _A {}
@@ -2826,35 +2847,35 @@ main() {
 }
 print(x) {}
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_enum_isUsed_fieldReference() {
+  test_unusedElement_enum_isUsed_fieldReference() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 enum _MyEnum {A, B, C}
 main() {
   print(_MyEnum.B);
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_enum_notUsed_noReference() {
+  test_unusedElement_enum_notUsed_noReference() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 enum _MyEnum {A, B, C}
 main() {
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_functionLocal_isUsed_closure() {
+  test_unusedElement_functionLocal_isUsed_closure() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 main() {
@@ -2862,24 +2883,24 @@ main() {
 }
 print(x) {}
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_functionLocal_isUsed_invocation() {
+  test_unusedElement_functionLocal_isUsed_invocation() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 main() {
   f() {}
   f();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_functionLocal_isUsed_reference() {
+  test_unusedElement_functionLocal_isUsed_reference() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 main() {
@@ -2888,23 +2909,23 @@ main() {
 }
 print(x) {}
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_functionLocal_notUsed_noReference() {
+  test_unusedElement_functionLocal_notUsed_noReference() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 main() {
   f() {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_functionLocal_notUsed_referenceFromItself() {
+  test_unusedElement_functionLocal_notUsed_referenceFromItself() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 main() {
@@ -2912,24 +2933,24 @@ main() {
     _f(p - 1);
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_functionTop_isUsed_invocation() {
+  test_unusedElement_functionTop_isUsed_invocation() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 _f() {}
 main() {
   _f();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_functionTop_isUsed_reference() {
+  test_unusedElement_functionTop_isUsed_reference() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 _f() {}
@@ -2938,23 +2959,23 @@ main() {
 }
 print(x) {}
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_functionTop_notUsed_noReference() {
+  test_unusedElement_functionTop_notUsed_noReference() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 _f() {}
 main() {
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_functionTop_notUsed_referenceFromItself() {
+  test_unusedElement_functionTop_notUsed_referenceFromItself() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 _f(int p) {
@@ -2962,12 +2983,12 @@ _f(int p) {
 }
 main() {
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_functionTypeAlias_isUsed_isExpression() {
+  test_unusedElement_functionTypeAlias_isUsed_isExpression() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 typedef _F(a, b);
@@ -2976,23 +2997,23 @@ main(f) {
     print('F');
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_functionTypeAlias_isUsed_reference() {
+  test_unusedElement_functionTypeAlias_isUsed_reference() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 typedef _F(a, b);
 main(_F f) {
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_functionTypeAlias_isUsed_typeArgument() {
+  test_unusedElement_functionTypeAlias_isUsed_typeArgument() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 typedef _F(a, b);
@@ -3000,35 +3021,35 @@ main() {
   var v = new List<_F>();
   print(v);
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_functionTypeAlias_isUsed_variableDeclaration() {
+  test_unusedElement_functionTypeAlias_isUsed_variableDeclaration() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 typedef _F(a, b);
 class A {
   _F f;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_functionTypeAlias_notUsed_noReference() {
+  test_unusedElement_functionTypeAlias_notUsed_noReference() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 typedef _F(a, b);
 main() {
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_getter_isUsed_invocation_implicitThis() {
+  test_unusedElement_getter_isUsed_invocation_implicitThis() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3037,12 +3058,12 @@ class A {
     var v = _g;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_getter_isUsed_invocation_PrefixedIdentifier() {
+  test_unusedElement_getter_isUsed_invocation_PrefixedIdentifier() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3052,12 +3073,12 @@ main(A a) {
   var v = a._g;
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_getter_isUsed_invocation_PropertyAccess() {
+  test_unusedElement_getter_isUsed_invocation_PropertyAccess() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3067,23 +3088,23 @@ main() {
   var v = new A()._g;
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_getter_notUsed_noReference() {
+  test_unusedElement_getter_notUsed_noReference() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
   get _g => null;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_getter_notUsed_referenceFromItself() {
+  test_unusedElement_getter_notUsed_referenceFromItself() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3091,12 +3112,12 @@ class A {
     return _g;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_method_isUsed_hasReference_implicitThis() {
+  test_unusedElement_method_isUsed_hasReference_implicitThis() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3107,12 +3128,12 @@ class A {
 }
 print(x) {}
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_method_isUsed_hasReference_implicitThis_subclass() {
+  test_unusedElement_method_isUsed_hasReference_implicitThis_subclass() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3126,12 +3147,12 @@ class B extends A {
 }
 print(x) {}
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_method_isUsed_hasReference_PrefixedIdentifier() {
+  test_unusedElement_method_isUsed_hasReference_PrefixedIdentifier() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3140,12 +3161,12 @@ class A {
 main(A a) {
   a._m;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_method_isUsed_hasReference_PropertyAccess() {
+  test_unusedElement_method_isUsed_hasReference_PropertyAccess() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3154,12 +3175,12 @@ class A {
 main() {
   new A()._m;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_method_isUsed_invocation_implicitThis() {
+  test_unusedElement_method_isUsed_invocation_implicitThis() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3168,12 +3189,12 @@ class A {
     _m();
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_method_isUsed_invocation_implicitThis_subclass() {
+  test_unusedElement_method_isUsed_invocation_implicitThis_subclass() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3185,12 +3206,12 @@ class A {
 class B extends A {
   _m() {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_method_isUsed_invocation_MemberElement() {
+  test_unusedElement_method_isUsed_invocation_MemberElement() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A<T> {
@@ -3199,12 +3220,12 @@ class A<T> {
 main(A<int> a) {
   a._m(0);
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_method_isUsed_invocation_propagated() {
+  test_unusedElement_method_isUsed_invocation_propagated() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3214,12 +3235,12 @@ main() {
   var a = new A();
   a._m();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_method_isUsed_invocation_static() {
+  test_unusedElement_method_isUsed_invocation_static() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3229,12 +3250,12 @@ main() {
   A a = new A();
   a._m();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_method_isUsed_invocation_subclass() {
+  test_unusedElement_method_isUsed_invocation_subclass() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3246,12 +3267,12 @@ class B extends A {
 main(A a) {
   a._m();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_method_isUsed_notPrivate() {
+  test_unusedElement_method_isUsed_notPrivate() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3259,12 +3280,12 @@ class A {
 }
 main() {
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_method_isUsed_staticInvocation() {
+  test_unusedElement_method_isUsed_staticInvocation() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3273,23 +3294,23 @@ class A {
 main() {
   A._m();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_method_notUsed_noReference() {
+  test_unusedElement_method_notUsed_noReference() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
   static _m() {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_method_notUsed_referenceFromItself() {
+  test_unusedElement_method_notUsed_referenceFromItself() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3297,12 +3318,12 @@ class A {
     _m(p - 1);
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_setter_isUsed_invocation_implicitThis() {
+  test_unusedElement_setter_isUsed_invocation_implicitThis() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3311,12 +3332,12 @@ class A {
     _s = 42;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_setter_isUsed_invocation_PrefixedIdentifier() {
+  test_unusedElement_setter_isUsed_invocation_PrefixedIdentifier() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3326,12 +3347,12 @@ main(A a) {
   a._s = 42;
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_setter_isUsed_invocation_PropertyAccess() {
+  test_unusedElement_setter_isUsed_invocation_PropertyAccess() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3341,23 +3362,23 @@ main() {
   new A()._s = 42;
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedElement_setter_notUsed_noReference() {
+  test_unusedElement_setter_notUsed_noReference() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
   set _s(x) {}
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedElement_setter_notUsed_referenceFromItself() {
+  test_unusedElement_setter_notUsed_referenceFromItself() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3367,12 +3388,12 @@ class A {
     }
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_ELEMENT]);
     verify([source]);
   }
 
-  void test_unusedField_isUsed_argument() {
+  test_unusedField_isUsed_argument() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3382,12 +3403,12 @@ class A {
   }
 }
 print(x) {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source);
     verify([source]);
   }
 
-  void test_unusedField_isUsed_reference_implicitThis() {
+  test_unusedField_isUsed_reference_implicitThis() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3397,24 +3418,24 @@ class A {
   }
 }
 print(x) {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source);
     verify([source]);
   }
 
-  void test_unusedField_isUsed_reference_implicitThis_expressionFunctionBody() {
+  test_unusedField_isUsed_reference_implicitThis_expressionFunctionBody() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
   int _f;
   m() => _f;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source);
     verify([source]);
   }
 
-  void test_unusedField_isUsed_reference_implicitThis_subclass() {
+  test_unusedField_isUsed_reference_implicitThis_subclass() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3427,12 +3448,12 @@ class B extends A {
   int _f;
 }
 print(x) {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source);
     verify([source]);
   }
 
-  void test_unusedField_isUsed_reference_qualified_propagatedElement() {
+  test_unusedField_isUsed_reference_qualified_propagatedElement() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3443,12 +3464,12 @@ main() {
   print(a._f);
 }
 print(x) {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source);
     verify([source]);
   }
 
-  void test_unusedField_isUsed_reference_qualified_staticElement() {
+  test_unusedField_isUsed_reference_qualified_staticElement() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3459,12 +3480,12 @@ main() {
   print(a._f);
 }
 print(x) {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source);
     verify([source]);
   }
 
-  void test_unusedField_isUsed_reference_qualified_unresolved() {
+  test_unusedField_isUsed_reference_qualified_unresolved() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3474,12 +3495,12 @@ main(a) {
   print(a._f);
 }
 print(x) {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source);
     verify([source]);
   }
 
-  void test_unusedField_notUsed_compoundAssign() {
+  test_unusedField_notUsed_compoundAssign() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3488,48 +3509,48 @@ class A {
     _f += 2;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_FIELD]);
     verify([source]);
   }
 
-  void test_unusedField_notUsed_constructorFieldInitializers() {
+  test_unusedField_notUsed_constructorFieldInitializers() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
   int _f;
   A() : _f = 0;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_FIELD]);
     verify([source]);
   }
 
-  void test_unusedField_notUsed_fieldFormalParameter() {
+  test_unusedField_notUsed_fieldFormalParameter() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
   int _f;
   A(this._f);
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_FIELD]);
     verify([source]);
   }
 
-  void test_unusedField_notUsed_noReference() {
+  test_unusedField_notUsed_noReference() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
   int _f;
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_FIELD]);
     verify([source]);
   }
 
-  void test_unusedField_notUsed_postfixExpr() {
+  test_unusedField_notUsed_postfixExpr() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3538,12 +3559,12 @@ class A {
     _f++;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_FIELD]);
     verify([source]);
   }
 
-  void test_unusedField_notUsed_prefixExpr() {
+  test_unusedField_notUsed_prefixExpr() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3552,12 +3573,12 @@ class A {
     ++_f;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_FIELD]);
     verify([source]);
   }
 
-  void test_unusedField_notUsed_simpleAssignment() {
+  test_unusedField_notUsed_simpleAssignment() async {
     enableUnusedElement = true;
     Source source = addSource(r'''
 class A {
@@ -3570,23 +3591,24 @@ main(A a) {
   a._f = 2;
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_FIELD]);
     verify([source]);
   }
 
-  void test_unusedImport() {
+  test_unusedImport() async {
     Source source = addSource(r'''
 library L;
 import 'lib1.dart';''');
     Source source2 = addNamedSource("/lib1.dart", "library lib1;");
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(source, [HintCode.UNUSED_IMPORT]);
     assertNoErrors(source2);
     verify([source, source2]);
   }
 
-  void test_unusedImport_as() {
+  test_unusedImport_as() async {
     Source source = addSource(r'''
 library L;
 import 'lib1.dart';
@@ -3597,14 +3619,15 @@ one.A a;''');
         r'''
 library lib1;
 class A {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(source, [HintCode.UNUSED_IMPORT]);
     assertNoErrors(source2);
     verify([source, source2]);
   }
 
   @failingTest
-  void test_unusedImport_as_equalPrefixes() {
+  test_unusedImport_as_equalPrefixes() async {
     // See todo at ImportsVerifier.prefixElementMap.
     Source source = addSource(r'''
 library L;
@@ -3621,14 +3644,16 @@ class A {}''');
         r'''
 library lib2;
 class B {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
+    await computeAnalysisResult(source3);
     assertErrors(source, [HintCode.UNUSED_IMPORT]);
     assertNoErrors(source2);
     assertNoErrors(source3);
     verify([source, source2, source3]);
   }
 
-  void test_unusedImport_hide() {
+  test_unusedImport_hide() async {
     Source source = addSource(r'''
 library L;
 import 'lib1.dart';
@@ -3639,22 +3664,24 @@ A a;''');
         r'''
 library lib1;
 class A {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(source, [HintCode.UNUSED_IMPORT]);
     assertNoErrors(source2);
     verify([source, source2]);
   }
 
-  void test_unusedImport_inComment_libraryDirective() {
+  test_unusedImport_inComment_libraryDirective() async {
     Source source = addSource(r'''
 /// Use [Future] class.
 library L;
 import 'dart:async';
 ''');
+    await computeAnalysisResult(source);
     assertNoErrors(source);
   }
 
-  void test_unusedImport_show() {
+  test_unusedImport_show() async {
     Source source = addSource(r'''
 library L;
 import 'lib1.dart' show A;
@@ -3666,13 +3693,14 @@ A a;''');
 library lib1;
 class A {}
 class B {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(source, [HintCode.UNUSED_IMPORT]);
     assertNoErrors(source2);
     verify([source, source2]);
   }
 
-  void test_unusedLocalVariable_inCatch_exception() {
+  test_unusedLocalVariable_inCatch_exception() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 main() {
@@ -3680,12 +3708,12 @@ main() {
   } on String catch (exception) {
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_CATCH_CLAUSE]);
     verify([source]);
   }
 
-  void test_unusedLocalVariable_inCatch_exception_hasStack() {
+  test_unusedLocalVariable_inCatch_exception_hasStack() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 main() {
@@ -3694,12 +3722,12 @@ main() {
     print(stack);
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedLocalVariable_inCatch_exception_noOnClause() {
+  test_unusedLocalVariable_inCatch_exception_noOnClause() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 main() {
@@ -3707,12 +3735,12 @@ main() {
   } catch (exception) {
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertNoErrors(source);
     verify([source]);
   }
 
-  void test_unusedLocalVariable_inCatch_stackTrace() {
+  test_unusedLocalVariable_inCatch_stackTrace() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 main() {
@@ -3720,12 +3748,12 @@ main() {
   } catch (exception, stackTrace) {
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_CATCH_STACK]);
     verify([source]);
   }
 
-  void test_unusedLocalVariable_inCatch_stackTrace_used() {
+  test_unusedLocalVariable_inCatch_stackTrace_used() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 main() {
@@ -3735,12 +3763,12 @@ main() {
   }
 }
 print(x) {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source);
     verify([source]);
   }
 
-  void test_unusedLocalVariable_inFor_underscore_ignored() {
+  test_unusedLocalVariable_inFor_underscore_ignored() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 main() {
@@ -3750,24 +3778,24 @@ main() {
     }
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source);
     verify([source]);
   }
 
-  void test_unusedLocalVariable_inFunction() {
+  test_unusedLocalVariable_inFunction() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 main() {
   var v = 1;
   v = 2;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_LOCAL_VARIABLE]);
     verify([source]);
   }
 
-  void test_unusedLocalVariable_inMethod() {
+  test_unusedLocalVariable_inMethod() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 class A {
@@ -3776,12 +3804,12 @@ class A {
     v = 2;
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_LOCAL_VARIABLE]);
     verify([source]);
   }
 
-  void test_unusedLocalVariable_isInvoked() {
+  test_unusedLocalVariable_isInvoked() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 typedef Foo();
@@ -3789,48 +3817,48 @@ main() {
   Foo foo;
   foo();
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source);
     verify([source]);
   }
 
-  void test_unusedLocalVariable_isRead_notUsed_compoundAssign() {
+  test_unusedLocalVariable_isRead_notUsed_compoundAssign() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 main() {
   var v = 1;
   v += 2;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_LOCAL_VARIABLE]);
     verify([source]);
   }
 
-  void test_unusedLocalVariable_isRead_notUsed_postfixExpr() {
+  test_unusedLocalVariable_isRead_notUsed_postfixExpr() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 main() {
   var v = 1;
   v++;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_LOCAL_VARIABLE]);
     verify([source]);
   }
 
-  void test_unusedLocalVariable_isRead_notUsed_prefixExpr() {
+  test_unusedLocalVariable_isRead_notUsed_prefixExpr() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 main() {
   var v = 1;
   ++v;
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.UNUSED_LOCAL_VARIABLE]);
     verify([source]);
   }
 
-  void test_unusedLocalVariable_isRead_usedArgument() {
+  test_unusedLocalVariable_isRead_usedArgument() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 main() {
@@ -3838,12 +3866,12 @@ main() {
   print(++v);
 }
 print(x) {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source);
     verify([source]);
   }
 
-  void test_unusedLocalVariable_isRead_usedInvocationTarget() {
+  test_unusedLocalVariable_isRead_usedInvocationTarget() async {
     enableUnusedLocalVariable = true;
     Source source = addSource(r'''
 class A {
@@ -3854,12 +3882,12 @@ main() {
   a.foo();
 }
 ''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source);
     verify([source]);
   }
 
-  void test_unusedShownName() {
+  test_unusedShownName() async {
     Source source = addSource(r'''
 library L;
 import 'lib1.dart' show A, B;
@@ -3870,13 +3898,14 @@ A a;''');
 library lib1;
 class A {}
 class B {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(source, [HintCode.UNUSED_SHOWN_NAME]);
     assertNoErrors(source2);
     verify([source, source2]);
   }
 
-  void test_unusedShownName_as() {
+  test_unusedShownName_as() async {
     Source source = addSource(r'''
 library L;
 import 'lib1.dart' as p show A, B;
@@ -3887,13 +3916,14 @@ p.A a;''');
 library lib1;
 class A {}
 class B {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(source, [HintCode.UNUSED_SHOWN_NAME]);
     assertNoErrors(source2);
     verify([source, source2]);
   }
 
-  void test_unusedShownName_duplicates() {
+  test_unusedShownName_duplicates() async {
     Source source = addSource(r'''
 library L;
 import 'lib1.dart' show A, B;
@@ -3908,14 +3938,15 @@ class A {}
 class B {}
 class C {}
 class D {}''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(
         source, [HintCode.UNUSED_SHOWN_NAME, HintCode.UNUSED_SHOWN_NAME]);
     assertNoErrors(source2);
     verify([source, source2]);
   }
 
-  void test_unusedShownName_topLevelVariable() {
+  test_unusedShownName_topLevelVariable() async {
     Source source = addSource(r'''
 library L;
 import 'lib1.dart' show var1, var2;
@@ -3931,13 +3962,14 @@ const int var1 = 1;
 const int var2 = 2;
 const int var3 = 3;
 const int var4 = 4;''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
+    await computeAnalysisResult(source2);
     assertErrors(source, [HintCode.UNUSED_SHOWN_NAME]);
     assertNoErrors(source2);
     verify([source, source2]);
   }
 
-  void test_useOfVoidResult_assignmentExpression_function() {
+  test_useOfVoidResult_assignmentExpression_function() async {
     Source source = addSource(r'''
 void f() {}
 class A {
@@ -3946,12 +3978,12 @@ class A {
     a = f();
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.USE_OF_VOID_RESULT]);
     verify([source]);
   }
 
-  void test_useOfVoidResult_assignmentExpression_method() {
+  test_useOfVoidResult_assignmentExpression_method() async {
     Source source = addSource(r'''
 class A {
   void m() {}
@@ -3960,12 +3992,12 @@ class A {
     a = m();
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.USE_OF_VOID_RESULT]);
     verify([source]);
   }
 
-  void test_useOfVoidResult_inForLoop() {
+  test_useOfVoidResult_inForLoop() async {
     Source source = addSource(r'''
 class A {
   void m() {}
@@ -3973,12 +4005,12 @@ class A {
     for(var a = m();;) {}
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.USE_OF_VOID_RESULT]);
     verify([source]);
   }
 
-  void test_useOfVoidResult_variableDeclaration_function() {
+  test_useOfVoidResult_variableDeclaration_function() async {
     Source source = addSource(r'''
 void f() {}
 class A {
@@ -3986,12 +4018,12 @@ class A {
     var a = f();
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.USE_OF_VOID_RESULT]);
     verify([source]);
   }
 
-  void test_useOfVoidResult_variableDeclaration_method() {
+  test_useOfVoidResult_variableDeclaration_method() async {
     Source source = addSource(r'''
 class A {
   void m() {}
@@ -3999,12 +4031,12 @@ class A {
     var a = m();
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(source, [HintCode.USE_OF_VOID_RESULT]);
     verify([source]);
   }
 
-  void test_useOfVoidResult_variableDeclaration_method2() {
+  test_useOfVoidResult_variableDeclaration_method2() async {
     Source source = addSource(r'''
 class A {
   void m() {}
@@ -4012,7 +4044,7 @@ class A {
     var a = m(), b = m();
   }
 }''');
-    computeLibrarySourceErrors(source);
+    await computeAnalysisResult(source);
     assertErrors(
         source, [HintCode.USE_OF_VOID_RESULT, HintCode.USE_OF_VOID_RESULT]);
     verify([source]);

@@ -22,6 +22,7 @@ namespace dart {
   V(PatchClass)                                                                \
   V(Function)                                                                  \
   V(ClosureData)                                                               \
+  V(SignatureData)                                                             \
   V(RedirectionData)                                                           \
   V(Field)                                                                     \
   V(LiteralToken)                                                              \
@@ -34,7 +35,7 @@ namespace dart {
   V(ObjectPool)                                                                \
   V(PcDescriptors)                                                             \
   V(CodeSourceMap)                                                             \
-  V(Stackmap)                                                                  \
+  V(StackMap)                                                                  \
   V(LocalVarDescriptors)                                                       \
   V(ExceptionHandlers)                                                         \
   V(Context)                                                                   \
@@ -74,7 +75,7 @@ namespace dart {
   V(Capability)                                                                \
   V(ReceivePort)                                                               \
   V(SendPort)                                                                  \
-  V(Stacktrace)                                                                \
+  V(StackTrace)                                                                \
   V(RegExp)                                                                    \
   V(WeakProperty)                                                              \
   V(MirrorReference)                                                           \
@@ -673,8 +674,8 @@ class RawClass : public RawObject {
     switch (kind) {
       case Snapshot::kCore:
       case Snapshot::kScript:
-      case Snapshot::kAppWithJIT:
-      case Snapshot::kAppNoJIT:
+      case Snapshot::kAppJIT:
+      case Snapshot::kAppAOT:
         return reinterpret_cast<RawObject**>(&ptr()->direct_subclasses_);
       case Snapshot::kMessage:
       case Snapshot::kNone:
@@ -701,6 +702,7 @@ class RawClass : public RawObject {
   friend class Object;
   friend class RawInstance;
   friend class RawInstructions;
+  friend class RawTypeArguments;
   friend class SnapshotReader;
   friend class InstanceSerializationCluster;
   friend class CidRewriteVisitor;
@@ -861,7 +863,28 @@ class RawClosureData : public RawObject {
   RawFunction* parent_function_;  // Enclosing function of this local function.
   RawType* signature_type_;
   RawInstance* closure_;  // Closure object for static implicit closures.
-  RawObject** to() { return reinterpret_cast<RawObject**>(&ptr()->closure_); }
+  RawObject** to_snapshot() {
+    return reinterpret_cast<RawObject**>(&ptr()->closure_);
+  }
+  RawObject* hash_;
+  RawObject** to() { return reinterpret_cast<RawObject**>(&ptr()->hash_); }
+
+  friend class Function;
+};
+
+
+class RawSignatureData : public RawObject {
+ private:
+  RAW_HEAP_OBJECT_IMPLEMENTATION(SignatureData);
+
+  RawObject** from() {
+    return reinterpret_cast<RawObject**>(&ptr()->parent_function_);
+  }
+  RawFunction* parent_function_;  // Enclosing function of this sig. function.
+  RawType* signature_type_;
+  RawObject** to() {
+    return reinterpret_cast<RawObject**>(&ptr()->signature_type_);
+  }
 
   friend class Function;
 };
@@ -910,9 +933,9 @@ class RawField : public RawObject {
       case Snapshot::kCore:
       case Snapshot::kScript:
         return reinterpret_cast<RawObject**>(&ptr()->guarded_list_length_);
-      case Snapshot::kAppWithJIT:
+      case Snapshot::kAppJIT:
         return reinterpret_cast<RawObject**>(&ptr()->dependent_code_);
-      case Snapshot::kAppNoJIT:
+      case Snapshot::kAppAOT:
         return reinterpret_cast<RawObject**>(&ptr()->initializer_);
       case Snapshot::kMessage:
       case Snapshot::kNone:
@@ -991,10 +1014,10 @@ class RawScript : public RawObject {
   RawObject** to() { return reinterpret_cast<RawObject**>(&ptr()->source_); }
   RawObject** to_snapshot(Snapshot::Kind kind) {
     switch (kind) {
-      case Snapshot::kAppNoJIT:
+      case Snapshot::kAppAOT:
         return reinterpret_cast<RawObject**>(&ptr()->url_);
       case Snapshot::kCore:
-      case Snapshot::kAppWithJIT:
+      case Snapshot::kAppJIT:
       case Snapshot::kScript:
         return reinterpret_cast<RawObject**>(&ptr()->tokens_);
       case Snapshot::kMessage:
@@ -1268,14 +1291,14 @@ class RawCodeSourceMap : public RawObject {
 };
 
 
-// Stackmap is an immutable representation of the layout of the stack at a
+// StackMap is an immutable representation of the layout of the stack at a
 // PC. The stack map representation consists of a bit map which marks each
 // live object index starting from the base of the frame.
 //
 // The bit map representation is optimized for dense and small bit maps, without
 // any upper bound.
-class RawStackmap : public RawObject {
-  RAW_HEAP_OBJECT_IMPLEMENTATION(Stackmap);
+class RawStackMap : public RawObject {
+  RAW_HEAP_OBJECT_IMPLEMENTATION(StackMap);
 
   // Regarding changing this to a bitfield: ARM64 requires register_bit_count_
   // to be as large as 96, meaning 7 bits, leaving 25 bits for the length, or
@@ -1492,11 +1515,11 @@ class RawICData : public RawObject {
   RawObject** to() { return reinterpret_cast<RawObject**>(&ptr()->owner_); }
   RawObject** to_snapshot(Snapshot::Kind kind) {
     switch (kind) {
-      case Snapshot::kAppNoJIT:
+      case Snapshot::kAppAOT:
         return reinterpret_cast<RawObject**>(&ptr()->args_descriptor_);
       case Snapshot::kCore:
       case Snapshot::kScript:
-      case Snapshot::kAppWithJIT:
+      case Snapshot::kAppJIT:
         return to();
       case Snapshot::kMessage:
       case Snapshot::kNone:
@@ -1616,9 +1639,9 @@ class RawLibraryPrefix : public RawInstance {
     switch (kind) {
       case Snapshot::kCore:
       case Snapshot::kScript:
-      case Snapshot::kAppWithJIT:
+      case Snapshot::kAppJIT:
         return reinterpret_cast<RawObject**>(&ptr()->imports_);
-      case Snapshot::kAppNoJIT:
+      case Snapshot::kAppAOT:
         return reinterpret_cast<RawObject**>(&ptr()->importer_);
       case Snapshot::kMessage:
       case Snapshot::kNone:
@@ -1679,6 +1702,7 @@ class RawType : public RawAbstractType {
   int8_t type_state_;
 
   friend class CidRewriteVisitor;
+  friend class RawTypeArguments;
 };
 
 
@@ -2099,8 +2123,8 @@ class RawReceivePort : public RawInstance {
 // Currently we don't have any interface that this object is supposed
 // to implement so we just support the 'toString' method which
 // converts the stack trace into a string.
-class RawStacktrace : public RawInstance {
-  RAW_HEAP_OBJECT_IMPLEMENTATION(Stacktrace);
+class RawStackTrace : public RawInstance {
+  RAW_HEAP_OBJECT_IMPLEMENTATION(StackTrace);
 
   RawObject** from() {
     return reinterpret_cast<RawObject**>(&ptr()->code_array_);
@@ -2378,7 +2402,7 @@ inline bool RawObject::IsVariableSizeClassId(intptr_t index) {
          RawObject::IsTypedDataClassId(index) || (index == kContextCid) ||
          (index == kTypeArgumentsCid) || (index == kInstructionsCid) ||
          (index == kObjectPoolCid) || (index == kPcDescriptorsCid) ||
-         (index == kCodeSourceMapCid) || (index == kStackmapCid) ||
+         (index == kCodeSourceMapCid) || (index == kStackMapCid) ||
          (index == kLocalVarDescriptorsCid) ||
          (index == kExceptionHandlersCid) || (index == kCodeCid) ||
          (index == kContextScopeCid) || (index == kInstanceCid) ||

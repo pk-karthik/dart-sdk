@@ -91,6 +91,10 @@ class IsolateVisitor {
 
   virtual void VisitIsolate(Isolate* isolate) = 0;
 
+ protected:
+  // Returns true if |isolate| is the VM or service isolate.
+  bool IsVMInternalIsolate(Isolate* isolate) const;
+
  private:
   DISALLOW_COPY_AND_ASSIGN(IsolateVisitor);
 };
@@ -174,7 +178,7 @@ class Isolate : public BaseIsolate {
 
   ThreadRegistry* thread_registry() const { return thread_registry_; }
   SafepointHandler* safepoint_handler() const { return safepoint_handler_; }
-
+  uintptr_t memory_high_watermark() const { return memory_high_watermark_; }
   ClassTable* class_table() { return &class_table_; }
   static intptr_t class_table_offset() {
     return OFFSET_OF(Isolate, class_table_);
@@ -200,7 +204,7 @@ class Isolate : public BaseIsolate {
   const char* debugger_name() const { return debugger_name_; }
   void set_debugger_name(const char* name);
 
-  int64_t start_time() const { return start_time_; }
+  int64_t UptimeMicros() const;
 
   Dart_Port main_port() const { return main_port_; }
   void set_main_port(Dart_Port port) {
@@ -308,9 +312,6 @@ class Isolate : public BaseIsolate {
   static intptr_t single_step_offset() {
     return OFFSET_OF(Isolate, single_step_);
   }
-
-  void set_has_compiled_code(bool value) { has_compiled_code_ = value; }
-  bool has_compiled_code() const { return has_compiled_code_; }
 
   // Lets the embedder know that a service message resulted in a resume request.
   void SetResumeRequest() {
@@ -690,6 +691,10 @@ class Isolate : public BaseIsolate {
                         bool is_mutator,
                         bool bypass_safepoint = false);
 
+  // Updates the maximum memory usage in bytes of all zones in all threads of
+  // the current isolate.
+  void UpdateMemoryHighWatermark();
+
   // DEPRECATED: Use Thread's methods instead. During migration, these default
   // to using the mutator thread (which must also be the current thread).
   Zone* current_zone() const {
@@ -710,10 +715,11 @@ class Isolate : public BaseIsolate {
 
   ThreadRegistry* thread_registry_;
   SafepointHandler* safepoint_handler_;
+  uintptr_t memory_high_watermark_;
   Dart_MessageNotifyCallback message_notify_callback_;
   char* name_;
   char* debugger_name_;
-  int64_t start_time_;
+  int64_t start_time_micros_;
   Dart_Port main_port_;
   Dart_Port origin_id_;  // Isolates created by spawnFunc have some origin id.
   uint64_t pause_capability_;
@@ -726,7 +732,6 @@ class Isolate : public BaseIsolate {
   Debugger* debugger_;
   bool resume_request_;
   int64_t last_resume_timestamp_;
-  bool has_compiled_code_;  // Can check that no compilation occured.
   Random random_;
   Simulator* simulator_;
   Mutex* mutex_;          // Protects compiler stats.
@@ -856,6 +861,7 @@ class Isolate : public BaseIsolate {
   friend class GCMarker;  // VisitObjectPointers
   friend class SafepointHandler;
   friend class Scavenger;  // VisitObjectPointers
+  friend class ObjectGraph;  // VisitObjectPointers
   friend class ServiceIsolate;
   friend class Thread;
   friend class Timeline;

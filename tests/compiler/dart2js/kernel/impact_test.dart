@@ -11,7 +11,7 @@ import 'package:compiler/src/common/names.dart';
 import 'package:compiler/src/common/resolution.dart';
 import 'package:compiler/src/compiler.dart';
 import 'package:compiler/src/constants/expressions.dart';
-import 'package:compiler/src/dart_types.dart';
+import 'package:compiler/src/elements/resolution_types.dart';
 import 'package:compiler/src/elements/elements.dart';
 import 'package:compiler/src/resolution/registry.dart';
 import 'package:compiler/src/resolution/tree_elements.dart';
@@ -168,6 +168,8 @@ main() {
   testForwardingConstructorTyped();
   testForwardingConstructorGeneric();
   testEnum();
+  testStaticGenericMethod();
+  testInstanceGenericMethod();
 }
 
 testEmpty() {}
@@ -583,6 +585,15 @@ testForwardingConstructorGeneric() {
 
 enum Enum { A }
 testEnum() => Enum.A;
+
+List<T> staticGenericMethod<T>(T arg) => [arg];
+testStaticGenericMethod() {
+  staticGenericMethod<int>(0);
+}
+
+testInstanceGenericMethod() {
+  new GenericClass<int, String>.generative().genericMethod<bool>(false);
+}
 ''',
   'helper.dart': '''
 class Class {
@@ -594,6 +605,8 @@ class GenericClass<X, Y> {
   const GenericClass.generative();
   factory GenericClass.fact() => null;
   const factory GenericClass.redirect() = GenericClass<X, Y>.generative;
+
+  Map<X, T> genericMethod<T>(T arg) => { null: arg };
 }
 typedef Typedef();
 typedef X GenericTypedef<X, Y>(Y y);
@@ -614,7 +627,9 @@ main(List<String> args) {
         ]);
     compiler.resolution.retainCachesForTesting = true;
     await compiler.run(entryPoint);
+    checkLibrary(compiler, compiler.mainApp, fullTest: args.contains('--full'));
     compiler.libraryLoader.libraries.forEach((LibraryElement library) {
+      if (library == compiler.mainApp) return;
       checkLibrary(compiler, library, fullTest: args.contains('--full'));
     });
   });
@@ -692,7 +707,7 @@ ResolutionImpact laxImpact(
       case StaticUseKind.CONST_CONSTRUCTOR_INVOKE:
         ConstructorElement constructor = staticUse.element;
         ConstructorElement effectiveTarget = constructor.effectiveTarget;
-        DartType effectiveTargetType =
+        ResolutionDartType effectiveTargetType =
             constructor.computeEffectiveTargetType(staticUse.type);
         builder.registerStaticUse(
             staticUse.kind == StaticUseKind.CONST_CONSTRUCTOR_INVOKE
@@ -776,31 +791,33 @@ ResolutionImpact laxImpact(
 }
 
 /// Visitor the performers unaliasing of all typedefs nested within a
-/// [DartType].
-class Unaliaser extends BaseDartTypeVisitor<dynamic, DartType> {
+/// [ResolutionDartType].
+class Unaliaser extends BaseDartTypeVisitor<dynamic, ResolutionDartType> {
   const Unaliaser();
 
   @override
-  DartType visit(DartType type, [_]) => type.accept(this, null);
+  ResolutionDartType visit(ResolutionDartType type, [_]) =>
+      type.accept(this, null);
 
   @override
-  DartType visitType(DartType type, _) => type;
+  ResolutionDartType visitType(ResolutionDartType type, _) => type;
 
-  List<DartType> visitList(List<DartType> types) => types.map(visit).toList();
+  List<ResolutionDartType> visitList(List<ResolutionDartType> types) =>
+      types.map(visit).toList();
 
   @override
-  DartType visitInterfaceType(InterfaceType type, _) {
+  ResolutionDartType visitInterfaceType(ResolutionInterfaceType type, _) {
     return type.createInstantiation(visitList(type.typeArguments));
   }
 
   @override
-  DartType visitTypedefType(TypedefType type, _) {
+  ResolutionDartType visitTypedefType(ResolutionTypedefType type, _) {
     return visit(type.unaliased);
   }
 
   @override
-  DartType visitFunctionType(FunctionType type, _) {
-    return new FunctionType.synthesized(
+  ResolutionDartType visitFunctionType(ResolutionFunctionType type, _) {
+    return new ResolutionFunctionType.synthesized(
         visit(type.returnType),
         visitList(type.parameterTypes),
         visitList(type.optionalParameterTypes),
@@ -809,7 +826,7 @@ class Unaliaser extends BaseDartTypeVisitor<dynamic, DartType> {
   }
 }
 
-/// Perform unaliasing of all typedefs nested within a [DartType].
-DartType unalias(DartType type) {
+/// Perform unaliasing of all typedefs nested within a [ResolutionDartType].
+ResolutionDartType unalias(ResolutionDartType type) {
   return const Unaliaser().visit(type);
 }

@@ -232,6 +232,15 @@ class ClassHierarchy {
     }
   }
 
+  /// True if the program contains another class that is a subtype of given one.
+  bool hasProperSubtypes(Class class_) {
+    var info = _infoFor[class_];
+    var subtypes = info.subtypeIntervalList;
+    return !(subtypes.length == 2 &&
+        subtypes[0] == info.topDownIndex &&
+        subtypes[1] == info.topDownIndex + 1);
+  }
+
   ClassHierarchy._internal(Program program, int numberOfClasses)
       : classes = new List<Class>(numberOfClasses) {
     // Build the class ordering based on a topological sort.
@@ -365,6 +374,7 @@ class ClassHierarchy {
       inherited = _getUnshadowedInheritedMembers(declared, inherited);
       allInheritedMembers = _merge(allInheritedMembers, inherited);
     }
+
     inheritFrom(classNode.supertype);
     inheritFrom(classNode.mixedInType);
     classNode.implementedTypes.forEach(inheritFrom);
@@ -415,10 +425,14 @@ class ClassHierarchy {
     }
     // One of the two lists is now exhausted, copy over the remains.
     while (i < declared.length) {
-      result[storeIndex++] = declared[i++];
+      Member declaredMember = declared[i++];
+      if (skipAbstractMembers && declaredMember.isAbstract) continue;
+      result[storeIndex++] = declaredMember;
     }
     while (j < inherited.length) {
-      result[storeIndex++] = inherited[j++];
+      Member inheritedMember = inherited[j++];
+      if (skipAbstractMembers && inheritedMember.isAbstract) continue;
+      result[storeIndex++] = inheritedMember;
     }
     result.length = storeIndex;
     return result;

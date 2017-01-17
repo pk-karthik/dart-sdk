@@ -6,17 +6,16 @@ library dart2js.common.resolution;
 
 import '../common.dart';
 import '../compile_time_constants.dart';
-import '../compiler.dart' show Compiler;
 import '../constants/expressions.dart' show ConstantExpression;
 import '../constants/values.dart' show ConstantValue;
-import '../core_types.dart' show CoreClasses, CoreTypes, CommonElements;
-import '../dart_types.dart' show DartType, Types;
+import '../core_types.dart' show CommonElements;
+import '../elements/resolution_types.dart' show ResolutionDartType, Types;
 import '../elements/elements.dart'
     show
         AstElement,
         ClassElement,
-        ConstructorElement,
         Element,
+        Entity,
         ExecutableElement,
         FunctionElement,
         FunctionSignature,
@@ -113,7 +112,7 @@ abstract class Target {
 
   /// Returns `true` if [element] is a native element, that is, that the
   /// corresponding entity already exists in the target language.
-  bool isNative(Element element) => false;
+  bool isNative(Entity element) => false;
 
   /// Returns `true` if [element] is a foreign element, that is, that the
   /// backend has specialized handling for the element.
@@ -127,8 +126,6 @@ abstract class Target {
 abstract class Resolution implements Frontend {
   ParsingContext get parsingContext;
   DiagnosticReporter get reporter;
-  CoreClasses get coreClasses;
-  CoreTypes get coreTypes;
   CommonElements get commonElements;
   Types get types;
   Target get target;
@@ -153,7 +150,8 @@ abstract class Resolution implements Frontend {
   void registerClass(ClassElement cls);
   void resolveMetadataAnnotation(MetadataAnnotation metadataAnnotation);
   FunctionSignature resolveSignature(FunctionElement function);
-  DartType resolveTypeAnnotation(Element element, TypeAnnotation node);
+  ResolutionDartType resolveTypeAnnotation(
+      Element element, TypeAnnotation node);
 
   /// Returns `true` if [element] has been resolved.
   // TODO(johnniwinther): Normalize semantics between normal and deserialized

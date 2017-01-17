@@ -13,7 +13,7 @@ import '../constants/constructors.dart'
 import '../constants/expressions.dart';
 import '../constants/values.dart';
 import '../core_types.dart';
-import '../dart_types.dart';
+import '../elements/resolution_types.dart';
 import '../elements/elements.dart';
 import '../elements/modelx.dart'
     show
@@ -171,8 +171,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
             : ConstantState.NON_CONSTANT,
         super(resolution, registry);
 
-  CoreClasses get coreClasses => resolution.coreClasses;
-  CoreTypes get coreTypes => resolution.coreTypes;
+  CommonElements get commonElements => resolution.commonElements;
   ConstantEnvironment get constants => resolution.constants;
   ResolverTask get resolver => resolution.resolver;
   CompilerOptions get options => resolution.options;
@@ -337,9 +336,9 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
       if (Elements.isUnresolved(element) && name == 'dynamic') {
         // TODO(johnniwinther): Remove this hack when we can return more complex
         // objects than [Element] from this method.
-        element = coreClasses.typeClass;
+        element = commonElements.typeClass;
         // Set the type to be `dynamic` to mark that this is a type literal.
-        registry.setType(node, const DynamicType());
+        registry.setType(node, const ResolutionDynamicType());
       }
       element = reportLookupErrorIfAny(element, node, name);
       if (element == null) {
@@ -414,7 +413,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     // Create the scope where the type variables are introduced, if any.
     scope = new MethodScope(scope, function);
     functionSignature.typeVariables
-        .forEach((DartType type) => addToScope(type.element));
+        .forEach((ResolutionDartType type) => addToScope(type.element));
 
     // Create the scope for the function body, and put the parameters in scope.
     scope = new BlockScope(scope);
@@ -464,12 +463,6 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
   }
 
   ResolutionResult visitAssert(Assert node) {
-    if (!options.enableAssertMessage) {
-      if (node.hasMessage) {
-        reporter.reportErrorMessage(
-            node, MessageKind.EXPERIMENTAL_ASSERT_MESSAGE);
-      }
-    }
     // TODO(sra): We could completely ignore the assert in production mode if we
     // didn't need it to be resolved for type checking.
     registry.registerFeature(
@@ -1108,7 +1101,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     // mutation/access to unpromoted variables.
 
     Send notTypeNode = node.arguments.head.asSend();
-    DartType type;
+    ResolutionDartType type;
     SendStructure sendStructure;
     if (notTypeNode != null) {
       // `e is! T`.
@@ -1140,7 +1133,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     visitExpression(expression);
 
     Node typeNode = node.arguments.head;
-    DartType type =
+    ResolutionDartType type =
         resolveTypeAnnotation(typeNode, registerCheckedModeCheck: false);
 
     // GENERIC_METHODS: Method type variables are not reified, so we must inform
@@ -1202,15 +1195,15 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
       if (expressionResult.isConstant) {
         bool isValidConstant;
         ConstantExpression expressionConstant = expressionResult.constant;
-        DartType knownExpressionType =
-            expressionConstant.getKnownType(coreTypes);
+        ResolutionDartType knownExpressionType =
+            expressionConstant.getKnownType(commonElements);
         switch (operator.kind) {
           case UnaryOperatorKind.COMPLEMENT:
-            isValidConstant = knownExpressionType == coreTypes.intType;
+            isValidConstant = knownExpressionType == commonElements.intType;
             break;
           case UnaryOperatorKind.NEGATE:
-            isValidConstant = knownExpressionType == coreTypes.intType ||
-                knownExpressionType == coreTypes.doubleType;
+            isValidConstant = knownExpressionType == commonElements.intType ||
+                knownExpressionType == commonElements.doubleType;
             break;
           case UnaryOperatorKind.NOT:
             reporter.internalError(
@@ -1243,7 +1236,8 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
 
     if (result.isConstant) {
       ConstantExpression expressionConstant = result.constant;
-      if (expressionConstant.getKnownType(coreTypes) == coreTypes.boolType) {
+      if (expressionConstant.getKnownType(commonElements) ==
+          commonElements.boolType) {
         // TODO(johnniwinther): Handle potentially invalid constant expressions.
         ConstantExpression constant =
             new UnaryConstantExpression(operator, expressionConstant);
@@ -1268,8 +1262,10 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     if (leftResult.isConstant && rightResult.isConstant) {
       ConstantExpression leftConstant = leftResult.constant;
       ConstantExpression rightConstant = rightResult.constant;
-      if (leftConstant.getKnownType(coreTypes) == coreTypes.boolType &&
-          rightConstant.getKnownType(coreTypes) == coreTypes.boolType) {
+      if (leftConstant.getKnownType(commonElements) ==
+              commonElements.boolType &&
+          rightConstant.getKnownType(commonElements) ==
+              commonElements.boolType) {
         // TODO(johnniwinther): Handle potentially invalid constant expressions.
         ConstantExpression constant = new BinaryConstantExpression(
             leftConstant, BinaryOperator.LOGICAL_AND, rightConstant);
@@ -1292,8 +1288,10 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     if (leftResult.isConstant && rightResult.isConstant) {
       ConstantExpression leftConstant = leftResult.constant;
       ConstantExpression rightConstant = rightResult.constant;
-      if (leftConstant.getKnownType(coreTypes) == coreTypes.boolType &&
-          rightConstant.getKnownType(coreTypes) == coreTypes.boolType) {
+      if (leftConstant.getKnownType(commonElements) ==
+              commonElements.boolType &&
+          rightConstant.getKnownType(commonElements) ==
+              commonElements.boolType) {
         // TODO(johnniwinther): Handle potentially invalid constant expressions.
         ConstantExpression constant = new BinaryConstantExpression(
             leftConstant, BinaryOperator.LOGICAL_OR, rightConstant);
@@ -1374,29 +1372,31 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
         bool isValidConstant;
         ConstantExpression leftConstant = leftResult.constant;
         ConstantExpression rightConstant = rightResult.constant;
-        DartType knownLeftType = leftConstant.getKnownType(coreTypes);
-        DartType knownRightType = rightConstant.getKnownType(coreTypes);
+        ResolutionDartType knownLeftType =
+            leftConstant.getKnownType(commonElements);
+        ResolutionDartType knownRightType =
+            rightConstant.getKnownType(commonElements);
         switch (operator.kind) {
           case BinaryOperatorKind.EQ:
           case BinaryOperatorKind.NOT_EQ:
-            isValidConstant = (knownLeftType == coreTypes.intType ||
-                    knownLeftType == coreTypes.doubleType ||
-                    knownLeftType == coreTypes.stringType ||
-                    knownLeftType == coreTypes.boolType ||
-                    knownLeftType == coreTypes.nullType) &&
-                (knownRightType == coreTypes.intType ||
-                    knownRightType == coreTypes.doubleType ||
-                    knownRightType == coreTypes.stringType ||
-                    knownRightType == coreTypes.boolType ||
-                    knownRightType == coreTypes.nullType);
+            isValidConstant = (knownLeftType == commonElements.intType ||
+                    knownLeftType == commonElements.doubleType ||
+                    knownLeftType == commonElements.stringType ||
+                    knownLeftType == commonElements.boolType ||
+                    knownLeftType == commonElements.nullType) &&
+                (knownRightType == commonElements.intType ||
+                    knownRightType == commonElements.doubleType ||
+                    knownRightType == commonElements.stringType ||
+                    knownRightType == commonElements.boolType ||
+                    knownRightType == commonElements.nullType);
             break;
           case BinaryOperatorKind.ADD:
-            isValidConstant = (knownLeftType == coreTypes.intType ||
-                    knownLeftType == coreTypes.doubleType ||
-                    knownLeftType == coreTypes.stringType) &&
-                (knownRightType == coreTypes.intType ||
-                    knownRightType == coreTypes.doubleType ||
-                    knownRightType == coreTypes.stringType);
+            isValidConstant = (knownLeftType == commonElements.intType ||
+                    knownLeftType == commonElements.doubleType ||
+                    knownLeftType == commonElements.stringType) &&
+                (knownRightType == commonElements.intType ||
+                    knownRightType == commonElements.doubleType ||
+                    knownRightType == commonElements.stringType);
             break;
           case BinaryOperatorKind.SUB:
           case BinaryOperatorKind.MUL:
@@ -1407,18 +1407,18 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
           case BinaryOperatorKind.GT:
           case BinaryOperatorKind.LTEQ:
           case BinaryOperatorKind.LT:
-            isValidConstant = (knownLeftType == coreTypes.intType ||
-                    knownLeftType == coreTypes.doubleType) &&
-                (knownRightType == coreTypes.intType ||
-                    knownRightType == coreTypes.doubleType);
+            isValidConstant = (knownLeftType == commonElements.intType ||
+                    knownLeftType == commonElements.doubleType) &&
+                (knownRightType == commonElements.intType ||
+                    knownRightType == commonElements.doubleType);
             break;
           case BinaryOperatorKind.SHL:
           case BinaryOperatorKind.SHR:
           case BinaryOperatorKind.AND:
           case BinaryOperatorKind.OR:
           case BinaryOperatorKind.XOR:
-            isValidConstant = knownLeftType == coreTypes.intType &&
-                knownRightType == coreTypes.intType;
+            isValidConstant = knownLeftType == commonElements.intType &&
+                knownRightType == commonElements.intType;
             break;
           case BinaryOperatorKind.INDEX:
             isValidConstant = false;
@@ -1980,8 +1980,12 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
   // the [GetStructure].
   // TODO(johnniwinther): Remove [element] when it is no longer needed for
   // evaluating constants.
-  ResolutionResult handleConstantTypeLiteralAccess(Send node, Name name,
-      TypeDeclarationElement element, DartType type, ConstantAccess semantics) {
+  ResolutionResult handleConstantTypeLiteralAccess(
+      Send node,
+      Name name,
+      TypeDeclarationElement element,
+      ResolutionDartType type,
+      ConstantAccess semantics) {
     registry.useElement(node, element);
     registry.registerTypeLiteral(node, type);
 
@@ -2015,8 +2019,12 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
   // the [GetStructure].
   // TODO(johnniwinther): Remove [element] when it is no longer needed for
   // evaluating constants.
-  ResolutionResult handleConstantTypeLiteralUpdate(SendSet node, Name name,
-      TypeDeclarationElement element, DartType type, ConstantAccess semantics) {
+  ResolutionResult handleConstantTypeLiteralUpdate(
+      SendSet node,
+      Name name,
+      TypeDeclarationElement element,
+      ResolutionDartType type,
+      ConstantAccess semantics) {
     // TODO(johnniwinther): Remove this when all constants are evaluated.
     resolver.constantCompiler.evaluate(semantics.constant);
 
@@ -2047,7 +2055,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
   ResolutionResult handleTypedefTypeLiteralAccess(
       Send node, Name name, TypedefElement typdef) {
     typdef.ensureResolved(resolution);
-    DartType type = typdef.rawType;
+    ResolutionDartType type = typdef.rawType;
     ConstantExpression constant = new TypeConstantExpression(type);
     AccessSemantics semantics = new ConstantAccess.typedefTypeLiteral(constant);
     return handleConstantTypeLiteralAccess(node, name, typdef, type, semantics);
@@ -2058,7 +2066,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
   ResolutionResult handleTypedefTypeLiteralUpdate(
       SendSet node, Name name, TypedefElement typdef) {
     typdef.ensureResolved(resolution);
-    DartType type = typdef.rawType;
+    ResolutionDartType type = typdef.rawType;
     ConstantExpression constant = new TypeConstantExpression(type);
     AccessSemantics semantics = new ConstantAccess.typedefTypeLiteral(constant);
     return handleConstantTypeLiteralUpdate(node, name, typdef, type, semantics);
@@ -2067,25 +2075,25 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
   /// Handle access to a type literal of the type 'dynamic'. Like `dynamic` or
   /// `dynamic()`.
   ResolutionResult handleDynamicTypeLiteralAccess(Send node) {
-    DartType type = const DynamicType();
+    ResolutionDartType type = const ResolutionDynamicType();
     ConstantExpression constant = new TypeConstantExpression(
         // TODO(johnniwinther): Use [type] when evaluation of constants is done
         // directly on the constant expressions.
-        node.isCall ? coreTypes.typeType : type);
+        node.isCall ? commonElements.typeType : type);
     AccessSemantics semantics = new ConstantAccess.dynamicTypeLiteral(constant);
     return handleConstantTypeLiteralAccess(node, const PublicName('dynamic'),
-        coreClasses.typeClass, type, semantics);
+        commonElements.typeClass, type, semantics);
   }
 
   /// Handle update to a type literal of the type 'dynamic'. Like `dynamic++` or
   /// `dynamic = 0`.
   ResolutionResult handleDynamicTypeLiteralUpdate(SendSet node) {
-    DartType type = const DynamicType();
+    ResolutionDartType type = const ResolutionDynamicType();
     ConstantExpression constant =
-        new TypeConstantExpression(const DynamicType());
+        new TypeConstantExpression(const ResolutionDynamicType());
     AccessSemantics semantics = new ConstantAccess.dynamicTypeLiteral(constant);
     return handleConstantTypeLiteralUpdate(node, const PublicName('dynamic'),
-        coreClasses.typeClass, type, semantics);
+        commonElements.typeClass, type, semantics);
   }
 
   /// Handle access to a type literal of a class. Like `C` or
@@ -2093,7 +2101,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
   ResolutionResult handleClassTypeLiteralAccess(
       Send node, Name name, ClassElement cls) {
     cls.ensureResolved(resolution);
-    DartType type = cls.rawType;
+    ResolutionDartType type = cls.rawType;
     ConstantExpression constant = new TypeConstantExpression(type);
     AccessSemantics semantics = new ConstantAccess.classTypeLiteral(constant);
     return handleConstantTypeLiteralAccess(node, name, cls, type, semantics);
@@ -2104,7 +2112,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
   ResolutionResult handleClassTypeLiteralUpdate(
       SendSet node, Name name, ClassElement cls) {
     cls.ensureResolved(resolution);
-    DartType type = cls.rawType;
+    ResolutionDartType type = cls.rawType;
     ConstantExpression constant = new TypeConstantExpression(type);
     AccessSemantics semantics = new ConstantAccess.classTypeLiteral(constant);
     return handleConstantTypeLiteralUpdate(node, name, cls, type, semantics);
@@ -3007,7 +3015,11 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
 
   ResolutionResult visitSend(Send node) {
     // Resolve type arguments to ensure that these are well-formed types.
-    visit(node.typeArgumentsNode);
+    if (node.typeArgumentsNode != null) {
+      for (TypeAnnotation type in node.typeArgumentsNode.nodes) {
+        resolveTypeAnnotation(type, registerCheckedModeCheck: false);
+      }
+    }
     if (node.isOperator) {
       // `a && b`, `a + b`, `-a`, or `a is T`.
       return handleOperatorSend(node);
@@ -3040,7 +3052,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
   }
 
   /// Callback for native enqueuer to parse a type.  Returns [:null:] on error.
-  DartType resolveTypeFromString(Node node, String typeName) {
+  ResolutionDartType resolveTypeFromString(Node node, String typeName) {
     Element element = lookupInScope(reporter, node, scope, typeName);
     if (element == null) return null;
     if (element is! ClassElement) return null;
@@ -3592,9 +3604,9 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
         reporter.reportErrorMessage(node, MessageKind.INVALID_YIELD);
       }
       if (currentAsyncMarker.isAsync) {
-        coreClasses.streamClass.ensureResolved(resolution);
+        commonElements.streamClass.ensureResolved(resolution);
       } else {
-        coreClasses.iterableClass.ensureResolved(resolution);
+        commonElements.iterableClass.ensureResolved(resolution);
       }
     }
     visit(node.expression);
@@ -3657,11 +3669,12 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     // Check that the target constructor is type compatible with the
     // redirecting constructor.
     ClassElement targetClass = redirectionTarget.enclosingClass;
-    InterfaceType type = registry.getType(node);
-    FunctionType targetConstructorType = redirectionTarget
+    ResolutionInterfaceType type = registry.getType(node);
+    ResolutionFunctionType targetConstructorType = redirectionTarget
         .computeType(resolution)
         .subst(type.typeArguments, targetClass.typeVariables);
-    FunctionType constructorType = constructor.computeType(resolution);
+    ResolutionFunctionType constructorType =
+        constructor.computeType(resolution);
     bool isSubtype =
         resolution.types.isSubtype(targetConstructorType, constructorType);
     if (!isSubtype) {
@@ -3670,7 +3683,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
       // TODO(johnniwinther): Handle this (potentially) erroneous case.
       isValidAsConstant = false;
     }
-    if (type.typeArguments.any((DartType type) => !type.isDynamic)) {
+    if (type.typeArguments.any((ResolutionDartType type) => !type.isDynamic)) {
       registry.registerFeature(Feature.TYPE_VARIABLE_BOUNDS_CHECK);
     }
 
@@ -3729,18 +3742,18 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
       if (!currentAsyncMarker.isAsync) {
         reporter.reportErrorMessage(node, MessageKind.INVALID_AWAIT);
       }
-      coreClasses.futureClass.ensureResolved(resolution);
+      commonElements.futureClass.ensureResolved(resolution);
     }
     visit(node.expression);
     return const NoneResult();
   }
 
   ResolutionResult visitVariableDefinitions(VariableDefinitions node) {
-    DartType type;
+    ResolutionDartType type;
     if (node.type != null) {
       type = resolveTypeAnnotation(node.type);
     } else {
-      type = const DynamicType();
+      type = const ResolutionDynamicType();
     }
     VariableList variables = new VariableList.node(node, type);
     VariableDefinitionsVisitor visitor =
@@ -3821,7 +3834,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     CallStructure callStructure = selector.callStructure;
     registry.useElement(node.send, constructor);
 
-    DartType type = result.type;
+    ResolutionDartType type = result.type;
     ConstructorAccessKind kind;
     bool isInvalid = false;
     switch (result.kind) {
@@ -3894,8 +3907,9 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
               constructor.declaration, callStructure, type)
           : new StaticUse.typedConstructorInvoke(
               constructor.declaration, callStructure, type));
-      InterfaceType interfaceType = type;
-      if (interfaceType.typeArguments.any((DartType type) => !type.isDynamic)) {
+      ResolutionInterfaceType interfaceType = type;
+      if (interfaceType.typeArguments
+          .any((ResolutionDartType type) => !type.isDynamic)) {
         registry.registerFeature(Feature.TYPE_VARIABLE_BOUNDS_CHECK);
       }
     }
@@ -3911,7 +3925,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
             .compileNode(argumentNode, registry.mapping);
         ConstantValue name = resolution.constants.getConstantValue(constant);
         if (!name.isString) {
-          DartType type = name.getType(coreTypes);
+          ResolutionDartType type = name.getType(commonElements);
           reporter.reportErrorMessage(
               argumentNode, MessageKind.STRING_EXPECTED, {'type': type});
         } else {
@@ -3985,7 +3999,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
           !resolution.mirrorUsageAnalyzerTask
               .hasMirrorUsage(enclosingElement)) {
         reporter.reportHintMessage(node.newToken, MessageKind.NON_CONST_BLOAT,
-            {'name': coreClasses.symbolClass.name});
+            {'name': commonElements.symbolClass.name});
       }
       registry.registerNewStructure(
           node,
@@ -4002,11 +4016,11 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     for (ConstantValue key in map.keys) {
       if (!key.isObject) continue;
       ObjectConstantValue objectConstant = key;
-      DartType keyType = objectConstant.type;
+      ResolutionInterfaceType keyType = objectConstant.type;
       ClassElement cls = keyType.element;
-      if (cls == coreClasses.stringClass) continue;
+      if (cls == commonElements.stringClass) continue;
       Element equals = cls.lookupMember('==');
-      if (equals.enclosingClass != coreClasses.objectClass) {
+      if (equals.enclosingClass != commonElements.objectClass) {
         reporter.reportErrorMessage(spannable,
             MessageKind.CONST_MAP_KEY_OVERRIDES_EQUALS, {'type': keyType});
       }
@@ -4073,11 +4087,11 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
         inConstContext: inConstContext));
   }
 
-  DartType resolveTypeAnnotation(TypeAnnotation node,
+  ResolutionDartType resolveTypeAnnotation(TypeAnnotation node,
       {bool malformedIsError: false,
       bool deferredIsMalformed: true,
       bool registerCheckedModeCheck: true}) {
-    DartType type = typeResolver.resolveTypeAnnotation(this, node,
+    ResolutionDartType type = typeResolver.resolveTypeAnnotation(this, node,
         malformedIsError: malformedIsError,
         deferredIsMalformed: deferredIsMalformed);
     if (registerCheckedModeCheck) {
@@ -4091,7 +4105,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     sendIsMemberAccess = false;
 
     NodeList arguments = node.typeArguments;
-    DartType typeArgument;
+    ResolutionDartType typeArgument;
     if (arguments != null) {
       Link<Node> nodes = arguments.nodes;
       if (nodes.isEmpty) {
@@ -4108,16 +4122,16 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
         }
       }
     }
-    DartType listType;
+    ResolutionDartType listType;
     if (typeArgument != null) {
       if (node.isConst && typeArgument.containsTypeVariables) {
         reporter.reportErrorMessage(
             arguments.nodes.head, MessageKind.TYPE_VARIABLE_IN_CONSTANT);
         isValidAsConstant = false;
       }
-      listType = coreTypes.listType(typeArgument);
+      listType = commonElements.listType(typeArgument);
     } else {
-      listType = coreTypes.listType();
+      listType = commonElements.listType();
     }
     registry.registerLiteralList(node, listType,
         isConstant: node.isConst, isEmpty: node.elements.isEmpty);
@@ -4386,8 +4400,8 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     sendIsMemberAccess = false;
 
     NodeList arguments = node.typeArguments;
-    DartType keyTypeArgument;
-    DartType valueTypeArgument;
+    ResolutionDartType keyTypeArgument;
+    ResolutionDartType valueTypeArgument;
     if (arguments != null) {
       Link<Node> nodes = arguments.nodes;
       if (nodes.isEmpty) {
@@ -4411,11 +4425,11 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
         }
       }
     }
-    DartType mapType;
+    ResolutionDartType mapType;
     if (valueTypeArgument != null) {
-      mapType = coreTypes.mapType(keyTypeArgument, valueTypeArgument);
+      mapType = commonElements.mapType(keyTypeArgument, valueTypeArgument);
     } else {
-      mapType = coreTypes.mapType();
+      mapType = commonElements.mapType();
     }
     if (node.isConst && mapType.containsTypeVariables) {
       reporter.reportErrorMessage(
@@ -4466,27 +4480,28 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     return visit(node.expression);
   }
 
-  DartType typeOfConstant(ConstantValue constant) {
-    if (constant.isInt) return coreTypes.intType;
-    if (constant.isBool) return coreTypes.boolType;
-    if (constant.isDouble) return coreTypes.doubleType;
-    if (constant.isString) return coreTypes.stringType;
-    if (constant.isNull) return coreTypes.nullType;
-    if (constant.isFunction) return coreTypes.functionType;
+  ResolutionDartType typeOfConstant(ConstantValue constant) {
+    if (constant.isInt) return commonElements.intType;
+    if (constant.isBool) return commonElements.boolType;
+    if (constant.isDouble) return commonElements.doubleType;
+    if (constant.isString) return commonElements.stringType;
+    if (constant.isNull) return commonElements.nullType;
+    if (constant.isFunction) return commonElements.functionType;
     assert(constant.isObject);
     ObjectConstantValue objectConstant = constant;
-    return objectConstant.type;
+    ResolutionInterfaceType type = objectConstant.type;
+    return type;
   }
 
-  bool overridesEquals(DartType type) {
+  bool overridesEquals(ResolutionDartType type) {
     ClassElement cls = type.element;
     Element equals = cls.lookupMember('==');
-    return equals.enclosingClass != coreClasses.objectClass;
+    return equals.enclosingClass != commonElements.objectClass;
   }
 
   void checkCaseExpressions(SwitchStatement node) {
     CaseMatch firstCase = null;
-    DartType firstCaseType = null;
+    ResolutionDartType firstCaseType = null;
     DiagnosticMessage error;
     List<DiagnosticMessage> infos = <DiagnosticMessage>[];
 
@@ -4506,7 +4521,8 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
             message: 'No constant computed for $node'));
 
         ConstantValue value = resolution.constants.getConstantValue(constant);
-        DartType caseType = value.getType(coreTypes); //typeOfConstant(value);
+        ResolutionDartType caseType =
+            value.getType(commonElements); //typeOfConstant(value);
 
         if (firstCaseType == null) {
           firstCase = caseMatch;
@@ -4514,12 +4530,12 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
 
           // We only report the bad type on the first class element. All others
           // get a "type differs" error.
-          if (caseType == coreTypes.doubleType) {
+          if (caseType == commonElements.doubleType) {
             reporter.reportErrorMessage(
                 node,
                 MessageKind.SWITCH_CASE_VALUE_OVERRIDES_EQUALS,
                 {'type': "double"});
-          } else if (caseType == coreTypes.functionType) {
+          } else if (caseType == commonElements.functionType) {
             reporter.reportErrorMessage(
                 node, MessageKind.SWITCH_CASE_FORBIDDEN, {'type': "Function"});
           } else if (value.isObject && overridesEquals(caseType)) {
@@ -4728,7 +4744,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
     inCatchBlock = oldInCatchBlock;
 
     if (node.type != null) {
-      DartType exceptionType =
+      ResolutionDartType exceptionType =
           resolveTypeAnnotation(node.type, registerCheckedModeCheck: false);
       if (exceptionDefinition != null) {
         Node exceptionVariable = exceptionDefinition.definitions.nodes.head;
@@ -4742,7 +4758,7 @@ class ResolverVisitor extends MappingVisitor<ResolutionResult> {
       Node stackTraceVariable = stackTraceDefinition.definitions.nodes.head;
       VariableElementX stackTraceElement =
           registry.getDefinition(stackTraceVariable);
-      InterfaceType stackTraceType = coreTypes.stackTraceType;
+      ResolutionInterfaceType stackTraceType = commonElements.stackTraceType;
       stackTraceElement.variables.type = stackTraceType;
     }
     return const NoneResult();

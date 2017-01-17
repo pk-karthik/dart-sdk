@@ -7,6 +7,9 @@
 # listed in tests/lib/analyzer/analyze_tests.status without the "standalone"
 # prefix.
 
+io/raw_socket_test: Pass, RuntimeError # Issue 28288
+io/http_close_test: Pass, RuntimeError # Issue 28380
+
 packages_file_test: Skip # Issue 26715
 packages_file_test/none: Skip   # contains no tests.
 
@@ -19,7 +22,7 @@ package/scenarios/invalid/same_package_twice_test.dart: RuntimeError, CompileTim
 
 issue14236_test: Pass # Do not remove this line. It serves as a marker for Issue 14516 comment #4.
 
-[ ($runtime != vm && $runtime != dart_precompiled) && ($runtime != drt || $compiler != none)) ]
+[ ($runtime != vm && $runtime != dart_precompiled) && ($runtime != drt || $compiler != none) ]
 no_assert_test: Fail, OK # This is testing a vm flag.
 env_test: Skip # This is testing a vm command line parsing scenario.
 
@@ -48,6 +51,10 @@ io/directory_fuzz_test: Skip
 io/socket_many_connections_test: Skip
 # Re-enable once the bots have been updated. Issue #26057
 io/secure_server_client_certificate_test: Skip
+io/socket_test: Pass, Timeout # Issue 27453
+
+# This test sometimes hangs on Mac.
+io/raw_server_socket_cancel_test: Skip # Issue 28182
 
 [ $runtime == vm && $system == linux ]
 # These tests have started timing out and issue 25649 has been filed to
@@ -55,6 +62,9 @@ io/secure_server_client_certificate_test: Skip
 # green again.
 io/http_proxy_test: Skip
 io/secure_builtin_roots_test: Skip
+
+# This test might be slow on an opt counter threshold bot.
+io/http_basic_test: Pass, Slow
 
 
 [ $compiler == none && ($runtime == drt || $runtime == dartium) ]
@@ -143,7 +153,10 @@ io/test_runner_test: CompileTimeError # Imports dart:mirrors
 out_of_memory_test: Skip # passes on Mac, crashes on Linux
 oom_error_stacktrace_test: Skip # Fails on Linux
 
-[ $arch == simarm && $mode == debug && $checked ]
+[ $arch == simmips ]
+io/socket_bind_test: Pass, Fail # Issue 28315
+
+[ ($arch == simarm || $arch == simdbc || $arch == simdbc64) && $mode == debug && $checked ]
 io/web_socket_test: Pass, Fail # Issue 26814
 
 [ $arch == mips ]
@@ -196,6 +209,7 @@ io/platform_resolved_executable_test/06: RuntimeError  # Issue 23641
 io/process_sync_test: Pass, Timeout # Issue 24596
 io/sleep_test: Pass, Fail # Issue 25757
 io/socket_info_ipv6_test: RuntimeError # Issue 27876
+io/http_server_early_client_close2_test: Pass, Crash  # Issue 28197
 
 [ ($runtime == vm || $runtime == dart_precompiled) && $mode == debug && $builder_tag == asan ]
 io/file_lock_test: Skip  # Timeout.
@@ -212,11 +226,9 @@ io/secure_socket_bad_data_test: RuntimeError  # An error in a secure connection 
 no_allow_absolute_addresses_test: SkipByDesign # Not supported.
 link_natives_lazily_test: SkipByDesign # Not supported.
 
-[ $noopt || $compiler == precompiler ]
+[ $compiler == precompiler ]
 # Stacktraces in precompilation omit inlined frames.
 assert_test: Pass, RuntimeError
-
-[ $noopt || $compiler == precompiler ]
 map_insert_remove_oom_test: Skip # Heap limit too low. Increasing iteration count to make a higher limit a meaningful test makes it too slow for simarm[64] bots.
 io/web_socket_test: Pass, RuntimeError # Issue 24674
 
@@ -270,6 +282,10 @@ verbose_gc_to_bmu_test: Skip
 
 io/platform_test: RuntimeError # Expects to be running from 'dart' instead of 'dart_precompiled_runtime'
 io/directory_list_sync_test: Timeout, Skip # Expects to find the test directory relative to the script.
+
+[ $runtime == vm && $system == windows && $mode == release ]
+io/http_server_close_response_after_error_test: Pass, Timeout # Issue 28370: timeout.
+io/regress_7191_test: Pass, Timeout # Issue 28374: timeout.
 
 [ $runtime == dart_precompiled || $mode == product ]
 io/skipping_dart2js_compilations_test: CompileTimeError # Imports dart:mirrors
@@ -364,3 +380,17 @@ io/http_proxy_advanced_test: SkipByDesign
 io/http_ipv6_test: SkipByDesign
 io/socket_ipv6_test: SkipByDesign
 io/socket_info_ipv6_test: SkipByDesign
+
+[ $builder_tag == asan && $arch == x64 ]
+io/directory_error_test: Fail # Issue 28350
+io/directory_fuzz_test: Fail # Issue 28350
+io/directory_list_nonexistent_test: Fail # Issue 28350
+
+io/stdout_bad_argument_test: Fail # Issue 28353
+io/file_blocking_lock_test: Fail # Issue 28353
+
+io/process_sync_test: RuntimeError
+io/signals_test: RuntimeError
+io/regress_7191_test: RuntimeError
+io/named_pipe_script_test: RuntimeError
+io/http_server_close_response_after_error_test: RuntimeError

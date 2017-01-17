@@ -1,4 +1,63 @@
-## 1.21.0
+## 1.22.0
+
+### Language
+
+  * Breaking change: ['Generalized tear-offs'](https://github.com/gbracha/generalizedTearOffs/blob/master/proposal.md)
+    are no longer supported, and will cause errors. We updated the language spec
+    and added warnings in 1.21, and are now taking the last step to fully
+    de-support them. They were previously supported in the VM only.
+
+  * The `assert()` statement has been expanded to support an optional second
+    `message` argument (SDK issue [27342](https://github.com/dart-lang/sdk/issues/27342)).
+
+    The message is displayed if the assert fails. It can be any object, and it
+    is accessible as `AssertionError.message`. It can be used to provide more
+    user friendly exception outputs. As an example, the following assert:
+
+    ```dart
+    assert(configFile != null, "Tool config missing. Please see https://goo.gl/k8iAi for details.");
+    ```
+
+    would produce the following exception output:
+
+    ```
+    Unhandled exception:
+    'file:///Users/mit/tmp/tool/bin/main.dart': Failed assertion: line 9 pos 10:
+    'configFile != null': Tool config missing. Please see https://goo.gl/k8iAi for details.
+    #0      _AssertionError._doThrowNew (dart:core-patch/errors_patch.dart:33)
+    #1      _AssertionError._throwNew (dart:core-patch/errors_patch.dart:29)
+    #2      main (file:///Users/mit/tmp/tool/bin/main.dart:9:10)
+    ```
+
+### Tool changes
+
+* Dart2Js
+
+  * Remove support for (long-time deprecated) mixin typedefs.
+
+* Pub
+
+  * Avoid using a barback asset server for executables unless they actually use
+    transformers. This makes precompilation substantially faster, produces
+    better error messages when precompilation fails, and allows
+    globally-activated executables to consistently use the
+    `Isolate.resolvePackageUri()` API.
+
+  * On Linux systems, always ignore packages' original file owners and
+    permissions when extracting those packages. This was already the default
+    under most circumstances.
+
+  * Properly close the standard input stream of child processes started using
+    `pub run`.
+
+  * Handle parse errors from the package cache more gracefully. A package whose
+    pubspec can't be parsed will now be ignored by `pub get --offline` and
+    deleted by `pub cache repair`.
+
+  * Make `pub run` run executables in spawned isolates. This lets them handle
+    signals and use standard IO reliably.
+
+## 1.21.0 - 2016-12-07
 
 ### Language
 
@@ -11,30 +70,48 @@
   [informal specification](https://gist.github.com/eernstg/cff159be9e34d5ea295d8c24b1a3e594)
   for details.
 * Don't warn about switch case fallthrough if the case ends in a `rethrow`
-  statement.
+  statement.  (SDK issue
+  [27650](https://github.com/dart-lang/sdk/issues/27650))
 * Also don't warn if the entire switch case is wrapped in braces - as long as
   the block ends with a `break`, `continue`, `rethrow`, `return` or `throw`.
 * Allow `=` as well as `:` as separator for named parameter default values.
 
+  ```dart
+  enableFlags({bool hidden: false}) { … }
+  ```
+
+  can now be replaced by
+
+  ```dart
+  enableFlags({bool hidden = false}) { … }
+  ```
+
+  (SDK issue [27559](https://github.com/dart-lang/sdk/issues/27559))
+
 ### Core library changes
 
-* `dart:core`: `Set.difference` now takes a `Set<Object>` as argument.
+* `dart:core`: `Set.difference` now takes a `Set<Object>` as argument.  (SDK
+  issue [27573](https://github.com/dart-lang/sdk/issues/27573))
 
-* `dart:developer`:
-  * The service protocol http server can now be controlled from Dart code.
+* `dart:developer`
+
+  * Added `Service` class.
+    * Allows inspecting and controlling the VM service protocol HTTP server.
+    * Provides an API to access the ID of an `Isolate`.
 
 ### Tool changes
 
 * Dart Dev Compiler
 
   * Support calls to `loadLibrary()` on deferred libraries. Deferred libraries
-    are still loaded eagerly. (#27343)
+    are still loaded eagerly. (SDK issue
+    [27343](https://github.com/dart-lang/sdk/issues/27343))
 
 ## 1.20.1 - 2016-10-13
 
 Patch release, resolves one issue:
 
-* Dartium: Fixes a bug that caused crashes.  No issue filed
+* Dartium: Fixes a bug that caused crashes.  No issue filed.
 
 ### Strong Mode
 
@@ -74,7 +151,8 @@ Patch release, resolves one issue:
   directory containing root certificate files hashed using `c_rehash`.
 
 * The VM now throws a catchable `Error` when method compilation fails. This
-  allows easier debugging of syntax errors, especially when testing.
+  allows easier debugging of syntax errors, especially when testing.  (SDK issue
+  [23684](https://github.com/dart-lang/sdk/issues/23684))
 
 ### Core library changes
 
@@ -82,14 +160,17 @@ Patch release, resolves one issue:
   Use the class in `package:resource` instead.
 * `dart:async`
   * `Future.wait` now catches synchronous errors and returns them in the
-    returned Future.
+    returned Future.  (SDK issue
+    [27249](https://github.com/dart-lang/sdk/issues/27249))
   * More aggressively returns a `Future` on `Stream.cancel` operations.
-    Discourages to return `null` from `cancel`.
+    Discourages to return `null` from `cancel`.  (SDK issue
+    [26777](https://github.com/dart-lang/sdk/issues/26777))
   * Fixes a few bugs where the cancel future wasn't passed through
     transformations.
 * `dart:io`
   * Added `WebSocket.addUtf8Text` to allow sending a pre-encoded text message
-    without a round-trip UTF-8 conversion.
+    without a round-trip UTF-8 conversion.  (SDK issue
+    [27129](https://github.com/dart-lang/sdk/issues/27129))
 
 ### Strong Mode
 
@@ -174,13 +255,16 @@ Patch release, resolves one issue:
     generates a `.packages` file, called a package spec. To generate
     a `packages/` directory in addition to the package spec, use the
     `--packages-dir` flag with `pub get`, `pub upgrade`, and `pub downgrade`.
+    See the [Good-bye
+    symlinks](http://news.dartlang.org/2016/10/good-bye-symlinks.html) article
+    for details.
 
 ## 1.19.1 - 2016-09-08
 
 Patch release, resolves one issue:
 
-* Dartdoc:  Fixes a bug that prevented generation of docs
-(Dartdoc issue [1233](https://github.com/dart-lang/dartdoc/issues/1233))
+* Dartdoc:  Fixes a bug that prevented generation of docs.
+  (Dartdoc issue [1233](https://github.com/dart-lang/dartdoc/issues/1233))
 
 ## 1.19.0 - 2016-08-26
 

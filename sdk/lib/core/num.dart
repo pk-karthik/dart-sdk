@@ -36,8 +36,8 @@ abstract class num implements Comparable<num> {
    * will fail to work. The behavior is the standard IEEE-754 equality of
    * doubles.
    *
-   * If you can avoid NaN values, the remaining doubles do have a proper eqality
-   * relation, and can be used safely.
+   * If you can avoid NaN values, the remaining doubles do have a proper
+   * equality relation, and can be used safely.
    *
    * Use [compareTo] for a comparison that distinguishes zero and minus zero,
    * and that considers NaN values as equal.
@@ -51,7 +51,7 @@ abstract class num implements Comparable<num> {
    * for an [int] and a [double] with the same numerical value, and therefore
    * the same value for the doubles zero and minus zero.
    *
-   * No guarantees are made about the hash code of NaN.
+   * No guarantees are made about the hash code of NaN values.
    */
   int get hashCode;
 
@@ -186,7 +186,7 @@ abstract class num implements Comparable<num> {
   /**
    * True if the number is finite; otherwise, false.
    *
-   * The only non-finite numbers are NaN, positive infinitity and
+   * The only non-finite numbers are NaN, positive infinity, and
    * negative infinity.
    */
   bool get isFinite;

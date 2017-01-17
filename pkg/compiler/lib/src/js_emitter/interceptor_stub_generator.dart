@@ -8,8 +8,10 @@ class InterceptorStubGenerator {
   final Compiler compiler;
   final Namer namer;
   final JavaScriptBackend backend;
+  final ClosedWorld closedWorld;
 
-  InterceptorStubGenerator(this.compiler, this.namer, this.backend);
+  InterceptorStubGenerator(
+      this.compiler, this.namer, this.backend, this.closedWorld);
 
   Emitter get emitter => backend.emitter.emitter;
 
@@ -160,16 +162,18 @@ class InterceptorStubGenerator {
       }''',
           [
             interceptorFor(helpers.jsJavaScriptFunctionClass),
-            backend.emitter.constructorAccess(compiler.coreClasses.objectClass),
+            backend.emitter
+                .constructorAccess(compiler.commonElements.objectClass),
             backend.emitter
                 .staticFunctionAccess(helpers.getNativeInterceptorMethod)
           ]));
     } else {
       ClassElement jsUnknown = helpers.jsUnknownJavaScriptObjectClass;
-      if (compiler.codegenWorld.directlyInstantiatedClasses
+      if (compiler.codegenWorldBuilder.directlyInstantiatedClasses
           .contains(jsUnknown)) {
         statements.add(js.statement('if (!(receiver instanceof #)) return #;', [
-          backend.emitter.constructorAccess(compiler.coreClasses.objectClass),
+          backend.emitter
+              .constructorAccess(compiler.commonElements.objectClass),
           interceptorFor(jsUnknown)
         ]));
       }
@@ -248,8 +252,8 @@ class InterceptorStubGenerator {
       bool containsJsIndexable =
           helpers.jsIndexingBehaviorInterface.isResolved &&
               classes.any((cls) {
-                return compiler.closedWorld
-                    .isSubtypeOf(cls, helpers.jsIndexingBehaviorInterface);
+                return closedWorld.isSubtypeOf(
+                    cls, helpers.jsIndexingBehaviorInterface);
               });
       // The index set operator requires a check on its set value in
       // checked mode, so we don't optimize the interceptor if the
@@ -357,9 +361,10 @@ class InterceptorStubGenerator {
     List<ConstantValue> constants =
         handler.getConstantsForEmission(emitter.compareConstants);
     for (ConstantValue constant in constants) {
-      if (constant is TypeConstantValue) {
-        TypeConstantValue typeConstant = constant;
-        Element element = typeConstant.representedType.element;
+      if (constant is TypeConstantValue &&
+          constant.representedType is ResolutionInterfaceType) {
+        ResolutionInterfaceType type = constant.representedType;
+        Element element = type.element;
         if (element is ClassElement) {
           ClassElement classElement = element;
           if (!analysis.needsClass(classElement)) continue;

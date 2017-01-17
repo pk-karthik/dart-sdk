@@ -83,7 +83,7 @@ class NativeEmitter {
     Class jsInterceptorClass = null;
 
     void walk(Class cls) {
-      if (cls.element == compiler.coreClasses.objectClass) {
+      if (cls.element == compiler.commonElements.objectClass) {
         objectClass = cls;
         return;
       }
@@ -264,11 +264,11 @@ class NativeEmitter {
       // parameter that was not provided for this stub.
       for (jsAst.Parameter stubParameter in stubParameters) {
         if (stubParameter.name == name) {
-          DartType type = parameter.type.unaliased;
-          if (type is FunctionType) {
+          ResolutionDartType type = parameter.type.unaliased;
+          if (type is ResolutionFunctionType) {
             // The parameter type is a function type either directly or through
             // typedef(s).
-            FunctionType functionType = type;
+            ResolutionFunctionType functionType = type;
             int arity = functionType.computeArity();
             statements.add(js
                 .statement('# = #(#, $arity)', [name, closureConverter, name]));

@@ -4,18 +4,24 @@
 
 library testing.abstract_context;
 
+import 'dart:async';
+
 import 'package:analyzer/dart/ast/ast.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/visitor.dart';
 import 'package:analyzer/exception/exception.dart';
 import 'package:analyzer/file_system/file_system.dart';
 import 'package:analyzer/file_system/memory_file_system.dart';
+import 'package:analyzer/file_system/physical_file_system.dart';
 import 'package:analyzer/source/package_map_resolver.dart';
+import 'package:analyzer/src/dart/analysis/byte_store.dart';
+import 'package:analyzer/src/dart/analysis/driver.dart';
+import 'package:analyzer/src/dart/analysis/file_state.dart';
+import 'package:analyzer/src/dart/sdk/sdk.dart';
 import 'package:analyzer/src/generated/engine.dart';
+import 'package:analyzer/src/generated/engine.dart' as engine;
 import 'package:analyzer/src/generated/sdk.dart';
 import 'package:analyzer/src/generated/source_io.dart';
-
-import 'mock_sdk.dart';
 
 /**
  * Finds an [Element] with the given [name].
@@ -40,13 +46,40 @@ Element findChildElement(Element root, String name, [ElementKind kind]) {
 typedef void _ElementVisitorFunction(Element element);
 
 class AbstractContextTest {
-  static final DartSdk SDK = new MockSdk();
+  static final DartSdk SDK = new FolderBasedDartSdk(
+      PhysicalResourceProvider.INSTANCE,
+      FolderBasedDartSdk.defaultSdkDirectory(PhysicalResourceProvider.INSTANCE))
+    ..useSummary = true;
   static final UriResolver SDK_RESOLVER = new DartUriResolver(SDK);
 
   MemoryResourceProvider provider;
   Map<String, List<Folder>> packageMap;
   UriResolver resourceResolver;
-  AnalysisContext context;
+
+  AnalysisContext _context;
+
+  StringBuffer _logBuffer = new StringBuffer();
+  FileContentOverlay _fileContentOverlay = new FileContentOverlay();
+  AnalysisDriver _driver;
+
+  AnalysisContext get context {
+    if (enableNewAnalysisDriver) {
+      throw new StateError('Should not be used with the new analysis driver.');
+    }
+    return _context;
+  }
+
+  AnalysisDriver get driver {
+    if (enableNewAnalysisDriver) {
+      return _driver;
+    }
+    throw new StateError('Should be used with the new analysis driver.');
+  }
+
+  /**
+   * Return `true` if the new analysis driver should be used by these tests.
+   */
+  bool get enableNewAnalysisDriver => false;
 
   Source addPackageSource(String packageName, String filePath, String content) {
     packageMap[packageName] = [(newFolder('/pubcache/$packageName'))];
@@ -56,12 +89,18 @@ class AbstractContextTest {
 
   Source addSource(String path, String content, [Uri uri]) {
     File file = newFile(path, content);
-    Source source = file.createSource(uri);
-    ChangeSet changeSet = new ChangeSet();
-    changeSet.addedSource(source);
-    context.applyChanges(changeSet);
-    context.setContents(source, content);
-    return source;
+    if (enableNewAnalysisDriver) {
+      driver.addFile(path);
+      _fileContentOverlay[path] = content;
+      return null;
+    } else {
+      Source source = file.createSource(uri);
+      ChangeSet changeSet = new ChangeSet();
+      changeSet.addedSource(source);
+      context.applyChanges(changeSet);
+      context.setContents(source, content);
+      return source;
+    }
   }
 
   File newFile(String path, [String content]) =>
@@ -74,8 +113,11 @@ class AbstractContextTest {
    * Performs all analysis tasks in [context].
    */
   void performAllAnalysisTasks() {
+    if (enableNewAnalysisDriver) {
+      return;
+    }
     while (true) {
-      AnalysisResult result = context.performAnalysisTask();
+      engine.AnalysisResult result = context.performAnalysisTask();
       if (!result.hasMoreWork) {
         break;
       }
@@ -86,12 +128,12 @@ class AbstractContextTest {
     AnalysisEngine.instance.processRequiredPlugins();
   }
 
-  CompilationUnit resolveDartUnit(Source unitSource, Source librarySource) {
-    return context.resolveCompilationUnit2(unitSource, librarySource);
-  }
-
-  CompilationUnit resolveLibraryUnit(Source source) {
-    return context.resolveCompilationUnit2(source, source);
+  Future<CompilationUnit> resolveLibraryUnit(Source source) async {
+    if (enableNewAnalysisDriver) {
+      return (await driver.getResult(source.fullName))?.unit;
+    } else {
+      return context.resolveCompilationUnit2(source, source);
+    }
   }
 
   void setUp() {
@@ -101,9 +143,24 @@ class AbstractContextTest {
     packageMap = new Map<String, List<Folder>>();
     PackageMapUriResolver packageResolver =
         new PackageMapUriResolver(provider, packageMap);
-    context = AnalysisEngine.instance.createAnalysisContext();
-    context.sourceFactory =
+    SourceFactory sourceFactory =
         new SourceFactory([SDK_RESOLVER, packageResolver, resourceResolver]);
+    if (enableNewAnalysisDriver) {
+      PerformanceLog log = new PerformanceLog(_logBuffer);
+      AnalysisDriverScheduler scheduler = new AnalysisDriverScheduler(log);
+      _driver = new AnalysisDriver(
+          scheduler,
+          log,
+          provider,
+          new MemoryByteStore(),
+          _fileContentOverlay,
+          sourceFactory,
+          new AnalysisOptionsImpl());
+      scheduler.start();
+    } else {
+      _context = AnalysisEngine.instance.createAnalysisContext();
+      context.sourceFactory = sourceFactory;
+    }
     AnalysisEngine.instance.logger = PrintLogger.instance;
   }
 
@@ -112,7 +169,7 @@ class AbstractContextTest {
   }
 
   void tearDown() {
-    context = null;
+    _context = null;
     provider = null;
     AnalysisEngine.instance.logger = null;
   }

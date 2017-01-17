@@ -26,7 +26,9 @@ import 'package:analysis_server/src/services/search/search_engine.dart';
 import 'package:analysis_server/src/services/search/search_engine_internal.dart';
 import 'package:analysis_server/src/services/search/search_engine_internal2.dart';
 import 'package:analysis_server/src/single_context_manager.dart';
+import 'package:analysis_server/src/utilities/null_string_sink.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/exception/exception.dart';
 import 'package:analyzer/file_system/file_system.dart';
@@ -240,7 +242,7 @@ class AnalysisServer {
   /**
    * The controller that is notified when analysis is started.
    */
-  StreamController<AnalysisContext> _onAnalysisStartedController;
+  StreamController<bool> _onAnalysisStartedController;
 
   /**
    * The controller that is notified when a single file has been analyzed.
@@ -330,11 +332,6 @@ class AnalysisServer {
   final Set<String> priorityFiles = new Set<String>();
 
   /**
-   * The cached results units for [priorityFiles].
-   */
-  final Map<String, nd.AnalysisResult> priorityFileResults = {};
-
-  /**
    * Initialize a newly created server to receive requests from and send
    * responses to the given [channel].
    *
@@ -369,7 +366,7 @@ class AnalysisServer {
 
     {
       String name = options.newAnalysisDriverLog;
-      StringSink sink = new _NullStringSink();
+      StringSink sink = new NullStringSink();
       if (name != null) {
         if (name == 'stdout') {
           sink = io.stdout;
@@ -495,9 +492,9 @@ class AnalysisServer {
   }
 
   /**
-   * The stream that is notified when analysis of a context is started.
+   * The stream that is notified with `true` when analysis is started.
    */
-  Stream<AnalysisContext> get onAnalysisStarted {
+  Stream<bool> get onAnalysisStarted {
     return _onAnalysisStartedController.stream;
   }
 
@@ -627,12 +624,14 @@ class AnalysisServer {
    * otherwise in the first driver, otherwise `null` is returned.
    */
   Future<nd.AnalysisResult> getAnalysisResult(String path) async {
-    nd.AnalysisResult result = priorityFileResults[path];
-    if (result != null) {
-      return result;
+    try {
+      nd.AnalysisDriver driver = getAnalysisDriver(path);
+      return await driver?.getResult(path);
+    } catch (e) {
+      // Ignore the exception.
+      // We don't want to log the same exception again and again.
+      return null;
     }
-    nd.AnalysisDriver driver = getAnalysisDriver(path);
-    return driver?.getResult(path);
   }
 
   CompilationUnitElement getCompilationUnitElement(String file) {
@@ -666,6 +665,19 @@ class AnalysisServer {
    */
   AnalysisContext getContainingContext(String path) {
     return contextManager.getContextFor(path);
+  }
+
+  /**
+   * Return the [nd.AnalysisDriver] for the "innermost" context whose associated
+   * folder is or contains the given path.  ("innermost" refers to the nesting
+   * of contexts, so if there is a context for path /foo and a context for
+   * path /foo/bar, then the innermost context containing /foo/bar/baz.dart is
+   * the context for /foo/bar.)
+   *
+   * If no context contains the given path, `null` is returned.
+   */
+  nd.AnalysisDriver getContainingDriver(String path) {
+    return contextManager.getDriverFor(path);
   }
 
   /**
@@ -907,7 +919,7 @@ class AnalysisServer {
    * Return `true` if analysis is complete.
    */
   bool isAnalysisComplete() {
-    return operationQueue.isEmpty;
+    return operationQueue.isEmpty && !analysisDriverScheduler.isAnalyzing;
   }
 
   /**
@@ -1072,7 +1084,7 @@ class AnalysisServer {
    * Schedules analysis of the given context.
    */
   void schedulePerformAnalysisOperation(AnalysisContext context) {
-    _onAnalysisStartedController.add(context);
+    _onAnalysisStartedController.add(true);
     scheduleOperation(new PerformAnalysisOperation(context, false));
   }
 
@@ -1152,10 +1164,24 @@ class AnalysisServer {
   }
 
   /**
-   * Send status notification to the client. The `operation` is the operation
-   * being performed or `null` if analysis is complete.
+   * Send status notification to the client. The state of analysis is given by
+   * the [status] information.
    */
   void sendStatusNotificationNew(nd.AnalysisStatus status) {
+    if (status.isAnalyzing) {
+      _onAnalysisStartedController.add(true);
+    }
+    if (_onAnalysisCompleteCompleter != null && !status.isAnalyzing) {
+      _onAnalysisCompleteCompleter.complete();
+      _onAnalysisCompleteCompleter = null;
+    }
+    // Perform on-idle actions.
+    if (!status.isAnalyzing) {
+      if (generalAnalysisServices
+          .contains(GeneralAnalysisService.ANALYZED_FILES)) {
+        sendAnalysisNotificationAnalyzedFiles(this);
+      }
+    }
     // Only send status when subscribed.
     if (!serverServices.contains(ServerService.STATUS)) {
       return;
@@ -1210,7 +1236,7 @@ class AnalysisServer {
           // The result will be produced by the "results" stream with
           // the fully resolved unit, and processed with sending analysis
           // notifications as it happens after content changes.
-          driver.getResult(file);
+          driver.getResult(file).catchError((exception, stackTrace) {});
         }
       }
       return;
@@ -1258,7 +1284,9 @@ class AnalysisServer {
                 sendAnalysisNotificationHighlights(this, file, dartUnit);
                 break;
               case AnalysisService.OUTLINE:
-                AnalysisContext context = dartUnit.element.context;
+                AnalysisContext context = resolutionMap
+                    .elementDeclaredByCompilationUnit(dartUnit)
+                    .context;
                 LineInfo lineInfo = context.getLineInfo(source);
                 SourceKind kind = context.getKindOf(source);
                 sendAnalysisNotificationOutline(
@@ -1305,10 +1333,6 @@ class AnalysisServer {
    */
   void setPriorityFiles(String requestId, List<String> files) {
     if (options.enableNewAnalysisDriver) {
-      // Flush results for files that are not priority anymore.
-      priorityFiles
-          .difference(files.toSet())
-          .forEach(priorityFileResults.remove);
       priorityFiles.clear();
       priorityFiles.addAll(files);
       // Set priority files in drivers.
@@ -1438,8 +1462,6 @@ class AnalysisServer {
   void updateContent(String id, Map<String, dynamic> changes) {
     if (options.enableNewAnalysisDriver) {
       changes.forEach((file, change) {
-        priorityFileResults.remove(file);
-
         // Prepare the new contents.
         String oldContents = fileContentOverlay[file];
         String newContents;
@@ -1472,6 +1494,11 @@ class AnalysisServer {
         driverMap.values.forEach((driver) {
           driver.changeFile(file);
         });
+
+        // If the file did not exist, and is "overlay only", it still should be
+        // analyzed. Add it to driver to which it should have been added.
+        contextManager.getDriverFor(file)?.addFile(file);
+
         // TODO(scheglov) implement other cases
       });
       return;
@@ -1808,17 +1835,12 @@ class ServerContextManagerCallbacks extends ContextManagerCallbacks {
         analysisServer.fileContentOverlay,
         sourceFactory,
         analysisOptions);
-    analysisDriver.name = folder.shortName;
+    analysisDriver.name = folder.path;
     analysisDriver.status.listen((status) {
       // TODO(scheglov) send server status
     });
     analysisDriver.results.listen((result) {
-      if (analysisServer.priorityFiles.contains(result.path)) {
-        analysisServer.priorityFileResults[result.path] = result;
-      }
-      _runDelayed(() {
-        new_sendErrorNotification(analysisServer, result);
-      });
+      new_sendErrorNotification(analysisServer, result);
       String path = result.path;
       CompilationUnit unit = result.unit;
       if (unit != null) {
@@ -1835,16 +1857,35 @@ class ServerContextManagerCallbacks extends ContextManagerCallbacks {
           });
         }
         if (analysisServer._hasAnalysisServiceSubscription(
+            AnalysisService.OCCURRENCES, path)) {
+          _runDelayed(() {
+            new_sendDartNotificationOccurrences(analysisServer, result);
+          });
+        }
+        if (analysisServer._hasAnalysisServiceSubscription(
             AnalysisService.OVERRIDES, path)) {
           _runDelayed(() {
             sendAnalysisNotificationOverrides(analysisServer, path, unit);
           });
         }
+        if (analysisServer._hasAnalysisServiceSubscription(
+            AnalysisService.OUTLINE, path)) {
+          _runDelayed(() {
+            SourceKind sourceKind =
+                unit.directives.any((d) => d is PartOfDirective)
+                    ? SourceKind.PART
+                    : SourceKind.LIBRARY;
+            sendAnalysisNotificationOutline(
+                analysisServer, path, result.lineInfo, sourceKind, unit);
+          });
+        }
       }
       // TODO(scheglov) Implement more notifications.
       // IMPLEMENTED
-      // OCCURRENCES (not used in IDEA)
-      // OUTLINE (not used in IDEA)
+    });
+    analysisDriver.exceptions.listen((nd.ExceptionResult result) {
+      AnalysisEngine.instance.logger
+          .logError('Analysis failed: ${result.path}', result.exception);
     });
     analysisServer.driverMap[folder] = analysisDriver;
     return analysisDriver;
@@ -1891,6 +1932,12 @@ class ServerContextManagerCallbacks extends ContextManagerCallbacks {
         sendAnalysisNotificationFlushResults(analysisServer, flushedFiles);
       }
     }
+  }
+
+  @override
+  void applyFileRemoved(nd.AnalysisDriver driver, String file) {
+    driver.removeFile(file);
+    sendAnalysisNotificationFlushResults(analysisServer, [file]);
   }
 
   @override
@@ -2082,11 +2129,4 @@ class ServerPerformanceStatistics {
    * The [PerformanceTag] for time spent in split store microtasks.
    */
   static PerformanceTag splitStore = new PerformanceTag('splitStore');
-}
-
-class _NullStringSink implements StringSink {
-  void write(Object obj) {}
-  void writeAll(Iterable objects, [String separator = ""]) {}
-  void writeCharCode(int charCode) {}
-  void writeln([Object obj = ""]) {}
 }

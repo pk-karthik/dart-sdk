@@ -24,6 +24,9 @@ class AnalysisStatus {
    * Return `true` is the driver is idle.
    */
   bool get isIdle => !_analyzing;
+
+  @override
+  String toString() => _analyzing ? 'analyzing' : 'idle';
 }
 
 /**
@@ -68,6 +71,11 @@ class StatusSupport {
    * The last status sent to the [stream].
    */
   AnalysisStatus _currentStatus = AnalysisStatus.IDLE;
+
+  /**
+   * Return the last status sent to the [stream].
+   */
+  AnalysisStatus get currentStatus => _currentStatus;
 
   /**
    * Return the stream that produces [AnalysisStatus] events.

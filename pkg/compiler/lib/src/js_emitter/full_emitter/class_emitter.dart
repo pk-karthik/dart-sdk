@@ -5,8 +5,13 @@
 part of dart2js.js_emitter.full_emitter;
 
 class ClassEmitter extends CodeEmitterHelper {
+  final ClosedWorld closedWorld;
+
+  ClassEmitter(this.closedWorld);
+
   ClassStubGenerator get _stubGenerator =>
-      new ClassStubGenerator(compiler, namer, backend);
+      new ClassStubGenerator(namer, backend, codegenWorldBuilder, closedWorld,
+          enableMinification: compiler.options.enableMinification);
 
   /**
    * Documentation wanted -- johnniwinther
@@ -171,7 +176,7 @@ class ClassEmitter extends CodeEmitterHelper {
           fieldNameParts.add(new jsAst.LiteralString('-'));
           if (fieldElement.isTopLevel ||
               backend.isAccessibleByReflection(fieldElement.enclosingClass)) {
-            DartType type = fieldElement.type;
+            ResolutionDartType type = fieldElement.type;
             fieldNameParts.add(task.metadataCollector.reifyType(type));
           }
         }
@@ -290,7 +295,7 @@ class ClassEmitter extends CodeEmitterHelper {
     }
 
     if (backend.isAccessibleByReflection(classElement)) {
-      List<DartType> typeVars = classElement.typeVariables;
+      List<ResolutionDartType> typeVars = classElement.typeVariables;
       Iterable typeVariableProperties =
           emitter.typeVariableHandler.typeVariablesOf(classElement);
 
@@ -344,7 +349,7 @@ class ClassEmitter extends CodeEmitterHelper {
         if (classElement.supertype != null) {
           types.add(task.metadataCollector.reifyType(classElement.supertype));
         }
-        for (DartType interface in classElement.interfaces) {
+        for (ResolutionDartType interface in classElement.interfaces) {
           types.add(task.metadataCollector.reifyType(interface));
         }
         // TODO(herhut): Fix use of reflection name here.

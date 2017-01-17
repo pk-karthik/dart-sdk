@@ -96,9 +96,8 @@ void Benchmark::RunAll(const char* executable) {
 
 
 Dart_Isolate Benchmark::CreateIsolate(const uint8_t* buffer) {
-  bin::IsolateData* isolate_data = new bin::IsolateData(NULL, NULL, NULL);
   char* err = NULL;
-  isolate_ = Dart_CreateIsolate(NULL, NULL, buffer, NULL, isolate_data, &err);
+  isolate_ = Dart_CreateIsolate(NULL, NULL, buffer, NULL, NULL, &err);
   EXPECT(isolate_ != NULL);
   free(err);
   return isolate_;
@@ -492,6 +491,11 @@ static uint8_t* malloc_allocator(uint8_t* ptr,
 }
 
 
+static void malloc_deallocator(uint8_t* ptr) {
+  free(ptr);
+}
+
+
 BENCHMARK_SIZE(CoreSnapshotSize) {
   const char* kScriptChars =
       "import 'dart:async';\n"
@@ -520,6 +524,9 @@ BENCHMARK_SIZE(CoreSnapshotSize) {
   const Snapshot* snapshot = Snapshot::SetupFromBuffer(isolate_snapshot_buffer);
   ASSERT(snapshot->kind() == Snapshot::kCore);
   benchmark->set_score(snapshot->length());
+
+  free(vm_isolate_snapshot_buffer);
+  free(isolate_snapshot_buffer);
 }
 
 
@@ -554,6 +561,9 @@ BENCHMARK_SIZE(StandaloneSnapshotSize) {
   const Snapshot* snapshot = Snapshot::SetupFromBuffer(isolate_snapshot_buffer);
   ASSERT(snapshot->kind() == Snapshot::kCore);
   benchmark->set_score(snapshot->length());
+
+  free(vm_isolate_snapshot_buffer);
+  free(isolate_snapshot_buffer);
 }
 
 
@@ -602,6 +612,7 @@ static uint8_t* message_allocator(uint8_t* ptr,
                                   intptr_t new_size) {
   return message_buffer;
 }
+static void message_deallocator(uint8_t* ptr) {}
 
 
 BENCHMARK(SerializeNull) {
@@ -612,7 +623,8 @@ BENCHMARK(SerializeNull) {
   timer.Start();
   for (intptr_t i = 0; i < kLoopCount; i++) {
     StackZone zone(thread);
-    MessageWriter writer(&buffer, &message_allocator, true);
+    MessageWriter writer(&buffer, &message_allocator, &message_deallocator,
+                         true);
     writer.WriteMessage(null_object);
     intptr_t buffer_len = writer.BytesWritten();
 
@@ -634,7 +646,8 @@ BENCHMARK(SerializeSmi) {
   timer.Start();
   for (intptr_t i = 0; i < kLoopCount; i++) {
     StackZone zone(thread);
-    MessageWriter writer(&buffer, &message_allocator, true);
+    MessageWriter writer(&buffer, &message_allocator, &message_deallocator,
+                         true);
     writer.WriteMessage(smi_object);
     intptr_t buffer_len = writer.BytesWritten();
 
@@ -659,7 +672,7 @@ BENCHMARK(SimpleMessage) {
   timer.Start();
   for (intptr_t i = 0; i < kLoopCount; i++) {
     StackZone zone(thread);
-    MessageWriter writer(&buffer, &malloc_allocator, true);
+    MessageWriter writer(&buffer, &malloc_allocator, &malloc_deallocator, true);
     writer.WriteMessage(array_object);
     intptr_t buffer_len = writer.BytesWritten();
 
@@ -693,7 +706,7 @@ BENCHMARK(LargeMap) {
   timer.Start();
   for (intptr_t i = 0; i < kLoopCount; i++) {
     StackZone zone(thread);
-    MessageWriter writer(&buffer, &malloc_allocator, true);
+    MessageWriter writer(&buffer, &malloc_allocator, &malloc_deallocator, true);
     writer.WriteMessage(map);
     intptr_t buffer_len = writer.BytesWritten();
 

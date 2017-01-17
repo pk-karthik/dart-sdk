@@ -20,11 +20,12 @@ import 'package:analyzer/analyzer.dart'
         StringLiteral,
         UriBasedDirective,
         parseDirectives;
+import 'package:analyzer/src/command_line/arguments.dart'
+    show defineAnalysisArguments;
 import 'package:analyzer/src/dart/ast/ast.dart';
 import 'package:analyzer/src/generated/source.dart' show Source;
 import 'package:args/args.dart' show ArgParser, ArgResults;
-import 'package:dev_compiler/src/analyzer/context.dart'
-    show AnalyzerOptions, parseDeclaredVariables;
+import 'package:dev_compiler/src/analyzer/context.dart';
 import 'package:dev_compiler/src/compiler/compiler.dart'
     show BuildUnit, CompilerOptions, JSModuleFile, ModuleCompiler;
 import 'package:dev_compiler/src/compiler/module_builder.dart'
@@ -78,7 +79,7 @@ main(List<String> arguments) {
       .where((p) => p.endsWith('.sum'))
       .toList();
 
-  var sharedCompiler = new ModuleCompiler(new AnalyzerOptions(
+  var sharedCompiler = new ModuleCompiler(new AnalyzerOptions.basic(
       dartSdkSummaryPath: sdkSummaryFile, summaryPaths: summaryPaths));
 
   var testDirs = [
@@ -103,6 +104,8 @@ main(List<String> arguments) {
   // Our default compiler options. Individual tests can override these.
   var defaultOptions = ['--no-source-map', '--no-summarize'];
   var compileArgParser = new ArgParser();
+  defineAnalysisArguments(compileArgParser, ddc: true);
+  AnalyzerOptions.addArguments(compileArgParser);
   CompilerOptions.addArguments(compileArgParser);
   addModuleFormatOptions(compileArgParser);
 
@@ -137,10 +140,12 @@ main(List<String> arguments) {
         args.addAll(matchedArgs.where((s) => !ignoreOptions.contains(s)));
       }
 
-      var declaredVars = <String, String>{};
-      var argResults =
-          compileArgParser.parse(parseDeclaredVariables(args, declaredVars));
+      ArgResults argResults = compileArgParser.parse(args);
+      var analyzerOptions = new AnalyzerOptions.fromArguments(argResults,
+          dartSdkSummaryPath: sdkSummaryFile, summaryPaths: summaryPaths);
+
       var options = new CompilerOptions.fromArguments(argResults);
+
       var moduleFormat = parseModuleFormatOption(argResults).first;
 
       // Collect any other files we've imported.
@@ -150,25 +155,32 @@ main(List<String> arguments) {
           name, path.dirname(testFile), files.toList(), _moduleForLibrary);
 
       var compiler = sharedCompiler;
-      if (declaredVars.isNotEmpty) {
-        compiler = new ModuleCompiler(new AnalyzerOptions(
-            dartSdkSummaryPath: sdkSummaryFile,
-            summaryPaths: summaryPaths,
-            declaredVariables: declaredVars));
+      if (analyzerOptions.declaredVariables.isNotEmpty) {
+        compiler = new ModuleCompiler(analyzerOptions);
       }
-      var module = compiler.compile(unit, options);
+      JSModuleFile module = null;
+      try {
+        module = compiler.compile(unit, options);
+      } catch (e) {}
 
       bool notStrong = notYetStrongTests.contains(name);
-      if (module.isValid) {
+      bool crashing = _crashingTests.contains(name);
+
+      if (module == null) {
+        expect(crashing, isTrue,
+            reason: "test $name crashes during compilation.");
+      } else if (module.isValid) {
         _writeModule(
             path.join(codegenOutputDir, name),
             isTopLevelTest ? path.join(codegenExpectDir, name) : null,
             moduleFormat,
             module);
 
+        expect(crashing, isFalse, reason: "test $name no longer crashes.");
         expect(notStrong, isFalse,
             reason: "test $name expected strong mode errors, but compiled.");
       } else {
+        expect(crashing, isFalse, reason: "test $name no longer crashes.");
         expect(notStrong, isTrue,
             reason: "test $name failed to compile due to strong mode errors:"
                 "\n\n${module.errors.join('\n')}.");
@@ -244,10 +256,16 @@ List<String> _setUpTests(List<String> testDirs) {
   var testFiles = <String>[];
 
   for (var testDir in testDirs) {
-    for (var file
-        in _listFiles(path.join(codegenDir, testDir), recursive: false)) {
-      var relativePath = path.relative(file, from: codegenDir);
-      var outputPath = path.join(codegenTestDir, relativePath);
+    // Look for the tests in the "_strong" directories in the SDK's main
+    // "tests" directory.
+    var dirParts = path.split(testDir);
+    var sdkTestDir =
+        path.join(dirParts[0] + "_strong", path.joinAll(dirParts.skip(1)));
+    var inputPath = path.join(testDirectory, '../../../tests/', sdkTestDir);
+
+    for (var file in _listFiles(inputPath, recursive: false)) {
+      var relativePath = path.relative(file, from: inputPath);
+      var outputPath = path.join(codegenTestDir, testDir, relativePath);
 
       _ensureDirectory(path.dirname(outputPath));
 
@@ -357,3 +375,21 @@ String _resolveDirective(UriBasedDirective directive) {
       ? uriContent
       : null;
 }
+
+final _crashingTests = new Set<String>.from([
+  'language/mixin_illegal_syntax_test_none_multi',
+  'language/mixin_illegal_syntax_test_01_multi',
+  'language/mixin_illegal_syntax_test_02_multi',
+  'language/mixin_illegal_syntax_test_03_multi',
+  'language/mixin_illegal_syntax_test_04_multi',
+  'language/mixin_illegal_syntax_test_05_multi',
+  'language/mixin_illegal_syntax_test_06_multi',
+  'language/mixin_illegal_syntax_test_07_multi',
+  'language/mixin_illegal_syntax_test_08_multi',
+  'language/mixin_illegal_syntax_test_09_multi',
+  'language/mixin_illegal_syntax_test_10_multi',
+  'language/mixin_illegal_syntax_test_11_multi',
+  'language/mixin_illegal_syntax_test_12_multi',
+  'language/mixin_illegal_syntax_test_13_multi',
+  'language/mixin_illegal_syntax_test_14_multi'
+]);

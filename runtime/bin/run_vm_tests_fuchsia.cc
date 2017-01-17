@@ -82,28 +82,8 @@ const char* kExpectFail[] = {
 
 // Bugs to fix, or things that are not yet implemented.
 const char* kBugs[] = {
-  // Need OS::GetCurrentThreadCPUMicros.
-  "Timeline_Dart_TimelineGetTraceOnlyDartEvents",
-  "Timeline_Dart_TimelineGetTraceWithDartEvents",
-  "Timeline_Dart_GlobalTimelineGetTrace",
-  "TimelineEventDuration",
-  "TimelineEventDurationPrintJSON",
-  "TimelineEventArguments",
-  "TimelineEventArgumentsPrintJSON",
-  "TimelineEventCallbackRecorderBasic",
-  "TimelineAnalysis_ThreadBlockCount",
-  "TimelineRingRecorderJSONOrder",
-  "TimelinePauses_BeginEnd",
-  "Timeline_Dart_TimelineGetTrace",
-  "Timeline_Dart_TimelineGetTraceGlobalOverride",
-  "Timeline_Dart_GlobalTimelineGetTrace_Threaded",
-
-  // Need VirtualMemory reservation with mmap.
-  "ArrayLengthMaxElements",
-  "Int8ListLengthMaxElements",
-
   // Assumes initial thread's stack is the same size as spawned thread stacks.
-  "StackOverflowStacktraceInfo",
+  "StackOverflowStackTraceInfo",
 };
 // clang-format on
 
@@ -153,7 +133,10 @@ static mx_status_t lp_setup(launchpad_t** lp_out,
   }
   launchpad_t* lp;
   mx_status_t status;
-  status = launchpad_create(0, argv[0], &lp);
+  mx_handle_t job = MX_HANDLE_INVALID;
+  status = mx_handle_duplicate(mx_job_default(), MX_RIGHT_SAME_RIGHTS, &job);
+  RETURN_IF_ERROR(status);
+  status = launchpad_create(job, argv[0], &lp);
   RETURN_IF_ERROR(status);
   status = launchpad_arguments(lp, argc, argv);
   RETURN_IF_ERROR(status);
@@ -269,7 +252,7 @@ static int run_test(mx_handle_t binary_vmo,
   drain_fd(stderr_pipe, test_stderr);
 
   mx_status_t r =
-      mx_handle_wait_one(p, MX_SIGNAL_SIGNALED, MX_TIME_INFINITE, NULL);
+      mx_handle_wait_one(p, MX_PROCESS_SIGNALED, MX_TIME_INFINITE, NULL);
   RETURN_IF_ERROR(r);
 
   mx_info_process_t proc_info;

@@ -150,9 +150,9 @@ const char* Snapshot::KindToCString(Kind kind) {
       return "script";
     case kMessage:
       return "message";
-    case kAppWithJIT:
+    case kAppJIT:
       return "app-jit";
-    case kAppNoJIT:
+    case kAppAOT:
       return "app-aot";
     case kNone:
       return "none";
@@ -370,7 +370,7 @@ void SnapshotReader::SetReadException(const char* msg) {
   const Library& library = Library::Handle(zone(), Library::CoreLibrary());
   result = DartLibraryCalls::InstanceCreate(library, Symbols::ArgumentError(),
                                             Symbols::Dot(), args);
-  const Stacktrace& stacktrace = Stacktrace::Handle(zone());
+  const StackTrace& stacktrace = StackTrace::Handle(zone());
   const UnhandledException& error = UnhandledException::Handle(
       zone(), UnhandledException::New(Instance::Cast(result), stacktrace));
   thread()->long_jump_base()->Jump(1, error);
@@ -1137,7 +1137,7 @@ void SnapshotReader::ProcessDeferredCanonicalizations() {
       }
       if (newobj.raw() != objref->raw()) {
         ZoneGrowableArray<intptr_t>* patches = backref.patch_records();
-        ASSERT(newobj.IsCanonical());
+        ASSERT(newobj.IsNull() || newobj.IsCanonical());
         ASSERT(patches != NULL);
         // First we replace the back ref table with the canonical object.
         *objref = newobj.raw();
@@ -1218,10 +1218,11 @@ SnapshotWriter::SnapshotWriter(Thread* thread,
                                Snapshot::Kind kind,
                                uint8_t** buffer,
                                ReAlloc alloc,
+                               DeAlloc dealloc,
                                intptr_t initial_size,
                                ForwardList* forward_list,
                                bool can_send_any_object)
-    : BaseWriter(buffer, alloc, initial_size),
+    : BaseWriter(buffer, alloc, dealloc, initial_size),
       thread_(thread),
       kind_(kind),
       object_store_(isolate()->object_store()),
@@ -1883,6 +1884,7 @@ ScriptSnapshotWriter::ScriptSnapshotWriter(uint8_t** buffer, ReAlloc alloc)
                      Snapshot::kScript,
                      buffer,
                      alloc,
+                     NULL,
                      kInitialSize,
                      &forward_list_,
                      true /* can_send_any_object */),
@@ -1932,11 +1934,13 @@ void SnapshotWriterVisitor::VisitPointers(RawObject** first, RawObject** last) {
 
 MessageWriter::MessageWriter(uint8_t** buffer,
                              ReAlloc alloc,
+                             DeAlloc dealloc,
                              bool can_send_any_object)
     : SnapshotWriter(Thread::Current(),
                      Snapshot::kMessage,
                      buffer,
                      alloc,
+                     dealloc,
                      kInitialSize,
                      &forward_list_,
                      can_send_any_object),
@@ -1957,6 +1961,7 @@ void MessageWriter::WriteMessage(const Object& obj) {
     NoSafepointScope no_safepoint;
     WriteObject(obj.raw());
   } else {
+    FreeBuffer();
     ThrowException(exception_type(), exception_msg());
   }
 }

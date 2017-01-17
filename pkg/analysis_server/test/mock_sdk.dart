@@ -173,6 +173,8 @@ class Future<T> {
   static Future wait(List<Future> futures) => null;
 }
 
+class FutureOr<T> {}
+
 class Stream<T> {}
 abstract class StreamTransformer<S, T> {}
 ''');
@@ -269,13 +271,24 @@ const Map<String, LibraryInfo> libraries = const {
    */
   PackageBundle _bundle;
 
-  MockSdk({resource.ResourceProvider resourceProvider})
+  MockSdk(
+      {bool generateSummaryFiles: false,
+      resource.ResourceProvider resourceProvider})
       : provider = resourceProvider ?? new resource.MemoryResourceProvider() {
     LIBRARIES.forEach((SdkLibrary library) {
       provider.newFile(library.path, (library as MockSdkLibrary).content);
     });
-    provider.newFile('/lib/_internal/sdk_library_metadata/lib/libraries.dart',
+    provider.newFile(
+        provider.convertPath(
+            '/lib/_internal/sdk_library_metadata/lib/libraries.dart'),
         librariesContent);
+    if (generateSummaryFiles) {
+      List<int> bytes = _computeLinkedBundleBytes();
+      provider.newFileWithBytes(
+          provider.convertPath('/lib/_internal/spec.sum'), bytes);
+      provider.newFileWithBytes(
+          provider.convertPath('/lib/_internal/strong.sum'), bytes);
+    }
   }
 
   @override
@@ -341,12 +354,14 @@ const Map<String, LibraryInfo> libraries = const {
   @override
   PackageBundle getLinkedBundle() {
     if (_bundle == null) {
-      List<Source> librarySources = sdkLibraries
-          .map((SdkLibrary library) => mapDartUri(library.shortName))
-          .toList();
-      List<int> bytes = new SummaryBuilder(
-              librarySources, context, context.analysisOptions.strongMode)
-          .build();
+      resource.File summaryFile =
+          provider.getFile(provider.convertPath('/lib/_internal/spec.sum'));
+      List<int> bytes;
+      if (summaryFile.exists) {
+        bytes = summaryFile.readAsBytesSync();
+      } else {
+        bytes = _computeLinkedBundleBytes();
+      }
       _bundle = new PackageBundle.fromBuffer(bytes);
     }
     return _bundle;
@@ -383,6 +398,18 @@ const Map<String, LibraryInfo> libraries = const {
     // table above.
     return null;
   }
+
+  /**
+   * Compute the bytes of the linked bundle associated with this SDK.
+   */
+  List<int> _computeLinkedBundleBytes() {
+    List<Source> librarySources = sdkLibraries
+        .map((SdkLibrary library) => mapDartUri(library.shortName))
+        .toList();
+    return new SummaryBuilder(
+            librarySources, context, context.analysisOptions.strongMode)
+        .build();
+  }
 }
 
 class MockSdkLibrary implements SdkLibrary {
@@ -414,7 +441,4 @@ class MockSdkLibrary implements SdkLibrary {
   bool get isVmLibrary => throw unimplemented;
 
   UnimplementedError get unimplemented => new UnimplementedError();
-
-  @override
-  List<String> getPatches(int platform) => const <String>[];
 }

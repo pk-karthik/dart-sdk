@@ -218,7 +218,10 @@ abstract class SummaryResynthesizer extends ElementResynthesizer {
         libraryElement.definingCompilationUnit = unitElement;
         unitElement.source = librarySource;
         unitElement.librarySource = librarySource;
-        return libraryElement..isSynthetic = true;
+        libraryElement.createLoadLibraryFunction(typeProvider);
+        libraryElement.publicNamespace = new Namespace({});
+        libraryElement.exportNamespace = new Namespace({});
+        return libraryElement;
       }
       UnlinkedUnit unlinkedSummary = _getUnlinkedSummaryOrNull(uri);
       if (unlinkedSummary == null) {
@@ -227,9 +230,13 @@ abstract class SummaryResynthesizer extends ElementResynthesizer {
       List<UnlinkedUnit> serializedUnits = <UnlinkedUnit>[unlinkedSummary];
       for (String part in serializedUnits[0].publicNamespace.parts) {
         Source partSource = sourceFactory.resolveUri(librarySource, part);
-        String partAbsUri = partSource.uri.toString();
-        serializedUnits.add(_getUnlinkedSummaryOrNull(partAbsUri) ??
-            new UnlinkedUnitBuilder(codeRange: new CodeRangeBuilder()));
+        if (partSource == null) {
+          serializedUnits.add(null);
+        } else {
+          String partAbsUri = partSource.uri.toString();
+          serializedUnits.add(_getUnlinkedSummaryOrNull(partAbsUri) ??
+              new UnlinkedUnitBuilder(codeRange: new CodeRangeBuilder()));
+        }
       }
       _LibraryResynthesizer libraryResynthesizer = new _LibraryResynthesizer(
           this, serializedLibrary, serializedUnits, librarySource);
@@ -305,6 +312,8 @@ abstract class SummaryResynthesizer extends ElementResynthesizer {
  * Builder of [Expression]s from [UnlinkedExpr]s.
  */
 class _ConstExprBuilder {
+  static const ARGUMENT_LIST = 'ARGUMENT_LIST';
+
   final _UnitResynthesizer resynthesizer;
   final ElementImpl context;
   final UnlinkedExpr uc;
@@ -468,17 +477,18 @@ class _ConstExprBuilder {
           _pushList(null);
           break;
         case UnlinkedExprOperation.makeTypedList:
-          TypeName itemType = _newTypeName();
-          _pushList(AstTestFactory.typeArgumentList(<TypeName>[itemType]));
+          TypeAnnotation itemType = _newTypeName();
+          _pushList(
+              AstTestFactory.typeArgumentList(<TypeAnnotation>[itemType]));
           break;
         case UnlinkedExprOperation.makeUntypedMap:
           _pushMap(null);
           break;
         case UnlinkedExprOperation.makeTypedMap:
-          TypeName keyType = _newTypeName();
-          TypeName valueType = _newTypeName();
-          _pushMap(
-              AstTestFactory.typeArgumentList(<TypeName>[keyType, valueType]));
+          TypeAnnotation keyType = _newTypeName();
+          TypeAnnotation valueType = _newTypeName();
+          _pushMap(AstTestFactory
+              .typeArgumentList(<TypeAnnotation>[keyType, valueType]));
           break;
         case UnlinkedExprOperation.pushReference:
           _pushReference();
@@ -505,6 +515,9 @@ class _ConstExprBuilder {
           Expression expression = _pop();
           _push(AstTestFactory.awaitExpression(expression));
           break;
+        case UnlinkedExprOperation.pushThis:
+          _push(AstTestFactory.thisExpression());
+          break;
         case UnlinkedExprOperation.assignToRef:
         case UnlinkedExprOperation.assignToProperty:
         case UnlinkedExprOperation.assignToIndex:
@@ -516,6 +529,9 @@ class _ConstExprBuilder {
         case UnlinkedExprOperation.typeCheck:
         case UnlinkedExprOperation.throwException:
         case UnlinkedExprOperation.pushLocalFunctionReference:
+        case UnlinkedExprOperation.pushError:
+        case UnlinkedExprOperation.pushTypedAbstract:
+        case UnlinkedExprOperation.pushUntypedAbstract:
           throw new UnimplementedError(
               'Unexpected $operation in a constant expression.');
       }
@@ -567,8 +583,8 @@ class _ConstExprBuilder {
     return AstTestFactory.propertyAccess(enclosing, property);
   }
 
-  TypeName _buildTypeAst(DartType type) {
-    List<TypeName> argumentNodes;
+  TypeAnnotation _buildTypeAst(DartType type) {
+    List<TypeAnnotation> argumentNodes;
     if (type is ParameterizedType) {
       if (!resynthesizer.libraryResynthesizer.typesWithImplicitTypeArguments
           .contains(type)) {
@@ -602,7 +618,7 @@ class _ConstExprBuilder {
    * Convert the next reference to the [DartType] and return the AST
    * corresponding to this type.
    */
-  TypeName _newTypeName() {
+  TypeAnnotation _newTypeName() {
     EntityRef typeRef = uc.references[refPtr++];
     DartType type =
         resynthesizer.buildType(typeRef, context?.typeParameterContext);
@@ -645,8 +661,12 @@ class _ConstExprBuilder {
       } else if (info.element is ClassElement) {
         constructorName = null;
       } else {
-        throw new StateError('Unsupported element for invokeConstructor '
-            '${info.element?.runtimeType}');
+        List<Expression> arguments = _buildArguments();
+        SimpleIdentifier name = AstTestFactory.identifier3(info.name);
+        name.staticElement = info.element;
+        name.setProperty(ARGUMENT_LIST, AstTestFactory.argumentList(arguments));
+        _push(name);
+        return;
       }
       InterfaceType definingType = resynthesizer._createConstructorDefiningType(
           context?.typeParameterContext, info, ref.typeArguments);
@@ -708,7 +728,8 @@ class _ConstExprBuilder {
     TypeArgumentList typeArguments;
     int numTypeArguments = uc.ints[intPtr++];
     if (numTypeArguments > 0) {
-      List<TypeName> typeNames = new List<TypeName>(numTypeArguments);
+      List<TypeAnnotation> typeNames =
+          new List<TypeAnnotation>(numTypeArguments);
       for (int i = 0; i < numTypeArguments; i++) {
         typeNames[i] = _newTypeName();
       }
@@ -1022,7 +1043,9 @@ class _LibraryResynthesizer {
           unlinkedDefiningUnit.publicNamespace.parts[i - 1],
           unlinkedDefiningUnit.parts[i - 1],
           i);
-      partResynthesizers.add(partResynthesizer);
+      if (partResynthesizer != null) {
+        partResynthesizers.add(partResynthesizer);
+      }
     }
     library.parts = partResynthesizers.map((r) => r.unit).toList();
     // Populate units.
@@ -1043,13 +1066,16 @@ class _LibraryResynthesizer {
   }
 
   /**
-   * Create, but do not populate, the [CompilationUnitElement] for a part other
-   * than the defining compilation unit.
+   * Create a [_UnitResynthesizer] that will resynthesize the part with the
+   * given [uri]. Return `null` if the [uri] is invalid.
    */
   _UnitResynthesizer buildPart(_UnitResynthesizer definingUnitResynthesizer,
       String uri, UnlinkedPart partDecl, int unitNum) {
     Source unitSource =
         summaryResynthesizer.sourceFactory.resolveUri(librarySource, uri);
+    if (unitSource == null) {
+      return null;
+    }
     _UnitResynthesizer partResynthesizer =
         createUnitResynthesizer(unitNum, unitSource, partDecl);
     CompilationUnitElementImpl partUnit = partResynthesizer.unit;
@@ -1288,7 +1314,7 @@ class _ReferenceInfo {
       // If type arguments are specified, use them.
       // Otherwise, delay until they are requested.
       if (numTypeParameters == 0) {
-        typeArguments = const <DartType>[];
+        return element.type;
       } else if (numTypeArguments == numTypeParameters) {
         typeArguments = new List<DartType>(numTypeParameters);
         for (int i = 0; i < numTypeParameters; i++) {
@@ -1524,8 +1550,11 @@ class _UnitResynthesizer {
     ElementAnnotationImpl elementAnnotation = new ElementAnnotationImpl(unit);
     Expression constExpr = _buildConstExpression(context, uc);
     if (constExpr is Identifier) {
+      ArgumentList arguments =
+          constExpr.getProperty(_ConstExprBuilder.ARGUMENT_LIST);
       elementAnnotation.element = constExpr.staticElement;
-      elementAnnotation.annotationAst = AstTestFactory.annotation(constExpr);
+      elementAnnotation.annotationAst =
+          AstTestFactory.annotation2(constExpr, null, arguments);
     } else if (constExpr is InstanceCreationExpression) {
       elementAnnotation.element = constExpr.staticElement;
       Identifier typeName = constExpr.constructorName.type.name;

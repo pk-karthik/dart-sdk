@@ -73,8 +73,9 @@ export 'a.dart';
 class B {}
 ''');
     FileState file = fileSystemState.getFileForPath(b);
-    List<TopLevelDeclaration> declarations = file.exportedTopLevelDeclarations;
-    expect(declarations.map((t) => t.name), unorderedEquals(['A', 'B']));
+    Map<String, TopLevelDeclaration> declarations =
+        file.exportedTopLevelDeclarations;
+    expect(declarations.keys, unorderedEquals(['A', 'B']));
   }
 
   test_exportedTopLevelDeclarations_export2_show() {
@@ -162,9 +163,10 @@ export 'a.dart';
 int V;
 ''');
     FileState file = fileSystemState.getFileForPath(b);
-    List<TopLevelDeclaration> declarations = file.exportedTopLevelDeclarations;
-    expect(declarations.map((t) => t.name), unorderedEquals(['V']));
-    expect(declarations.single.kind, TopLevelDeclarationKind.variable);
+    Map<String, TopLevelDeclaration> declarations =
+        file.exportedTopLevelDeclarations;
+    expect(declarations.keys, unorderedEquals(['V']));
+    expect(declarations['V'].kind, TopLevelDeclarationKind.variable);
   }
 
   test_exportedTopLevelDeclarations_export_show() {
@@ -320,6 +322,30 @@ class A1 {}
     expect(file.directReferencedFiles, hasLength(5));
 
     expect(fileSystemState.getFilesForPath(a1), [file]);
+  }
+
+  test_getFileForPath_onlyDartFiles() {
+    String a = _p('/test/lib/a.dart');
+    String b = _p('/test/lib/b.dart');
+    String c = _p('/test/lib/c.dart');
+    String d = _p('/test/lib/d.dart');
+    provider.newFile(
+        a,
+        r'''
+library lib;
+import 'dart:math';
+import 'b.dart';
+import 'not_dart.txt';
+export 'c.dart';
+export 'not_dart.txt';
+part 'd.dart';
+part 'not_dart.txt';
+''');
+    FileState file = fileSystemState.getFileForPath(a);
+    expect(file.importedFiles.map((f) => f.path), [b]);
+    expect(file.exportedFiles.map((f) => f.path), [c]);
+    expect(file.partedFiles.map((f) => f.path), [d]);
+    expect(fileSystemState.knownFilePaths, unorderedEquals([a, b, c, d]));
   }
 
   test_getFileForPath_part() {
@@ -499,16 +525,13 @@ set _V3(_) {}
 ''');
     FileState file = fileSystemState.getFileForPath(path);
 
-    List<TopLevelDeclaration> declarations = file.topLevelDeclarations;
+    Map<String, TopLevelDeclaration> declarations = file.topLevelDeclarations;
 
     void assertHas(String name, TopLevelDeclarationKind kind) {
-      expect(
-          declarations,
-          contains(predicate(
-              (TopLevelDeclaration t) => t.name == name && t.kind == kind)));
+      expect(declarations[name]?.kind, kind);
     }
 
-    expect(declarations.map((t) => t.name),
+    expect(declarations.keys,
         unorderedEquals(['C', 'F', 'E', 'f', 'V1', 'V2', 'V3', 'V4']));
     assertHas('C', TopLevelDeclarationKind.type);
     assertHas('F', TopLevelDeclarationKind.type);
@@ -636,8 +659,9 @@ set _V3(_) {}
 
   void _assertExportedTopLevelDeclarations(String path, List<String> expected) {
     FileState file = fileSystemState.getFileForPath(path);
-    List<TopLevelDeclaration> declarations = file.exportedTopLevelDeclarations;
-    expect(declarations.map((t) => t.name), unorderedEquals(expected));
+    Map<String, TopLevelDeclaration> declarations =
+        file.exportedTopLevelDeclarations;
+    expect(declarations.keys, unorderedEquals(expected));
   }
 
   void _assertFilesWithoutTransitiveFiles(List<FileState> expected) {

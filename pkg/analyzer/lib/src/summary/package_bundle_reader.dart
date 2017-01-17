@@ -218,14 +218,12 @@ abstract class ResynthesizerResultProvider extends ResultProvider {
             result as ResultDescriptor<int>, 0, TargetedResult.EMPTY_LIST);
         return true;
       } else if (result == SOURCE_KIND) {
-        if (_dataStore.linkedMap.containsKey(uriString)) {
-          entry.setValue(result as ResultDescriptor<SourceKind>,
-              SourceKind.LIBRARY, TargetedResult.EMPTY_LIST);
-          return true;
-        }
-        if (_dataStore.unlinkedMap.containsKey(uriString)) {
-          entry.setValue(result as ResultDescriptor<SourceKind>,
-              SourceKind.PART, TargetedResult.EMPTY_LIST);
+        UnlinkedUnit unlinked = _dataStore.unlinkedMap[uriString];
+        if (unlinked != null) {
+          entry.setValue(
+              result as ResultDescriptor<SourceKind>,
+              unlinked.isPartOf ? SourceKind.PART : SourceKind.LIBRARY,
+              TargetedResult.EMPTY_LIST);
           return true;
         }
         return false;
@@ -389,12 +387,26 @@ class SummaryDataStore {
     for (int i = 0; i < bundle.unlinkedUnitUris.length; i++) {
       String uri = bundle.unlinkedUnitUris[i];
       uriToSummaryPath[uri] = path;
-      unlinkedMap[uri] = bundle.unlinkedUnits[i];
+      addUnlinkedUnit(uri, bundle.unlinkedUnits[i]);
     }
     for (int i = 0; i < bundle.linkedLibraryUris.length; i++) {
       String uri = bundle.linkedLibraryUris[i];
-      linkedMap[uri] = bundle.linkedLibraries[i];
+      addLinkedLibrary(uri, bundle.linkedLibraries[i]);
     }
+  }
+
+  /**
+   * Add the given [linkedLibrary] with the given [uri].
+   */
+  void addLinkedLibrary(String uri, LinkedLibrary linkedLibrary) {
+    linkedMap[uri] = linkedLibrary;
+  }
+
+  /**
+   * Add the given [unlinkedUnit] with the given [uri].
+   */
+  void addUnlinkedUnit(String uri, UnlinkedUnit unlinkedUnit) {
+    unlinkedMap[uri] = unlinkedUnit;
   }
 
   /**

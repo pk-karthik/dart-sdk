@@ -8,6 +8,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/error/error.dart';
 import 'package:analyzer/exception/exception.dart';
@@ -239,6 +240,7 @@ class AnalysisContextImpl implements InternalAnalysisContext {
    * Initialize a newly created analysis context.
    */
   AnalysisContextImpl() {
+    AnalysisEngine.instance.processRequiredPlugins();
     _privatePartition = new UniversalCachePartition(this);
     _cache = createCacheFromSourceFactory(null);
     _taskManager = AnalysisEngine.instance.taskManager;
@@ -282,7 +284,6 @@ class AnalysisContextImpl implements InternalAnalysisContext {
         this._options.strongMode != options.strongMode ||
         this._options.enableAssertInitializer !=
             options.enableAssertInitializer ||
-        this._options.enableAssertMessage != options.enableAssertMessage ||
         this._options.enableLazyAssignmentOperators !=
             options.enableLazyAssignmentOperators ||
         ((options is AnalysisOptionsImpl)
@@ -300,14 +301,13 @@ class AnalysisContextImpl implements InternalAnalysisContext {
         this._options.enableStrictCallChecks !=
             options.enableStrictCallChecks ||
         this._options.enableSuperMixins != options.enableSuperMixins ||
-        this._options.patchPlatform != options.patchPlatform;
+        !_samePatchPaths(this._options.patchPaths, options.patchPaths);
     this._options.analyzeFunctionBodiesPredicate =
         options.analyzeFunctionBodiesPredicate;
     this._options.generateImplicitErrors = options.generateImplicitErrors;
     this._options.generateSdkErrors = options.generateSdkErrors;
     this._options.dart2jsHint = options.dart2jsHint;
     this._options.enableAssertInitializer = options.enableAssertInitializer;
-    this._options.enableAssertMessage = options.enableAssertMessage;
     this._options.enableStrictCallChecks = options.enableStrictCallChecks;
     this._options.enableLazyAssignmentOperators =
         options.enableLazyAssignmentOperators;
@@ -329,7 +329,7 @@ class AnalysisContextImpl implements InternalAnalysisContext {
     this._options.trackCacheDependencies = options.trackCacheDependencies;
     this._options.disableCacheFlushing = options.disableCacheFlushing;
     this._options.finerGrainedInvalidation = options.finerGrainedInvalidation;
-    this._options.patchPlatform = options.patchPlatform;
+    this._options.patchPaths = options.patchPaths;
     if (options is AnalysisOptionsImpl) {
       this._options.strongModeHints = options.strongModeHints;
       this._options.implicitCasts = options.implicitCasts;
@@ -810,8 +810,9 @@ class AnalysisContextImpl implements InternalAnalysisContext {
     if (source == null) {
       return false;
     }
-    if (_contentCache.getContents(source) != null) {
-      return true;
+    bool overriddenExists = _contentCache.getExists(source);
+    if (overriddenExists != null) {
+      return overriddenExists;
     }
     return source.exists();
   }
@@ -1246,6 +1247,7 @@ class AnalysisContextImpl implements InternalAnalysisContext {
       setValue(HINTS, AnalysisError.NO_ERRORS);
       setValue(LINTS, AnalysisError.NO_ERRORS);
       setValue(LIBRARY_UNIT_ERRORS, AnalysisError.NO_ERRORS);
+      setValue(RESOLVE_DIRECTIVES_ERRORS, AnalysisError.NO_ERRORS);
       setValue(RESOLVE_TYPE_NAMES_ERRORS, AnalysisError.NO_ERRORS);
       setValue(RESOLVE_UNIT_ERRORS, AnalysisError.NO_ERRORS);
       entry.setState(RESOLVED_UNIT, CacheState.FLUSHED);
@@ -1944,9 +1946,12 @@ class AnalysisContextImpl implements InternalAnalysisContext {
       }
       // if validation, remember the result, but throw it away
       if (analysisOptions.incrementalValidation) {
-        incrementalResolutionValidation_lastUnitSource = oldUnit.element.source;
+        CompilationUnitElement compilationUnitElement =
+            resolutionMap.elementDeclaredByCompilationUnit(oldUnit);
+        incrementalResolutionValidation_lastUnitSource =
+            compilationUnitElement.source;
         incrementalResolutionValidation_lastLibrarySource =
-            oldUnit.element.library.source;
+            compilationUnitElement.library.source;
         incrementalResolutionValidation_lastUnit = oldUnit;
         return false;
       }
@@ -1963,6 +1968,21 @@ class AnalysisContextImpl implements InternalAnalysisContext {
       driver.reset();
       return true;
     });
+  }
+
+  static bool _samePatchPaths(
+      Map<String, List<String>> a, Map<String, List<String>> b) {
+    if (a.length != b.length) return false;
+    for (var key in a.keys) {
+      if (!b.containsKey(key)) return false;
+      var aValue = a[key];
+      var bValue = b[key];
+      if (aValue.length != bValue.length) return false;
+      for (var i = 0; i < aValue.length; i++) {
+        if (aValue[i] != bValue[i]) return false;
+      }
+    }
+    return true;
   }
 }
 

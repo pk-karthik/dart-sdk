@@ -2,12 +2,13 @@
 # for details. All rights reserved. Use of this source code is governed by a
 # BSD-style license that can be found in the LICENSE file.
 
-cc/IsolateReload_PendingUnqualifiedCall_InstanceToStatic: Fail, Crash
-cc/IsolateReload_PendingUnqualifiedCall_StaticToInstance: Fail, Crash
-cc/IsolateReload_PendingConstructorCall_AbstractToConcrete: Fail, Crash
-cc/IsolateReload_PendingConstructorCall_ConcreteToAbstract: Fail, Crash
-cc/IsolateReload_PendingStaticCall_DefinedToNSM: Fail, Crash
-cc/IsolateReload_PendingStaticCall_NSMToDefined: Fail, Crash
+# Issue 28198
+cc/IsolateReload_PendingUnqualifiedCall_InstanceToStatic: Fail, Crash, Timeout
+cc/IsolateReload_PendingUnqualifiedCall_StaticToInstance: Fail, Crash, Timeout
+cc/IsolateReload_PendingConstructorCall_AbstractToConcrete: Fail, Crash, Timeout
+cc/IsolateReload_PendingConstructorCall_ConcreteToAbstract: Fail, Crash, Timeout
+cc/IsolateReload_PendingStaticCall_DefinedToNSM: Fail, Crash, Timeout
+cc/IsolateReload_PendingStaticCall_NSMToDefined: Fail, Crash, Timeout
 
 # These tests are expected to crash on all platforms.
 cc/ArrayNew_Overflow_Crash: Crash, Timeout
@@ -28,6 +29,24 @@ cc/Profiler_InliningIntervalBoundry: Skip # Differences in ia32, debug, release
 cc/Sleep: Pass, Fail
 
 dart/data_uri_import_test/none: SkipByDesign
+
+[ $mode == debug && $arch != ia32 && $system != windows ]
+cc/Profiler_ArrayAllocation: Fail # 28304
+cc/Profiler_BasicSourcePosition: Fail # 28304
+cc/Profiler_BasicSourcePositionOptimized: Fail, Crash # 28304, # 28282
+cc/Profiler_BinaryOperatorSourcePosition: Fail # 28304
+cc/Profiler_BinaryOperatorSourcePositionOptimized: Fail # 28304
+cc/Profiler_ChainedSamples: Fail # 28304
+cc/Profiler_ClosureAllocation: Fail # 28304
+cc/Profiler_CodeTicks: Fail # 28304
+cc/Profiler_ContextAllocation: Fail # 28304
+cc/Profiler_FunctionInline: Fail # 28304
+cc/Profiler_FunctionTicks: Fail # 28304
+cc/Profiler_SourcePosition: Fail # 28304
+cc/Profiler_SourcePositionOptimized: Fail # 28304
+cc/Profiler_ToggleRecordAllocation: Fail # 28304
+cc/Profiler_TrivialRecordAllocation: Fail # 28304
+cc/Profiler_TypedArrayAllocation: Fail # 28304
 
 [ $mode == debug ]
 # This is a benchmark that is not informative in debug mode.
@@ -148,17 +167,81 @@ cc/Dart2JSCompileAll: SkipSlow  # Timeout.
 [ $builder_tag == asan ]
 cc/CodeImmutability: Fail,OK # Address Sanitizer turns a crash into a failure.
 
-[ $noopt || $compiler == precompiler ]
+[ $builder_tag == asan && $arch == x64 ]
+cc/Log_Basic: Fail # Issue 28347
+cc/Log_Block: Fail # Issue 28347
+cc/Log_Macro: Fail # Issue 28347
+
+cc/Debug_DeleteBreakpoint: Fail # Issue 28348
+
+cc/IsolateReload_ChangeInstanceFormat7: Fail # Issue 28349
+cc/IsolateReload_ClassAdded: Fail # Issue 28349
+cc/IsolateReload_ComplexInheritanceChange: Fail # Issue 28349
+cc/IsolateReload_ConstFieldUpdate: Fail # Issue 28349
+cc/IsolateReload_ConstantIdentical: Fail # Issue 28349
+cc/IsolateReload_ConstructorChanged: Fail # Issue 28349
+cc/IsolateReload_DanglingGetter_Class: Fail # Issue 28349
+cc/IsolateReload_DanglingGetter_Instance: Fail # Issue 28349
+cc/IsolateReload_DanglingGetter_Library: Fail # Issue 28349
+cc/IsolateReload_DanglingSetter_Class: Fail # Issue 28349
+cc/IsolateReload_DanglingSetter_Instance: Fail # Issue 28349
+cc/IsolateReload_DanglingSetter_Library: Fail # Issue 28349
+cc/IsolateReload_DirectSubclasses_GhostSubclass: Fail # Issue 28349
+cc/IsolateReload_DirectSubclasses_Success: Fail # Issue 28349
+cc/IsolateReload_EnumAddition: Fail # Issue 28349
+cc/IsolateReload_EnumDelete: Fail # Issue 28349
+cc/IsolateReload_EnumEquality: Fail # Issue 28349
+cc/IsolateReload_EnumIdentical: Fail # Issue 28349
+cc/IsolateReload_EnumIdentityReload: Fail # Issue 28349
+cc/IsolateReload_EnumReorderIdentical: Fail # Issue 28349
+cc/IsolateReload_EnumValuesToString: Fail # Issue 28349
+cc/IsolateReload_ExportedLibModified: Fail # Issue 28349
+cc/IsolateReload_FunctionReplacement: Fail # Issue 28349
+cc/IsolateReload_Generics: Fail # Issue 28349
+cc/IsolateReload_ImplicitConstructorChanged: Fail # Issue 28349
+cc/IsolateReload_ImportedLibModified: Fail # Issue 28349
+cc/IsolateReload_ImportedMixinFunction: Fail # Issue 28349
+cc/IsolateReload_LibraryDebuggable: Fail # Issue 28349
+cc/IsolateReload_LibraryHide: Fail # Issue 28349
+cc/IsolateReload_LibraryImportAdded: Fail # Issue 28349
+cc/IsolateReload_LibraryImportRemoved: Fail # Issue 28349
+cc/IsolateReload_LibraryLookup: Fail # Issue 28349
+cc/IsolateReload_LibraryShow: Fail # Issue 28349
+cc/IsolateReload_LiveStack: Fail # Issue 28349
+cc/IsolateReload_MainLibModified: Fail # Issue 28349
+cc/IsolateReload_MixinChanged: Fail # Issue 28349
+cc/IsolateReload_PendingSuperCall: Fail # Issue 28349
+cc/IsolateReload_PrefixImportedLibModified: Fail # Issue 28349
+cc/IsolateReload_SavedClosure: Fail # Issue 28349
+cc/IsolateReload_SavedClosure: Fail # Issue 28349
+cc/IsolateReload_SimpleConstFieldUpdate: Fail # Issue 28349
+cc/IsolateReload_SmiFastPathStubs: Fail # Issue 28349
+cc/IsolateReload_StaticTearOffRetainsHash: Fail # Issue 28349
+cc/IsolateReload_StaticValuePreserved: Fail # Issue 28349
+cc/IsolateReload_StaticValuePreserved: Fail # Issue 28349
+cc/IsolateReload_SuperClassChanged: Fail # Issue 28349
+cc/IsolateReload_TearOff_AddArguments2: Fail # Issue 28349
+cc/IsolateReload_TearOff_AddArguments: Fail # Issue 28349
+cc/IsolateReload_TearOff_Class_Identity: Fail # Issue 28349
+cc/IsolateReload_TearOff_Instance_Equality: Fail # Issue 28349
+cc/IsolateReload_TearOff_Library_Identity: Fail # Issue 28349
+cc/IsolateReload_TearOff_List_Set: Fail # Issue 28349
+cc/IsolateReload_TopLevelFieldAdded: Fail # Issue 28349
+cc/IsolateReload_TypeIdentity: Fail # Issue 28349
+cc/IsolateReload_TypeIdentityGeneric: Fail # Issue 28349
+cc/IsolateReload_TypeIdentityParameter: Fail # Issue 28349
+
+[ $compiler == precompiler ]
 dart/byte_array_test: Skip # Incompatible flag --disable_alloc_stubs_after_gc
 
-[ $noopt || $compiler == precompiler || $mode == product ]
+[ $compiler == precompiler || $mode == product ]
 dart/redirection_type_shuffling_test: SkipByDesign # Imports dart:mirrors
 cc/CreateMirrorSystem: SkipByDesign # Imports dart:mirrors
 cc/CoreSnapshotSize: SkipByDesign # Imports dart:mirrors
 cc/StandaloneSnapshotSize: SkipByDesign # Imports dart:mirrors
 
-[ $noopt || $runtime == dart_precompiled ]
-# Stacktraces in precompilation omit inlined frames.
+[ $runtime == dart_precompiled ]
+# StackTraces in precompilation omit inlined frames.
 dart/inline_stack_frame_test: Pass, RuntimeError
 dart/optimized_stacktrace_test: Pass, RuntimeError
 

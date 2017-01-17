@@ -25,11 +25,13 @@ import 'package:analysis_server/src/services/correction/strings.dart';
 import 'package:analysis_server/src/services/correction/util.dart';
 import 'package:analysis_server/src/services/search/hierarchy.dart';
 import 'package:analyzer/dart/ast/ast.dart';
+import 'package:analyzer/dart/ast/standard_resolution_map.dart';
 import 'package:analyzer/dart/ast/token.dart';
 import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/dart/element/type.dart';
 import 'package:analyzer/error/error.dart';
 import 'package:analyzer/file_system/file_system.dart';
+import 'package:analyzer/src/dart/analysis/top_level_declaration.dart';
 import 'package:analyzer/src/dart/ast/token.dart';
 import 'package:analyzer/src/dart/ast/utilities.dart';
 import 'package:analyzer/src/dart/element/element.dart';
@@ -58,12 +60,12 @@ typedef bool ElementPredicate(Element argument);
  * Clients may not extend, implement or mix-in this class.
  */
 class DartFixContextImpl extends FixContextImpl implements DartFixContext {
-  /**
-   * The [CompilationUnit] to compute fixes in.
-   */
+  final GetTopLevelDeclarations getTopLevelDeclarations;
   final CompilationUnit unit;
 
-  DartFixContextImpl(FixContext fixContext, this.unit) : super.from(fixContext);
+  DartFixContextImpl(
+      FixContext fixContext, this.getTopLevelDeclarations, this.unit)
+      : super.from(fixContext);
 }
 
 /**
@@ -88,6 +90,7 @@ class FixProcessor {
   static const int MAX_LEVENSHTEIN_DISTANCE = 3;
 
   ResourceProvider resourceProvider;
+  GetTopLevelDeclarations getTopLevelDeclarations;
   CompilationUnit unit;
   AnalysisError error;
   AnalysisContext context;
@@ -117,6 +120,7 @@ class FixProcessor {
 
   FixProcessor(DartFixContext dartContext) {
     resourceProvider = dartContext.resourceProvider;
+    getTopLevelDeclarations = dartContext.getTopLevelDeclarations;
     context = dartContext.analysisContext;
     // unit
     unit = dartContext.unit;
@@ -179,9 +183,9 @@ class FixProcessor {
         if (name != null && name.staticElement == null) {
           node = name;
           if (annotation.arguments == null) {
-            _addFix_importLibrary_withTopLevelVariable();
+            await _addFix_importLibrary_withTopLevelVariable();
           } else {
-            _addFix_importLibrary_withType();
+            await _addFix_importLibrary_withType();
             _addFix_createClass();
             _addFix_undefinedClass_useSimilar();
           }
@@ -196,9 +200,6 @@ class FixProcessor {
         CompileTimeErrorCode.NO_DEFAULT_SUPER_CONSTRUCTOR_IMPLICIT) {
       _addFix_createConstructorSuperImplicit();
     }
-    if (errorCode == CompileTimeErrorCode.PART_OF_NON_PART) {
-      _addFix_addPartOfDirective();
-    }
     if (errorCode ==
         CompileTimeErrorCode.UNDEFINED_CONSTRUCTOR_IN_INITIALIZER_DEFAULT) {
       _addFix_createConstructorSuperExplicit();
@@ -206,10 +207,6 @@ class FixProcessor {
     if (errorCode == CompileTimeErrorCode.URI_DOES_NOT_EXIST) {
       _addFix_createImportUri();
       _addFix_createPartUri();
-      _addFix_replaceImportUri();
-    }
-    if (errorCode == CompileTimeErrorCode.URI_HAS_NOT_BEEN_GENERATED) {
-      _addFix_replaceImportUri();
     }
     if (errorCode == HintCode.CAN_BE_NULL_AFTER_NULL_AWARE) {
       _addFix_canBeNullAfterNullAware();
@@ -291,10 +288,11 @@ class FixProcessor {
       // implement methods
       _addFix_createMissingOverrides();
     }
-    if (errorCode == StaticWarningCode.CAST_TO_NON_TYPE ||
+    if (errorCode == CompileTimeErrorCode.UNDEFINED_CLASS ||
+        errorCode == StaticWarningCode.CAST_TO_NON_TYPE ||
         errorCode == StaticWarningCode.TYPE_TEST_WITH_UNDEFINED_NAME ||
         errorCode == StaticWarningCode.UNDEFINED_CLASS) {
-      _addFix_importLibrary_withType();
+      await _addFix_importLibrary_withType();
       _addFix_createClass();
       _addFix_undefinedClass_useSimilar();
     }
@@ -313,8 +311,8 @@ class FixProcessor {
       _addFix_createField();
       _addFix_createGetter();
       _addFix_createFunction_forFunctionType();
-      _addFix_importLibrary_withType();
-      _addFix_importLibrary_withTopLevelVariable();
+      await _addFix_importLibrary_withType();
+      await _addFix_importLibrary_withTopLevelVariable();
       _addFix_createLocalVariable();
     }
     if (errorCode == StaticWarningCode.UNDEFINED_IDENTIFIER_AWAIT) {
@@ -337,11 +335,11 @@ class FixProcessor {
       _addFix_nonBoolCondition_addNotNull();
     }
     if (errorCode == StaticTypeWarningCode.NON_TYPE_AS_TYPE_ARGUMENT) {
-      _addFix_importLibrary_withType();
+      await _addFix_importLibrary_withType();
       _addFix_createClass();
     }
     if (errorCode == StaticTypeWarningCode.UNDEFINED_FUNCTION) {
-      _addFix_importLibrary_withFunction();
+      await _addFix_importLibrary_withFunction();
       _addFix_undefinedFunction_useSimilar();
       _addFix_undefinedFunction_create();
     }
@@ -353,7 +351,7 @@ class FixProcessor {
     }
     if (errorCode == HintCode.UNDEFINED_METHOD ||
         errorCode == StaticTypeWarningCode.UNDEFINED_METHOD) {
-      _addFix_importLibrary_withFunction();
+      await _addFix_importLibrary_withFunction();
       _addFix_undefinedMethod_useSimilar();
       _addFix_undefinedMethod_create();
       _addFix_undefinedFunction_create();
@@ -489,9 +487,17 @@ class FixProcessor {
           AstNode targetNode = targetElement.computeNode();
           if (targetNode is FunctionDeclaration) {
             FunctionExpression function = targetNode.functionExpression;
-            targetOffset = function.parameters.leftParenthesis.end;
+            Token paren = function.parameters.leftParenthesis;
+            if (paren == null) {
+              return;
+            }
+            targetOffset = paren.end;
           } else if (targetNode is MethodDeclaration) {
-            targetOffset = targetNode.parameters.leftParenthesis.end;
+            Token paren = targetNode.parameters.leftParenthesis;
+            if (paren == null) {
+              return;
+            }
+            targetOffset = paren.end;
           } else {
             return;
           }
@@ -532,26 +538,6 @@ class FixProcessor {
     }
   }
 
-  void _addFix_addPartOfDirective() {
-    // TODO(brianwilkerson) Generalize this to allow other valid string literals.
-    if (node is SimpleStringLiteral && node.parent is PartDirective) {
-      PartDirective directive = node.parent;
-      Source partSource = directive.uriSource;
-      CompilationUnit partUnit;
-      partUnit = context.getResolvedCompilationUnit2(partSource, partSource);
-      if (partUnit != null) {
-        CorrectionUtils partUtils = new CorrectionUtils(partUnit);
-        CorrectionUtils_InsertDesc desc = partUtils.getInsertDescTop();
-        String libraryName = unitLibraryElement.name;
-        _addInsertEdit(
-            desc.offset,
-            '${desc.prefix}part of $libraryName;$eol${desc.suffix}',
-            partUnit.element);
-        _addFix(DartFixKind.ADD_PART_OF, []);
-      }
-    }
-  }
-
   void _addFix_boolInsteadOfBoolean() {
     SourceRange range = rf.rangeError(error);
     _addReplaceEdit(range, 'bool');
@@ -584,7 +570,7 @@ class FixProcessor {
       AstNode variableList = declaration.parent;
       if (variableList is VariableDeclarationList &&
           variableList.variables.length == 1) {
-        TypeName typeNode = variableList.type;
+        TypeAnnotation typeNode = variableList.type;
         if (typeNode != null) {
           Expression initializer = coveredNode;
           DartType newType = initializer.bestType;
@@ -593,7 +579,7 @@ class FixProcessor {
                 utils.getTypeSource(newType, librariesToImport);
             _addReplaceEdit(rf.rangeNode(typeNode), newTypeSource);
             _addFix(DartFixKind.CHANGE_TYPE_ANNOTATION,
-                [typeNode.type.displayName, newTypeSource]);
+                [resolutionMap.typeForTypeName(typeNode), newTypeSource]);
           }
         }
       }
@@ -1352,6 +1338,7 @@ class FixProcessor {
 
   void _addFix_createMissingOverrides_single(SourceBuilder sb,
       ClassDeclaration targetClass, ExecutableElement element) {
+    utils.targetExecutableElement = element;
     // prepare environment
     String prefix = utils.getIndent(1);
     String prefix2 = utils.getIndent(2);
@@ -1387,6 +1374,7 @@ class FixProcessor {
     }
     // name
     sb.append(element.displayName);
+    _appendTypeParameters(sb, element.typeParameters);
     // parameters + body
     if (isGetter) {
       sb.append(' => null;');
@@ -1404,6 +1392,7 @@ class FixProcessor {
       sb.append('}');
     }
     sb.append(eol);
+    utils.targetExecutableElement = null;
   }
 
   void _addFix_createNoSuchMethod() {
@@ -1447,7 +1436,7 @@ class FixProcessor {
 
   void _addFix_illegalAsyncReturnType() {
     // prepare the existing type
-    TypeName typeName = node.getAncestor((n) => n is TypeName);
+    TypeAnnotation typeName = node.getAncestor((n) => n is TypeAnnotation);
     _replaceTypeWithFuture(typeName);
     // add proposal
     _addFix(DartFixKind.REPLACE_RETURN_TYPE_FUTURE, []);
@@ -1459,7 +1448,8 @@ class FixProcessor {
     _addFix(kind, [libraryUri], importsOnly: true);
   }
 
-  void _addFix_importLibrary_withElement(String name, ElementKind kind) {
+  Future<Null> _addFix_importLibrary_withElement(String name,
+      List<ElementKind> elementKinds, TopLevelDeclarationKind kind2) async {
     // ignore if private
     if (name.startsWith('_')) {
       return;
@@ -1477,7 +1467,7 @@ class FixProcessor {
       if (element is PropertyAccessorElement) {
         element = (element as PropertyAccessorElement).variable;
       }
-      if (element.kind != kind) {
+      if (!elementKinds.contains(element.kind)) {
         continue;
       }
       // may be apply prefix
@@ -1527,7 +1517,7 @@ class FixProcessor {
         }
         // prepare LibraryElement
         LibraryElement libraryElement =
-            context.getResult(librarySource, LIBRARY_ELEMENT1);
+            context.computeResult(librarySource, LIBRARY_ELEMENT1);
         if (libraryElement == null) {
           continue;
         }
@@ -1539,7 +1529,7 @@ class FixProcessor {
         if (element is PropertyAccessorElement) {
           element = (element as PropertyAccessorElement).variable;
         }
-        if (element.kind != kind) {
+        if (!elementKinds.contains(element.kind)) {
           continue;
         }
         // add import
@@ -1549,41 +1539,27 @@ class FixProcessor {
     }
     // check project libraries
     {
-      List<Source> librarySources = context.librarySources;
-      for (Source librarySource in librarySources) {
-        // we don't need SDK libraries here
+      List<TopLevelDeclarationInSource> declarations =
+          await getTopLevelDeclarations(name);
+      for (TopLevelDeclarationInSource declaration in declarations) {
+        // Check the kind.
+        if (declaration.declaration.kind != kind2) {
+          continue;
+        }
+        // Check the source.
+        Source librarySource = declaration.source;
         if (librarySource.isInSystemLibrary) {
           continue;
         }
-        // maybe already imported
         if (alreadyImportedWithPrefix.contains(librarySource)) {
-          continue;
-        }
-        // prepare LibraryElement
-        LibraryElement libraryElement =
-            context.getResult(librarySource, LIBRARY_ELEMENT4);
-        if (libraryElement == null) {
-          continue;
-        }
-        // prepare exported Element
-        Element element = getExportedElement(libraryElement, name);
-        if (element == null) {
-          continue;
-        }
-        if (element is PropertyAccessorElement) {
-          element = (element as PropertyAccessorElement).variable;
-        }
-        if (element.kind != kind) {
           continue;
         }
         // Compute the fix kind.
         FixKind fixKind;
-        if (resourceProvider.pathContext
-            .split(librarySource.fullName)
-            .contains('src')) {
+        if (_isLibSrcPath(librarySource.fullName)) {
           // Bad: non-API.
           fixKind = DartFixKind.IMPORT_LIBRARY_PROJECT3;
-        } else if (element.library != libraryElement) {
+        } else if (declaration.isExported) {
           // Ugly: exports.
           fixKind = DartFixKind.IMPORT_LIBRARY_PROJECT2;
         } else {
@@ -1591,34 +1567,39 @@ class FixProcessor {
           fixKind = DartFixKind.IMPORT_LIBRARY_PROJECT1;
         }
         // Add the fix.
-        _addFix_importLibrary(fixKind, libraryElement.source);
+        _addFix_importLibrary(fixKind, librarySource);
       }
     }
   }
 
-  void _addFix_importLibrary_withFunction() {
+  Future<Null> _addFix_importLibrary_withFunction() async {
     if (node is SimpleIdentifier && node.parent is MethodInvocation) {
       MethodInvocation invocation = node.parent as MethodInvocation;
       if (invocation.realTarget == null && invocation.methodName == node) {
         String name = (node as SimpleIdentifier).name;
-        _addFix_importLibrary_withElement(name, ElementKind.FUNCTION);
+        await _addFix_importLibrary_withElement(name,
+            const [ElementKind.FUNCTION], TopLevelDeclarationKind.function);
       }
     }
   }
 
-  void _addFix_importLibrary_withTopLevelVariable() {
+  Future<Null> _addFix_importLibrary_withTopLevelVariable() async {
     if (node is SimpleIdentifier) {
       String name = (node as SimpleIdentifier).name;
-      _addFix_importLibrary_withElement(name, ElementKind.TOP_LEVEL_VARIABLE);
+      await _addFix_importLibrary_withElement(
+          name,
+          const [ElementKind.TOP_LEVEL_VARIABLE],
+          TopLevelDeclarationKind.variable);
     }
   }
 
-  void _addFix_importLibrary_withType() {
+  Future<Null> _addFix_importLibrary_withType() async {
     if (_mayBeTypeIdentifier(node)) {
       String typeName = (node as SimpleIdentifier).name;
-      _addFix_importLibrary_withElement(typeName, ElementKind.CLASS);
-      _addFix_importLibrary_withElement(
-          typeName, ElementKind.FUNCTION_TYPE_ALIAS);
+      await _addFix_importLibrary_withElement(
+          typeName,
+          const [ElementKind.CLASS, ElementKind.FUNCTION_TYPE_ALIAS],
+          TopLevelDeclarationKind.type);
     }
   }
 
@@ -1654,6 +1635,9 @@ class FixProcessor {
   void _addFix_makeEnclosingClassAbstract() {
     ClassDeclaration enclosingClass =
         node.getAncestor((node) => node is ClassDeclaration);
+    if (enclosingClass == null) {
+      return;
+    }
     String className = enclosingClass.name.name;
     _addInsertEdit(enclosingClass.classKeyword.offset, 'abstract ');
     _addFix(DartFixKind.MAKE_CLASS_ABSTRACT, [className]);
@@ -1801,32 +1785,6 @@ class FixProcessor {
     _addRemoveEdit(utils.getLinesRange(rf.rangeNode(importDirective)));
     // done
     _addFix(DartFixKind.REMOVE_UNUSED_IMPORT, []);
-  }
-
-  void _addFix_replaceImportUri() {
-    if (node is SimpleStringLiteral) {
-      SimpleStringLiteral stringLiteral = node;
-      String uri = stringLiteral.value;
-      String uriName = substringAfterLast(uri, '/');
-      for (Source libSource in context.librarySources) {
-        String libFile = libSource.fullName;
-        if (substringAfterLast(libFile, '/') == uriName) {
-          String fixedUri;
-          // may be "package:" URI
-          String libPackageUri = findNonFileUri(context, libFile);
-          if (libPackageUri != null) {
-            fixedUri = libPackageUri;
-          } else {
-            String relativeFile = relative(libFile, from: unitLibraryFolder);
-            fixedUri = split(relativeFile).join('/');
-          }
-          // add fix
-          SourceRange range = rf.rangeNode(node);
-          _addReplaceEdit(range, "'$fixedUri'");
-          _addFix(DartFixKind.REPLACE_IMPORT_URI, [fixedUri]);
-        }
-      }
-    }
   }
 
   void _addFix_replaceVarWithDynamic() {
@@ -2065,7 +2023,9 @@ class FixProcessor {
         targetClassNode = targetTypeNode;
         // maybe static
         if (target is Identifier) {
-          staticModifier = target.bestElement.kind == ElementKind.CLASS;
+          staticModifier =
+              resolutionMap.bestElementForIdentifier(target).kind ==
+                  ElementKind.CLASS;
         }
         // use different utils
         CompilationUnitElement targetUnitElement =
@@ -2154,33 +2114,31 @@ class FixProcessor {
     ConstructorDeclaration constructor = node.parent;
     // add these fields
     List<FieldElement> fields =
-        error.getProperty(ErrorProperty.NOT_INITIALIZED_FIELDS);
-    if (fields != null) {
-      // prepare new parameters code
-      fields.sort((a, b) => a.nameOffset - b.nameOffset);
-      String fieldParametersCode =
-          fields.map((field) => 'this.${field.name}').join(', ');
-      // prepare the last required parameter
-      FormalParameter lastRequiredParameter;
-      List<FormalParameter> parameters = constructor.parameters.parameters;
-      for (FormalParameter parameter in parameters) {
-        if (parameter.kind == ParameterKind.REQUIRED) {
-          lastRequiredParameter = parameter;
-        }
+        ErrorVerifier.computeNotInitializedFields(constructor);
+    // prepare new parameters code
+    fields.sort((a, b) => a.nameOffset - b.nameOffset);
+    String fieldParametersCode =
+        fields.map((field) => 'this.${field.name}').join(', ');
+    // prepare the last required parameter
+    FormalParameter lastRequiredParameter;
+    List<FormalParameter> parameters = constructor.parameters.parameters;
+    for (FormalParameter parameter in parameters) {
+      if (parameter.kind == ParameterKind.REQUIRED) {
+        lastRequiredParameter = parameter;
       }
-      // append new field formal initializers
-      if (lastRequiredParameter != null) {
-        _addInsertEdit(lastRequiredParameter.end, ', $fieldParametersCode');
-      } else {
-        int offset = constructor.parameters.leftParenthesis.end;
-        if (parameters.isNotEmpty) {
-          fieldParametersCode += ', ';
-        }
-        _addInsertEdit(offset, fieldParametersCode);
-      }
-      // add proposal
-      _addFix(DartFixKind.ADD_FIELD_FORMAL_PARAMETERS, []);
     }
+    // append new field formal initializers
+    if (lastRequiredParameter != null) {
+      _addInsertEdit(lastRequiredParameter.end, ', $fieldParametersCode');
+    } else {
+      int offset = constructor.parameters.leftParenthesis.end;
+      if (parameters.isNotEmpty) {
+        fieldParametersCode += ', ';
+      }
+      _addInsertEdit(offset, fieldParametersCode);
+    }
+    // add proposal
+    _addFix(DartFixKind.ADD_FIELD_FORMAL_PARAMETERS, []);
   }
 
   void _addFix_useEffectiveIntegerDivision() {
@@ -2524,7 +2482,7 @@ class FixProcessor {
   }
 
   void _appendType(SourceBuilder sb, DartType type,
-      {String groupId, bool orVar: false}) {
+      {String groupId, bool orVar: false, bool trailingSpace: true}) {
     if (type != null && !type.isDynamic) {
       String typeSource = utils.getTypeSource(type, librariesToImport);
       if (groupId != null) {
@@ -2534,9 +2492,36 @@ class FixProcessor {
       } else {
         sb.append(typeSource);
       }
-      sb.append(' ');
+      if (trailingSpace) {
+        sb.append(' ');
+      }
     } else if (orVar) {
       sb.append('var ');
+    }
+  }
+
+  void _appendTypeParameter(
+      SourceBuilder sb, TypeParameterElement typeParameter) {
+    sb.append(typeParameter.name);
+    if (typeParameter.bound != null) {
+      sb.append(' extends ');
+      _appendType(sb, typeParameter.bound, trailingSpace: false);
+    }
+  }
+
+  void _appendTypeParameters(
+      SourceBuilder sb, List<TypeParameterElement> typeParameters) {
+    if (typeParameters.isNotEmpty) {
+      sb.append('<');
+      bool isFirst = true;
+      for (TypeParameterElement typeParameter in typeParameters) {
+        if (!isFirst) {
+          sb.append(', ');
+        }
+        isFirst = false;
+        _appendTypeParameter(sb, typeParameter);
+      }
+      sb.append('>');
     }
   }
 
@@ -2800,6 +2785,16 @@ class FixProcessor {
     return node is SimpleIdentifier && node.name == 'await';
   }
 
+  bool _isLibSrcPath(String path) {
+    List<String> parts = resourceProvider.pathContext.split(path);
+    for (int i = 0; i < parts.length - 2; i++) {
+      if (parts[i] == 'lib' && parts[i + 1] == 'src') {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /**
    * Removes any [ParenthesizedExpression] enclosing [expr].
    *
@@ -2830,7 +2825,7 @@ class FixProcessor {
     }
   }
 
-  void _replaceTypeWithFuture(TypeName typeName) {
+  void _replaceTypeWithFuture(TypeAnnotation typeName) {
     InterfaceType futureType = context.typeProvider.futureType;
     // validate the type
     DartType type = typeName?.type;

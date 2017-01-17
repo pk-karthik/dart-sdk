@@ -85,6 +85,7 @@ class FileState {
    */
   Source source;
 
+  bool _exists;
   String _content;
   String _contentHash;
   LineInfo _lineInfo;
@@ -101,8 +102,8 @@ class FileState {
   Set<FileState> _transitiveFiles;
   String _transitiveSignature;
 
-  List<TopLevelDeclaration> _topLevelDeclarations;
-  List<TopLevelDeclaration> _exportedTopLevelDeclarations;
+  Map<String, TopLevelDeclaration> _topLevelDeclarations;
+  Map<String, TopLevelDeclaration> _exportedTopLevelDeclarations;
 
   FileState._(this._fsState, this.path, this.uri, this.source);
 
@@ -128,52 +129,53 @@ class FileState {
   Set<FileState> get directReferencedFiles => _directReferencedFiles;
 
   /**
+   * Return `true` if the file exists.
+   */
+  bool get exists => _exists;
+
+  /**
    * The list of files this file exports.
    */
   List<FileState> get exportedFiles => _exportedFiles;
 
   /**
-   * Return [TopLevelDeclaration]s exported from the this library file.
+   * Return [TopLevelDeclaration]s exported from the this library file. The
+   * keys to the map are names of declarations.
    */
-  List<TopLevelDeclaration> get exportedTopLevelDeclarations {
+  Map<String, TopLevelDeclaration> get exportedTopLevelDeclarations {
     if (_exportedTopLevelDeclarations == null) {
-      _exportedTopLevelDeclarations = <TopLevelDeclaration>[];
+      _exportedTopLevelDeclarations = <String, TopLevelDeclaration>{};
 
       Set<FileState> seenLibraries = new Set<FileState>();
 
       /**
        * Compute [TopLevelDeclaration]s exported from the [library].
        */
-      List<TopLevelDeclaration> computeExported(FileState library) {
+      Map<String, TopLevelDeclaration> computeExported(FileState library) {
         var declarations = <String, TopLevelDeclaration>{};
         if (seenLibraries.add(library)) {
-          // Append the library declarations.
-          for (TopLevelDeclaration t in library.topLevelDeclarations) {
-            declarations[t.name] = t;
-          }
-          for (FileState part in library.partedFiles) {
-            for (TopLevelDeclaration t in part.topLevelDeclarations) {
-              declarations[t.name] = t;
-            }
-          }
-
           // Append the exported declarations.
           for (int i = 0; i < library._exportedFiles.length; i++) {
-            List<TopLevelDeclaration> exported =
+            Map<String, TopLevelDeclaration> exported =
                 computeExported(library._exportedFiles[i]);
-            for (TopLevelDeclaration t in exported) {
-              if (!declarations.containsKey(t.name) &&
-                  library._exportFilters[i].accepts(t.name)) {
+            for (TopLevelDeclaration t in exported.values) {
+              if (library._exportFilters[i].accepts(t.name)) {
                 declarations[t.name] = t;
               }
             }
+          }
+
+          // Append the library declarations.
+          declarations.addAll(library.topLevelDeclarations);
+          for (FileState part in library.partedFiles) {
+            declarations.addAll(part.topLevelDeclarations);
           }
 
           // We're done with this library.
           seenLibraries.remove(library);
         }
 
-        return declarations.values.toList();
+        return declarations;
       }
 
       _exportedTopLevelDeclarations = computeExported(this);
@@ -224,15 +226,16 @@ class FileState {
   Set<String> get referencedNames => _referencedNames;
 
   /**
-   * Return public top-level declarations declared in the file.
+   * Return public top-level declarations declared in the file. The keys to the
+   * map are names of declarations.
    */
-  List<TopLevelDeclaration> get topLevelDeclarations {
+  Map<String, TopLevelDeclaration> get topLevelDeclarations {
     if (_topLevelDeclarations == null) {
-      _topLevelDeclarations = <TopLevelDeclaration>[];
+      _topLevelDeclarations = <String, TopLevelDeclaration>{};
 
       void addDeclaration(TopLevelDeclarationKind kind, String name) {
         if (!name.startsWith('_')) {
-          _topLevelDeclarations.add(new TopLevelDeclaration(kind, name));
+          _topLevelDeclarations[name] = new TopLevelDeclaration(kind, name);
         }
       }
 
@@ -337,6 +340,7 @@ class FileState {
     LineInfo lineInfo = new LineInfo(scanner.lineStarts);
 
     Parser parser = new Parser(source, errorListener);
+    parser.enableAssertInitializer = analysisOptions.enableAssertInitializer;
     parser.parseGenericMethodComments = analysisOptions.strongMode;
     CompilationUnit unit = parser.parseCompilationUnit(token);
     unit.lineInfo = lineInfo;
@@ -354,15 +358,10 @@ class FileState {
     try {
       _content = _fsState._contentOverlay[path];
       _content ??= _fsState._resourceProvider.getFile(path).readAsStringSync();
+      _exists = true;
     } catch (_) {
       _content = '';
-      // TODO(scheglov) We fail to report URI_DOES_NOT_EXIST.
-      // On one hand we need to provide an unlinked bundle to prevent
-      // analysis context from reading the file (we want it to work
-      // hermetically and handle one one file at a time). OTOH,
-      // ResynthesizerResultProvider happily reports that any source in the
-      // SummaryDataStore has MODIFICATION_TIME `0`. We need to return `-1`
-      // for missing files. Maybe add this feature to SummaryDataStore?
+      _exists = false;
     }
 
     // Compute the content hash.
@@ -439,7 +438,7 @@ class FileState {
     for (UnlinkedImport import in _unlinked.imports) {
       if (!import.isImplicit) {
         String uri = import.uri;
-        if (!_isDartUri(uri)) {
+        if (_isDartFileUri(uri)) {
           FileState file = _fileForRelativeUri(uri);
           if (file != null) {
             _importedFiles.add(file);
@@ -449,7 +448,7 @@ class FileState {
     }
     for (UnlinkedExportPublic export in _unlinked.publicNamespace.exports) {
       String uri = export.uri;
-      if (!_isDartUri(uri)) {
+      if (_isDartFileUri(uri)) {
         FileState file = _fileForRelativeUri(uri);
         if (file != null) {
           _exportedFiles.add(file);
@@ -459,7 +458,7 @@ class FileState {
       }
     }
     for (String uri in _unlinked.publicNamespace.parts) {
-      if (!_isDartUri(uri)) {
+      if (_isDartFileUri(uri)) {
         FileState file = _fileForRelativeUri(uri);
         if (file != null) {
           _partedFiles.add(file);
@@ -526,8 +525,8 @@ class FileState {
     return true;
   }
 
-  static bool _isDartUri(String uri) {
-    return uri.startsWith('dart:');
+  static bool _isDartFileUri(String uri) {
+    return !uri.startsWith('dart:') && AnalysisEngine.isDartFileName(uri);
   }
 }
 
@@ -548,6 +547,11 @@ class FileSystemState {
    * Mapping from a URI to the corresponding [FileState].
    */
   final Map<Uri, FileState> _uriToFile = {};
+
+  /**
+   * All known file paths.
+   */
+  final Set<String> knownFilePaths = new Set<String>();
 
   /**
    * Mapping from a path to the corresponding [FileState]s, canonical or not.
@@ -579,9 +583,10 @@ class FileSystemState {
   }
 
   /**
-   * Return the set of known files.
+   * Return the known files.
    */
-  Set<String> get knownFiles => _pathToFiles.keys.toSet();
+  Iterable<FileState> get knownFiles =>
+      _pathToFiles.values.map((files) => files.first);
 
   @visibleForTesting
   FileSystemStateTestView get test => _testView;
@@ -610,7 +615,7 @@ class FileSystemState {
       FileSource uriSource = new FileSource(resource, uri);
       file = new FileState._(this, path, uri, uriSource);
       _uriToFile[uri] = file;
-      _pathToFiles.putIfAbsent(path, () => <FileState>[]).add(file);
+      _addFileWithPath(path, file);
       _pathToCanonicalFile[path] = file;
       file.refresh();
     }
@@ -636,7 +641,7 @@ class FileSystemState {
       FileSource source = new FileSource(resource, uri);
       file = new FileState._(this, path, uri, source);
       _uriToFile[uri] = file;
-      _pathToFiles.putIfAbsent(path, () => <FileState>[]).add(file);
+      _addFileWithPath(path, file);
       file.refresh();
     }
     return file;
@@ -655,6 +660,27 @@ class FileSystemState {
     return allFiles
       ..remove(canonicalFile)
       ..insert(0, canonicalFile);
+  }
+
+  /**
+   * Remove the file with the given [path].
+   */
+  void removeFile(String path) {
+    _uriToFile.clear();
+    knownFilePaths.clear();
+    _pathToFiles.clear();
+    _pathToCanonicalFile.clear();
+    _partToLibraries.clear();
+  }
+
+  void _addFileWithPath(String path, FileState file) {
+    var files = _pathToFiles[path];
+    if (files == null) {
+      knownFilePaths.add(path);
+      files = <FileState>[];
+      _pathToFiles[path] = files;
+    }
+    files.add(file);
   }
 }
 

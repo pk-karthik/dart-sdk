@@ -154,6 +154,15 @@ bool isDartFunctionTypeRti(Object type) {
                     JS_GET_NAME(JsGetName.FUNCTION_CLASS_TYPE_NAME));
 }
 
+/// Returns true if the given [type] is _the_ `Null` type.
+@ForceInline()
+bool isNullType(Object type) {
+  return JS_BUILTIN('returns:bool;effects:none;depends:none',
+      JsBuiltin.isGivenTypeRti,
+      type,
+      JS_GET_NAME(JsGetName.NULL_CLASS_TYPE_NAME));
+}
+
 /// Returns whether the given type is _the_ Dart Object type.
 // TODO(floitsch): move this to foreign_helper.dart or similar.
 @ForceInline()
@@ -670,11 +679,14 @@ class ReflectionInfo {
     if (JS('bool', 'typeof # == "number"', functionType)) {
       return getType(functionType);
     } else if (JS('bool', 'typeof # == "function"', functionType)) {
-      var fakeInstance = JS('', 'new #()', jsConstructor);
-      setRuntimeTypeInfo(
-          fakeInstance, JS('JSExtendableArray', '#["<>"]', fakeInstance));
-      return JS('=Object|Null', r'#.apply({$receiver:#})',
-                functionType, fakeInstance);
+      if (jsConstructor != null) {
+        var fakeInstance = JS('', 'new #()', jsConstructor);
+        setRuntimeTypeInfo(
+            fakeInstance, JS('JSExtendableArray', '#["<>"]', fakeInstance));
+        return JS('=Object|Null', r'#.apply({$receiver:#})',
+                  functionType, fakeInstance);
+      }
+      return functionType;
     } else {
       throw new RuntimeError('Unexpected function type');
     }
@@ -2607,18 +2619,21 @@ abstract class Closure implements Function {
                 })(#, #)''',
              RAW_DART_FUNCTION_REF(getType),
              functionType);
-    } else if (!isStatic
-               && JS('bool', 'typeof # == "function"', functionType)) {
-      var getReceiver = isIntercepted
-          ? RAW_DART_FUNCTION_REF(BoundClosure.receiverOf)
-          : RAW_DART_FUNCTION_REF(BoundClosure.selfOf);
-      signatureFunction = JS(
-        '',
-        'function(f,r){'
-          'return function(){'
-            'return f.apply({\$receiver:r(this)},arguments)'
-          '}'
-        '}(#,#)', functionType, getReceiver);
+    } else if (JS('bool', 'typeof # == "function"', functionType)) {
+      if (isStatic) {
+        signatureFunction = functionType;
+      } else {
+        var getReceiver = isIntercepted
+            ? RAW_DART_FUNCTION_REF(BoundClosure.receiverOf)
+            : RAW_DART_FUNCTION_REF(BoundClosure.selfOf);
+        signatureFunction = JS(
+          '',
+          'function(f,r){'
+            'return function(){'
+              'return f.apply({\$receiver:r(this)},arguments)'
+            '}'
+          '}(#,#)', functionType, getReceiver);
+      }
     } else {
       throw 'Error in reflectionInfo.';
     }
@@ -3452,8 +3467,7 @@ void throwNoSuchMethod(obj, name, arguments, expectedArgumentNames) {
  * field that is currently being initialized.
  */
 void throwCyclicInit(String staticName) {
-  throw new CyclicInitializationError(
-      "Cyclic initialization for static $staticName");
+  throw new CyclicInitializationError(staticName);
 }
 
 /**
@@ -4046,10 +4060,9 @@ void mainHasTooManyParameters() {
 }
 
 class _AssertionError extends AssertionError {
-  final _message;
-  _AssertionError(this._message);
+  _AssertionError(Object message) : super(message);
 
-  String toString() => "Assertion failed: " + Error.safeToString(_message);
+  String toString() => "Assertion failed: " + Error.safeToString(message);
 }
 
 

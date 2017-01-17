@@ -77,10 +77,11 @@ class RawPcDescriptors;
 class RawReceivePort;
 class RawRedirectionData;
 class RawScript;
+class RawSignatureData;
 class RawSendPort;
 class RawSmi;
-class RawStackmap;
-class RawStacktrace;
+class RawStackMap;
+class RawStackTrace;
 class RawSubtypeTestCache;
 class RawTokenStream;
 class RawTwoByteString;
@@ -152,17 +153,17 @@ enum SerializeState {
 class Snapshot {
  public:
   enum Kind {
-    kCore = 0,    // Full snapshot of core libraries. No root library, no code.
-    kScript,      // A partial snapshot of only the application script.
-    kMessage,     // A partial snapshot used only for isolate messaging.
-    kAppWithJIT,  // Full snapshot of core libraries and application. Has some
-                  // code, but may compile in the future because we haven't
-                  // necessarily included code for every function or to
-                  // (de)optimize.
-    kAppNoJIT,    // Full snapshot of core libraries and application. Has
-                  // complete code for the application that never deopts. Will
-                  // not compile in the future.
-    kNone,        // dart_bootstrap/gen_snapshot
+    kCore = 0,  // Full snapshot of core libraries. No root library, no code.
+    kScript,    // A partial snapshot of only the application script.
+    kMessage,   // A partial snapshot used only for isolate messaging.
+    kAppJIT,    // Full snapshot of core libraries and application. Has some
+                // code, but may compile in the future because we haven't
+                // necessarily included code for every function or to
+                // (de)optimize.
+    kAppAOT,    // Full snapshot of core libraries and application. Has
+                // complete code for the application that never deopts. Will
+                // not compile in the future.
+    kNone,      // dart_bootstrap/gen_snapshot
     kInvalid
   };
   static const char* KindToCString(Kind kind);
@@ -183,10 +184,10 @@ class Snapshot {
   }
 
   static bool IsFull(Kind kind) {
-    return (kind == kCore) || (kind == kAppWithJIT) || (kind == kAppNoJIT);
+    return (kind == kCore) || (kind == kAppJIT) || (kind == kAppAOT);
   }
   static bool IncludesCode(Kind kind) {
-    return (kind == kAppWithJIT) || (kind == kAppNoJIT);
+    return (kind == kAppJIT) || (kind == kAppAOT);
   }
 
   uint8_t* Addr() { return reinterpret_cast<uint8_t*>(this); }
@@ -542,6 +543,7 @@ class SnapshotReader : public BaseReader {
   friend class PatchClass;
   friend class RedirectionData;
   friend class Script;
+  friend class SignatureData;
   friend class SubtypeTestCache;
   friend class TokenStream;
   friend class Type;
@@ -635,8 +637,13 @@ class BaseWriter : public StackResource {
   }
 
  protected:
-  BaseWriter(uint8_t** buffer, ReAlloc alloc, intptr_t initial_size)
-      : StackResource(Thread::Current()), stream_(buffer, alloc, initial_size) {
+  BaseWriter(uint8_t** buffer,
+             ReAlloc alloc,
+             DeAlloc dealloc,
+             intptr_t initial_size)
+      : StackResource(Thread::Current()),
+        stream_(buffer, alloc, initial_size),
+        dealloc_(dealloc) {
     ASSERT(buffer != NULL);
     ASSERT(alloc != NULL);
   }
@@ -653,8 +660,11 @@ class BaseWriter : public StackResource {
     data[Snapshot::kSnapshotFlagIndex] = kind;
   }
 
+  void FreeBuffer() { dealloc_(stream_.buffer()); }
+
  private:
   WriteStream stream_;
+  DeAlloc dealloc_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(BaseWriter);
 };
@@ -860,6 +870,7 @@ class SnapshotWriter : public BaseWriter {
                  Snapshot::Kind kind,
                  uint8_t** buffer,
                  ReAlloc alloc,
+                 DeAlloc dealloc,
                  intptr_t initial_size,
                  ForwardList* forward_list,
                  bool can_send_any_object);
@@ -958,7 +969,7 @@ class SnapshotWriter : public BaseWriter {
   friend class RawReceivePort;
   friend class RawRegExp;
   friend class RawScript;
-  friend class RawStacktrace;
+  friend class RawStackTrace;
   friend class RawSubtypeTestCache;
   friend class RawTokenStream;
   friend class RawType;
@@ -990,7 +1001,10 @@ class ScriptSnapshotWriter : public SnapshotWriter {
 class MessageWriter : public SnapshotWriter {
  public:
   static const intptr_t kInitialSize = 512;
-  MessageWriter(uint8_t** buffer, ReAlloc alloc, bool can_send_any_object);
+  MessageWriter(uint8_t** buffer,
+                ReAlloc alloc,
+                DeAlloc dealloc,
+                bool can_send_any_object);
   ~MessageWriter() {}
 
   void WriteMessage(const Object& obj);

@@ -6,12 +6,12 @@ library analyzer.error.error;
 
 import 'dart:collection';
 
-import 'package:analyzer/dart/element/element.dart';
 import 'package:analyzer/error/listener.dart';
 import 'package:analyzer/src/dart/scanner/scanner.dart' show ScannerErrorCode;
 import 'package:analyzer/src/error/codes.dart';
 import 'package:analyzer/src/generated/java_core.dart';
 import 'package:analyzer/src/generated/parser.dart' show ParserErrorCode;
+import 'package:analyzer/src/generated/resolver.dart' show ResolverErrorCode;
 import 'package:analyzer/src/generated/source.dart';
 import 'package:front_end/src/base/errors.dart';
 import 'package:front_end/src/scanner/errors.dart';
@@ -111,7 +111,6 @@ const List<ErrorCode> errorCodeValues = const [
   CompileTimeErrorCode.EXTENDS_DISALLOWED_CLASS,
   CompileTimeErrorCode.EXTENDS_ENUM,
   CompileTimeErrorCode.EXTENDS_NON_CLASS,
-  CompileTimeErrorCode.EXTRA_ARGUMENT_TO_ASSERT,
   CompileTimeErrorCode.EXTRA_POSITIONAL_ARGUMENTS,
   CompileTimeErrorCode.FIELD_INITIALIZED_BY_MULTIPLE_INITIALIZERS,
   CompileTimeErrorCode.FIELD_INITIALIZED_IN_PARAMETER_AND_INITIALIZER,
@@ -307,7 +306,7 @@ const List<ErrorCode> errorCodeValues = const [
   ParserErrorCode.CONST_TYPEDEF,
   ParserErrorCode.CONTINUE_OUTSIDE_OF_LOOP,
   ParserErrorCode.CONTINUE_WITHOUT_LABEL_IN_CASE,
-  ParserErrorCode.DEPRECATED_CLASS_TYPE_ALIAS,
+  ParserErrorCode.DEFAULT_VALUE_IN_FUNCTION_TYPE,
   ParserErrorCode.DIRECTIVE_AFTER_DECLARATION,
   ParserErrorCode.DUPLICATED_MODIFIER,
   ParserErrorCode.DUPLICATE_LABEL_IN_SWITCH_STATEMENT,
@@ -374,12 +373,14 @@ const List<ErrorCode> errorCodeValues = const [
   ParserErrorCode.MISSING_EXPRESSION_IN_INITIALIZER,
   ParserErrorCode.MISSING_EXPRESSION_IN_THROW,
   ParserErrorCode.MISSING_FUNCTION_BODY,
+  ParserErrorCode.MISSING_FUNCTION_KEYWORD,
   ParserErrorCode.MISSING_FUNCTION_PARAMETERS,
   ParserErrorCode.MISSING_GET,
   ParserErrorCode.MISSING_IDENTIFIER,
   ParserErrorCode.MISSING_INITIALIZER,
   ParserErrorCode.MISSING_KEYWORD_OPERATOR,
   ParserErrorCode.MISSING_METHOD_PARAMETERS,
+  ParserErrorCode.MISSING_NAME_FOR_NAMED_PARAMETER,
   ParserErrorCode.MISSING_NAME_IN_LIBRARY_DIRECTIVE,
   ParserErrorCode.MISSING_NAME_IN_PART_OF_DIRECTIVE,
   ParserErrorCode.MISSING_PREFIX_IN_DEFERRED_IMPORT,
@@ -398,6 +399,7 @@ const List<ErrorCode> errorCodeValues = const [
   ParserErrorCode.MULTIPLE_VARIABLES_IN_FOR_EACH,
   ParserErrorCode.MULTIPLE_WITH_CLAUSES,
   ParserErrorCode.NAMED_FUNCTION_EXPRESSION,
+  ParserErrorCode.NAMED_FUNCTION_TYPE,
   ParserErrorCode.NAMED_PARAMETER_OUTSIDE_GROUP,
   ParserErrorCode.NATIVE_CLAUSE_IN_NON_SDK_CODE,
   ParserErrorCode.NATIVE_FUNCTION_BODY_IN_NON_SDK_CODE,
@@ -442,6 +444,9 @@ const List<ErrorCode> errorCodeValues = const [
   ParserErrorCode.WITH_WITHOUT_EXTENDS,
   ParserErrorCode.WRONG_SEPARATOR_FOR_POSITIONAL_PARAMETER,
   ParserErrorCode.WRONG_TERMINATOR_FOR_PARAMETER_GROUP,
+  ResolverErrorCode.BREAK_LABEL_ON_SWITCH_MEMBER,
+  ResolverErrorCode.CONTINUE_LABEL_ON_SWITCH,
+  ResolverErrorCode.MISSING_LIBRARY_DIRECTIVE_WITH_PART,
   ScannerErrorCode.ILLEGAL_CHARACTER,
   ScannerErrorCode.MISSING_DIGIT,
   ScannerErrorCode.MISSING_HEX_DIGIT,
@@ -564,6 +569,7 @@ const List<ErrorCode> errorCodeValues = const [
   StaticWarningCode.STATIC_ACCESS_TO_INSTANCE_MEMBER,
   StaticWarningCode.SWITCH_EXPRESSION_NOT_ASSIGNABLE,
   StaticWarningCode.TYPE_ANNOTATION_DEFERRED_CLASS,
+  StaticWarningCode.TYPE_ANNOTATION_GENERIC_FUNCTION_PARAMETER,
   StaticWarningCode.TYPE_PARAMETER_REFERENCED_BY_STATIC,
   StaticWarningCode.TYPE_TEST_WITH_NON_TYPE,
   StaticWarningCode.TYPE_TEST_WITH_UNDEFINED_NAME,
@@ -858,13 +864,6 @@ class AnalysisErrorWithProperties extends AnalysisError {
  */
 class ErrorProperty<V> implements Comparable<ErrorProperty> {
   /**
-   * A property whose value is a list of [FieldElement]s that are final, but
-   * not initialized by a constructor.
-   */
-  static const ErrorProperty<List<FieldElement>> NOT_INITIALIZED_FIELDS =
-      const ErrorProperty<List<FieldElement>>('NOT_INITIALIZED_FIELDS', 0);
-
-  /**
    * A property whose value is the name of the library that is used by all
    * of the "part of" directives, so should be used in the "library" directive.
    * Is `null` if there is no a single name used by all of the parts.
@@ -873,7 +872,6 @@ class ErrorProperty<V> implements Comparable<ErrorProperty> {
       const ErrorProperty<String>('PARTS_LIBRARY_NAME', 1);
 
   static const List<ErrorProperty> values = const [
-    NOT_INITIALIZED_FIELDS,
     PARTS_LIBRARY_NAME,
   ];
 
